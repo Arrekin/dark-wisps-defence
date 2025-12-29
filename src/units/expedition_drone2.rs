@@ -21,9 +21,12 @@ impl Plugin for ExpeditionDrone2Plugin {
 }
 
 pub const EXPEDITION_DRONE_BASE_IMAGE: &str = "units/expedition_drone.png";
-const CIRCLE_RADIUS: f32 = 150.0;
-const CIRCLE_SPEED: f32 = 0.8; // radians per second
+const PATROL_RADIUS: f32 = 150.0;      // how far waypoints spawn from target center
+const DRONE_SPEED: f32 = 80.0;          // world units per second
+const DRONE_TURN_RATE: f32 = 1.2;       // radians per second (how fast it can turn)
+const WAYPOINT_REACH_DIST: f32 = 2.0;  // how close before picking new waypoint
 const DRONE_FRONT_OFFSET: f32 = 32.0; // pixels from drone center to front
+const SCAN_ANGLE_LIMIT: f32 = 1.6;    // radians (~90°) - max angle from forward to scan
 const SCAN_POINT_SPEED: f32 = 20.0; // world units per second - how fast beam moves to target
 const SPOT_RADIUS: f32 = 25.0; // base radius of scan spot on ground
 const SPOT_ELONGATION_FACTOR: f32 = 0.0015; // elongation per unit distance (0 = circle when close)
@@ -31,9 +34,11 @@ const BEAM_START_WIDTH: f32 = 2.0; // width at drone (narrow apex)
 
 #[derive(Component)]
 pub struct ExpeditionDrone2 {
-    pub target_entity: Entity, // entity with GridImprint we're scanning
-    pub angle: f32,            // current angle in radians
-    pub radius: f32,
+    pub target_entity: Entity,   // entity with GridImprint we're scanning
+    pub heading: f32,            // current facing direction in radians
+    pub waypoint: Vec2,          // current waypoint we're flying toward
+    pub time_at_waypoint: f32,   // timer to detect stuck state
+    pub is_scanning: bool,       // true if target is within scan angle
 }
 
 #[derive(Component)]
@@ -87,13 +92,22 @@ fn spawn_test_drone2(
     let center = target_transform.translation.xy();
     let target_size = target_imprint.world_size();
     
-    let initial_angle: f32 = 0.0;
+    // Start drone at edge of patrol area
+    let mut rng = nanorand::tls_rng();
+    let initial_angle: f32 = rng.generate::<f32>() * std::f32::consts::TAU;
     let drone_pos = center + Vec2::new(
-        CIRCLE_RADIUS * initial_angle.cos(),
-        CIRCLE_RADIUS * initial_angle.sin(),
+        PATROL_RADIUS * initial_angle.cos(),
+        PATROL_RADIUS * initial_angle.sin(),
     );
     
-    let tangent_angle = initial_angle + std::f32::consts::FRAC_PI_2;
+    // Initial heading: point toward center
+    let initial_heading = (center - drone_pos).y.atan2((center - drone_pos).x);
+    
+    // First waypoint on opposite side
+    let first_waypoint = center + Vec2::new(
+        PATROL_RADIUS * (initial_angle + std::f32::consts::PI).cos(),
+        PATROL_RADIUS * (initial_angle + std::f32::consts::PI).sin(),
+    );
     
     // Initial random target point within the main base bounds
     let mut rng = nanorand::tls_rng();
@@ -126,12 +140,14 @@ fn spawn_test_drone2(
         Transform {
             translation: drone_pos.extend(Z_AERIAL_UNIT),
             scale: Vec3::new(2.0, 2.0, 1.0),
-            rotation: Quat::from_rotation_z(tangent_angle),
+            rotation: Quat::from_rotation_z(initial_heading),
         },
         ExpeditionDrone2 {
             target_entity,
-            angle: initial_angle,
-            radius: CIRCLE_RADIUS,
+            heading: initial_heading,
+            waypoint: first_waypoint,
+            time_at_waypoint: 0.0,
+            is_scanning: true,
         },
     )).id();
     
@@ -174,28 +190,72 @@ fn drone2_circle_system(
     targets: Query<&Transform, Without<ExpeditionDrone2>>,
     mut drones: Query<(&mut Transform, &mut ExpeditionDrone2)>,
 ) {
+    let mut rng = nanorand::tls_rng();
+    
     for (mut transform, mut drone) in drones.iter_mut() {
         // Get target center position
         let Ok(target_transform) = targets.get(drone.target_entity) else { continue; };
         let center = target_transform.translation.xy();
+        let drone_pos = transform.translation.xy();
         
-        // Update circling angle
-        drone.angle += CIRCLE_SPEED * time.delta_secs();
-        if drone.angle > std::f32::consts::TAU {
-            drone.angle -= std::f32::consts::TAU;
-        }
+        // Check angle to target center
+        let to_target = center - drone_pos;
+        let angle_to_target = to_target.y.atan2(to_target.x);
+        let angle_diff = (angle_to_target - drone.heading + std::f32::consts::PI)
+            .rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
+        let target_in_front = angle_diff.abs() < SCAN_ANGLE_LIMIT;
         
-        // Calculate new position on circle around target
-        let new_pos = center + Vec2::new(
-            drone.radius * drone.angle.cos(),
-            drone.radius * drone.angle.sin(),
-        );
+        // Determine desired heading based on whether target is in front
+        let desired_heading = if target_in_front {
+            // Target is in front - aim directly at target center
+            angle_to_target
+        } else {
+            // Target is behind - we've overshot, head toward turnaround waypoint
+            // Pick new waypoint if we don't have one or reached it
+            let to_waypoint = drone.waypoint - drone_pos;
+            let dist_to_waypoint = to_waypoint.length();
+            
+            drone.time_at_waypoint += time.delta_secs();
+            let is_stuck = drone.time_at_waypoint > 5.0;
+            
+            if dist_to_waypoint < WAYPOINT_REACH_DIST || is_stuck {
+                // Reset timer and pick new turnaround waypoint
+                drone.time_at_waypoint = 0.0;
+                
+                // Pick waypoint that will bring us back toward target
+                // Go to a point past the target in our current direction of travel
+                let overshoot_angle = drone.heading + std::f32::consts::PI;
+                let angle_variation = (rng.generate::<f32>() - 0.5) * std::f32::consts::FRAC_PI_4;
+                let waypoint_angle = overshoot_angle + angle_variation;
+                
+                drone.waypoint = center + Vec2::new(
+                    PATROL_RADIUS * waypoint_angle.cos(),
+                    PATROL_RADIUS * waypoint_angle.sin(),
+                );
+            }
+            
+            // Head toward waypoint
+            to_waypoint.y.atan2(to_waypoint.x)
+        };
+        
+        // Smoothly turn toward desired heading (limited turn rate)
+        let heading_diff = (desired_heading - drone.heading + std::f32::consts::PI)
+            .rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
+        let max_turn = DRONE_TURN_RATE * time.delta_secs();
+        let turn_amount = heading_diff.clamp(-max_turn, max_turn);
+        drone.heading += turn_amount;
+        
+        // Move forward in current heading direction
+        let forward = Vec2::new(drone.heading.cos(), drone.heading.sin());
+        let new_pos = drone_pos + forward * DRONE_SPEED * time.delta_secs();
         transform.translation.x = new_pos.x;
         transform.translation.y = new_pos.y;
         
-        // Update rotation to face tangent direction
-        let tangent_angle = drone.angle + std::f32::consts::FRAC_PI_2;
-        transform.rotation = Quat::from_rotation_z(tangent_angle);
+        // Update rotation to match heading
+        transform.rotation = Quat::from_rotation_z(drone.heading);
+        
+        // Update scanning state
+        drone.is_scanning = target_in_front;
     }
 }
 
@@ -218,35 +278,41 @@ fn update_scan_spot_system(
         let target_size = target_imprint.world_size();
         let drone_pos = drone_transform.translation.xy();
         
-        // Move spot toward destination
-        let to_destination = spot.destination_pos - spot.current_pos;
-        let distance_to_dest = to_destination.length();
-        
-        if distance_to_dest < 2.0 {
-            // Reached destination, pick a new random point
-            spot.destination_pos = random_point_in_bounds(&mut rng, target_center, target_size);
-        } else {
-            // Move toward destination
-            let move_amount = SCAN_POINT_SPEED * time.delta_secs();
-            if move_amount >= distance_to_dest {
-                spot.current_pos = spot.destination_pos;
+        // Only move spot when drone is actively scanning
+        if drone.is_scanning {
+            // Move spot toward destination
+            let to_destination = spot.destination_pos - spot.current_pos;
+            let distance_to_dest = to_destination.length();
+            
+            if distance_to_dest < 2.0 {
+                // Reached destination, pick a new random point
+                spot.destination_pos = random_point_in_bounds(&mut rng, target_center, target_size);
             } else {
-                spot.current_pos += to_destination.normalize() * move_amount;
+                // Move toward destination
+                let move_amount = SCAN_POINT_SPEED * time.delta_secs();
+                if move_amount >= distance_to_dest {
+                    spot.current_pos = spot.destination_pos;
+                } else {
+                    spot.current_pos += to_destination.normalize() * move_amount;
+                }
             }
+            
+            // Update spot position
+            spot_transform.translation.x = spot.current_pos.x;
+            spot_transform.translation.y = spot.current_pos.y;
+            
+            // OVAL PROJECTION: Rotate spot to point toward drone
+            let to_drone = drone_pos - spot.current_pos;
+            let distance = to_drone.length();
+            let angle_to_drone = to_drone.y.atan2(to_drone.x);
+            spot_transform.rotation = Quat::from_rotation_z(angle_to_drone);
+            // Elongation: 1.0 (circle) when close, stretches more as drone gets farther
+            let elongation = 1.0 + distance * SPOT_ELONGATION_FACTOR;
+            spot_transform.scale = Vec3::new(SPOT_RADIUS * elongation, SPOT_RADIUS, 1.0);
+        } else {
+            // Hide spot when not scanning (scale to zero)
+            spot_transform.scale = Vec3::ZERO;
         }
-        
-        // Update spot position
-        spot_transform.translation.x = spot.current_pos.x;
-        spot_transform.translation.y = spot.current_pos.y;
-        
-        // OVAL PROJECTION: Rotate spot to point toward drone, elongation scales with distance
-        let to_drone = drone_pos - spot.current_pos;
-        let distance = to_drone.length();
-        let angle_to_drone = to_drone.y.atan2(to_drone.x);
-        spot_transform.rotation = Quat::from_rotation_z(angle_to_drone);
-        // Elongation: 1.0 (circle) when close, stretches more as drone gets farther
-        let elongation = 1.0 + distance * SPOT_ELONGATION_FACTOR;
-        spot_transform.scale = Vec3::new(SPOT_RADIUS * elongation, SPOT_RADIUS, 1.0);
         
         // Pulse animation for spot
         if let Some(material) = ray_materials.get_mut(material_handle) {
@@ -257,14 +323,20 @@ fn update_scan_spot_system(
 
 fn update_scanning_beam_system(
     time: Res<Time>,
-    drones: Query<&Transform, With<ExpeditionDrone2>>,
+    drones: Query<(&Transform, &ExpeditionDrone2)>,
     spots: Query<&ScanSpot>,
     mut beams: Query<(&mut Transform, &ScanningRay, &MeshMaterial2d<ScanningRayMaterial>), (Without<ExpeditionDrone2>, Without<ScanSpot>)>,
     mut ray_materials: ResMut<Assets<ScanningRayMaterial>>,
 ) {
     for (mut beam_transform, beam, material_handle) in beams.iter_mut() {
-        let Ok(drone_transform) = drones.get(beam.drone) else { continue; };
+        let Ok((drone_transform, drone)) = drones.get(beam.drone) else { continue; };
         let Ok(spot) = spots.get(beam.spot) else { continue; };
+        
+        // Hide beam when not scanning
+        if !drone.is_scanning {
+            beam_transform.scale = Vec3::ZERO;
+            continue;
+        }
         
         // Get drone position and facing direction
         let drone_pos = drone_transform.translation.xy();
