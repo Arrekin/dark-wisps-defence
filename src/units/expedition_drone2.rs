@@ -13,9 +13,9 @@ impl Plugin for ExpeditionDrone2Plugin {
             .add_plugins(Material2dPlugin::<ScanningRayMaterial>::default())
             .add_systems(OnEnter(GameState::Running), spawn_test_drone2)
             .add_systems(Update, (
-                drone2_circle_system.run_if(in_state(GameState::Running)),
-                update_scan_spot_system.run_if(in_state(GameState::Running)),
-                update_scanning_beam_system.run_if(in_state(GameState::Running)),
+                drone_movement_system.run_if(in_state(GameState::Running)),
+                update_scan_spot_system.run_if(in_state(GameState::Running)).after(drone_movement_system),
+                update_scanning_beam_system.run_if(in_state(GameState::Running)).after(update_scan_spot_system),
             ));
     }
 }
@@ -37,7 +37,7 @@ pub struct ExpeditionDrone2 {
     pub target_entity: Entity,   // entity with GridImprint we're scanning
     pub heading: f32,            // current facing direction in radians
     pub waypoint: Vec2,          // current waypoint we're flying toward
-    pub time_at_waypoint: f32,   // timer to detect stuck state
+    pub turnaround_timer: f32,   // timer for turnaround waypoint stuck detection
     pub is_scanning: bool,       // true if target is within scan angle
 }
 
@@ -66,7 +66,7 @@ pub struct ScanningRayMaterial {
     #[uniform(0)]
     pub pulse: f32,
     #[uniform(0)]
-    pub _padding: f32,
+    pub is_spot: f32,  // 0.0 = beam, 1.0 = spot
 }
 
 impl Material2d for ScanningRayMaterial {
@@ -110,7 +110,6 @@ fn spawn_test_drone2(
     );
     
     // Initial random target point within the main base bounds
-    let mut rng = nanorand::tls_rng();
     let initial_target = random_point_in_bounds(&mut rng, center, target_size);
     
     // Beam mesh - just draws the cone lines, no circle
@@ -119,7 +118,7 @@ fn spawn_test_drone2(
         start_width: 0.1,
         end_width: 0.4,
         pulse: 0.0,
-        _padding: 0.0,
+        is_spot: 0.0,  // beam mode
     });
     
     // Spot mesh - circle at fixed world position
@@ -128,7 +127,7 @@ fn spawn_test_drone2(
         start_width: 0.0, // unused for spot
         end_width: 0.0,
         pulse: 0.0,
-        _padding: 1.0, // flag: 1.0 = spot mode
+        is_spot: 1.0,  // spot mode
     });
     
     // Spawn drone
@@ -146,7 +145,7 @@ fn spawn_test_drone2(
             target_entity,
             heading: initial_heading,
             waypoint: first_waypoint,
-            time_at_waypoint: 0.0,
+            turnaround_timer: 0.0,
             is_scanning: true,
         },
     )).id();
@@ -185,7 +184,7 @@ fn random_point_in_bounds(rng: &mut nanorand::tls::TlsWyRand, center: Vec2, size
     )
 }
 
-fn drone2_circle_system(
+fn drone_movement_system(
     time: Res<Time>,
     targets: Query<&Transform, Without<ExpeditionDrone2>>,
     mut drones: Query<(&mut Transform, &mut ExpeditionDrone2)>,
@@ -215,12 +214,12 @@ fn drone2_circle_system(
             let to_waypoint = drone.waypoint - drone_pos;
             let dist_to_waypoint = to_waypoint.length();
             
-            drone.time_at_waypoint += time.delta_secs();
-            let is_stuck = drone.time_at_waypoint > 5.0;
+            drone.turnaround_timer += time.delta_secs();
+            let is_stuck = drone.turnaround_timer > 5.0;
             
             if dist_to_waypoint < WAYPOINT_REACH_DIST || is_stuck {
                 // Reset timer and pick new turnaround waypoint
-                drone.time_at_waypoint = 0.0;
+                drone.turnaround_timer = 0.0;
                 
                 // Pick waypoint that will bring us back toward target
                 // Go to a point past the target in our current direction of travel
@@ -309,14 +308,13 @@ fn update_scan_spot_system(
             // Elongation: 1.0 (circle) when close, stretches more as drone gets farther
             let elongation = 1.0 + distance * SPOT_ELONGATION_FACTOR;
             spot_transform.scale = Vec3::new(SPOT_RADIUS * elongation, SPOT_RADIUS, 1.0);
+            // Pulse animation for spot (only when visible)
+            if let Some(material) = ray_materials.get_mut(material_handle) {
+                material.pulse = (material.pulse + time.delta_secs() * 1.2) % 1.0;
+            }
         } else {
             // Hide spot when not scanning (scale to zero)
             spot_transform.scale = Vec3::ZERO;
-        }
-        
-        // Pulse animation for spot
-        if let Some(material) = ray_materials.get_mut(material_handle) {
-            material.pulse = (material.pulse + time.delta_secs() * 1.2) % 1.0;
         }
     }
 }
