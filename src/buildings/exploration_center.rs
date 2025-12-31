@@ -1,16 +1,19 @@
+use bevy::color::palettes::css::BLUE;
+
 use crate::prelude::*;
 use crate::ui::indicators::{IndicatorDisplay, IndicatorType, Indicators};
-use crate::map_objects::common::{ExpeditionTargetMarker, ExpeditionZone};
-use crate::units::expedition_drone::BuilderExpeditionDrone;
+use crate::ui::display_info_panel::DisplayInfoPanel;
+use crate::buildings::info_panel::{BuildingInfoPanelEnabledTrigger};
+use crate::units::expedition_drone::{BuilderExpeditionDrone, ExpeditionDrone, DroneFuel, DRONE_COST_ORE};
 
 pub struct ExplorationCenterPlugin;
 impl Plugin for ExplorationCenterPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_systems(Update, (
-                create_expedition_system.run_if(in_state(GameState::Running)),
-            ))
+            .add_systems(Update, ExplorationCenterInfoPanel::update.run_if(in_state(UiInteraction::DisplayInfoPanel)))
             .add_observer(BuilderExplorationCenter::on_add)
+            .add_observer(ExplorationCenterInfoPanel::on_building_info_panel_enabled)
+            .add_observer(ExplorationCenterBuyDroneButton::on_add)
             .register_db_loader::<BuilderExplorationCenter>(MapLoadingStage::SpawnMapElements)
             .register_db_saver(BuilderExplorationCenter::on_game_save);
     }
@@ -19,8 +22,6 @@ impl Plugin for ExplorationCenterPlugin {
 pub const EXPLORATION_CENTER_BASE_IMAGE: &str = "buildings/exploration_center.png";
 
 
-#[derive(Component)]
-pub struct ExplorationCenterNewExpeditionTimer(pub Timer);
 
 #[derive(Clone, Copy, Debug)]
 pub struct ExplorationCenterSaveData {
@@ -123,7 +124,7 @@ impl BuilderExplorationCenter {
         entity_commands
             .remove::<BuilderExplorationCenter>()
             .insert((
-                ExplorationCenter,
+                ExplorationCenter::new(2),
                 Sprite {
                     image: asset_server.load(EXPLORATION_CENTER_BASE_IMAGE),
                     custom_size: Some(grid_imprint.world_size()),
@@ -132,7 +133,6 @@ impl BuilderExplorationCenter {
                 builder.grid_position,
                 grid_imprint,
                 NeedsPower::default(),
-                ExplorationCenterNewExpeditionTimer(Timer::from_seconds(3.0, TimerMode::Repeating)),
                 ModifiersBank::from_baseline(&building_info.baseline),
                 related![Indicators[
                     IndicatorType::NoPower,
@@ -145,28 +145,129 @@ impl BuilderExplorationCenter {
     }
 }
 
-pub fn create_expedition_system(
-    mut commands: Commands,
-    mut exploration_centres: Query<(&mut ExplorationCenterNewExpeditionTimer, &Transform), (With<ExplorationCenter>, With<HasPower>, Without<DisabledByPlayer>)>,
-    expedition_zones: Query<(Entity, &Transform), (With<ExpeditionZone>, With<ExpeditionTargetMarker>)>,
-    time: Res<Time>,
-) {
-    if expedition_zones.is_empty() { return; }
-    let mut zones_positions = None;
-    for (mut timer, exploration_center_transform) in exploration_centres.iter_mut() {
-        timer.0.tick(time.delta());
-        if timer.0.just_finished() {
-            if zones_positions.is_none() {
-                // Cache to avoid recomputing zone positions for every exploration center
-                zones_positions = Some(expedition_zones.iter().map(|(entity, transform)| (entity, transform.translation.xy())).collect::<Vec<_>>());
-            }
-            let center_position = exploration_center_transform.translation.xy();
-            let closest_zone = zones_positions.as_ref().unwrap().iter().min_by(|a, b| {
-                a.1.distance_squared(center_position).total_cmp(&b.1.distance_squared(center_position))
-            });
-            if let Some((zone_entity, ..)) = closest_zone {
-                commands.spawn(BuilderExpeditionDrone::new(center_position, *zone_entity));
-            }
-        }
+////////////////////////////////////////////
+////        Display Info Panel          ////
+////////////////////////////////////////////
+
+#[derive(Component)]
+pub struct ExplorationCenterInfoPanel;
+impl ExplorationCenterInfoPanel {
+    fn on_building_info_panel_enabled(
+        trigger: On<BuildingInfoPanelEnabledTrigger>,
+        exploration_centers: Query<(), With<ExplorationCenter>>,
+        exploration_center_panel: Single<&mut Node, With<ExplorationCenterInfoPanel>>,
+    ) {
+        let focused_entity = trigger.entity;
+        exploration_center_panel.into_inner().display = if exploration_centers.contains(focused_entity) { Display::Flex } else { Display::None };
+    }
+
+    // TODO: make it event based
+    fn update(
+        display_info_panel: Single<&DisplayInfoPanel>,
+        exploration_centers: Query<&ExplorationCenter>,
+        drones: Query<(&ExpeditionDrone, &HomeBase, &DroneFuel)>,
+        drone_count_text: Single<&mut Text, With<ExplorationCenterDroneCountText>>,
+        buy_button: Single<&mut Node, With<ExplorationCenterBuyDroneButton>>,
+    ) {
+        let focused_entity = display_info_panel.into_inner().current_focus;
+        let Ok(center) = exploration_centers.get(focused_entity) else { return; };
+        
+        // Count drones owned by this center
+        let owned_drones: Vec<_> = drones.iter()
+            .filter(|(_, home_base, _)| home_base.0 == focused_entity)
+            .collect();
+        let drone_count = owned_drones.len();
+        let max_slots = center.max_drone_slots;
+        
+        // Update drone count text
+        drone_count_text.into_inner().0 = format!("Drones: {}/{}", drone_count, max_slots);
+        
+        // Show/hide buy button
+        buy_button.into_inner().display = if drone_count < max_slots { Display::Flex} else { Display::None };
+    }
+
+    pub fn subpanel_content_bundle() -> impl Bundle {
+        (
+            Node {
+                display: Display::None,
+                width: Val::Percent(100.),
+                    flex_direction: FlexDirection::Column,
+                    justify_content: JustifyContent::Start,
+                    align_items: AlignItems::Start,
+                    ..default()
+            },
+            ExplorationCenterInfoPanel,
+            children![
+                // Drone count
+                (
+                    Text::new("Drones: 0/2"),
+                    TextColor::from(BLUE),
+                    TextLayout::new_with_linebreak(LineBreak::NoWrap),
+                    Node {
+                        margin: UiRect{ left: Val::Px(4.), right: Val::Px(4.), ..default() },
+                        ..default()
+                    },
+                    ExplorationCenterDroneCountText,
+                ),
+                // Buy drone button
+                ExplorationCenterBuyDroneButton::default(),
+            ],
+        )
+    }
+
+}
+
+#[derive(Component)]
+struct ExplorationCenterDroneCountText;
+
+#[derive(Component, Default)]
+#[require(Button)]
+struct ExplorationCenterBuyDroneButton;
+impl ExplorationCenterBuyDroneButton {
+    fn on_add(
+        trigger: On<Add, ExplorationCenterBuyDroneButton>,
+        mut commands: Commands,
+    ) {
+        commands.entity(trigger.entity).insert((
+            Node {
+                width: Val::Percent(80.),
+                height: Val::Px(24.),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                margin: UiRect::top(Val::Px(4.)),
+                ..default()
+            },
+            BackgroundColor::from(Color::linear_rgba(0., 0.1, 0.3, 0.8)),
+            BorderColor::from(Color::linear_rgba(0., 0.2, 1., 1.)),
+            BorderRadius::all(Val::Px(4.)),
+            children![(
+                Text::new(format!("Buy Drone ({} ore)", DRONE_COST_ORE)),
+                TextColor::from(BLUE),
+                TextFont::default().with_font_size(12.0),
+            )],
+        )).observe(Self::on_click);
+    }
+
+    fn on_click(
+        _trigger: On<Pointer<Click>>,
+        mut commands: Commands,
+        mut stock: ResMut<Stock>,
+        display_info_panel: Single<&DisplayInfoPanel>,
+        exploration_centers: Query<&ExplorationCenter>,
+        drones: Query<(&ExpeditionDrone, &HomeBase)>,
+    ) {
+        let focused_entity = display_info_panel.into_inner().current_focus;
+        let Ok(center) = exploration_centers.get(focused_entity) else { return; };
+        
+        // Check slot availability
+        let owned_count = drones.iter().filter(|(_, home_base)| home_base.0 == focused_entity).count();
+        if owned_count >= center.max_drone_slots { return; }
+        
+        // Check cost
+        let cost = Cost { resource_type: ResourceType::DarkOre, amount: DRONE_COST_ORE as i32 };
+        if !stock.try_pay_cost(cost) { return; }
+        
+        // Spawn new drone
+        commands.spawn(BuilderExpeditionDrone::new(focused_entity));
     }
 }

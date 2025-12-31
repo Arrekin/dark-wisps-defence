@@ -1,12 +1,6 @@
-pub fn angle_difference(angle1: f32, angle2: f32) -> f32 {
-    let mut diff = (angle1 - angle2) % (2.0 * std::f32::consts::PI);
-    
-    // Normalize to [-π, π] range for shortest rotation
-    if diff > std::f32::consts::PI {
-        diff -= 2.0 * std::f32::consts::PI;
-    } else if diff < -std::f32::consts::PI {
-        diff += 2.0 * std::f32::consts::PI;
-    }
-    
-    diff
+/// Compute the shortest angular difference between two angles, normalized to [-π, π].
+/// Returns `target_angle - current_angle` wrapped to the shortest rotation direction.
+pub fn angle_difference(target_angle: f32, current_angle: f32) -> f32 {
+    (target_angle - current_angle + std::f32::consts::PI)
+        .rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI
 }

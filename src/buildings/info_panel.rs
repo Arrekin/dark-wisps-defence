@@ -28,7 +28,7 @@ pub struct BuildingInfoPanelNameText;
 #[derive(Component)]
 pub struct BuildingInfoPanelHealthbar;
 #[derive(EntityEvent)]
-pub struct BuildingInfoPanelEnabledTrigger { entity: Entity }
+pub struct BuildingInfoPanelEnabledTrigger { pub entity: Entity }
 
 // Tower Subpanel
 #[derive(Component)]
@@ -118,7 +118,7 @@ fn on_ui_map_object_focus_changed_trigger(
     }
 }
 
-fn initialize_building_panel_content_system(
+pub fn initialize_building_panel_content_system(
     mut commands: Commands,
     display_info_panel_main_content_root: Single<Entity, With<DisplayPanelMainContentRoot>>,
 ) {
@@ -179,6 +179,7 @@ fn initialize_building_panel_content_system(
                 ),
                 // Specialized panels depending on the building type
                 tower_subpanel_content_bundle(),
+                super::exploration_center::ExplorationCenterInfoPanel::subpanel_content_bundle(),
             ],
         ));
     });

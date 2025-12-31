@@ -103,7 +103,6 @@ impl AdminOnly {
         admin_mode: Res<State<AdminMode>>,
         mut menu_buttons: Query<&mut Visibility, With<AdminOnly>>,
     ) {
-        println!("dddd");
         let new_visibility = if matches!(admin_mode.get(), AdminMode::Enabled) { Visibility::Inherited } else { Visibility::Hidden };
         for mut visibility in menu_buttons.iter_mut() {
             *visibility = new_visibility;

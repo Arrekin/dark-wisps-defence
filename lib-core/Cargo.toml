@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 bevy = { version = "0.17.*", features = ["dynamic_linking"] }
+nanorand = { version = "0.7.*", features = ["tls"] }
 refinery = { version = "0.9.*", features = ["rusqlite"]}
 rusqlite = { version = "0.37.*", features = ["bundled"] }
 serde = "1.0.*"

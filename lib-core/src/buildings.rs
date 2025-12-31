@@ -58,7 +58,14 @@ pub struct MiningComplex;
 
 #[derive(Component)]
 #[require(Building, BuildingType = BuildingType::ExplorationCenter)]
-pub struct ExplorationCenter;
+pub struct ExplorationCenter {
+    pub max_drone_slots: usize,
+}
+impl ExplorationCenter {
+    pub fn new(max_drone_slots: usize) -> Self {
+        Self { max_drone_slots }
+    }
+}
 
 #[derive(Component, Default)]
 pub struct Tower;

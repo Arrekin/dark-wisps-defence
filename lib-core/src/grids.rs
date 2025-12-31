@@ -120,6 +120,20 @@ impl GridImprint {
     pub fn world_center(&self) -> Vec2 {
         self.world_size() / 2.
     }
+    
+    /// Generate a random local offset within the imprint bounds.
+    pub fn random_local_offset(&self) -> Vec2 {
+        use nanorand::Rng;
+        let mut rng = nanorand::tls_rng();
+        match self {
+            GridImprint::Rectangle { width, height } => {
+                Vec2::new(
+                    rng.generate::<f32>() * *width as f32 * CELL_SIZE,
+                    rng.generate::<f32>() * *height as f32 * CELL_SIZE,
+                )
+            }
+        }
+    }
 }
 
 impl Default for GridImprint {

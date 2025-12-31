@@ -230,6 +230,15 @@ impl MapInfo {
     }
 }
 
+#[derive(Component)]
+#[relationship(relationship_target = HomeBaseLinkedObjects)]
+pub struct HomeBase(pub Entity);
+#[derive(Component)]
+#[relationship_target(relationship = HomeBase)]
+pub struct HomeBaseLinkedObjects(Vec<Entity>);
+
+
+
 
 macro_rules! define_z_indexes {
     // Internal macro to handle incrementing the counter
