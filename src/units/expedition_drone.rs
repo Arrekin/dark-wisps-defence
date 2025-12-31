@@ -53,18 +53,18 @@ impl Plugin for ExpeditionDronePlugin {
 }
 
 pub const EXPEDITION_DRONE_BASE_IMAGE: &str = "units/expedition_drone.png";
-const PATROL_RADIUS: f32 = 150.0;      // how far waypoints spawn from target center
-const DRONE_SPEED: f32 = 160.0;          // world units per second
-const DRONE_TURN_RATE: f32 = 1.2;       // radians per second (how fast it can turn)
-const WAYPOINT_REACH_DIST: f32 = 2.0;  // how close before picking new waypoint
-const DRONE_FRONT_OFFSET: f32 = 32.0; // pixels from drone center to front
-const SCAN_ANGLE_LIMIT: f32 = 1.6;    // radians (~90°) - max angle from forward to scan
-const SCAN_POINT_SPEED: f32 = 20.0; // world units per second - how fast beam moves to target
-const SPOT_RADIUS: f32 = 25.0; // base radius of scan spot on ground
+const PATROL_RADIUS: f32 = 150.0;           // how far waypoints spawn from target center
+const DRONE_SPEED: f32 = 160.0;             // world units per second
+const DRONE_TURN_RATE: f32 = 1.2;           // radians per second (how fast it can turn)
+const WAYPOINT_REACH_DIST: f32 = 2.0;       // how close before picking new waypoint
+const DRONE_FRONT_OFFSET: f32 = 32.0;       // pixels from drone center to front
+const SCAN_ANGLE_LIMIT: f32 = 1.6;          // radians (~90°) - max angle from forward to scan
+const SCAN_POINT_SPEED: f32 = 20.0;         // world units per second - how fast beam moves to target
+const SPOT_RADIUS: f32 = 25.0;              // base radius of scan spot on ground
 const SPOT_ELONGATION_FACTOR: f32 = 0.0015; // elongation per unit distance (0 = circle when close)
-const BEAM_START_WIDTH: f32 = 2.0; // width at drone (narrow apex)
-const DEFAULT_MAX_FUEL: f32 = 60.0; // seconds of flight time
-const FUEL_CONSUMPTION_RATE: f32 = 1.0; // fuel units per second while on mission
+const BEAM_START_WIDTH: f32 = 2.0;          // width at drone (narrow apex)
+const DEFAULT_MAX_FUEL: f32 = 60.0;         // seconds of flight time
+const FUEL_CONSUMPTION_RATE: f32 = 1.0;     // fuel units per second while on mission
 
 /// Drone cost in dark ore - kept as constant for easy balancing
 pub const DRONE_COST_ORE: u32 = 100;
@@ -79,6 +79,7 @@ pub enum DroneState {
 }
 
 #[derive(Component)]
+#[require(MapBound)]
 pub struct ExpeditionDrone {
     pub state: DroneState,
     pub mission_target: Option<Entity>, // current mission target (ExpeditionZone)
@@ -304,6 +305,7 @@ impl ExpeditionDrone {
 }
 
 #[derive(Component)]
+#[require(MapBound)]
 pub struct ScanningBeam {
     pub drone: Entity,
     pub spot: Entity,             // the scan spot entity
@@ -355,6 +357,7 @@ impl ScanningBeam {
 }
 
 #[derive(Component)]
+#[require(MapBound)]
 pub struct ScanSpot {
     pub destination: Vec2,        // where moving toward (world coords)
 }
@@ -460,6 +463,11 @@ pub struct ScanningBeamMaterial {
     #[uniform(0)]
     pub pulse: f32,        // animation 0-1
 }
+impl Default for ScanningBeamMaterial {
+    fn default() -> Self {
+        Self { start_width: 0.1, end_width: 0.4, pulse: 0.0 }
+    }
+}
 
 impl Material2d for ScanningBeamMaterial {
     fn fragment_shader() -> ShaderRef {
@@ -471,7 +479,7 @@ impl Material2d for ScanningBeamMaterial {
 }
 
 /// Material for the scan spot (ground projection).
-#[derive(Asset, TypePath, Debug, Clone, AsBindGroup)]
+#[derive(Asset, TypePath, Debug, Clone, AsBindGroup, Default)]
 pub struct ScanSpotMaterial {
     #[uniform(0)]
     pub pulse: f32,  // animation 0-1
@@ -579,15 +587,9 @@ impl BuilderExpeditionDrone {
         
         // Create scanning visual materials
         let beam_mesh = meshes.add(Rectangle::new(1.0, 1.0));
-        let beam_material = beam_materials.add(ScanningBeamMaterial {
-            start_width: 0.1,
-            end_width: 0.4,
-            pulse: 0.0,
-        });
+        let beam_material = beam_materials.add(ScanningBeamMaterial::default());
         let spot_mesh = meshes.add(Circle::new(1.0));
-        let spot_material = spot_materials.add(ScanSpotMaterial {
-            pulse: 0.0,
-        });
+        let spot_material = spot_materials.add(ScanSpotMaterial::default());
         
         // Spawn scan spot
         let spot_entity = commands.spawn((
