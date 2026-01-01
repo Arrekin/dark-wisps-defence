@@ -4,6 +4,7 @@ pub mod healthbar;
 pub mod cost_indicator;
 pub mod utils;
 pub mod upgrade_line;
+pub mod tooltip;
 
 pub struct LibUiPlugin;
 impl Plugin for LibUiPlugin {
@@ -13,6 +14,7 @@ impl Plugin for LibUiPlugin {
                 healthbar::HealthbarPlugin,
                 cost_indicator::CostIndicatorPlugin,
                 upgrade_line::CommonPlugin,
+                tooltip::TooltipPlugin,
             ));
     }
 }
@@ -21,6 +23,7 @@ pub mod prelude {
     pub use crate::healthbar::Healthbar;
     pub use crate::cost_indicator::CostIndicator;
     pub use crate::upgrade_line::UpgradeLineBuilder;
+    pub use crate::tooltip::{TooltipOf, Tooltips};
 }
 
 pub mod lib_prelude {

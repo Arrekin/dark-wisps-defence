@@ -69,7 +69,7 @@ const FUEL_CONSUMPTION_RATE: f32 = 1.0;     // fuel units per second while on mi
 /// Drone cost in dark ore - kept as constant for easy balancing
 pub const DRONE_COST_ORE: u32 = 100;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, strum::Display)]
 pub enum DroneState {
     #[default]
     Stationed,      // Hidden at home base, refueling
