@@ -7,6 +7,7 @@ use crate::prelude::*;
 use crate::map_objects::common::ExpeditionZone;
 use crate::ui::display_info_panel::{DisplayInfoPanel, DisplayPanelMainContentRoot, UiMapObjectFocusedTrigger};
 use crate::ui::grid_object_placer::{GridObjectPlacer, GridObjectPlacerRequest};
+use crate::units::expedition_drone::{ExpeditionDrone, DroneState, ExpeditionDroneDeploymentRequest};
 
 use super::common::ExpeditionTargetMarker;
 
@@ -265,6 +266,7 @@ impl BuilderQuantumField {
                 builder.grid_imprint,
                 quantum_field,
                 ExpeditionZone::default(),
+                ExpeditionTargetMarker, // All quantum fields are valid drone targets by default
             ));
     }
 }
@@ -465,12 +467,21 @@ impl QuantumFieldActionButton {
         display_info_panel: Single<&DisplayInfoPanel>,
         action_button: Single<&mut QuantumFieldActionButton>,
         mut quantum_fields: Query<&mut QuantumField>,
+        drones: Query<(Entity, &ExpeditionDrone, &DroneState)>,
     ) {
         let focused_entity = display_info_panel.into_inner().current_focus;
         let mut action_button = action_button.into_inner();
         match *action_button {
             QuantumFieldActionButton::SendExpeditions => {
-                commands.entity(focused_entity).insert(ExpeditionTargetMarker);
+                // Send all idle drones
+                for (drone_entity, drone, drone_state) in drones.iter() {
+                    if matches!(drone_state, DroneState::Stationed) && drone.mission_target.is_none() {
+                        commands.trigger(ExpeditionDroneDeploymentRequest {
+                            drone: drone_entity,
+                            target: focused_entity,
+                        });
+                    }
+                }
             },
             QuantumFieldActionButton::StopExpeditions => {
                 commands.entity(focused_entity).remove::<ExpeditionTargetMarker>();

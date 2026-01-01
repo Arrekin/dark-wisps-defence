@@ -36,7 +36,7 @@ impl Plugin for ExpeditionDronePlugin {
             ))
             .add_systems(Update, (
                 (
-                    ExpeditionDrone::deploy_system,
+                    ExpeditionDrone::refueling_system,
                     ExpeditionDrone::travel_system,
                     ExpeditionDrone::fuel_consumption_system,
                     (
@@ -47,6 +47,9 @@ impl Plugin for ExpeditionDronePlugin {
                 ).run_if(in_state(GameState::Running)),
             ))
             .add_observer(BuilderExpeditionDrone::on_add)
+            .add_observer(ExpeditionDrone::on_deployment_request)
+            .add_observer(ExpeditionDrone::on_recall)
+            .add_observer(ExpeditionDrone::on_state_changed)
             .register_db_loader::<BuilderExpeditionDrone>(MapLoadingStage::SpawnMapElements)
             .register_db_saver(BuilderExpeditionDrone::on_game_save);
     }
@@ -64,15 +67,28 @@ const SPOT_RADIUS: f32 = 25.0;              // base radius of scan spot on groun
 const SPOT_ELONGATION_FACTOR: f32 = 0.0015; // elongation per unit distance (0 = circle when close)
 const BEAM_START_WIDTH: f32 = 2.0;          // width at drone (narrow apex)
 const DEFAULT_MAX_FUEL: f32 = 60.0;         // seconds of flight time
-const FUEL_CONSUMPTION_RATE: f32 = 1.0;     // fuel units per second while on mission
+const FUEL_CONSUMPTION_RATE: f32 = 3.0;     // fuel units per second while on mission
 
 /// Drone cost in dark ore - kept as constant for easy balancing
 pub const DRONE_COST_ORE: u32 = 100;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, strum::Display)]
+/// Request to deploy a drone to a specific target
+#[derive(Event)]
+pub struct ExpeditionDroneDeploymentRequest {
+    pub drone: Entity,
+    pub target: Entity,
+}
+
+/// Event to recall a drone back to base
+#[derive(EntityEvent)]
+pub struct RecallDrone(pub Entity);
+
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq, strum::Display)]
+#[component(immutable)]
 pub enum DroneState {
     #[default]
-    Stationed,      // Hidden at home base, refueling
+    Stationed,      // Hidden at home base, no active mission
+    Refueling,      // At home base, refueling before redeploying (has mission_target)
     Deploying,      // Flying toward mission target
     Scanning,       // Patrolling and scanning target
     Returning,      // Flying back to home base
@@ -81,7 +97,6 @@ pub enum DroneState {
 #[derive(Component)]
 #[require(MapBound)]
 pub struct ExpeditionDrone {
-    pub state: DroneState,
     pub mission_target: Option<Entity>, // current mission target (ExpeditionZone)
     pub heading: f32,             // current facing direction in radians
     pub waypoint: Vec2,           // current waypoint we're flying toward
@@ -100,55 +115,112 @@ impl ExpeditionDrone {
         );
     }
 
-
-    /// Initiates deployment for stationed drones when a target is available.
-    /// - Finds closest ExpeditionTargetMarker to home base
-    /// - Refuels drone to full
-    /// - Sets state to Deploying and makes drone visible
-    /// - Points drone toward target
-    fn deploy_system(
+    /// Refueling system - handles drones in Refueling state
+    /// Refuels drone (instant for now) then either redeploys or goes to stationed
+    fn refueling_system(
         mut commands: Commands,
-        mut drones: Query<(Entity, &mut ExpeditionDrone, &mut Visibility, &mut Transform, &mut DroneFuel, Option<&HomeBase>)>,
-        home_bases: Query<&Transform, (With<ExplorationCenter>, Without<ExpeditionDrone>)>,
-        targets: Query<(Entity, &Transform), (With<ExpeditionTargetMarker>, Without<ExplorationCenter>, Without<ExpeditionDrone>)>,
+        mut drones: Query<(Entity, &DroneState, &mut DroneFuel), With<ExpeditionDrone>>,
     ) {
-        for (entity, mut drone, mut visibility, mut transform, mut fuel, maybe_home_base) in drones.iter_mut() {
-            if drone.state != DroneState::Stationed { continue; }
-            let Some(home_base) = maybe_home_base else {
-                commands.entity(entity).despawn();
-                continue;
-             };
+        for (entity, drone_state, mut drone_fuel) in drones.iter_mut() {
+            if !matches!(drone_state, DroneState::Refueling) { continue; }
             
-            // Check if there's a mission target available
-            let Ok(home_transform) = home_bases.get(home_base.0) else { continue; };
-            let home_pos = home_transform.translation.xy();
+            // Refuel, instant for now
+            drone_fuel.refuel_full();
             
-            // Find closest target with ExpeditionTargetMarker
-            let closest_target = targets.iter()
-                .min_by(|(_, t1), (_, t2)| {
-                    let d1 = t1.translation.xy().distance_squared(home_pos);
-                    let d2 = t2.translation.xy().distance_squared(home_pos);
-                    d1.total_cmp(&d2)
-                });
-            
-            let Some((target_entity, target_transform)) = closest_target else { continue; };
-            
-            // Refuel before deploying
-            fuel.refuel_full();
-            
-            // Deploy!
-            drone.state = DroneState::Deploying;
-            drone.mission_target = Some(target_entity);
-            
-            // Position at home base
-            transform.translation = home_pos.extend(Z_AERIAL_UNIT);
-            
-            // Point toward target
-            let to_target = target_transform.translation.xy() - home_pos;
-            drone.heading = to_target.y.atan2(to_target.x);
-            transform.rotation = Quat::from_rotation_z(drone.heading);
-            
-            *visibility = Visibility::Inherited;
+            // Redeploy. If there is no missing, reinsertion observer will check for that and set it to Stationed
+            commands.entity(entity).insert(DroneState::Deploying);
+        }
+    }
+    
+    /// Handle ExpeditionDroneDeploymentRequest event - deploys a stationed drone to a target
+    fn on_deployment_request(
+        trigger: On<ExpeditionDroneDeploymentRequest>,
+        mut commands: Commands,
+        mut drones: Query<(&DroneState, &mut ExpeditionDrone)>,
+    ) {
+        let event = trigger.event();
+        let Ok((drone_state, mut drone,)) = drones.get_mut(event.drone) else { return };
+        
+        // Only statione drones can be sent out
+        if !matches!(drone_state, DroneState::Stationed) { return; }
+    
+        drone.mission_target = Some(event.target);
+        commands.entity(event.drone).insert(DroneState::Deploying);
+    }
+
+    fn on_state_changed(
+        trigger: On<Insert, DroneState>,
+        mut commands: Commands,
+        mut drones: Query<(&DroneState, &mut ExpeditionDrone, &mut Visibility, &mut Transform, &HomeBase)>,
+        home_bases: Query<&Transform, (With<ExplorationCenter>, Without<ExpeditionDrone>)>,
+        targets: Query<&Transform, Without<ExpeditionDrone>>,
+    ) {
+        let drone_entity = trigger.entity;
+        let Ok((drone_state, mut drone, mut visibility, mut transform, home_base)) = drones.get_mut(drone_entity) else { return };
+        
+        match drone_state {
+            DroneState::Stationed => {
+                *visibility = Visibility::Hidden;
+            }
+            DroneState::Refueling => {
+                *visibility = Visibility::Hidden;
+            }
+            DroneState::Deploying => {
+                let Some(target_entity) = drone.mission_target else {
+                    commands.entity(drone_entity).insert(DroneState::Stationed);
+                    return;
+                };
+
+                let Ok(home_transform) = home_bases.get(home_base.0) else { return };
+                let Ok(target_transform) = targets.get(target_entity) else { return };
+                
+                let home_pos = home_transform.translation.xy();
+
+                // Position at home base
+                transform.translation = home_pos.extend(Z_AERIAL_UNIT);
+                
+                // Point toward target
+                let to_target = target_transform.translation.xy() - home_pos;
+                drone.heading = to_target.y.atan2(to_target.x);
+                transform.rotation = Quat::from_rotation_z(drone.heading);
+                
+                *visibility = Visibility::Inherited;
+
+            }
+            DroneState::Scanning => {
+                let mut rng = nanorand::tls_rng();
+
+                let Some(target_entity) = drone.mission_target else {
+                    commands.entity(drone_entity).insert(DroneState::Returning);
+                    return;
+                };
+                let Ok(target_transform) = targets.get(target_entity) else { return };
+                drone.set_new_waypoint(target_transform.translation.xy(), &mut rng);
+            }
+            _ => {}
+        }
+        
+    }
+    
+    /// Handle RecallDrone event - sends drone back to base and clears mission
+    fn on_recall(
+        trigger: On<RecallDrone>,
+        mut commands: Commands,
+        mut drones: Query<(&DroneState, &mut ExpeditionDrone)>,
+    ) {
+        let drone_entity = trigger.0;
+        let Ok((drone_state, mut drone)) = drones.get_mut(drone_entity) else { return };
+        
+        match drone_state {
+            DroneState::Deploying | DroneState::Scanning => {
+                commands.entity(drone_entity).insert(DroneState::Returning);
+                drone.mission_target = None; // Clear mission on manual recall
+            }
+            DroneState::Refueling => {
+                // Clear mission so when refuelling is done it will go into stationed mode
+                drone.mission_target = None;
+            }
+            _ => {}
         }
     }
 
@@ -159,17 +231,18 @@ impl ExpeditionDrone {
     fn travel_system(
         mut commands: Commands,
         time: Res<Time>,
-        mut drones: Query<(Entity, &mut ExpeditionDrone, &mut Visibility, &mut Transform, &mut DroneFuel, Option<&HomeBase>)>,
+        mut drones: Query<(Entity, &DroneState, &mut ExpeditionDrone, &mut Transform, Option<&HomeBase>)>,
         home_bases: Query<&Transform, (With<ExplorationCenter>, Without<ExpeditionDrone>)>,
         targets: Query<&Transform, (With<ExpeditionTargetMarker>, Without<ExplorationCenter>, Without<ExpeditionDrone>)>,
     ) {
-        let mut rng = nanorand::tls_rng();
-        
-        for (entity, mut drone, mut visibility, mut transform, mut fuel, maybe_home_base) in drones.iter_mut() {
-            let (destination, arrival_dist) = match drone.state {
+        for (entity, drone_state, mut drone, mut transform, maybe_home_base) in drones.iter_mut() {
+            let (destination, arrival_dist) = match drone_state {
                 DroneState::Deploying => {
                     let Some(target_entity) = drone.mission_target else { continue; };
-                    let Ok(target_transform) = targets.get(target_entity) else { continue; };
+                    let Ok(target_transform) = targets.get(target_entity) else {
+                        commands.entity(entity).insert(DroneState::Returning);
+                        continue; 
+                    };
                     (target_transform.translation.xy(), PATROL_RADIUS)
                 }
                 DroneState::Returning => {
@@ -189,17 +262,9 @@ impl ExpeditionDrone {
             
             // Check arrival
             if distance < arrival_dist {
-                match drone.state {
-                    DroneState::Deploying => {
-                        drone.state = DroneState::Scanning;
-                        drone.set_new_waypoint(destination, &mut rng);
-                    }
-                    DroneState::Returning => {
-                        drone.state = DroneState::Stationed;
-                        drone.mission_target = None;
-                        *visibility = Visibility::Hidden;
-                        fuel.refuel_full();
-                    }
+                match drone_state {
+                    DroneState::Deploying => { commands.entity(entity).insert(DroneState::Scanning); }
+                    DroneState::Returning => { commands.entity(entity).insert(DroneState::Refueling); }
                     _ => {}
                 }
                 continue;
@@ -220,25 +285,20 @@ impl ExpeditionDrone {
 
     /// Consumes fuel while drone is on mission and triggers return when depleted.
     /// - Drains fuel during Deploying and Scanning states
-    /// - Triggers Returning state if fuel empty or target no longer valid
+    /// - Triggers Returning state if fuel empty
     fn fuel_consumption_system(
+        mut commands: Commands,
         time: Res<Time>,
-        mut drones: Query<(&mut ExpeditionDrone, &mut DroneFuel)>,
-        targets: Query<(), With<ExpeditionTargetMarker>>,
+        mut drones: Query<(Entity, &DroneState, &mut DroneFuel)>,
     ) {
-        for (mut drone, mut fuel) in drones.iter_mut() {
-            match drone.state {
+        for (entity, drone_state, mut fuel) in drones.iter_mut() {
+            match drone_state {
                 DroneState::Deploying | DroneState::Scanning => {
                     fuel.consume(FUEL_CONSUMPTION_RATE * time.delta_secs());
-                    
-                    // Check if fuel depleted OR target no longer valid
-                    let target_valid = drone.mission_target
-                        .map(|t| targets.contains(t))
-                        .unwrap_or(false);
-                    
-                    if fuel.is_empty() || !target_valid {
-                        drone.state = DroneState::Returning;
-                        drone.mission_target = None;
+
+                    if fuel.is_empty() {
+                        // Fuel depleted - return but keep mission (will redeploy after refuel)
+                        commands.entity(entity).insert(DroneState::Returning);
                     }
                 }
                 _ => {}
@@ -252,20 +312,24 @@ impl ExpeditionDrone {
     /// - When target in front: turns toward target center
     /// - When target not in front: flies toward current waypoint, picks new one when reached
     fn patrol_system(
+        mut commands: Commands,
         time: Res<Time>,
         targets: Query<&Transform, Without<ExpeditionDrone>>,
-        mut drones: Query<(&mut Transform, &mut ExpeditionDrone)>,
+        mut drones: Query<(Entity, &DroneState, &mut Transform, &mut ExpeditionDrone)>,
     ) {
         let mut rng = nanorand::tls_rng();
         
-        for (mut transform, mut drone) in drones.iter_mut() {
+        for (entity, drone_state, mut transform, mut drone) in drones.iter_mut() {
             // Reset beam state each frame (will be set true if conditions met)
             drone.is_beam_active = false;
             
-            if drone.state != DroneState::Scanning { continue; }
+            if !matches!(drone_state,  DroneState::Scanning) { continue; }
             
             let Some(target_entity) = drone.mission_target else { continue; };
-            let Ok(target_transform) = targets.get(target_entity) else { continue; };
+            let Ok(target_transform) = targets.get(target_entity) else {
+                commands.entity(entity).insert(DroneState::Returning);
+                continue;
+            };
             let center = target_transform.translation.xy();
             let drone_pos = transform.translation.xy();
             
@@ -519,12 +583,12 @@ impl BuilderExpeditionDrone {
     pub fn new(home_base: Entity) -> Self {
         Self { home_base, save_data: None }
     }
-    fn new_for_saving(drone: &ExpeditionDrone, home_base: Entity, fuel: &DroneFuel, transform: &Transform, entity: Entity) -> Self {
+    fn new_for_saving(drone: &ExpeditionDrone, drone_state: &DroneState, home_base: Entity, fuel: &DroneFuel, transform: &Transform, entity: Entity) -> Self {
         Self {
             home_base: home_base,
             save_data: Some(DroneSaveData {
                 entity,
-                state: drone.state,
+                state: *drone_state,
                 mission_target: drone.mission_target,
                 world_position: transform.translation.xy(),
                 heading: drone.heading,
@@ -537,11 +601,11 @@ impl BuilderExpeditionDrone {
 
     fn on_game_save(
         mut commands: Commands,
-        drones: Query<(Entity, &ExpeditionDrone, &HomeBase, &DroneFuel, &Transform)>,
+        drones: Query<(Entity, &ExpeditionDrone, &DroneState, &HomeBase, &DroneFuel, &Transform)>,
     ) {
         if drones.is_empty() { return; }
-        let batch = drones.iter().map(|(entity, drone, home_base, fuel, transform)| {
-            BuilderExpeditionDrone::new_for_saving(drone, home_base.0, fuel, transform, entity)
+        let batch = drones.iter().map(|(entity, drone, drone_state, home_base, fuel, transform)| {
+            BuilderExpeditionDrone::new_for_saving(drone, drone_state, home_base.0, fuel, transform, entity)
         }).collect::<SaveableBatchCommand<_>>();
         commands.queue(batch);
     }
@@ -630,12 +694,12 @@ impl BuilderExpeditionDrone {
                 },
                 visibility,
                 ExpeditionDrone {
-                    state,
                     mission_target,
                     heading,
                     waypoint,
                     is_beam_active: false,
                 },
+                state,
                 HomeBase(builder.home_base),
                 DroneFuel {
                     current: fuel_current,
@@ -654,9 +718,10 @@ impl Saveable for BuilderExpeditionDrone {
         let mission_target_id = data.mission_target.map(|e| e.index() as i64);
         let state_u8: u8 = match data.state {
             DroneState::Stationed => 0,
-            DroneState::Deploying => 1,
-            DroneState::Scanning => 2,
-            DroneState::Returning => 3,
+            DroneState::Refueling => 1,
+            DroneState::Deploying => 2,
+            DroneState::Scanning => 3,
+            DroneState::Returning => 4,
         };
 
         tx.register_entity(entity_id)?;
@@ -693,9 +758,10 @@ impl Loadable for BuilderExpeditionDrone {
             
             let state = match state_u8 {
                 0 => DroneState::Stationed,
-                1 => DroneState::Deploying,
-                2 => DroneState::Scanning,
-                3 => DroneState::Returning,
+                1 => DroneState::Refueling,
+                2 => DroneState::Deploying,
+                3 => DroneState::Scanning,
+                4 => DroneState::Returning,
                 _ => DroneState::Stationed,
             };
             
