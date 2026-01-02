@@ -165,8 +165,8 @@ impl BuilderExplorationCenter {
 
 use lib_ui::prelude::Tooltips;
 
-const SLOT_SIZE: f32 = 32.0;
-const SLOT_GAP: f32 = 4.0;
+const SLOT_SIZE: f32 = 64.0;
+const SLOT_GAP: f32 = 8.0;
 
 /// Trigger to rebuild the drone slots UI
 #[derive(Event)]
@@ -261,9 +261,10 @@ impl ExplorationCenterInfoPanel {
                     TextColor::from(BLUE),
                     TextLayout::new_with_linebreak(LineBreak::NoWrap),
                     Node {
-                        margin: UiRect::all(Val::Px(4.)),
+                        margin: UiRect::top(Val::Px(4.)),
                         ..default()
                     },
+                    TextFont::from_font_size(14.),
                     ExplorationCenterDroneCountText,
                 ),
                 // Drone slots container (horizontal row)
@@ -271,7 +272,7 @@ impl ExplorationCenterInfoPanel {
                     Node {
                         flex_direction: FlexDirection::Row,
                         justify_content: JustifyContent::Center,
-                        align_items: AlignItems::Center,
+                        align_items: AlignItems::Start,
                         column_gap: Val::Px(SLOT_GAP),
                         margin: UiRect::vertical(Val::Px(4.)),
                         ..default()
@@ -336,6 +337,7 @@ impl DroneSlot {
     fn on_add(
         trigger: On<Add, DroneSlot>,
         mut commands: Commands,
+        asset_server: Res<AssetServer>,
         slots: Query<&DroneSlot>,
         drones: Query<&DroneState>,
     ) {
@@ -351,7 +353,7 @@ impl DroneSlot {
                 justify_content: JustifyContent::Center,
                 ..default()
             },
-            BackgroundColor::from(Self::state_color(*drone_state)),
+            ImageNode::new(asset_server.load(Self::state_icon(*drone_state))),
             BorderColor::from(Color::linear_rgba(0.3, 0.6, 0.3, 1.)),
             BorderRadius::all(Val::Px(4.)),
             related![Tooltips[BuilderSlotTooltip::new_drone(*drone_state)]],
@@ -360,33 +362,34 @@ impl DroneSlot {
     
     fn update(
         mut commands: Commands,
-        mut slots: Query<(&DroneSlot, &mut BackgroundColor, &Tooltips)>,
+        asset_server: Res<AssetServer>,
+        mut slots: Query<(&DroneSlot, &mut ImageNode, &Tooltips)>,
         drones: Query<&DroneState>,
         tooltip_data: Query<&SlotTooltipData>,
     ) {
-        for (slot, mut bg, tooltips) in slots.iter_mut() {
+        for (slot, mut image, tooltips) in slots.iter_mut() {
             let Ok(drone_state) = drones.get(slot.drone_entity) else { continue; };
-            *bg = BackgroundColor::from(Self::state_color(*drone_state));
             
-            // Update tooltip data if changed
+            // Update tooltip data and background if changed
             let Some(tooltip_entity) = tooltips.iter().next() else { continue };
             let new_data = SlotTooltipData::DroneState(*drone_state);
             let needs_update = tooltip_data.get(tooltip_entity)
                 .map(|current| *current != new_data)
                 .unwrap_or(true);
             if needs_update {
+                *image = ImageNode::new(asset_server.load(Self::state_icon(*drone_state)));
                 commands.entity(tooltip_entity).insert(new_data);
             }
         }
     }
-    
-    fn state_color(state: DroneState) -> Color {
+
+    fn state_icon(state: DroneState) -> &'static str {
         match state {
-            DroneState::Stationed => Color::linear_rgba(0.2, 0.4, 0.2, 0.9),
-            DroneState::Refueling => Color::linear_rgba(0.3, 0.3, 0.4, 0.9),
-            DroneState::Deploying => Color::linear_rgba(0.4, 0.4, 0.1, 0.9),
-            DroneState::Scanning => Color::linear_rgba(0.1, 0.4, 0.6, 0.9),
-            DroneState::Returning => Color::linear_rgba(0.4, 0.3, 0.1, 0.9),
+            DroneState::Stationed => "ui/drones/drone_stationed.png",
+            DroneState::Refueling => "ui/drones/drone_refueling.png",
+            DroneState::Deploying => "ui/drones/drone_deploying.png",
+            DroneState::Scanning => "ui/drones/drone_scanning.png",
+            DroneState::Returning => "ui/drones/drone_returning.png",
         }
     }
 }

@@ -177,7 +177,7 @@ fn initialize_display_info_panel_system(
             bottom: Val::Px(5.0),
             left: Val::Percent(25.),
             width: Val::Percent(50.0),
-            height: Val::Px(140.0),
+            height: Val::Px(160.0),
             border: UiRect::all(Val::Px(4.0)),
             flex_direction: FlexDirection::Row,
             align_items: AlignItems::Center,
