@@ -9,7 +9,6 @@ use crate::ui::display_info_panel::{DisplayInfoPanel, DisplayPanelMainContentRoo
 use crate::ui::grid_object_placer::{GridObjectPlacer, GridObjectPlacerRequest};
 use crate::units::expedition_drone::{ExpeditionDrone, DroneState, ExpeditionDroneDeploymentRequest};
 
-use super::common::ExpeditionTargetMarker;
 
 pub struct QuantumFieldPlugin;
 impl Plugin for QuantumFieldPlugin {
@@ -124,7 +123,6 @@ pub struct QuantumFieldSaveData {
     pub entity: Entity,
     pub current_layer: usize,
     pub current_layer_progress: i32,
-    pub is_expedition_target: bool,
 }
 
 #[derive(Component, SSS)]
@@ -142,8 +140,8 @@ impl Saveable for BuilderQuantumField {
         // 1. Insert into quantum_fields table
         tx.register_entity(entity_index)?;
         tx.execute(
-            "INSERT OR REPLACE INTO quantum_fields (id, current_layer, current_layer_progress, is_expedition_target) VALUES (?1, ?2, ?3, ?4)",
-            rusqlite::params![entity_index, save_data.current_layer, save_data.current_layer_progress, save_data.is_expedition_target],
+            "INSERT OR REPLACE INTO quantum_fields (id, current_layer, current_layer_progress) VALUES (?1, ?2, ?3)",
+            rusqlite::params![entity_index, save_data.current_layer, save_data.current_layer_progress],
         )?;
 
         // 2. Insert into grid_positions table
@@ -157,7 +155,7 @@ impl Saveable for BuilderQuantumField {
 }
 impl Loadable for BuilderQuantumField {
     fn load(ctx: &mut LoadContext) -> rusqlite::Result<LoadResult> {
-        let mut stmt = ctx.conn.prepare("SELECT id, current_layer, current_layer_progress, is_expedition_target FROM quantum_fields LIMIT ?1 OFFSET ?2")?;
+        let mut stmt = ctx.conn.prepare("SELECT id, current_layer, current_layer_progress FROM quantum_fields LIMIT ?1 OFFSET ?2")?;
         let mut rows = stmt.query(ctx.pagination.as_params())?;
         
         let mut count = 0;
@@ -165,7 +163,6 @@ impl Loadable for BuilderQuantumField {
             let old_id: i64 = row.get(0)?;
             let current_layer: usize = row.get(1)?;
             let current_layer_progress: i32 = row.get(2)?;
-            let is_expedition_target: bool = row.get(3)?;
             
             let grid_position = ctx.conn.get_grid_coords(old_id)?;
             let grid_imprint = ctx.conn.get_grid_imprint(old_id)?;
@@ -175,7 +172,6 @@ impl Loadable for BuilderQuantumField {
                     entity: new_entity,
                     current_layer,
                     current_layer_progress,
-                    is_expedition_target,
                 };
                 ctx.commands.entity(new_entity).insert(BuilderQuantumField::new_for_saving(grid_position, grid_imprint, save_data));
             } else {
@@ -198,16 +194,15 @@ impl BuilderQuantumField {
     
     fn on_game_save(
         mut commands: Commands,
-        quantum_fields: Query<(Entity, &GridCoords, &GridImprint, &QuantumField, Has<ExpeditionTargetMarker>)>,
+        quantum_fields: Query<(Entity, &GridCoords, &GridImprint, &QuantumField)>,
     ) {
         if quantum_fields.is_empty() { return; }
         println!("Creating batch of BuilderQuantumField for saving. {} items", quantum_fields.iter().count());
-        let batch = quantum_fields.iter().map(|(entity, coords, imprint, quantum_field, is_expedition_target)| {
+        let batch = quantum_fields.iter().map(|(entity, coords, imprint, quantum_field)| {
             let save_data = QuantumFieldSaveData {
                 entity,
                 current_layer: quantum_field.current_layer,
                 current_layer_progress: quantum_field.current_layer_progress,
-                is_expedition_target,
             };
             BuilderQuantumField::new_for_saving(*coords, *imprint, save_data)
         }).collect::<SaveableBatchCommand<_>>();
@@ -245,9 +240,6 @@ impl BuilderQuantumField {
             quantum_field.current_layer = save_data.current_layer;
             quantum_field.current_layer_progress = save_data.current_layer_progress;
             
-            if save_data.is_expedition_target {
-                commands.entity(entity).insert(ExpeditionTargetMarker);
-            }
             if quantum_field.is_solved() {
                 commands.entity(entity).insert(Solved);
             }
@@ -266,7 +258,6 @@ impl BuilderQuantumField {
                 builder.grid_imprint,
                 quantum_field,
                 ExpeditionZone::default(),
-                ExpeditionTargetMarker, // All quantum fields are valid drone targets by default
             ));
     }
 }
@@ -433,8 +424,7 @@ struct QuantumFieldLayerCostPanel;
 enum QuantumFieldActionButton {
     #[default]
     Hidden,
-    SendExpeditions,
-    StopExpeditions,
+    SendIdleDrones,
     PayCost,
 }
 impl QuantumFieldActionButton {
@@ -472,7 +462,7 @@ impl QuantumFieldActionButton {
         let focused_entity = display_info_panel.into_inner().current_focus;
         let mut action_button = action_button.into_inner();
         match *action_button {
-            QuantumFieldActionButton::SendExpeditions => {
+            QuantumFieldActionButton::SendIdleDrones => {
                 // Send all idle drones
                 for (drone_entity, drone, drone_state) in drones.iter() {
                     if matches!(drone_state, DroneState::Stationed) && drone.mission_target.is_none() {
@@ -482,9 +472,6 @@ impl QuantumFieldActionButton {
                         });
                     }
                 }
-            },
-            QuantumFieldActionButton::StopExpeditions => {
-                commands.entity(focused_entity).remove::<ExpeditionTargetMarker>();
             },
             QuantumFieldActionButton::PayCost => {
                 let Ok(mut quantum_field) = quantum_fields.get_mut(focused_entity) else { return; };
@@ -503,14 +490,14 @@ struct QuantumFieldActionButtonText;
 
 
 fn update_quantum_field_info_panel_system(
-    quantum_fields: Query<(&QuantumField, Has<ExpeditionTargetMarker>)>,
+    quantum_fields: Query<&QuantumField>,
     display_info_panel: Single<&DisplayInfoPanel>,
     action_button: Single<&mut QuantumFieldActionButton>,
     healthbar: Single<&mut Healthbar, With<QuantumFieldLayerHealthbar>>,
     text: Single<&mut Text, With<QuantumFieldLayerText>>,
 ) {
     let focused_entity = display_info_panel.into_inner().current_focus;
-    let Ok((quantum_field, has_expedition_target_marker)) = quantum_fields.get(focused_entity) else { return; };
+    let Ok(quantum_field) = quantum_fields.get(focused_entity) else { return; };
     // Update the layer text
     text.into_inner().0 = if quantum_field.is_solved() {
         "All Quantum Layers Solved".to_string()
@@ -528,10 +515,8 @@ fn update_quantum_field_info_panel_system(
             QuantumFieldActionButton::Hidden
         } else if quantum_field.is_current_layer_solved() {
             QuantumFieldActionButton::PayCost
-        } else if  has_expedition_target_marker {
-            QuantumFieldActionButton::StopExpeditions
         } else {
-            QuantumFieldActionButton::SendExpeditions
+            QuantumFieldActionButton::SendIdleDrones
         }
     };
 }
@@ -577,12 +562,8 @@ fn update_quantum_field_action_button_system(
     let (action_button, mut style) = action_button.into_inner();
     let mut text = action_button_text.into_inner();
     match action_button {
-        QuantumFieldActionButton::SendExpeditions => {
-            text.0 = "Send Expeditions".to_string();
-            style.display = Display::Flex;
-        },
-        QuantumFieldActionButton::StopExpeditions => {
-            text.0 = "Stop Expeditions".to_string();
+        QuantumFieldActionButton::SendIdleDrones => {
+            text.0 = "Send Idle Drones".to_string();
             style.display = Display::Flex;
         },
         QuantumFieldActionButton::PayCost => {

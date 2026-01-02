@@ -24,7 +24,7 @@ use bevy::{
 use lib_core::utils::angle_difference;
 
 use crate::prelude::*;
-use crate::map_objects::common::ExpeditionTargetMarker;
+use crate::map_objects::common::ExpeditionZone;
 
 pub struct ExpeditionDronePlugin;
 impl Plugin for ExpeditionDronePlugin {
@@ -233,7 +233,7 @@ impl ExpeditionDrone {
         time: Res<Time>,
         mut drones: Query<(Entity, &DroneState, &mut ExpeditionDrone, &mut Transform, Option<&HomeBase>)>,
         home_bases: Query<&Transform, (With<ExplorationCenter>, Without<ExpeditionDrone>)>,
-        targets: Query<&Transform, (With<ExpeditionTargetMarker>, Without<ExplorationCenter>, Without<ExpeditionDrone>)>,
+        targets: Query<&Transform, (With<ExpeditionZone>, Without<ExplorationCenter>, Without<ExpeditionDrone>)>,
     ) {
         for (entity, drone_state, mut drone, mut transform, maybe_home_base) in drones.iter_mut() {
             let (destination, arrival_dist) = match drone_state {

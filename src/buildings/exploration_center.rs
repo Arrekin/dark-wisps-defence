@@ -4,8 +4,8 @@ use crate::prelude::*;
 use crate::ui::indicators::{IndicatorDisplay, IndicatorType, Indicators};
 use crate::ui::display_info_panel::DisplayInfoPanel;
 use crate::buildings::info_panel::BuildingInfoPanelEnabledTrigger;
-use crate::units::expedition_drone::{BuilderExpeditionDrone, DroneState, DRONE_COST_ORE, ExpeditionDroneDeploymentRequest, RecallDrone};
-use crate::map_objects::common::ExpeditionTargetMarker;
+use crate::units::expedition_drone::{BuilderExpeditionDrone, DroneState, ExpeditionDrone, DRONE_COST_ORE, ExpeditionDroneDeploymentRequest, RecallDrone};
+use crate::map_objects::common::ExpeditionZone;
 use lib_ui::utils::recolor_background_on;
 
 pub struct ExplorationCenterPlugin;
@@ -21,7 +21,9 @@ impl Plugin for ExplorationCenterPlugin {
             .add_observer(ExplorationCenterInfoPanel::on_rebuild_drone_slots)
             .add_observer(DroneSlotRow::on_add)
             .add_observer(DroneSlot::on_add)
-            .add_observer(DroneActionButton::on_add)
+            .add_observer(BuilderDroneActionButton::on_add)
+            .add_observer(BuilderSlotTooltip::on_add)
+            .add_observer(SlotTooltip::on_data_changed)
             .add_observer(BuyDroneSlot::on_add)
             .add_observer(TargetSelectionPanel::on_add)
             .add_observer(TargetSelectionPanel::on_open)
@@ -352,24 +354,28 @@ impl DroneSlot {
             BackgroundColor::from(Self::state_color(*drone_state)),
             BorderColor::from(Color::linear_rgba(0.3, 0.6, 0.3, 1.)),
             BorderRadius::all(Val::Px(4.)),
-            related![Tooltips[SlotTooltip::new_drone(*drone_state)]],
+            related![Tooltips[BuilderSlotTooltip::new_drone(*drone_state)]],
         ));
     }
     
     fn update(
+        mut commands: Commands,
         mut slots: Query<(&DroneSlot, &mut BackgroundColor, &Tooltips)>,
         drones: Query<&DroneState>,
-        mut tooltip_texts: Query<&mut Text, With<SlotTooltip>>,
+        tooltip_data: Query<&SlotTooltipData>,
     ) {
         for (slot, mut bg, tooltips) in slots.iter_mut() {
             let Ok(drone_state) = drones.get(slot.drone_entity) else { continue; };
             *bg = BackgroundColor::from(Self::state_color(*drone_state));
             
-            // Update tooltip text
-            if let Some(tooltip_entity) = tooltips.iter().next() {
-                if let Ok(mut text) = tooltip_texts.get_mut(tooltip_entity) {
-                    text.0 = drone_state.to_string();
-                }
+            // Update tooltip data if changed
+            let Some(tooltip_entity) = tooltips.iter().next() else { continue };
+            let new_data = SlotTooltipData::DroneState(*drone_state);
+            let needs_update = tooltip_data.get(tooltip_entity)
+                .map(|current| *current != new_data)
+                .unwrap_or(true);
+            if needs_update {
+                commands.entity(tooltip_entity).insert(new_data);
             }
         }
     }
@@ -385,75 +391,97 @@ impl DroneSlot {
     }
 }
 
-/// Button below drone slot: Send/Recall/Returning
+/// Builder for DroneActionButton
 #[derive(Component)]
-#[require(Button)]
-struct DroneActionButton {
+struct BuilderDroneActionButton {
     drone_entity: Entity,
 }
-impl DroneActionButton {
+impl BuilderDroneActionButton {
     fn new(drone_entity: Entity) -> Self {
         Self { drone_entity }
     }
     
     fn on_add(
-        trigger: On<Add, DroneActionButton>,
+        trigger: On<Add, BuilderDroneActionButton>,
         mut commands: Commands,
-        buttons: Query<&DroneActionButton>,
-        drones: Query<&DroneState>,
+        builders: Query<&BuilderDroneActionButton>,
+        drones: Query<(&DroneState, &ExpeditionDrone)>,
     ) {
         let entity = trigger.entity;
-        let Ok(button) = buttons.get(entity) else { return };
-        let Ok(drone_state) = drones.get(button.drone_entity) else { return };
+        let Ok(builder) = builders.get(entity) else { return };
+        let Ok((drone_state, drone)) = drones.get(builder.drone_entity) else { return };
         
-        let (text, is_active) = Self::button_state(*drone_state);
+        let (text, is_active) = DroneActionButton::button_state(*drone_state, drone.mission_target.is_some());
         
-        commands.entity(entity).insert((
-            Node {
-                padding: UiRect::axes(Val::Px(4.), Val::Px(2.)),
-                ..default()
-            },
-            BackgroundColor::from(if is_active {
-                Color::linear_rgba(0.2, 0.3, 0.5, 0.9)
-            } else {
-                Color::linear_rgba(0.2, 0.2, 0.2, 0.5)
-            }),
-            BorderRadius::all(Val::Px(3.)),
-            children![(
-                Text::new(text),
-                TextColor::from(if is_active { Color::WHITE } else { Color::linear_rgba(0.6, 0.6, 0.6, 1.) }),
-                TextFont::default().with_font_size(10.0),
-            )],
-        ))
-        .observe(Self::on_click)
-        .observe(recolor_background_on::<Pointer<Over>>(Color::linear_rgba(0.3, 0.4, 0.6, 0.95)))
-        .observe(recolor_background_on::<Pointer<Out>>(Color::linear_rgba(0.2, 0.3, 0.5, 0.9)));
+        let text_entity = commands.spawn((
+            Text::new(text),
+            TextColor::from(if is_active { Color::WHITE } else { Color::linear_rgba(0.6, 0.6, 0.6, 1.) }),
+            TextFont::default().with_font_size(10.0),
+        )).id();
+        
+        commands.entity(entity)
+            .remove::<BuilderDroneActionButton>()
+            .insert((
+                DroneActionButton {
+                    drone_entity: builder.drone_entity,
+                    text_entity,
+                },
+                Node {
+                    padding: UiRect::axes(Val::Px(4.), Val::Px(2.)),
+                    ..default()
+                },
+                BackgroundColor::from(if is_active {
+                    Color::linear_rgba(0.2, 0.3, 0.5, 0.9)
+                } else {
+                    Color::linear_rgba(0.2, 0.2, 0.2, 0.5)
+                }),
+                BorderRadius::all(Val::Px(3.)),
+            ))
+            .add_child(text_entity)
+            .observe(DroneActionButton::on_click)
+            .observe(recolor_background_on::<Pointer<Over>>(Color::linear_rgba(0.3, 0.4, 0.6, 0.95)))
+            .observe(recolor_background_on::<Pointer<Out>>(Color::linear_rgba(0.2, 0.3, 0.5, 0.9)));
+    }
+}
+
+/// Button below drone slot: Send/Recall/Returning
+#[derive(Component)]
+#[require(Button)]
+struct DroneActionButton {
+    drone_entity: Entity,
+    text_entity: Entity,
+}
+impl DroneActionButton {
+    fn new(drone_entity: Entity) -> BuilderDroneActionButton {
+        BuilderDroneActionButton::new(drone_entity)
     }
     
     fn update(
-        buttons: Query<(&DroneActionButton, &Children)>,
-        drones: Query<&DroneState>,
+        buttons: Query<&DroneActionButton>,
+        drones: Query<(&DroneState, &ExpeditionDrone)>,
         mut texts: Query<(&mut Text, &mut TextColor)>,
     ) {
-        for (button, children) in buttons.iter() {
-            let Ok(drone_state) = drones.get(button.drone_entity) else { continue };
-            let (text, is_active) = Self::button_state(*drone_state);
+        for button in buttons.iter() {
+            let Ok((drone_state, drone)) = drones.get(button.drone_entity) else { continue };
+            let (text, is_active) = Self::button_state(*drone_state, drone.mission_target.is_some());
             
-            // Only update text - background is handled by hover observers
-            for child in children.iter() {
-                if let Ok((mut t, mut color)) = texts.get_mut(child) {
-                    t.0 = text.to_string();
-                    *color = TextColor::from(if is_active { Color::WHITE } else { Color::linear_rgba(0.6, 0.6, 0.6, 1.) });
-                }
-            }
+            let Ok((mut t, mut color)) = texts.get_mut(button.text_entity) else { continue };
+            t.0 = text.to_string();
+            *color = TextColor::from(if is_active { Color::WHITE } else { Color::linear_rgba(0.6, 0.6, 0.6, 1.) });
         }
     }
     
-    fn button_state(state: DroneState) -> (&'static str, bool) {
+    fn button_state(state: DroneState, has_mission: bool) -> (&'static str, bool) {
         match state {
             DroneState::Stationed => ("Send", true),
-            DroneState::Refueling | DroneState::Deploying | DroneState::Scanning => ("Recall", true),
-            DroneState::Returning => ("Returning", false),
+            DroneState::Deploying | DroneState::Scanning => ("Recall", true),
+            DroneState::Returning | DroneState::Refueling => {
+                if has_mission {
+                    ("Recall", true)
+                } else {
+                    ("Returning", false)
+                }
+            }
         }
     }
     
@@ -468,35 +496,47 @@ impl DroneActionButton {
         
         match drone_state {
             DroneState::Stationed => {
-                // Open target selection panel as child of the info panel
                 commands.trigger(OpenTargetSelectionPanel { drone: button.drone_entity });
             }
             DroneState::Refueling | DroneState::Deploying | DroneState::Scanning => {
-                // Recall drone (or cancel mission if refueling)
                 commands.trigger(RecallDrone(button.drone_entity));
             }
-            DroneState::Returning => {
-                // Already returning, do nothing
-            }
+            DroneState::Returning => {}
         }
     }
 }
 
-/// Tooltip shown when hovering over a slot (drone or buy button)
+/// Data component for SlotTooltip - insert this to update tooltip text
+#[derive(Component, Clone, PartialEq)]
+#[component(immutable)]
+enum SlotTooltipData {
+    DroneState(DroneState),
+    BuyCost(u32),
+}
+impl SlotTooltipData {
+    fn text(&self) -> String {
+        match self {
+            Self::DroneState(state) => state.to_string(),
+            Self::BuyCost(cost) => format!("Cost: {} ore", cost),
+        }
+    }
+}
+
+/// Builder for SlotTooltip
 #[derive(Component)]
-struct SlotTooltip;
-impl SlotTooltip {
+struct BuilderSlotTooltip {
+    data: SlotTooltipData,
+}
+impl BuilderSlotTooltip {
     fn new_drone(state: DroneState) -> impl Bundle {
-        Self::bundle(state.to_string())
+        Self::new(SlotTooltipData::DroneState(state))
     }
-    
     fn new_buy() -> impl Bundle {
-        Self::bundle(format!("Cost: {} ore", DRONE_COST_ORE))
+        Self::new(SlotTooltipData::BuyCost(DRONE_COST_ORE))
     }
-    
-    fn bundle(text: String) -> impl Bundle {
+    fn new(data: SlotTooltipData) -> impl Bundle {
         (
-            Self,
+            Self { data },
             Node {
                 display: Display::None,
                 position_type: PositionType::Absolute,
@@ -506,12 +546,46 @@ impl SlotTooltip {
             },
             BackgroundColor::from(Color::linear_rgba(0.1, 0.1, 0.2, 0.95)),
             BorderRadius::all(Val::Px(4.)),
-            children![(
-                Text::new(text),
-                TextColor::from(Color::WHITE),
-                TextFont::default().with_font_size(11.0),
-            )],
         )
+    }
+    
+    fn on_add(
+        trigger: On<Add, BuilderSlotTooltip>,
+        mut commands: Commands,
+        builders: Query<&BuilderSlotTooltip>,
+    ) {
+        let entity = trigger.entity;
+        let Ok(builder) = builders.get(entity) else { return };
+        
+        let text_entity = commands.spawn((
+            Text::new(builder.data.text()),
+            TextColor::from(Color::WHITE),
+            TextFont::default().with_font_size(11.0),
+        )).id();
+        
+        commands.entity(entity)
+            .remove::<BuilderSlotTooltip>()
+            .insert((SlotTooltip { text_entity }, builder.data.clone()))
+            .add_child(text_entity);
+    }
+}
+
+/// Tooltip shown when hovering over a slot (drone or buy button)
+#[derive(Component)]
+struct SlotTooltip {
+    text_entity: Entity,
+}
+impl SlotTooltip {
+    
+    fn on_data_changed(
+        trigger: On<Insert, SlotTooltipData>,
+        tooltips: Query<(&SlotTooltip, &SlotTooltipData)>,
+        mut texts: Query<&mut Text>,
+    ) {
+        let entity = trigger.entity;
+        let Ok((tooltip, data)) = tooltips.get(entity) else { return };
+        let Ok(mut text) = texts.get_mut(tooltip.text_entity) else { return };
+        text.0 = data.text();
     }
 }
 
@@ -540,7 +614,7 @@ impl BuyDroneSlot {
                 TextColor::from(BLUE),
                 TextFont::default().with_font_size(20.0),
             )],
-            related![Tooltips[SlotTooltip::new_buy()]],
+            related![Tooltips[BuilderSlotTooltip::new_buy()]],
         ))
         .observe(Self::on_click)
         .observe(recolor_background_on::<Pointer<Over>>(Color::linear_rgba(0.15, 0.3, 0.5, 0.9)))
@@ -596,7 +670,7 @@ impl TargetSelectionPanel {
         trigger: On<Add, TargetSelectionPanel>,
         mut commands: Commands,
         panels: Query<&TargetSelectionPanel>,
-        targets: Query<(Entity, &Transform), With<ExpeditionTargetMarker>>,
+        targets: Query<(Entity, &Transform), With<ExpeditionZone>>,
     ) {
         let entity = trigger.entity;
         let Ok(panel) = panels.get(entity) else { return };
