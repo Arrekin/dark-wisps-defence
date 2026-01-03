@@ -45,7 +45,7 @@ pub struct MapBound;
 #[derive(Component, Default)]
 pub struct MapLoadingTask;
 
-#[derive(Component, Default)]
+#[derive(Component)]
 pub struct Health {
     current: f32,
     max: f32, // A helper, source of truth is in MaxHealth component
@@ -70,21 +70,31 @@ impl Health {
         self.current <= 0.
     }
 }
+impl Default for Health {
+    fn default() -> Self {
+        Self { current: f32::MAX, max: f32::MAX }
+    }
+}
 
-#[derive(Component, Default, Clone, Copy, Property)]
+#[derive(Component, Clone, Copy, Property)]
 #[component(immutable)]
 #[require(Health)]
 pub struct MaxHealth(pub f32);
-impl MaxHealth {
+impl MaxHealth {   
     fn on_insert(
         trigger: On<Insert, MaxHealth>,
         mut healths: Query<(&mut Health, &MaxHealth)>,
     ) {
         let Ok((mut health, max_health)) = healths.get_mut(trigger.entity) else { return; };
-        if health.current == 0. {
+        health.max = max_health.0;
+        if health.current > max_health.0 {
             health.current = max_health.0;
         }
-        health.max = max_health.0;
+    }
+}
+impl Default for MaxHealth {
+    fn default() -> Self {
+        Self(f32::MAX)
     }
 }
 #[derive(Component, Default, Clone, Copy, Property)]

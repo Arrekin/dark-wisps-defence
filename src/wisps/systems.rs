@@ -69,8 +69,8 @@ pub fn remove_dead_wisps(
             wisps_grid.wisp_remove(*coords, wisp_entity);
             commands.entity(wisp_entity).despawn();
             // Grant essence
-            for container in essences.0.iter() {
-                stock.add(container.essence_type.into(), container.amount);
+            for essence in essences.0.iter() {
+                stock.add(essence.essence_type.into(), essence.amount);
             }
             // Update stats
             stats_wisps_killed.0 += 1;
