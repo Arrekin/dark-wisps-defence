@@ -721,7 +721,7 @@ impl SlotTooltip {
                     BuilderPreviewCamera::new(
                         entity, // tooltip owns the camera
                         drone_transform.translation.xy(),
-                        2.5,
+                        2.,
                     ).with_auto_follow_entity(drone_entity)
                 ).id();
                 

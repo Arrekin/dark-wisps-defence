@@ -140,27 +140,41 @@ impl ExpeditionDrone {
     fn on_deployment_request(
         trigger: On<ExpeditionDroneDeploymentRequest>,
         mut commands: Commands,
-        mut drones: Query<(&DroneState, &mut ExpeditionDrone)>,
+        mut drones: Query<(&mut Transform, &DroneState, &mut ExpeditionDrone, &HomeBase)>,
+        home_bases: Query<&Transform, (With<ExplorationCenter>, Without<ExpeditionDrone>)>,
+        targets: Query<&Transform, Without<ExpeditionDrone>>,
     ) {
         let event = trigger.event();
-        let Ok((drone_state, mut drone,)) = drones.get_mut(event.drone) else { return };
+        let Ok((mut transform, drone_state, mut drone, home_base)) = drones.get_mut(event.drone) else { return };
         
         // Only statione drones can be sent out
         if !matches!(drone_state, DroneState::Stationed) { return; }
     
         drone.mission_target = Some(event.target);
+
+        let Ok(home_transform) = home_bases.get(home_base.0) else { return };
+        let Ok(target_transform) = targets.get(event.target) else { return };
+        
+        let home_pos = home_transform.translation.xy();
+        
+        transform.translation = home_pos.extend(transform.translation.z);
+        
+        // Point toward target
+        let to_target = target_transform.translation.xy() - home_pos;
+        drone.heading = to_target.y.atan2(to_target.x);
+        transform.rotation = Quat::from_rotation_z(drone.heading);
+
         commands.entity(event.drone).insert(DroneState::Deploying);
     }
 
     fn on_state_changed(
         trigger: On<Insert, DroneState>,
         mut commands: Commands,
-        mut drones: Query<(&DroneState, &mut ExpeditionDrone, &mut Visibility, &mut Transform, &HomeBase)>,
-        home_bases: Query<&Transform, (With<ExplorationCenter>, Without<ExpeditionDrone>)>,
-        targets: Query<&Transform, Without<ExpeditionDrone>>,
+        mut drones: Query<(&DroneState, &mut ExpeditionDrone, &mut Visibility)>,
+        targets: Query<&Transform>,
     ) {
         let drone_entity = trigger.entity;
-        let Ok((drone_state, mut drone, mut visibility, mut transform, home_base)) = drones.get_mut(drone_entity) else { return };
+        let Ok((drone_state, mut drone, mut visibility)) = drones.get_mut(drone_entity) else { return };
         
         match drone_state {
             DroneState::Stationed => {
@@ -170,26 +184,12 @@ impl ExpeditionDrone {
                 *visibility = Visibility::Hidden;
             }
             DroneState::Deploying => {
-                let Some(target_entity) = drone.mission_target else {
+                if drone.mission_target.is_none() {
                     commands.entity(drone_entity).insert(DroneState::Stationed);
                     return;
                 };
-
-                let Ok(home_transform) = home_bases.get(home_base.0) else { return };
-                let Ok(target_transform) = targets.get(target_entity) else { return };
-                
-                let home_pos = home_transform.translation.xy();
-
-                // Position at home base
-                transform.translation = home_pos.extend(Z_AERIAL_UNIT);
-                
-                // Point toward target
-                let to_target = target_transform.translation.xy() - home_pos;
-                drone.heading = to_target.y.atan2(to_target.x);
-                transform.rotation = Quat::from_rotation_z(drone.heading);
                 
                 *visibility = Visibility::Inherited;
-
             }
             DroneState::Scanning => {
                 let mut rng = nanorand::tls_rng();
@@ -731,7 +731,7 @@ impl BuilderExpeditionDrone {
 
 impl Saveable for BuilderExpeditionDrone {
     fn save(self, tx: &rusqlite::Transaction) -> rusqlite::Result<()> {
-        let data = self.save_data.expect("BuilderExpeditionDrone2 for saving must have save_data");
+        let data = self.save_data.expect("BuilderExpeditionDrone for saving must have save_data");
         let entity_id = data.entity.index() as i64;
         let home_base_id = self.home_base.index() as i64;
         let mission_target_id = data.mission_target.map(|e| e.index() as i64);
@@ -746,7 +746,7 @@ impl Saveable for BuilderExpeditionDrone {
         tx.register_entity(entity_id)?;
         tx.save_world_position(entity_id, data.world_position)?;
         tx.execute(
-            "INSERT OR REPLACE INTO expedition_drones2 (id, home_base_id, state, mission_target_id, heading, waypoint_x, waypoint_y, fuel_current, fuel_max) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            "INSERT OR REPLACE INTO expedition_drones (id, home_base_id, state, mission_target_id, heading, waypoint_x, waypoint_y, fuel_current, fuel_max) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             rusqlite::params![entity_id, home_base_id, state_u8, mission_target_id, data.heading, data.waypoint.x, data.waypoint.y, data.fuel_current, data.fuel_max],
         )?;
         Ok(())
@@ -755,7 +755,7 @@ impl Saveable for BuilderExpeditionDrone {
 
 impl Loadable for BuilderExpeditionDrone {
     fn load(ctx: &mut LoadContext) -> rusqlite::Result<LoadResult> {
-        let mut stmt = ctx.conn.prepare("SELECT id, home_base_id, state, mission_target_id, heading, waypoint_x, waypoint_y, fuel_current, fuel_max FROM expedition_drones2 LIMIT ?1 OFFSET ?2")?;
+        let mut stmt = ctx.conn.prepare("SELECT id, home_base_id, state, mission_target_id, heading, waypoint_x, waypoint_y, fuel_current, fuel_max FROM expedition_drones LIMIT ?1 OFFSET ?2")?;
         let mut rows = stmt.query(ctx.pagination.as_params())?;
         
         let mut count = 0;
