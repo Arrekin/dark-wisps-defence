@@ -216,7 +216,7 @@ impl ExpeditionDrone {
                 commands.entity(drone_entity).insert(DroneState::Returning);
                 drone.mission_target = None; // Clear mission on manual recall
             }
-            DroneState::Refueling => {
+            DroneState::Refueling | DroneState::Returning => {
                 // Clear mission so when refuelling is done it will go into stationed mode
                 drone.mission_target = None;
             }

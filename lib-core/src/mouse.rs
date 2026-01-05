@@ -1,3 +1,4 @@
+use bevy::picking::hover::PickingInteraction;
 use bevy::window::PrimaryWindow;
 
 use crate::prelude::*;
@@ -12,7 +13,7 @@ pub struct MousePlugin;
 impl Plugin for MousePlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(MouseInfo::default());
-        app.add_systems(PreUpdate, update_mouse_info_system);
+        app.add_systems(PreUpdate, update_mouse_info_system.after(bevy::picking::PickingSystems::Hover));
 
     }
 }
@@ -29,7 +30,7 @@ pub fn update_mouse_info_system(
     mut mouse_info: ResMut<MouseInfo>,
     window: Single<&Window, With<PrimaryWindow>>,
     camera: Single<(&Camera, &GlobalTransform), With<MainCamera>>,
-    ui_nodes: Query<&Interaction, With<ComputedNode>>,
+    ui_nodes: Query<&PickingInteraction, With<ComputedNode>>,
 ) {
     let (camera, camera_transform) = camera.into_inner();
 
@@ -42,6 +43,6 @@ pub fn update_mouse_info_system(
         mouse_info.grid_coords = grid_coords;
     }
     if !ui_nodes.is_empty() {
-        mouse_info.is_over_ui = ui_nodes.iter().any(|interaction| !matches!(interaction, Interaction::None));
+        mouse_info.is_over_ui = ui_nodes.iter().any(|interaction| !matches!(interaction, PickingInteraction::None));
     }
 }

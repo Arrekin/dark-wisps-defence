@@ -4,6 +4,7 @@ pub mod healthbar;
 pub mod cost_indicator;
 pub mod utils;
 pub mod upgrade_line;
+pub mod mouse_scrolling;
 pub mod tooltip;
 
 pub struct LibUiPlugin;
@@ -15,6 +16,7 @@ impl Plugin for LibUiPlugin {
                 cost_indicator::CostIndicatorPlugin,
                 upgrade_line::CommonPlugin,
                 tooltip::TooltipPlugin,
+                mouse_scrolling::MouseScrollingPlugin,
             ));
     }
 }

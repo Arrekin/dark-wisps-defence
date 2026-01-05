@@ -14,10 +14,8 @@ pub struct QuantumFieldPlugin;
 impl Plugin for QuantumFieldPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_systems(Startup, (
-                |mut commands: Commands| { commands.spawn(GridPlacerUiForQuantumField::default()); },
-            ))
             .add_systems(PostStartup, (
+                |mut commands: Commands| { commands.spawn(GridPlacerUiForQuantumField::default()); },
                 initialize_quantum_field_panel_content_system,
             ))
             .add_systems(Update, (
@@ -248,6 +246,7 @@ impl BuilderQuantumField {
         commands.entity(entity)
             .remove::<BuilderQuantumField>()
             .insert((
+                Name::new("Quantum Field"),
                 Sprite {
                     custom_size: Some(builder.grid_imprint.world_size()),
                     color: INDIGO.into(),

@@ -1,12 +1,16 @@
 use bevy::color::palettes::css::BLUE;
+use bevy::ui::widget::ViewportNode;
+
+use lib_core::camera::{BuilderPreviewCamera, OwnedCameras};
+use lib_ui::utils::recolor_background_on;
 
 use crate::prelude::*;
 use crate::ui::indicators::{IndicatorDisplay, IndicatorType, Indicators};
-use crate::ui::display_info_panel::DisplayInfoPanel;
+use crate::ui::display_info_panel::{DisplayInfoPanel, UiMapObjectFocusedTrigger, UiMapObjectUnfocusedTrigger};
 use crate::buildings::info_panel::BuildingInfoPanelEnabledTrigger;
 use crate::units::expedition_drone::{BuilderExpeditionDrone, DroneState, ExpeditionDrone, DRONE_COST_ORE, ExpeditionDroneDeploymentRequest, RecallDrone};
 use crate::map_objects::common::ExpeditionZone;
-use lib_ui::utils::recolor_background_on;
+
 
 pub struct ExplorationCenterPlugin;
 impl Plugin for ExplorationCenterPlugin {
@@ -28,9 +32,13 @@ impl Plugin for ExplorationCenterPlugin {
             .add_observer(TargetSelectionPanel::on_add)
             .add_observer(TargetSelectionPanel::on_open)
             .add_observer(TargetSelectionPanel::on_select_target)
+            .add_observer(TargetSelectionPanel::on_global_focused)
+            .add_observer(TargetSelectionPanel::on_global_unfocused)
             .add_observer(TargetListItem::on_add)
+            .add_observer(TargetListItemCameraPreview::on_add)
             .register_db_loader::<BuilderExplorationCenter>(MapLoadingStage::SpawnMapElements)
-            .register_db_saver(BuilderExplorationCenter::on_game_save);
+            .register_db_saver(BuilderExplorationCenter::on_game_save)
+            ;
     }
 }
 
@@ -186,13 +194,7 @@ impl ExplorationCenterInfoPanel {
         mut commands: Commands,
         exploration_centers: Query<(), With<ExplorationCenter>>,
         exploration_center_panel: Single<&mut Node, With<ExplorationCenterInfoPanel>>,
-        selection_panels: Query<Entity, With<TargetSelectionPanel>>,
     ) {
-        // Always close any open selection panels on focus change
-        for panel in selection_panels.iter() {
-            commands.entity(panel).despawn();
-        }
-        
         let focused_entity = trigger.entity;
         let is_exploration_center = exploration_centers.contains(focused_entity);
         if is_exploration_center {
@@ -202,7 +204,7 @@ impl ExplorationCenterInfoPanel {
             exploration_center_panel.into_inner().display = Display::None;
         }
     }
-
+    
     fn on_rebuild_drone_slots(
         _trigger: On<RebuildDroneSlotsUi>,
         mut commands: Commands,
@@ -356,7 +358,7 @@ impl DroneSlot {
             ImageNode::new(asset_server.load(Self::state_icon(*drone_state))),
             BorderColor::from(Color::linear_rgba(0.3, 0.6, 0.3, 1.)),
             BorderRadius::all(Val::Px(4.)),
-            related![Tooltips[BuilderSlotTooltip::new_drone(*drone_state)]],
+            related![Tooltips[BuilderSlotTooltip::new_drone(*drone_state, slot.drone_entity)]],
         ));
     }
     
@@ -372,7 +374,7 @@ impl DroneSlot {
             
             // Update tooltip data and background if changed
             let Some(tooltip_entity) = tooltips.iter().next() else { continue };
-            let new_data = SlotTooltipData::DroneState(*drone_state);
+            let new_data = SlotTooltipData::DroneState { state: *drone_state, drone_entity: slot.drone_entity };
             let needs_update = tooltip_data.get(tooltip_entity)
                 .map(|current| *current != new_data)
                 .unwrap_or(true);
@@ -492,10 +494,10 @@ impl DroneActionButton {
         trigger: On<Pointer<Click>>,
         mut commands: Commands,
         buttons: Query<&DroneActionButton>,
-        drones: Query<&DroneState>,
+        drones: Query<(&DroneState, &ExpeditionDrone)>,
     ) {
         let Ok(button) = buttons.get(trigger.entity) else { return };
-        let Ok(drone_state) = drones.get(button.drone_entity) else { return };
+        let Ok((drone_state, drone)) = drones.get(button.drone_entity) else { return };
         
         match drone_state {
             DroneState::Stationed => {
@@ -504,7 +506,11 @@ impl DroneActionButton {
             DroneState::Refueling | DroneState::Deploying | DroneState::Scanning => {
                 commands.trigger(RecallDrone(button.drone_entity));
             }
-            DroneState::Returning => {}
+            DroneState::Returning => {
+                if drone.mission_target.is_some() {
+                    commands.trigger(RecallDrone(button.drone_entity))
+                }
+            }
         }
     }
 }
@@ -513,17 +519,32 @@ impl DroneActionButton {
 #[derive(Component, Clone, PartialEq)]
 #[component(immutable)]
 enum SlotTooltipData {
-    DroneState(DroneState),
+    DroneState { state: DroneState, drone_entity: Entity },
     BuyCost(u32),
 }
 impl SlotTooltipData {
     fn text(&self) -> String {
         match self {
-            Self::DroneState(state) => state.to_string(),
+            Self::DroneState { state, .. } => state.to_string(),
             Self::BuyCost(cost) => format!("Cost: {} ore", cost),
         }
     }
+    
+    /// Returns the drone entity if it is outside home base
+    fn drone_outside_home_base(&self) -> Option<Entity> {
+        match self {
+            Self::DroneState { state, drone_entity } => {
+                match state {
+                    DroneState::Deploying | DroneState::Scanning | DroneState::Returning => Some(*drone_entity),
+                    DroneState::Stationed | DroneState::Refueling => None,
+                }
+            }
+            _ => None,
+        }
+    }
 }
+
+const TOOLTIP_CAMERA_SIZE: f32 = 256.0;
 
 /// Builder for SlotTooltip
 #[derive(Component)]
@@ -531,8 +552,8 @@ struct BuilderSlotTooltip {
     data: SlotTooltipData,
 }
 impl BuilderSlotTooltip {
-    fn new_drone(state: DroneState) -> impl Bundle {
-        Self::new(SlotTooltipData::DroneState(state))
+    fn new_drone(state: DroneState, drone_entity: Entity) -> impl Bundle {
+        Self::new(SlotTooltipData::DroneState { state, drone_entity })
     }
     fn new_buy() -> impl Bundle {
         Self::new(SlotTooltipData::BuyCost(DRONE_COST_ORE))
@@ -545,6 +566,9 @@ impl BuilderSlotTooltip {
                 position_type: PositionType::Absolute,
                 bottom: Val::Px(SLOT_SIZE + 4.),
                 padding: UiRect::all(Val::Px(4.)),
+                flex_direction: FlexDirection::Column,
+                align_items: AlignItems::Center,
+                row_gap: Val::Px(4.),
                 ..default()
             },
             BackgroundColor::from(Color::linear_rgba(0.1, 0.1, 0.2, 0.95)),
@@ -552,6 +576,7 @@ impl BuilderSlotTooltip {
         )
     }
     
+    /// Build the tooltip UI structure. Camera preview is handled by on_data_changed.
     fn on_add(
         trigger: On<Add, BuilderSlotTooltip>,
         mut commands: Commands,
@@ -560,16 +585,21 @@ impl BuilderSlotTooltip {
         let entity = trigger.entity;
         let Ok(builder) = builders.get(entity) else { return };
         
+        // Text showing drone state
         let text_entity = commands.spawn((
             Text::new(builder.data.text()),
             TextColor::from(Color::WHITE),
             TextFont::default().with_font_size(11.0),
         )).id();
         
+        // Initialize tooltip without camera - on_data_changed will add it if needed
         commands.entity(entity)
             .remove::<BuilderSlotTooltip>()
-            .insert((SlotTooltip { text_entity }, builder.data.clone()))
-            .add_child(text_entity);
+            .add_child(text_entity) // Child first, otherwise below inserts may trigger wrong ordering of preview camera
+            .insert((
+                SlotTooltip::new(text_entity),
+                builder.data.clone(),
+            ));
     }
 }
 
@@ -577,19 +607,72 @@ impl BuilderSlotTooltip {
 #[derive(Component)]
 struct SlotTooltip {
     text_entity: Entity,
+    preview_node_entity: Entity,
 }
 impl SlotTooltip {
-    
+    fn new(text_entity: Entity) -> Self {
+        Self { text_entity, preview_node_entity: Entity::PLACEHOLDER }
+    }    
+    /// Handles camera preview creation/removal when drone state changes.
+    /// Cameras are created only when needed.
     fn on_data_changed(
         trigger: On<Insert, SlotTooltipData>,
-        tooltips: Query<(&SlotTooltip, &SlotTooltipData)>,
+        mut commands: Commands,
+        mut tooltips: Query<(&mut SlotTooltip, &SlotTooltipData, Option<&OwnedCameras>)>,
         mut texts: Query<&mut Text>,
+        mut nodes: Query<&mut Node>,
+        drones: Query<&Transform>,
     ) {
         let entity = trigger.entity;
-        let Ok((tooltip, data)) = tooltips.get(entity) else { return };
-        let Ok(mut text) = texts.get_mut(tooltip.text_entity) else { return };
-        text.0 = data.text();
+        let Ok((mut tooltip, data, maybe_owned_cameras)) = tooltips.get_mut(entity) else { return };
+        
+        // Update text
+        if let Ok(mut text) = texts.get_mut(tooltip.text_entity) {
+            text.0 = data.text();
+        }
+        
+        // Check if we need camera preview (drone on mission)
+        let needs_camera = data.drone_outside_home_base().is_some();
+        let has_camera = maybe_owned_cameras.is_some();
+        
+        if needs_camera && !has_camera {
+            // Add camera preview
+            let Some(drone_entity) = data.drone_outside_home_base() else { unreachable!(); };
+            if let Ok(drone_transform) = drones.get(drone_entity) {
+                let camera = commands.spawn(
+                    BuilderPreviewCamera::new(
+                        entity, // tooltip owns the camera
+                        drone_transform.translation.xy(),
+                        2.5,
+                    ).with_auto_follow_entity(drone_entity)
+                ).id();
+                
+                let preview_node = commands.spawn((
+                    Node {
+                        width: Val::Px(TOOLTIP_CAMERA_SIZE),
+                        height: Val::Px(TOOLTIP_CAMERA_SIZE),
+                        border: UiRect::all(Val::Px(1.)),
+                        ..default()
+                    },
+                    BorderColor::from(Color::linear_rgba(0.3, 0.5, 0.3, 1.)),
+                    ViewportNode::new(camera),
+                )).id();
+                
+                commands.entity(entity).add_child(preview_node);
+                tooltip.preview_node_entity = preview_node;
+            }
+        }
+
+        let Ok(mut preview_node) = nodes.get_mut(tooltip.preview_node_entity) else { return; };
+        // Show/hide camera preview
+        if needs_camera {
+            preview_node.display = Display::Flex;
+        } else {
+            preview_node.display = Display::None;
+        }
     }
+    
+    // Note: on_remove not needed - CameraOf relationship auto-despawns cameras when tooltip despawns
 }
 
 /// A square button for buying a new drone
@@ -654,10 +737,11 @@ impl BuyDroneSlot {
 
 /// Event triggered when a target is selected for a drone
 #[derive(Event)]
-struct SelectTargetForDrone {
+struct OpenTargetSelectionForDrone {
     drone: Entity,
     target: Entity,
 }
+
 
 /// Modal panel for selecting a target for a drone
 #[derive(Component)]
@@ -673,7 +757,7 @@ impl TargetSelectionPanel {
         trigger: On<Add, TargetSelectionPanel>,
         mut commands: Commands,
         panels: Query<&TargetSelectionPanel>,
-        targets: Query<(Entity, &Transform), With<ExpeditionZone>>,
+        targets: Query<(Entity, &Name, &GridCoords), With<ExpeditionZone>>,
     ) {
         let entity = trigger.entity;
         let Ok(panel) = panels.get(entity) else { return };
@@ -681,17 +765,23 @@ impl TargetSelectionPanel {
         
         // Build list of target items
         let target_items: Vec<_> = targets.iter()
-            .enumerate()
-            .map(|(i, (target_entity, _))| TargetListItem::new(drone_entity, target_entity, i))
+            .map(|(target_entity, name, coords)| TargetListItem::new(drone_entity, target_entity, name.as_str(), *coords))
             .collect();
         
         commands.entity(entity).insert((
             Node {
                 position_type: PositionType::Absolute,
-                left: Val::Px(220.),  // Offset from the info panel
-                bottom: Val::Px(200.),
-                width: Val::Px(200.),
-                max_height: Val::Px(300.),
+                // Center on screen: 50% - half width
+                left: Val::Percent(50.),
+                top: Val::Percent(50.),
+                // Use negative margin to offset by half size for true centering
+                margin: UiRect {
+                    left: Val::Px(-150.), // half of 300px width
+                    top: Val::Px(-200.),  // half of 400px max height
+                    ..default()
+                },
+                width: Val::Px(300.),
+                max_height: Val::Percent(50.),
                 flex_direction: FlexDirection::Column,
                 padding: UiRect::all(Val::Px(8.)),
                 ..default()
@@ -699,7 +789,6 @@ impl TargetSelectionPanel {
             BackgroundColor::from(Color::linear_rgba(0.1, 0.1, 0.15, 0.95)),
             BorderRadius::all(Val::Px(6.)),
             BorderColor::from(Color::linear_rgba(0.3, 0.3, 0.5, 1.)),
-            GlobalZIndex(100),
         ));
         
         // Header
@@ -715,9 +804,10 @@ impl TargetSelectionPanel {
             Node {
                 flex_direction: FlexDirection::Column,
                 overflow: Overflow::scroll_y(),
-                max_height: Val::Px(200.),
+                max_height: Val::Percent(50.),
                 ..default()
             },
+            ScrollPosition::default(),
         )).id();
         commands.entity(entity).add_child(scroll_container);
         
@@ -754,21 +844,24 @@ impl TargetSelectionPanel {
         commands.entity(entity).add_child(cancel_btn);
     }
     
-    /// Opens the target selection panel as a child of the info panel
+    /// Opens the target selection panel centered on screen
     fn on_open(
         trigger: On<OpenTargetSelectionPanel>,
         mut commands: Commands,
-        info_panel: Single<Entity, With<ExplorationCenterInfoPanel>>,
         existing_panels: Query<Entity, With<TargetSelectionPanel>>,
     ) {
-        // Close any existing panels first
+        // Close any existing panels
         for panel in existing_panels.iter() {
             commands.entity(panel).despawn();
         }
         
-        // Spawn as child of the info panel - will auto-hide when panel hides
-        let panel = commands.spawn(TargetSelectionPanel::new(trigger.event().drone)).id();
-        commands.entity(*info_panel).add_child(panel);
+        // Spawn as separate root UI entity (not child of info panel)
+        // Position centered on screen using left/top percentages
+        commands.spawn((
+            TargetSelectionPanel::new(trigger.event().drone),
+            GlobalZIndex(100),
+            Pickable::default(),
+        ));
     }
     
     fn on_cancel_click(
@@ -782,7 +875,7 @@ impl TargetSelectionPanel {
     }
     
     fn on_select_target(
-        trigger: On<SelectTargetForDrone>,
+        trigger: On<OpenTargetSelectionForDrone>,
         mut commands: Commands,
         panels: Query<Entity, With<TargetSelectionPanel>>,
     ) {
@@ -799,6 +892,22 @@ impl TargetSelectionPanel {
             commands.entity(panel).despawn();
         }
     }
+
+    fn on_global_focused(
+        _trigger: On<UiMapObjectFocusedTrigger>,
+        mut commands: Commands,
+        selection_panels: Single<Entity, With<TargetSelectionPanel>>,
+    ) {
+        commands.entity(selection_panels.into_inner()).despawn();
+    }
+
+    fn on_global_unfocused(
+        _trigger: On<UiMapObjectUnfocusedTrigger>,
+        mut commands: Commands,
+        selection_panels: Single<Entity, With<TargetSelectionPanel>>,
+    ) {
+        commands.entity(selection_panels.into_inner()).despawn();
+    }
 }
 
 /// A single item in the target selection list
@@ -809,21 +918,52 @@ struct TargetListItem {
     target_entity: Entity,
 }
 impl TargetListItem {
-    fn new(drone_entity: Entity, target_entity: Entity, index: usize) -> impl Bundle {
+    fn new(drone_entity: Entity, target_entity: Entity, name: &str, coords: GridCoords) -> impl Bundle {
         (
             Self { drone_entity, target_entity },
             Node {
                 padding: UiRect::all(Val::Px(6.)),
-                margin: UiRect::bottom(Val::Px(2.)),
+                margin: UiRect::bottom(Val::Px(4.)),
+                flex_direction: FlexDirection::Row,
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::SpaceBetween,
+                column_gap: Val::Px(8.),
                 ..default()
             },
             BackgroundColor::from(Color::linear_rgba(0.15, 0.15, 0.2, 0.9)),
             BorderRadius::all(Val::Px(3.)),
-            children![(
-                Text::new(format!("Target {}", index + 1)),
-                TextColor::from(Color::WHITE),
-                TextFont::default().with_font_size(12.0),
-            )],
+            children![
+                // Left side: Name and coordinates
+                (
+                    Node {
+                        flex_direction: FlexDirection::Column,
+                        ..default()
+                    },
+                    children![
+                        (
+                            Text::new(name.to_string()),
+                            TextColor::from(Color::WHITE),
+                            TextFont::default().with_font_size(12.0),
+                        ),
+                        (
+                            Text::new(format!("at ({}, {})", coords.x, coords.y)),
+                            TextColor::from(Color::linear_rgba(0.7, 0.7, 0.7, 1.)),
+                            TextFont::default().with_font_size(10.0),
+                        ),
+                    ],
+                ),
+                // Right side: Camera preview placeholder (will be set up in on_add)
+                (
+                    Node {
+                        width: Val::Px(64.),
+                        height: Val::Px(64.),
+                        border: UiRect::all(Val::Px(1.)),
+                        ..default()
+                    },
+                    BorderColor::from(Color::linear_rgba(0.4, 0.4, 0.6, 1.)),
+                    TargetListItemCameraPreview { target_entity },
+                ),
+            ],
         )
     }
     
@@ -843,9 +983,37 @@ impl TargetListItem {
         items: Query<&TargetListItem>,
     ) {
         let Ok(item) = items.get(trigger.entity) else { return };
-        commands.trigger(SelectTargetForDrone {
+        commands.trigger(OpenTargetSelectionForDrone {
             drone: item.drone_entity,
             target: item.target_entity,
         });
+    }
+}
+
+/// Camera preview for a target in the selection list
+#[derive(Component)]
+struct TargetListItemCameraPreview {
+    target_entity: Entity,
+}
+impl TargetListItemCameraPreview {
+    fn on_add(
+        trigger: On<Add, TargetListItemCameraPreview>,
+        mut commands: Commands,
+        previews: Query<&TargetListItemCameraPreview>,
+        targets: Query<(&GridCoords, &GridImprint)>,
+    ) {
+        let entity = trigger.entity;
+        let Ok(preview) = previews.get(entity) else { return };
+        let Ok((coords, imprint)) = targets.get(preview.target_entity) else { return };
+        
+        // Add camera preview centered on the target
+        let world_pos = coords.to_world_position_centered(*imprint);
+        let camera = commands.spawn(BuilderPreviewCamera::new(
+            entity,
+            world_pos,
+            3., // Zoom level
+        )).id();
+        
+        commands.entity(entity).insert(ViewportNode::new(camera));
     }
 }

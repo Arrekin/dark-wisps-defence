@@ -1,10 +1,7 @@
 use bevy::color::palettes::css::YELLOW;
-use bevy::camera::RenderTarget;
-use bevy::render::{
-    render_resource::{Extent3d, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages},
-    view::Hdr,
-};
+use bevy::ui::widget::ViewportNode;
 
+use lib_core::camera::{BuilderPreviewCamera, CameraAutoFollowEntity};
 use lib_grid::grids::obstacles::{GridStructureType, ObstacleGrid};
 
 use crate::prelude::*;
@@ -84,10 +81,9 @@ fn show_on_click_system(
     obstacle_grid: Res<ObstacleGrid>,
     mut next_ui_interaction_state: ResMut<NextState<UiInteraction>>,
     display_info_panel: Single<&mut DisplayInfoPanel>,
-    info_panel_camera: Single<&mut Transform, With<DisplayInfoPanelCamera>>,
-    grid_positions: Query<(&GridCoords, &GridImprint)>,
+    info_panel_camera: Single<Entity, With<DisplayInfoPanelCamera>>,
 ) {
-    if !mouse.just_pressed(MouseButton::Left) || !mouse_info.grid_coords.is_in_bounds(obstacle_grid.bounds()) { return; }
+    if mouse_info.is_over_ui || !mouse.just_pressed(MouseButton::Left) || !mouse_info.grid_coords.is_in_bounds(obstacle_grid.bounds()) { return; }
 
     let field = &obstacle_grid[mouse_info.grid_coords];
     let focused_element =  match &field.structure {
@@ -102,11 +98,7 @@ fn show_on_click_system(
     };
 
     // Center the camera on the focused structure
-    let Ok((grid_coords, grid_imprint)) = grid_positions.get(focused_element) else { return; };
-    let world_position = grid_coords.to_world_position_centered(*grid_imprint);
-    let mut camera_transform = info_panel_camera.into_inner();
-    camera_transform.translation.x = world_position.x;
-    camera_transform.translation.y = world_position.y;
+    commands.entity(info_panel_camera.into_inner()).insert(CameraAutoFollowEntity(focused_element));
 
     display_info_panel.into_inner().current_focus = focused_element;
     commands.trigger(UiMapObjectFocusedTrigger { entity: focused_element });
@@ -128,49 +120,15 @@ fn on_building_destroyed_system(
 
 fn initialize_display_info_panel_system(
     mut commands: Commands,
-    mut images: ResMut<Assets<Image>>,
 ) {
-    let camera_image_handle = {
-        let size = Extent3d {
-            width: 128,
-            height: 128,
-            ..default()
-        };
-        let mut image = Image {
-            texture_descriptor: TextureDescriptor {
-                label: None,
-                size,
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: TextureDimension::D2,
-                format: TextureFormat::Rgba8UnormSrgb,
-                usage: TextureUsages::TEXTURE_BINDING
-                    | TextureUsages::COPY_DST
-                    | TextureUsages::RENDER_ATTACHMENT,
-                view_formats: &[],
-            },
-            ..Default::default()
-        };
-        image.resize(size);
-        images.add(image)
-    };
-    commands.spawn((
-        Camera2d::default(),
-        Camera {
-            order: 1,
-            target: RenderTarget::Image(camera_image_handle.clone().into()),
-            is_active: false,
-            ..default()
-        },
-        Hdr,
-        Projection::Orthographic(OrthographicProjection {
-            near: -1000.,
-            far: 1000.,
-            scale: 2., // TODO, check new scaling_mode
-            ..OrthographicProjection::default_2d()
-        }),
+    let info_panel_entity = commands.spawn_empty().id();
+    
+    // Spawn camera that renders to the image
+    let camera = commands.spawn((
+        BuilderPreviewCamera::new(info_panel_entity, Vec2::ZERO, 2.),
         DisplayInfoPanelCamera,
-    ));
+    )).id();
+    
     commands.spawn((
         Node {
             position_type: PositionType::Absolute,
@@ -190,7 +148,7 @@ fn initialize_display_info_panel_system(
         Visibility::Hidden,
         DisplayInfoPanel::default(),
         children![
-            // Camera image (Left side)
+            // Camera viewport (Left side) using ViewportNode
             (
                 Node {
                     min_width: Val::Px(128.0),
@@ -199,7 +157,7 @@ fn initialize_display_info_panel_system(
                     ..default()
                 },
                 BorderColor::from(YELLOW),
-                ImageNode::new(camera_image_handle),
+                ViewportNode::new(camera),
             ),
             // Right panels, content is provided by external sub-panels
             (

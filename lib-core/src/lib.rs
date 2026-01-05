@@ -1,7 +1,7 @@
 use bevy::app::{App, Plugin};
 
 pub mod buildings;
-mod camera;
+pub mod camera;
 pub mod grids;
 pub mod mouse;
 pub mod states;
