@@ -67,7 +67,8 @@ const SPOT_RADIUS: f32 = 25.0;              // base radius of scan spot on groun
 const SPOT_ELONGATION_FACTOR: f32 = 0.0015; // elongation per unit distance (0 = circle when close)
 const BEAM_START_WIDTH: f32 = 2.0;          // width at drone (narrow apex)
 const DEFAULT_MAX_FUEL: f32 = 60.0;         // seconds of flight time
-const FUEL_CONSUMPTION_RATE: f32 = 3.0;     // fuel units per second while on mission
+pub const FUEL_CONSUMPTION_RATE: f32 = 3.0;     // fuel units per second while on mission
+pub const REFUEL_RATE: f32 = 15.0;              // fuel units per second while refueling
 
 /// Drone cost in dark ore - kept as constant for easy balancing
 pub const DRONE_COST_ORE: u32 = 100;
@@ -116,19 +117,22 @@ impl ExpeditionDrone {
     }
 
     /// Refueling system - handles drones in Refueling state
-    /// Refuels drone (instant for now) then either redeploys or goes to stationed
+    /// Refuels drone over time, then either redeploys or goes to stationed
     fn refueling_system(
         mut commands: Commands,
+        time: Res<Time>,
         mut drones: Query<(Entity, &DroneState, &mut DroneFuel), With<ExpeditionDrone>>,
     ) {
         for (entity, drone_state, mut drone_fuel) in drones.iter_mut() {
             if !matches!(drone_state, DroneState::Refueling) { continue; }
             
-            // Refuel, instant for now
-            drone_fuel.refuel_full();
+            // Refuel over time
+            drone_fuel.refuel(REFUEL_RATE * time.delta_secs());
             
-            // Redeploy. If there is no missing, reinsertion observer will check for that and set it to Stationed
-            commands.entity(entity).insert(DroneState::Deploying);
+            // When full, redeploy. If there is no mission, reinsertion observer will check for that and set it to Stationed
+            if drone_fuel.is_full() {
+                commands.entity(entity).insert(DroneState::Deploying);
+            }
         }
     }
     
@@ -512,8 +516,23 @@ impl Default for DroneFuel {
 }
 impl DroneFuel {
     pub fn is_empty(&self) -> bool { self.current <= 0.0 }
-    pub fn refuel_full(&mut self) { self.current = self.max; }
+    pub fn is_full(&self) -> bool { self.current >= self.max }
+    pub fn fraction(&self) -> f32 { self.current / self.max }
+    pub fn refuel(&mut self, amount: f32) { self.current = (self.current + amount).min(self.max); }
     pub fn consume(&mut self, amount: f32) { self.current = (self.current - amount).max(0.0); }
+    
+    /// Calculate fuel cost to travel a distance (deployment only, return is free)
+    pub fn travel_fuel_cost(distance: f32) -> f32 {
+        let travel_time = distance / DRONE_SPEED;
+        travel_time * FUEL_CONSUMPTION_RATE
+    }
+    
+    /// Calculate fuel percentage needed to reach target from a position
+    pub fn fuel_percent_for_distance(&self, distance: f32) -> f32 {
+        if self.current <= 0.0 { return f32::INFINITY; }
+        let cost = Self::travel_fuel_cost(distance);
+        (cost / self.current) * 100.0
+    }
 }
 
 
@@ -705,7 +724,7 @@ impl BuilderExpeditionDrone {
                     current: fuel_current,
                     max: fuel_max,
                 },
-                MapBound,
+                Pickable{ should_block_lower: false, is_hoverable: true },
             ));
     }
 }
@@ -785,4 +804,3 @@ impl Loadable for BuilderExpeditionDrone {
         Ok(count.into())
     }
 }
-

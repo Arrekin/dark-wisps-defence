@@ -8,7 +8,7 @@ use crate::prelude::*;
 use crate::ui::indicators::{IndicatorDisplay, IndicatorType, Indicators};
 use crate::ui::display_info_panel::{DisplayInfoPanel, UiMapObjectFocusedTrigger, UiMapObjectUnfocusedTrigger};
 use crate::buildings::info_panel::BuildingInfoPanelEnabledTrigger;
-use crate::units::expedition_drone::{BuilderExpeditionDrone, DroneState, ExpeditionDrone, DRONE_COST_ORE, ExpeditionDroneDeploymentRequest, RecallDrone};
+use crate::units::expedition_drone::{BuilderExpeditionDrone, DroneState, ExpeditionDrone, DroneFuel, DRONE_COST_ORE, ExpeditionDroneDeploymentRequest, RecallDrone};
 use crate::map_objects::common::ExpeditionZone;
 
 
@@ -19,12 +19,13 @@ impl Plugin for ExplorationCenterPlugin {
             .add_systems(Update, (
                 DroneSlot::update,
                 DroneActionButton::update,
+                DroneSlotFuelFill::update,
             ).run_if(in_state(UiInteraction::DisplayInfoPanel)))
             .add_observer(BuilderExplorationCenter::on_add)
             .add_observer(ExplorationCenterInfoPanel::on_building_info_panel_enabled)
             .add_observer(ExplorationCenterInfoPanel::on_rebuild_drone_slots)
             .add_observer(DroneSlotRow::on_add)
-            .add_observer(DroneSlot::on_add)
+            .add_observer(BuilderDroneSlot::on_add)
             .add_observer(BuilderDroneActionButton::on_add)
             .add_observer(BuilderSlotTooltip::on_add)
             .add_observer(SlotTooltip::on_data_changed)
@@ -326,61 +327,44 @@ impl DroneSlotRow {
     }
 }
 
+const FUEL_BAR_WIDTH: f32 = 6.0;
+const FUEL_BAR_COLOR: Color = Color::linear_rgba(0.9, 0.8, 0.2, 1.0); // yellow
+
 /// A square representing an owned drone
 #[derive(Component)]
 struct DroneSlot {
     drone_entity: Entity,
 }
 impl DroneSlot {
-    fn new(drone_entity: Entity) -> Self {
-        Self { drone_entity }
-    }
-    
-    fn on_add(
-        trigger: On<Add, DroneSlot>,
-        mut commands: Commands,
-        asset_server: Res<AssetServer>,
-        slots: Query<&DroneSlot>,
-        drones: Query<&DroneState>,
-    ) {
-        let entity = trigger.entity;
-        let Ok(slot) = slots.get(entity) else { return };
-        let Ok(drone_state) = drones.get(slot.drone_entity) else { return };
-        
-        commands.entity(entity).insert((
-            Node {
-                width: Val::Px(SLOT_SIZE),
-                height: Val::Px(SLOT_SIZE),
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
-                ..default()
-            },
-            ImageNode::new(asset_server.load(Self::state_icon(*drone_state))),
-            BorderColor::from(Color::linear_rgba(0.3, 0.6, 0.3, 1.)),
-            BorderRadius::all(Val::Px(4.)),
-            related![Tooltips[BuilderSlotTooltip::new_drone(*drone_state, slot.drone_entity)]],
-        ));
+    fn new(drone_entity: Entity) -> BuilderDroneSlot {
+        BuilderDroneSlot { drone_entity }
     }
     
     fn update(
         mut commands: Commands,
         asset_server: Res<AssetServer>,
-        mut slots: Query<(&DroneSlot, &mut ImageNode, &Tooltips)>,
+        slots: Query<(&DroneSlot, &Tooltips, &Children)>,
         drones: Query<&DroneState>,
         tooltip_data: Query<&SlotTooltipData>,
+        mut icons: Query<&mut ImageNode, With<DroneSlotIcon>>,
     ) {
-        for (slot, mut image, tooltips) in slots.iter_mut() {
+        for (slot, tooltips, children) in slots.iter() {
             let Ok(drone_state) = drones.get(slot.drone_entity) else { continue; };
             
-            // Update tooltip data and background if changed
-            let Some(tooltip_entity) = tooltips.iter().next() else { continue };
-            let new_data = SlotTooltipData::DroneState { state: *drone_state, drone_entity: slot.drone_entity };
-            let needs_update = tooltip_data.get(tooltip_entity)
-                .map(|current| *current != new_data)
-                .unwrap_or(true);
-            if needs_update {
-                *image = ImageNode::new(asset_server.load(Self::state_icon(*drone_state)));
-                commands.entity(tooltip_entity).insert(new_data);
+            // Update icon if state changed
+            for child in children.iter() {
+                if let Ok(mut image) = icons.get_mut(child) {
+                    // Update tooltip data and background if changed(TODO: there is weird coupling here where slot image is changes based on tooltip data)
+                    let Some(tooltip_entity) = tooltips.iter().next() else { continue };
+                    let new_data: SlotTooltipData = SlotTooltipData::DroneState { state: *drone_state, drone_entity: slot.drone_entity };
+                    let needs_update = tooltip_data.get(tooltip_entity)
+                        .map(|current| *current != new_data)
+                        .unwrap_or(true);
+                    if needs_update {
+                        *image = ImageNode::new(asset_server.load(Self::state_icon(*drone_state)));
+                        commands.entity(tooltip_entity).insert(new_data);
+                    }
+                }
             }
         }
     }
@@ -392,6 +376,100 @@ impl DroneSlot {
             DroneState::Deploying => "ui/drones/drone_deploying.png",
             DroneState::Scanning => "ui/drones/drone_scanning.png",
             DroneState::Returning => "ui/drones/drone_returning.png",
+        }
+    }
+}
+
+#[derive(Component)]
+struct BuilderDroneSlot {
+    drone_entity: Entity,
+}
+impl BuilderDroneSlot {
+    fn on_add(
+        trigger: On<Add, BuilderDroneSlot>,
+        mut commands: Commands,
+        asset_server: Res<AssetServer>,
+        builders: Query<&BuilderDroneSlot>,
+        drones: Query<(&DroneState, &DroneFuel)>,
+    ) {
+        let entity = trigger.entity;
+        let Ok(builder) = builders.get(entity) else { return };
+        let Ok((drone_state, drone_fuel)) = drones.get(builder.drone_entity) else { return };
+        
+        commands.entity(entity)
+            .remove::<BuilderDroneSlot>()
+            .insert((
+                DroneSlot {
+                    drone_entity: builder.drone_entity,
+                },
+                Node {
+                    width: Val::Px(SLOT_SIZE + FUEL_BAR_WIDTH + 4.),
+                    height: Val::Px(SLOT_SIZE),
+                    flex_direction: FlexDirection::Row,
+                    column_gap: Val::Px(2.),
+                    ..default()
+                },
+                children![
+                    // Drone icon
+                    (
+                        Node {
+                            width: Val::Px(SLOT_SIZE),
+                            height: Val::Px(SLOT_SIZE),
+                            align_items: AlignItems::Center,
+                            justify_content: JustifyContent::Center,
+                            ..default()
+                        },
+                        ImageNode::new(asset_server.load(DroneSlot::state_icon(*drone_state))),
+                        BorderColor::from(Color::linear_rgba(0.3, 0.6, 0.3, 1.)),
+                        BorderRadius::all(Val::Px(4.)),
+                        DroneSlotIcon,
+                    ),
+                    // Fuel bar container (vertical, bottom-aligned fill)
+                    (
+                        Node {
+                            width: Val::Px(FUEL_BAR_WIDTH),
+                            height: Val::Percent(100.),
+                            flex_direction: FlexDirection::Column,
+                            justify_content: JustifyContent::End,
+                            border: UiRect::all(Val::Px(1.)),
+                            ..default()
+                        },
+                        BackgroundColor::from(Color::linear_rgba(0.1, 0.1, 0.1, 0.8)),
+                        BorderColor::from(Color::linear_rgba(0.4, 0.4, 0.2, 1.)),
+                        BorderRadius::all(Val::Px(2.)),
+                        children![(
+                            // Fuel bar fill
+                            Node {
+                                width: Val::Percent(100.),
+                                height: Val::Percent(drone_fuel.fraction() * 100.0),
+                                ..default()
+                            },
+                            BackgroundColor::from(FUEL_BAR_COLOR),
+                            DroneSlotFuelFill { drone_entity: builder.drone_entity },
+                        )],
+                    ),
+                ],
+                related![Tooltips[BuilderSlotTooltip::new_drone(*drone_state, builder.drone_entity)]],
+            ));
+    }
+}
+
+#[derive(Component)]
+struct DroneSlotIcon;
+
+#[derive(Component)]
+struct DroneSlotFuelFill {
+    drone_entity: Entity
+}
+impl DroneSlotFuelFill {
+    fn update(
+        drone_fuels: Query<&DroneFuel>,
+        mut fuel_fills: Query<(&mut Node, &DroneSlotFuelFill)>,
+    ) {
+        for (mut fuel_fill_node, fuel_fill) in fuel_fills.iter_mut() {
+            // Update fuel bar fill height
+            let Ok(drone_fuel) = drone_fuels.get(fuel_fill.drone_entity) else { continue; };
+            fuel_fill_node.height = Val::Percent(drone_fuel.fraction() * 100.0);
         }
     }
 }
@@ -757,15 +835,36 @@ impl TargetSelectionPanel {
         trigger: On<Add, TargetSelectionPanel>,
         mut commands: Commands,
         panels: Query<&TargetSelectionPanel>,
-        targets: Query<(Entity, &Name, &GridCoords), With<ExpeditionZone>>,
+        targets: Query<(Entity, &Name, &GridCoords, &GridImprint), With<ExpeditionZone>>,
+        drones: Query<(&HomeBase, &DroneFuel)>,
+        home_bases: Query<&Transform, With<ExplorationCenter>>,
     ) {
         let entity = trigger.entity;
         let Ok(panel) = panels.get(entity) else { return };
         let drone_entity = panel.drone_entity;
         
-        // Build list of target items
-        let target_items: Vec<_> = targets.iter()
-            .map(|(target_entity, name, coords)| TargetListItem::new(drone_entity, target_entity, name.as_str(), *coords))
+        // Get drone's home base position and fuel for distance calculations
+        let Ok((home_base, drone_fuel)) = drones.get(drone_entity) else { return };
+        let Ok(home_transform) = home_bases.get(home_base.0) else { return };
+        let home_pos = home_transform.translation.xy();
+        
+        // Build list of target items with fuel cost data, sorted by effectiveness
+        let mut target_data: Vec<_> = targets.iter()
+            .map(|(target_entity, name, coords, imprint)| {
+                let target_pos = coords.to_world_position_centered(*imprint);
+                let distance = (target_pos - home_pos).length();
+                let fuel_percent = drone_fuel.fuel_percent_for_distance(distance);
+                (target_entity, name.as_str().to_string(), *coords, fuel_percent)
+            })
+            .collect();
+        
+        // Sort by fuel percentage (most effective = lowest fuel cost first)
+        target_data.sort_by(|a, b| a.3.partial_cmp(&b.3).unwrap_or(std::cmp::Ordering::Equal));
+        
+        let target_items: Vec<_> = target_data.iter()
+            .map(|(target_entity, name, coords, fuel_percent)| {
+                TargetListItem::new(drone_entity, *target_entity, name, *coords, *fuel_percent)
+            })
             .collect();
         
         commands.entity(entity).insert((
@@ -918,7 +1017,23 @@ struct TargetListItem {
     target_entity: Entity,
 }
 impl TargetListItem {
-    fn new(drone_entity: Entity, target_entity: Entity, name: &str, coords: GridCoords) -> impl Bundle {
+    /// Color for fuel percentage: <60% green, <80% yellow, <100% orange, >=100% red
+    fn fuel_color(fuel_percent: f32) -> Color {
+        if fuel_percent < 60.0 {
+            Color::linear_rgba(0.3, 0.9, 0.3, 1.0) // green
+        } else if fuel_percent < 80.0 {
+            Color::linear_rgba(0.9, 0.9, 0.2, 1.0) // yellow
+        } else if fuel_percent < 100.0 {
+            Color::linear_rgba(0.9, 0.5, 0.2, 1.0) // orange
+        } else {
+            Color::linear_rgba(0.9, 0.2, 0.2, 1.0) // red
+        }
+    }
+    
+    fn new(drone_entity: Entity, target_entity: Entity, name: &str, coords: GridCoords, fuel_percent: f32) -> impl Bundle {
+        let fuel_text = format!("{}%", fuel_percent.round() as i32);
+        let fuel_color = Self::fuel_color(fuel_percent);
+        
         (
             Self { drone_entity, target_entity },
             Node {
@@ -933,7 +1048,7 @@ impl TargetListItem {
             BackgroundColor::from(Color::linear_rgba(0.15, 0.15, 0.2, 0.9)),
             BorderRadius::all(Val::Px(3.)),
             children![
-                // Left side: Name and coordinates
+                // Left side: Name, coordinates, and fuel cost
                 (
                     Node {
                         flex_direction: FlexDirection::Column,
@@ -949,6 +1064,26 @@ impl TargetListItem {
                             Text::new(format!("at ({}, {})", coords.x, coords.y)),
                             TextColor::from(Color::linear_rgba(0.7, 0.7, 0.7, 1.)),
                             TextFont::default().with_font_size(10.0),
+                        ),
+                        // Fuel cost indicator
+                        (
+                            Node {
+                                flex_direction: FlexDirection::Row,
+                                column_gap: Val::Px(4.),
+                                ..default()
+                            },
+                            children![
+                                (
+                                    Text::new("Fuel needed for travel: "),
+                                    TextColor::from(Color::linear_rgba(0.6, 0.6, 0.6, 1.)),
+                                    TextFont::default().with_font_size(10.0),
+                                ),
+                                (
+                                    Text::new(fuel_text),
+                                    TextColor::from(fuel_color),
+                                    TextFont::default().with_font_size(10.0),
+                                ),
+                            ],
                         ),
                     ],
                 ),
