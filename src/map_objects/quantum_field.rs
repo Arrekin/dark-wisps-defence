@@ -79,21 +79,21 @@ struct Solved;
 pub struct QuantumField {
     pub layers: Vec<QuantumFieldLayer>,
     pub current_layer: usize,
-    pub current_layer_progress: i32,
+    pub current_layer_progress: f32,
 }
 impl QuantumField {
-    pub fn progress_layer(&mut self, amount: i32) {
+    pub fn progress_layer(&mut self, amount: f32) {
         if self.is_solved() { return; }
-        self.current_layer_progress = std::cmp::min(self.current_layer_progress + amount, self.layers[self.current_layer].value);
+        self.current_layer_progress = (self.current_layer_progress + amount).min(self.layers[self.current_layer].value);
     }
     pub fn move_to_next_layer(&mut self) {
         if self.is_solved() { return; }
         self.current_layer += 1;
-        self.current_layer_progress = 0;
+        self.current_layer_progress = 0.0;
     }
     /// Returns (current_layer_progress, current_layer_target)
-    pub fn get_progress_details(&self) -> (i32, i32) {
-        if self.is_solved() { return (0, 0); }
+    pub fn get_progress_details(&self) -> (f32, f32) {
+        if self.is_solved() { return (0.0, 0.0); }
         (self.current_layer_progress, self.layers[self.current_layer].value)
     }
     pub fn is_solved(&self) -> bool {
@@ -112,7 +112,7 @@ impl QuantumField {
 // `value` - amount of research needed to solve the layer
 // `costs` - costs needed to pay after solving the layer to finalize it
 pub struct QuantumFieldLayer {
-    pub value: i32,
+    pub value: f32,
     pub costs: Vec<Cost>,
 }
 
@@ -120,7 +120,7 @@ pub struct QuantumFieldLayer {
 pub struct QuantumFieldSaveData {
     pub entity: Entity,
     pub current_layer: usize,
-    pub current_layer_progress: i32,
+    pub current_layer_progress: f32,
 }
 
 #[derive(Component, SSS)]
@@ -160,7 +160,7 @@ impl Loadable for BuilderQuantumField {
         while let Some(row) = rows.next()? {
             let old_id: i64 = row.get(0)?;
             let current_layer: usize = row.get(1)?;
-            let current_layer_progress: i32 = row.get(2)?;
+            let current_layer_progress: f32 = row.get(2)?;
             
             let grid_position = ctx.conn.get_grid_coords(old_id)?;
             let grid_imprint = ctx.conn.get_grid_imprint(old_id)?;
@@ -217,18 +217,18 @@ impl BuilderQuantumField {
         
         let mut quantum_field = QuantumField {
             current_layer: 0,
-            current_layer_progress: 0,
+            current_layer_progress: 0.0,
             layers: vec![
                 QuantumFieldLayer {
-                    value: 15000,
+                    value: 15000.0,
                     costs: vec![Cost{ resource_type: ResourceType::DarkOre, amount: 100}, Cost{ resource_type: ResourceType::DarkOre, amount: 100}, Cost{ resource_type: ResourceType::DarkOre, amount: 100}],
                 },
                 QuantumFieldLayer {
-                    value: 30000,
+                    value: 30000.0,
                     costs: vec![Cost{ resource_type: ResourceType::DarkOre, amount: 200}],
                 },
                 QuantumFieldLayer {
-                    value: 45000,
+                    value: 45000.0,
                     costs: vec![Cost{ resource_type: ResourceType::DarkOre, amount: 300}],
                 },
             ],
@@ -292,11 +292,10 @@ fn process_expeditions_system(
     mut quantum_fields: Query<(Entity, &mut QuantumField, &mut ExpeditionZone), (Changed<ExpeditionZone>, Without<Solved>)>,
 ) {
     for (entity, mut quantum_field, mut expedition_zone) in quantum_fields.iter_mut() {
-        while expedition_zone.expeditions_arrived > 0 {
-            expedition_zone.expeditions_arrived -= 1;
-            quantum_field.progress_layer(1500); // TODO: It should come from Almanach
+        if expedition_zone.accumulated_scan_progress > 0. {
+            quantum_field.progress_layer(expedition_zone.take_accumulated_scan_progress());
             if quantum_field.is_solved() {
-                commands.entity(entity).insert(Solved);
+                commands.entity(entity).insert(Solved).remove::<ExpeditionZone>();
             }
         }
     }
@@ -506,8 +505,8 @@ fn update_quantum_field_info_panel_system(
     // Update the layer progress
     let (current_layer_progress, current_layer_target) = quantum_field.get_progress_details();
     let mut healthbar = healthbar.into_inner();
-    healthbar.value = current_layer_progress as f32;
-    healthbar.max_value = current_layer_target as f32;
+    healthbar.value = current_layer_progress;
+    healthbar.max_value = current_layer_target;
     // Update the action button
     *action_button.into_inner() = {
         if quantum_field.is_solved() {

@@ -111,7 +111,16 @@ fn on_healthbar_changed_system(
         style.width = Val::Percent(healthbar.get_percent());
         background_color.0 = healthbar.color;
         let mut text = texts.get_mut(children.value_text)?;
-        text.0 = format!("{} / {}", healthbar.value, healthbar.max_value);
+        let format_value = |v: f32| {
+            if v.fract() == 0.0 {
+                format!("{:.0}", v)
+            } else if (v * 10.0).fract() == 0.0 {
+                format!("{:.1}", v)
+            } else {
+                format!("{:.2}", v)
+            }
+        };
+        text.0 = format!("{} / {}", format_value(healthbar.value), format_value(healthbar.max_value));
     }
     Ok(())
 }

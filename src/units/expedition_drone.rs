@@ -43,6 +43,7 @@ impl Plugin for ExpeditionDronePlugin {
                         ExpeditionDrone::patrol_system,
                         ScanSpot::update,
                         ScanningBeam::update,
+                        ExpeditionDrone::zone_scan_progress_system,
                     ).chain(),
                 ).run_if(in_state(GameState::Running)),
             ))
@@ -69,6 +70,7 @@ const BEAM_START_WIDTH: f32 = 2.0;          // width at drone (narrow apex)
 const DEFAULT_MAX_FUEL: f32 = 60.0;         // seconds of flight time
 pub const FUEL_CONSUMPTION_RATE: f32 = 3.0;     // fuel units per second while on mission
 pub const REFUEL_RATE: f32 = 15.0;              // fuel units per second while refueling
+const SCAN_PROGRESS_RATE: f32 = 10.;           // scan progress per second when beam active
 
 /// Drone cost in dark ore - kept as constant for easy balancing
 pub const DRONE_COST_ORE: u32 = 100;
@@ -117,14 +119,19 @@ impl ExpeditionDrone {
     }
 
     /// Refueling system - handles drones in Refueling state
-    /// Refuels drone over time, then either redeploys or goes to stationed
+    /// Refuels drone over time, then either redeploys or goes to stationed.
+    /// Only refuels if home base (ExplorationCenter) is operational.
     fn refueling_system(
         mut commands: Commands,
         time: Res<Time>,
-        mut drones: Query<(Entity, &DroneState, &mut DroneFuel), With<ExpeditionDrone>>,
+        mut drones: Query<(Entity, &DroneState, &mut DroneFuel, &HomeBase), With<ExpeditionDrone>>,
+        exploration_centers: Query<(), (With<ExplorationCenter>, With<HasPower>, Without<DisabledByPlayer>)>,
     ) {
-        for (entity, drone_state, mut drone_fuel) in drones.iter_mut() {
+        for (entity, drone_state, mut drone_fuel, home_base) in drones.iter_mut() {
             if !matches!(drone_state, DroneState::Refueling) { continue; }
+            
+            // Only refuel if home base is operational
+            if !exploration_centers.contains(home_base.0) { continue; }
             
             // Refuel over time
             drone_fuel.refuel(REFUEL_RATE * time.delta_secs());
@@ -136,18 +143,23 @@ impl ExpeditionDrone {
         }
     }
     
-    /// Handle ExpeditionDroneDeploymentRequest event - deploys a stationed drone to a target
+    /// Handle ExpeditionDroneDeploymentRequest event - deploys a stationed drone to a target.
+    /// Only deploys if home base (ExplorationCenter) is operational.
     fn on_deployment_request(
         trigger: On<ExpeditionDroneDeploymentRequest>,
         mut commands: Commands,
         mut drones: Query<(&mut Transform, &DroneState, &mut ExpeditionDrone, &HomeBase)>,
         home_bases: Query<&Transform, (With<ExplorationCenter>, Without<ExpeditionDrone>)>,
+        exploration_centers: Query<(), (With<ExplorationCenter>, With<HasPower>, Without<DisabledByPlayer>)>,
         targets: Query<&Transform, Without<ExpeditionDrone>>,
     ) {
         let event = trigger.event();
         let Ok((mut transform, drone_state, mut drone, home_base)) = drones.get_mut(event.drone) else { return };
         
-        // Only statione drones can be sent out
+        // Only deploy if home base is operational
+        if !exploration_centers.contains(home_base.0) { return; }
+        
+        // Only stationed drones can be sent out
         if !matches!(drone_state, DroneState::Stationed) { return; }
     
         drone.mission_target = Some(event.target);
@@ -370,13 +382,27 @@ impl ExpeditionDrone {
         }
     }
 
+    /// Accumulates scan progress on ExpeditionZone when drone beam is active over it.
+    /// Progress is added at SCAN_PROGRESS_RATE per second while beam is active.
+    fn zone_scan_progress_system(
+        time: Res<Time>,
+        drones: Query<&ExpeditionDrone>,
+        mut zones: Query<&mut ExpeditionZone>,
+    ) {
+        for drone in drones.iter() {
+            if !drone.is_beam_active { continue; }
+            let Some(target_entity) = drone.mission_target else { continue; };
+            let Ok(mut zone) = zones.get_mut(target_entity) else { continue; };
+            zone.accumulated_scan_progress += SCAN_PROGRESS_RATE * time.delta_secs();
+        }
+    }
 }
 
 #[derive(Component)]
 #[require(MapBound)]
 pub struct ScanningBeam {
     pub drone: Entity,
-    pub spot: Entity,             // the scan spot entity
+    pub spot: Entity,  // the scan spot entity
 }
 impl ScanningBeam {
     /// Updates scanning beam position and appearance.
@@ -384,15 +410,21 @@ impl ScanningBeam {
     /// - Stretches beam from drone front to scan spot
     /// - Animates pulse effect traveling down the beam
     fn update(
+        mut commands: Commands,
         time: Res<Time>,
         drones: Query<(&Transform, &ExpeditionDrone)>,
         spots: Query<&Transform, With<ScanSpot>>,
-        mut beams: Query<(&mut Transform, &ScanningBeam, &MeshMaterial2d<ScanningBeamMaterial>), (Without<ExpeditionDrone>, Without<ScanSpot>)>,
+        mut beams: Query<(Entity, &mut Transform, &ScanningBeam, &MeshMaterial2d<ScanningBeamMaterial>), (Without<ExpeditionDrone>, Without<ScanSpot>)>,
         mut beam_materials: ResMut<Assets<ScanningBeamMaterial>>,
     ) {
-        for (mut beam_transform, beam, material_handle) in beams.iter_mut() {
-            let Ok((drone_transform, drone)) = drones.get(beam.drone) else { continue; };
-            let Ok(spot_transform) = spots.get(beam.spot) else { continue; };
+        for (beam_entity, mut beam_transform, beam, material_handle) in beams.iter_mut() {
+            let Ok((drone_transform, drone)) = drones.get(beam.drone) else {
+                // TODO: perhaps there will be a better way to handling on drone removed to delete beam and spot
+                commands.entity(beam_entity).despawn();
+                commands.entity(beam.spot).despawn();
+                continue;
+            };
+            let Ok(spot_transform) = spots.get(beam.spot) else { unreachable!(); };
             
             if !drone.is_beam_active {
                 beam_transform.scale = Vec3::ZERO;
@@ -427,7 +459,7 @@ impl ScanningBeam {
 #[derive(Component)]
 #[require(MapBound)]
 pub struct ScanSpot {
-    pub destination: Vec2,        // where moving toward (world coords)
+    pub destination: Vec2, // where moving toward (world coords)
 }
 impl ScanSpot {
     /// Updates scan spot position and appearance.
