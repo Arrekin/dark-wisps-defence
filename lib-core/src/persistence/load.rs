@@ -50,6 +50,7 @@ impl LoadGameSignal {
         
         // Run migrations synchronously on main thread before parallel loading starts
         GameDbConnection::with_db_connection(&save_executor.save_name, |conn| {
+            //conn.execute("DELETE FROM refinery_schema_history;", []); // Used to clear rafinery migrations history, uncomment when in need.
             db_migrations::migrations::runner().run(conn)?;
             Ok(())
         }).expect("Failed to run migrations on load");
