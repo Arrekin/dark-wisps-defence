@@ -216,6 +216,40 @@ For nullable references, use nullable columns in the schema.
 - **Skip transient state** - some runtime state (animations, timers) can be reset on load
 - **Save world position** for moving entities to avoid snapping to grid centers
 
+## Merging Migrations
+
+During development, schema changes accumulate as incremental migrations (V2, V3, etc.). Once a feature is complete and all save files are migrated to the latest version, these can be consolidated back into V1 for cleaner history.
+
+### When to Merge
+
+- **Feature complete** - All schema changes for the feature are finalized
+- **All saves migrated** - Every save file has already run through all migrations
+- **No legacy saves** - You accept that older saves (pre-migration) will become incompatible
+
+⚠️ **Warning**: If any saves exist that haven't been migrated to the latest version, merging will corrupt them. For released games with player saves, this is generally not safe unless you're certain no unmigrated saves exist.
+
+### How to Merge
+
+1. **Consolidate V1**: Apply all migration changes directly to `V1__initial.sql`:
+   - Add new tables/columns from later migrations
+   - Remove dropped columns (don't include them at all)
+   - Use final column types (e.g., if V5 changed INTEGER→REAL, use REAL in V1)
+   - Drop intermediate table names (e.g., if V2 added `foo2` and V4 renamed it to `foo`, just define `foo`)
+
+2. **Use `IF NOT EXISTS`**: Change all `CREATE TABLE` to `CREATE TABLE IF NOT EXISTS` so the migration is idempotent on existing databases.
+
+3. **Delete later migrations**: Remove V2, V3, etc. files.
+
+4. **Clear refinery metadata**: Before loading each save, clear the migration history so refinery re-runs V1:
+   ```sql
+   DELETE FROM refinery_schema_history;
+   ```
+   A commented helper exists in `LoadGameSignal::on_trigger` for this purpose.
+
+### Why This Works
+
+Since all saves are already at the final schema state, re-running V1 with `IF NOT EXISTS` is a no-op for data—tables already exist with correct structure. Refinery simply re-registers that V1 has run.
+
 ## File Locations
 
 - `lib-core/src/persistance/` - Core infrastructure (traits, executor, registry)

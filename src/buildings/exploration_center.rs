@@ -1,3 +1,23 @@
+//! # Exploration Center
+//!
+//! Building that houses and manages expedition drones for scanning ExpeditionZone targets.
+//!
+//! ## Ownership Model
+//!
+//! ExplorationCenter → (HomeBaseLinkedObjects) → ExpeditionDrone(s) → (HomeBase) → back
+//!
+//! Drones are spawned as separate entities with a `HomeBase` relationship pointing to their
+//! center. The center tracks capacity via `max_drone_slots`. Drones can only refuel and
+//! redeploy when their home center is powered and enabled.
+//!
+//! ## UI Structure
+//!
+//! When focused in DisplayInfoPanel, shows:
+//! - Drone count text
+//! - DroneSlotRow per owned drone (icon + fuel bar + action button)
+//! - BuyDroneSlot button if capacity available
+//! - TargetSelectionPanel modal when sending a drone
+
 use bevy::color::palettes::css::BLUE;
 use bevy::ui::widget::ViewportNode;
 

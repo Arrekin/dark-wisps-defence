@@ -56,6 +56,8 @@ pub struct EnergyRelay;
 #[require(Building, BuildingType = BuildingType::MiningComplex)]
 pub struct MiningComplex;
 
+/// Building that owns and manages expedition drones.
+/// Drones link back via HomeBase relationship; this component tracks capacity.
 #[derive(Component)]
 #[require(Building, BuildingType = BuildingType::ExplorationCenter)]
 pub struct ExplorationCenter {

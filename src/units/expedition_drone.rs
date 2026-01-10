@@ -1,20 +1,59 @@
 //! # Expedition Drone System
 //!
-//! Autonomous scanning drones deployed from Exploration Centers to gather intel on targets.
+//! Autonomous scanning drones deployed from Exploration Centers to scan ExpeditionZone targets.
 //!
-//! ## Lifecycle
-//! 1. **Stationed** - Drone is hidden at home base, refueling
-//! 2. **Deploying** - Drone flies toward assigned target (ExpeditionTargetMarker)
-//! 3. **Scanning** - Drone patrols around target, activating scan beam when target is in view
-//! 4. **Returning** - Drone flies back to home base (triggered by fuel depletion or target loss)
+//! ## Architecture
+//!
+//! Each drone is a separate entity owned by an ExplorationCenter (via HomeBase relationship).
+//! The drone-to-target relationship is tracked via `mission_target` field, not a component—this
+//! allows the mission to persist across state transitions (e.g., returning→refueling→redeploying).
+//!
+//! ## State Machine
+//!
+//! ```text
+//!                    ┌─────────────┐
+//!        deploy      │  Stationed  │
+//!       request      └──────┬──────┘
+//!                           │
+//!                           ▼
+//!                    ┌─────────────┐
+//!                    │  Deploying  │──┐
+//!                    └──────┬──────┘  │
+//!                           │ arrival │
+//!                           ▼         │ fuel empty
+//!                    ┌─────────────┐  │ or recall
+//!                    │  Scanning   │──┤ or target lost
+//!                    └──────┬──────┘  │
+//!                           │         │
+//!                           ▼         │
+//!                    ┌─────────────┐◄─┘
+//!                    │  Returning  │
+//!                    └──────┬──────┘
+//!                           │ arrival at home
+//!                           ▼
+//!                    ┌─────────────┐
+//!                    │  Refueling  │───► Deploying (if mission_target exists)
+//!                    └─────────────┘───► Stationed (if no mission_target)
+//! ```
+//!
+//! ## Fuel Design
+//!
+//! - Fuel depletes during Deploying and Scanning states only
+//! - Return flight is "free" (no fuel cost)—ensures drones always make it home
+//! - Refueling only occurs when home base (ExplorationCenter) is powered and enabled
+//! - After refueling, drone auto-redeploys if `mission_target` is still set
+//!
+//! ## Scanning Mechanics
+//!
+//! During Scanning, drones orbit the target at PATROL_RADIUS. When the target is within
+//! SCAN_ANGLE_LIMIT of the drone's heading, the beam activates and accumulates progress
+//! on the target's ExpeditionZone component. The target consumes this progress for its
+//! own mechanics (e.g., QuantumField layer progression).
 //!
 //! ## Visual Components
-//! - **ScanSpot**: Ground projection showing where the scan beam hits
-//! - **ScanningBeam**: Cone of light connecting drone to scan spot
 //!
-//! ## Fuel Mechanics
-//! Drones consume fuel while deploying or scanning. When fuel is depleted, they return home.
-//! Fuel is fully restored when the drone arrives back at the home base.
+//! - **ScanSpot**: Ground projection that wanders within target bounds
+//! - **ScanningBeam**: Tapered cone from drone to spot (shader-based)
 
 use bevy::{
     render::render_resource::AsBindGroup, 
@@ -57,20 +96,25 @@ impl Plugin for ExpeditionDronePlugin {
 }
 
 pub const EXPEDITION_DRONE_BASE_IMAGE: &str = "units/expedition_drone.png";
-const PATROL_RADIUS: f32 = 150.0;           // how far waypoints spawn from target center
-const DRONE_SPEED: f32 = 160.0;             // world units per second
-const DRONE_TURN_RATE: f32 = 1.2;           // radians per second (how fast it can turn)
-const WAYPOINT_REACH_DIST: f32 = 2.0;       // how close before picking new waypoint
-const DRONE_FRONT_OFFSET: f32 = 32.0;       // pixels from drone center to front
-const SCAN_ANGLE_LIMIT: f32 = 1.6;          // radians (~90°) - max angle from forward to scan
-const SCAN_POINT_SPEED: f32 = 20.0;         // world units per second - how fast beam moves to target
-const SPOT_RADIUS: f32 = 25.0;              // base radius of scan spot on ground
-const SPOT_ELONGATION_FACTOR: f32 = 0.0015; // elongation per unit distance (0 = circle when close)
-const BEAM_START_WIDTH: f32 = 2.0;          // width at drone (narrow apex)
-const DEFAULT_MAX_FUEL: f32 = 60.0;         // seconds of flight time
-pub const FUEL_CONSUMPTION_RATE: f32 = 3.0;     // fuel units per second while on mission
-pub const REFUEL_RATE: f32 = 15.0;              // fuel units per second while refueling
-const SCAN_PROGRESS_RATE: f32 = 10.;           // scan progress per second when beam active
+// Movement tuning
+const PATROL_RADIUS: f32 = 150.0;
+const DRONE_SPEED: f32 = 160.0;
+const DRONE_TURN_RATE: f32 = 1.2;           // radians/sec - gives smooth arcing flight
+const WAYPOINT_REACH_DIST: f32 = 2.0;
+
+// Scanning geometry
+const DRONE_FRONT_OFFSET: f32 = 32.0;       // beam origin offset from sprite center
+const SCAN_ANGLE_LIMIT: f32 = 1.6;          // ~90° cone in front of drone
+const SCAN_POINT_SPEED: f32 = 20.0;
+const SPOT_RADIUS: f32 = 25.0;
+const SPOT_ELONGATION_FACTOR: f32 = 0.0015; // perspective effect: spot stretches with distance
+const BEAM_START_WIDTH: f32 = 2.0;
+
+// Fuel balance (fuel ≈ seconds of active flight at 1:1 ratio with FUEL_CONSUMPTION_RATE)
+const DEFAULT_MAX_FUEL: f32 = 60.0;
+pub const FUEL_CONSUMPTION_RATE: f32 = 3.0;
+pub const REFUEL_RATE: f32 = 15.0;              // ~4 seconds to full refuel
+const SCAN_PROGRESS_RATE: f32 = 10.;
 
 /// Drone cost in dark ore - kept as constant for easy balancing
 pub const DRONE_COST_ORE: u32 = 100;
@@ -86,15 +130,17 @@ pub struct ExpeditionDroneDeploymentRequest {
 #[derive(EntityEvent)]
 pub struct RecallDrone(pub Entity);
 
+/// Drone state machine. Immutable component - state changes trigger `on_state_changed` observer.
+/// See module docs for state transition diagram.
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq, strum::Display)]
 #[component(immutable)]
 pub enum DroneState {
     #[default]
-    Stationed,      // Hidden at home base, no active mission
-    Refueling,      // At home base, refueling before redeploying (has mission_target)
-    Deploying,      // Flying toward mission target
-    Scanning,       // Patrolling and scanning target
-    Returning,      // Flying back to home base
+    Stationed,
+    Refueling,
+    Deploying,
+    Scanning,
+    Returning,
 }
 
 #[derive(Component)]
@@ -106,7 +152,8 @@ pub struct ExpeditionDrone {
     pub is_beam_active: bool,     // true when target is in front and beam should show
 }
 impl ExpeditionDrone {
-    /// Generate a new patrol waypoint on the opposite side of the target
+    /// Generate waypoint roughly opposite current heading with random variation.
+    /// This creates natural figure-8 patrol patterns around the target.
     fn set_new_waypoint(&mut self, target_center: Vec2, rng: &mut nanorand::tls::TlsWyRand) {
         use nanorand::Rng;
         let overshoot_angle = self.heading + std::f32::consts::PI;
@@ -118,9 +165,8 @@ impl ExpeditionDrone {
         );
     }
 
-    /// Refueling system - handles drones in Refueling state
-    /// Refuels drone over time, then either redeploys or goes to stationed.
-    /// Only refuels if home base (ExplorationCenter) is operational.
+    /// Refuels drones at home base. Transitions to Deploying when full (auto-redeploy).
+    /// The state observer handles the Deploying→Stationed fallback if mission_target is None.
     fn refueling_system(
         mut commands: Commands,
         time: Res<Time>,
@@ -143,8 +189,7 @@ impl ExpeditionDrone {
         }
     }
     
-    /// Handle ExpeditionDroneDeploymentRequest event - deploys a stationed drone to a target.
-    /// Only deploys if home base (ExplorationCenter) is operational.
+    /// Initiates deployment: sets mission_target, positions at home base, and transitions to Deploying.
     fn on_deployment_request(
         trigger: On<ExpeditionDroneDeploymentRequest>,
         mut commands: Commands,
@@ -218,7 +263,8 @@ impl ExpeditionDrone {
         
     }
     
-    /// Handle RecallDrone event - sends drone back to base and clears mission
+    /// Manual recall: sends drone home and clears mission_target.
+    /// Clearing mission ensures drone goes to Stationed after refueling, not auto-redeploy.
     fn on_recall(
         trigger: On<RecallDrone>,
         mut commands: Commands,
@@ -240,10 +286,7 @@ impl ExpeditionDrone {
         }
     }
 
-    /// Moves drones in Deploying or Returning states toward their destination.
-    /// - Deploying: flies toward mission target, transitions to Scanning on arrival
-    /// - Returning: flies toward home base, transitions to Stationed on arrival (refuels, hides)
-    /// - Handles smooth turning with DRONE_TURN_RATE limit
+    /// Moves drones toward destination with smooth turning (DRONE_TURN_RATE).
     fn travel_system(
         mut commands: Commands,
         time: Res<Time>,
@@ -299,9 +342,7 @@ impl ExpeditionDrone {
         }
     }
 
-    /// Consumes fuel while drone is on mission and triggers return when depleted.
-    /// - Drains fuel during Deploying and Scanning states
-    /// - Triggers Returning state if fuel empty
+    /// Drains fuel during active mission. Return flight is free to guarantee drones reach home.
     fn fuel_consumption_system(
         mut commands: Commands,
         time: Res<Time>,
@@ -322,11 +363,7 @@ impl ExpeditionDrone {
         }
     }
 
-    /// Handles patrol movement and beam activation during Scanning state.
-    /// - Resets is_beam_active each frame
-    /// - Activates beam when target is within SCAN_ANGLE_LIMIT of drone heading
-    /// - When target in front: turns toward target center
-    /// - When target not in front: flies toward current waypoint, picks new one when reached
+    /// Orbital patrol during Scanning: drone circles target, beam activates when target is ahead.
     fn patrol_system(
         mut commands: Commands,
         time: Res<Time>,
@@ -382,8 +419,7 @@ impl ExpeditionDrone {
         }
     }
 
-    /// Accumulates scan progress on ExpeditionZone when drone beam is active over it.
-    /// Progress is added at SCAN_PROGRESS_RATE per second while beam is active.
+    /// Transfers scan progress to target's ExpeditionZone while beam is active.
     fn zone_scan_progress_system(
         time: Res<Time>,
         drones: Query<&ExpeditionDrone>,
@@ -553,7 +589,7 @@ impl DroneFuel {
     pub fn refuel(&mut self, amount: f32) { self.current = (self.current + amount).min(self.max); }
     pub fn consume(&mut self, amount: f32) { self.current = (self.current - amount).max(0.0); }
     
-    /// Calculate fuel cost to travel a distance (deployment only, return is free)
+    /// Fuel cost for one-way travel. Used by UI to show deployment cost.
     pub fn travel_fuel_cost(distance: f32) -> f32 {
         let travel_time = distance / DRONE_SPEED;
         travel_time * FUEL_CONSUMPTION_RATE
@@ -568,7 +604,7 @@ impl DroneFuel {
 }
 
 
-/// Material for the scanning beam (cone from drone to spot).
+/// Shader material for the tapered beam effect. Width interpolates from narrow (drone) to wide (spot).
 #[derive(Asset, TypePath, Debug, Clone, AsBindGroup)]
 pub struct ScanningBeamMaterial {
     #[uniform(0)]
@@ -661,10 +697,8 @@ impl BuilderExpeditionDrone {
         commands.queue(batch);
     }
 
-    /// Spawns drone entity with visual components (beam, spot) when builder is added.
-    /// - Creates drone sprite with fuel component
-    /// - Spawns ScanSpot and ScanningBeam as separate entities linked by entity refs
-    /// - Positions drone at home base (hidden) or saved world position
+    /// Spawns drone with linked visual components (ScanSpot + ScanningBeam as separate entities).
+    /// Visual entities hold references to drone; beam also references spot for positioning.
     fn on_add(
         trigger: On<Add, BuilderExpeditionDrone>,
         mut commands: Commands,

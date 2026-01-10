@@ -1,3 +1,23 @@
+//! # Quantum Field
+//!
+//! Mysterious anomalies whose fluctuations prevent the main base from teleporting away.
+//! All quantum fields on a map must be solved for the player to complete the scenario.
+//!
+//! ## Layer Progression
+//!
+//! Each QuantumField has multiple layers that must be solved sequentially:
+//! 1. **Scan phase** - Expedition drones accumulate progress via ExpeditionZone
+//! 2. **Pay phase** - Once scanned, player pays resource costs to finalize the layer
+//! 3. **Repeat** - Next layer begins until all layers solved
+//!
+//! When all layers are solved, the field gains `Solved` marker and loses its ExpeditionZone.
+//!
+//! ## Integration with Drones
+//!
+//! QuantumField has an ExpeditionZone component, making it a valid target for expedition drones.
+//! The `process_expeditions_system` consumes accumulated scan progress and applies it to
+//! the current layer. This decouples drone mechanics from field-specific progression.
+
 use bevy::color::palettes::css::{AQUA, BLUE, INDIGO};
 
 use lib_grid::grids::obstacles::{ObstacleGrid, ReservedCoords};
@@ -70,16 +90,18 @@ impl Default for QuantumFieldImprintSelector {
     }
 }
 
-// Marks QuantumField with all its layers solved
+/// Marker for fully-solved QuantumFields. Removes ExpeditionZone to prevent further scanning.
 #[derive(Component)]
 struct Solved;
 
+/// Progressive obstacle requiring drone scanning to solve.
+/// Layers are defined at spawn time; current_layer indexes into the layers vec.
 #[derive(Component)]
 #[require(MapBound, ObstacleGridObject = ObstacleGridObject::QuantumField)]
 pub struct QuantumField {
     pub layers: Vec<QuantumFieldLayer>,
-    pub current_layer: usize,
-    pub current_layer_progress: f32,
+    pub current_layer: usize,        // index into layers; equals layers.len() when solved
+    pub current_layer_progress: f32, // scan progress toward current layer's value
 }
 impl QuantumField {
     pub fn progress_layer(&mut self, amount: f32) {
@@ -108,12 +130,10 @@ impl QuantumField {
     }
 }
 
-// Describes a layer of QuantumField to solve
-// `value` - amount of research needed to solve the layer
-// `costs` - costs needed to pay after solving the layer to finalize it
+/// A single layer requiring scan progress + resource payment to complete.
 pub struct QuantumFieldLayer {
-    pub value: f32,
-    pub costs: Vec<Cost>,
+    pub value: f32,       // scan progress required to complete this layer
+    pub costs: Vec<Cost>, // resources required after scanning to finalize
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -301,8 +321,7 @@ fn process_expeditions_system(
     }
 }
 
-/// Widget for selecting QuantumField grid imprint size during construction
-/// The widget consists of one horizontal layer containing left arrow button, text label specifying the imprint size and right arrow button
+/// Editor UI for selecting QuantumField size before placement.
 #[derive(Component, Default)]
 pub struct GridPlacerUiForQuantumField {
     pub imprint_selector: QuantumFieldImprintSelector,
