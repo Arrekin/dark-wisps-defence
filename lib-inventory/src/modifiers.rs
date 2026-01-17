@@ -188,7 +188,7 @@ impl UpgradeType {
 
 pub struct UpgradeRuntimeInfo {
     pub current_level: usize,
-    pub static_info: AlmanachUpgradeInfo,
+    pub static_info: UpgradeInfo,
 }
 
 #[derive(Component)]
@@ -200,10 +200,10 @@ impl Upgrades {
     /// If `apply_levels` is provided, upgrades start at those levels.
     /// On insert, the observer will apply modifiers for any non-zero levels.
     pub fn from_almanach(
-        almanach_upgrades: &HashMap<UpgradeType, AlmanachUpgradeInfo>,
+        almanach_upgrades: &HashMap<UpgradeType, UpgradeInfo>,
         apply_levels: Option<&HashMap<UpgradeType, usize>>,
     ) -> Self {
-        let upgrades = almanach_upgrades.iter().map(|(upgrade_type, info)| {
+        let upgrades = almanach_upgrades.iter().map(|(upgrade_type, info): (_, &UpgradeInfo)| {
             let level = apply_levels.and_then(|l| l.get(upgrade_type).copied()).unwrap_or(0);
             (*upgrade_type, UpgradeRuntimeInfo {
                 current_level: level,

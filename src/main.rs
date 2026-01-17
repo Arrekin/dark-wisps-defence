@@ -1,5 +1,4 @@
 mod buildings;
-mod data_loader;
 mod editor;
 mod effects;
 mod map_objects;
@@ -39,7 +38,6 @@ fn main() {
             lib_ui::LibUiPlugin,
         ))
         .add_plugins((
-            data_loader::DataLoaderPlugin,
             editor::EditorPlugin,
         ))
         // Warning: Bevy behaves wierdly when there are many Startup systems. If some plugins begin to not run at all, watch out for Startup systems at all places. Use Post/Pre Startup instead.

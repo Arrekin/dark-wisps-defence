@@ -23,6 +23,20 @@ pub enum BuildingType {
     ExplorationCenter,
 }
 impl BuildingType {
+    /// Returns all BuildingType variants including all tower types.
+    pub fn all() -> impl Iterator<Item = Self> {
+        [
+            Self::MainBase,
+            Self::EnergyRelay,
+            Self::MiningComplex,
+            Self::ExplorationCenter,
+            Self::Tower(TowerType::Blaster),
+            Self::Tower(TowerType::Cannon),
+            Self::Tower(TowerType::RocketLauncher),
+            Self::Tower(TowerType::Emitter),
+        ].into_iter()
+    }
+
     pub fn is_energy_supplier(&self) -> bool {
         matches!(self, BuildingType::MainBase | BuildingType::EnergyRelay)
     }
