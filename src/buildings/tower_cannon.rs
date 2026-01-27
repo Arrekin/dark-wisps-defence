@@ -36,7 +36,7 @@ pub struct BuilderTowerCannon {
 impl Saveable for BuilderTowerCannon {
     fn save(self, tx: &rusqlite::Transaction) -> rusqlite::Result<()> {
         let save_data = self.save_data.expect("BuilderTowerCannon for saving must have save_data");
-        let entity_index = save_data.entity.index() as i64;
+        let entity_index = save_data.entity.index_u32() as i64;
 
         tx.save_marker("tower_cannons", entity_index)?;
         tx.save_grid_coords(entity_index, self.grid_position)?;

@@ -798,9 +798,9 @@ impl BuilderExpeditionDrone {
 impl Saveable for BuilderExpeditionDrone {
     fn save(self, tx: &rusqlite::Transaction) -> rusqlite::Result<()> {
         let data = self.save_data.expect("BuilderExpeditionDrone for saving must have save_data");
-        let entity_id = data.entity.index() as i64;
-        let home_base_id = self.home_base.index() as i64;
-        let mission_target_id = data.mission_target.map(|e| e.index() as i64);
+        let entity_id = data.entity.index_u32() as i64;
+        let home_base_id = self.home_base.index_u32() as i64;
+        let mission_target_id = data.mission_target.map(|e| e.index_u32() as i64);
         let state_u8: u8 = match data.state {
             DroneState::Stationed => 0,
             DroneState::Refueling => 1,

@@ -82,7 +82,7 @@ pub struct BuilderExplorationCenter {
 impl Saveable for BuilderExplorationCenter {
     fn save(self, tx: &rusqlite::Transaction) -> rusqlite::Result<()> {
         let save_data = self.save_data.expect("BuilderExplorationCenter for saving purpose must have save_data");
-        let entity_index = save_data.entity.index() as i64;
+        let entity_index = save_data.entity.index_u32() as i64;
 
         tx.save_marker("exploration_centers", entity_index)?;
         tx.save_grid_coords(entity_index, self.grid_position)?;
@@ -437,11 +437,11 @@ impl BuilderDroneSlot {
                             height: Val::Px(SLOT_SIZE),
                             align_items: AlignItems::Center,
                             justify_content: JustifyContent::Center,
+                            border_radius: BorderRadius::all(Val::Px(4.)),
                             ..default()
                         },
                         ImageNode::new(asset_server.load(DroneSlot::state_icon(*drone_state))),
                         BorderColor::from(Color::linear_rgba(0.3, 0.6, 0.3, 1.)),
-                        BorderRadius::all(Val::Px(4.)),
                         DroneSlotIcon,
                     ),
                     // Fuel bar container (vertical, bottom-aligned fill)
@@ -452,11 +452,11 @@ impl BuilderDroneSlot {
                             flex_direction: FlexDirection::Column,
                             justify_content: JustifyContent::End,
                             border: UiRect::all(Val::Px(1.)),
+                            border_radius: BorderRadius::all(Val::Px(2.)),
                             ..default()
                         },
                         BackgroundColor::from(Color::linear_rgba(0.1, 0.1, 0.1, 0.8)),
                         BorderColor::from(Color::linear_rgba(0.4, 0.4, 0.2, 1.)),
-                        BorderRadius::all(Val::Px(2.)),
                         children![(
                             // Fuel bar fill
                             Node {
@@ -531,6 +531,7 @@ impl BuilderDroneActionButton {
                 },
                 Node {
                     padding: UiRect::axes(Val::Px(4.), Val::Px(2.)),
+                    border_radius: BorderRadius::all(Val::Px(3.)),
                     ..default()
                 },
                 BackgroundColor::from(if is_active {
@@ -538,7 +539,6 @@ impl BuilderDroneActionButton {
                 } else {
                     Color::linear_rgba(0.2, 0.2, 0.2, 0.5)
                 }),
-                BorderRadius::all(Val::Px(3.)),
             ))
             .add_child(text_entity)
             .observe(DroneActionButton::on_click)
@@ -667,10 +667,10 @@ impl BuilderSlotTooltip {
                 flex_direction: FlexDirection::Column,
                 align_items: AlignItems::Center,
                 row_gap: Val::Px(4.),
+                border_radius: BorderRadius::all(Val::Px(4.)),
                 ..default()
             },
             BackgroundColor::from(Color::linear_rgba(0.1, 0.1, 0.2, 0.95)),
-            BorderRadius::all(Val::Px(4.)),
         )
     }
     
@@ -788,11 +788,11 @@ impl BuyDroneSlot {
                 height: Val::Px(SLOT_SIZE),
                 align_items: AlignItems::Center,
                 justify_content: JustifyContent::Center,
+                border_radius: BorderRadius::all(Val::Px(4.)),
                 ..default()
             },
             BackgroundColor::from(Color::linear_rgba(0.1, 0.2, 0.4, 0.8)),
             BorderColor::from(Color::linear_rgba(0.2, 0.4, 0.8, 1.)),
-            BorderRadius::all(Val::Px(4.)),
             children![(
                 Text::new("+"),
                 TextColor::from(BLUE),
@@ -903,10 +903,10 @@ impl TargetSelectionPanel {
                 max_height: Val::Percent(50.),
                 flex_direction: FlexDirection::Column,
                 padding: UiRect::all(Val::Px(8.)),
+                border_radius: BorderRadius::all(Val::Px(6.)),
                 ..default()
             },
             BackgroundColor::from(Color::linear_rgba(0.1, 0.1, 0.15, 0.95)),
-            BorderRadius::all(Val::Px(6.)),
             BorderColor::from(Color::linear_rgba(0.3, 0.3, 0.5, 1.)),
         ));
         
@@ -950,10 +950,10 @@ impl TargetSelectionPanel {
                 margin: UiRect::top(Val::Px(8.)),
                 padding: UiRect::axes(Val::Px(8.), Val::Px(4.)),
                 justify_content: JustifyContent::Center,
+                border_radius: BorderRadius::all(Val::Px(4.)),
                 ..default()
             },
             BackgroundColor::from(Color::linear_rgba(0.3, 0.2, 0.2, 0.9)),
-            BorderRadius::all(Val::Px(4.)),
             children![(
                 Text::new("Cancel"),
                 TextColor::from(Color::WHITE),
@@ -1063,10 +1063,10 @@ impl TargetListItem {
                 align_items: AlignItems::Center,
                 justify_content: JustifyContent::SpaceBetween,
                 column_gap: Val::Px(8.),
+                border_radius: BorderRadius::all(Val::Px(3.)),
                 ..default()
             },
             BackgroundColor::from(Color::linear_rgba(0.15, 0.15, 0.2, 0.9)),
-            BorderRadius::all(Val::Px(3.)),
             children![
                 // Left side: Name, coordinates, and fuel cost
                 (

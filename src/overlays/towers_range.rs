@@ -289,7 +289,7 @@ impl<'a> OverlayBufferCreator<'a> {
         }
         let mut signature: u32 = 0;
         for &entity in set.iter() {
-            signature ^= entity.index();
+            signature ^= entity.index_u32();
         }
         let cover_count = set.len() as u32;
         let highlight = match highlight_mode {

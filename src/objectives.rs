@@ -138,10 +138,10 @@ impl BuilderObjective {
                     flex_direction: FlexDirection::Row,
                     align_items: AlignItems::Center,
                     column_gap: Val::Px(5.),
+                    border_radius: BorderRadius::all(Val::Px(7.)),
                     ..default()
                 },
                 BackgroundColor::from(Color::linear_rgba(0.1, 0.3, 0.8, 0.7)),
-                BorderRadius::all(Val::Px(7.)),
                 BorderColor::from(Color::linear_rgba(0., 0.2, 0.8, 0.9)),
             ))
             .add_children(&[checkmark, text]);
@@ -178,7 +178,7 @@ impl BuilderObjective {
 impl Saveable for BuilderObjective {
     fn save(self, tx: &rusqlite::Transaction) -> rusqlite::Result<()> {
         let save_data = self.save_data.expect("BuilderObjective for saving must have save_data");
-        let entity_index = save_data.entity.index() as i64;
+        let entity_index = save_data.entity.index_u32() as i64;
 
         let objective_type_str = match self.objective_details.objective_type {
             ObjectiveType::ClearAllQuantumFields => "clear_quantum_fields",

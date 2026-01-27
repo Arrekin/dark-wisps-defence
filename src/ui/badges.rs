@@ -107,11 +107,11 @@ fn initialize_badges_system(
                 width: Val::Px(101.),
                 flex_direction: FlexDirection::Column,
                 border: UiRect::all(Val::Px(1.)),
+                border_radius: BorderRadius::all(Val::Px(2.)),
                 ..default()
             },
             BackgroundColor::from(Color::linear_rgba(0., 0.3, 0.7, 0.1)),
             BorderColor::from(Color::linear_rgba(0., 0.3, 0.9, 0.3)),
-            BorderRadius::all(Val::Px(2.)),
         )).with_children(|parent| {
             for essence_type in EssenceType::iter() {
                 let essence_badge = parent
@@ -135,11 +135,11 @@ fn initialize_badges_system(
                             Node {
                                 width: Val::Px(10.),
                                 height: Val::Px(10.),
+                                border_radius: BorderRadius::all(Val::Px(25.)),
                                 ..default()
                             },
                             background_color,
                             border_color,
-                            BorderRadius::all(Val::Px(25.)),
                         ));
                         // Essence amount
                         parent.spawn((

@@ -1,4 +1,4 @@
-use bevy::ecs::entity_disabling::{Disabled, Internal};
+use bevy::ecs::entity_disabling::Disabled;
 
 use crate::prelude::*;
 use crate::map_objects::dark_ore::dark_ore_area_scanner::{HasOreInScannerRange, NoOreInScannerRange};
@@ -112,7 +112,7 @@ impl IndicatorType {
     fn on_parent_looses_power(
         trigger: On<Insert, NoPower>,
         mut commands: Commands,
-        observers_for_changes: Query<&IndicatorObserverForChanges, Allow<Internal>>,
+        observers_for_changes: Query<&IndicatorObserverForChanges>,
         indicators: Query<(&IndicatorType, Has<Disabled>)>,
     ) {
         let observer_entity = trigger.observer();
@@ -128,7 +128,7 @@ impl IndicatorType {
     fn on_parent_gains_power(
         trigger: On<Insert, HasPower>,
         mut commands: Commands,
-        observers_for_changes: Query<&IndicatorObserverForChanges, Allow<Internal>>,
+        observers_for_changes: Query<&IndicatorObserverForChanges>,
         indicators: Query<&IndicatorType>,
     ) {
         let observer_entity = trigger.observer();
@@ -144,7 +144,7 @@ impl IndicatorType {
     fn on_parent_looses_ore(
         trigger: On<Insert, NoOreInScannerRange>,
         mut commands: Commands,
-        observers_for_changes: Query<&IndicatorObserverForChanges, Allow<Internal>>,
+        observers_for_changes: Query<&IndicatorObserverForChanges>,
         indicators: Query<(&IndicatorType, Has<Disabled>)>,
     ) {
         let observer_entity = trigger.observer();
@@ -160,7 +160,7 @@ impl IndicatorType {
     fn on_parent_gains_ore(
         trigger: On<Insert, HasOreInScannerRange>,
         mut commands: Commands,
-        observers_for_changes: Query<&IndicatorObserverForChanges, Allow<Internal>>,
+        observers_for_changes: Query<&IndicatorObserverForChanges>,
         indicators: Query<&IndicatorType>,
     ) {
         let observer_entity = trigger.observer();
@@ -176,7 +176,7 @@ impl IndicatorType {
     fn on_parent_disabled_by_player(
         trigger: On<Insert, DisabledByPlayer>,
         mut commands: Commands,
-        observers_for_changes: Query<&IndicatorObserverForChanges, Allow<Internal>>,
+        observers_for_changes: Query<&IndicatorObserverForChanges>,
         indicators: Query<&IndicatorType, With<Disabled>>,
     ) {
         let observer_entity = trigger.observer();
@@ -192,7 +192,7 @@ impl IndicatorType {
     fn on_parent_enabled_by_player(
         trigger: On<Remove, DisabledByPlayer>,
         mut commands: Commands,
-        observers_for_changes: Query<&IndicatorObserverForChanges, Allow<Internal>>,
+        observers_for_changes: Query<&IndicatorObserverForChanges>,
         indicators: Query<&IndicatorType>,
     ) {
         let observer_entity = trigger.observer();

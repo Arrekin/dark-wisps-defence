@@ -56,8 +56,8 @@ pub struct BuilderRocket {
 impl Saveable for BuilderRocket {
     fn save(self, tx: &rusqlite::Transaction) -> rusqlite::Result<()> {
         let save_data = self.save_data.expect("BuilderRocket for saving must have save_data");
-        let entity_id = save_data.entity.index() as i64;
-        let target_wisp_id = self.target_wisp.index() as i64;
+        let entity_id = save_data.entity.index_u32() as i64;
+        let target_wisp_id = self.target_wisp.index_u32() as i64;
         
         // Convert Quat rotation to z-angle
         let (axis, angle) = self.rotation.to_axis_angle();

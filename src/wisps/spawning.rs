@@ -27,7 +27,7 @@ pub struct BuilderWisp {
 impl Saveable for BuilderWisp {
     fn save(self, tx: &rusqlite::Transaction) -> rusqlite::Result<()> {
         let save_data = self.save_data.expect("BuilderWisp for saving must have save_data");
-        let entity_index = save_data.entity.index() as i64;
+        let entity_index = save_data.entity.index_u32() as i64;
 
         tx.register_entity(entity_index)?;
         tx.save_world_position(entity_index, save_data.world_position)?;

@@ -137,6 +137,7 @@ fn initialize_display_info_panel_system(
             width: Val::Percent(50.0),
             height: Val::Px(160.0),
             border: UiRect::all(Val::Px(4.0)),
+            border_radius: BorderRadius::all(Val::Px(7.)),
             flex_direction: FlexDirection::Row,
             align_items: AlignItems::Center,
             padding: UiRect::all(Val::Px(4.0)),
@@ -144,7 +145,6 @@ fn initialize_display_info_panel_system(
         },
         BackgroundColor::from(Color::linear_rgba(0.46, 0.62, 0.67, 1.)),
         BorderColor::from(Color::linear_rgba(0., 0.2, 1., 1.)),
-        BorderRadius::all(Val::Px(7.)),
         Visibility::Hidden,
         DisplayInfoPanel::default(),
         children![

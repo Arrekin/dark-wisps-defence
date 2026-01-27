@@ -229,9 +229,9 @@ impl BuilderPreviewCamera {
                 Camera2d::default(),
                 Camera {
                     order: -1, // Render before main camera
-                    target: RenderTarget::Image(image_handle.into()),
                     ..default()
                 },
+                RenderTarget::Image(image_handle.into()),
                 Hdr,
                 Projection::Orthographic(OrthographicProjection {
                     near: -1000.,

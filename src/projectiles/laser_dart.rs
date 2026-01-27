@@ -47,8 +47,8 @@ pub struct BuilderLaserDart {
 impl Saveable for BuilderLaserDart {
     fn save(self, tx: &rusqlite::Transaction) -> rusqlite::Result<()> {
         let save_data = self.save_data.expect("BuilderLaserDart for saving must have save_data");
-        let entity_id = save_data.entity.index() as i64;
-        let target_wisp_id = self.target_wisp.map(|e| e.index() as i64);
+        let entity_id = save_data.entity.index_u32() as i64;
+        let target_wisp_id = self.target_wisp.map(|e| e.index_u32() as i64);
 
         tx.register_entity(entity_id)?;
         tx.save_world_position(entity_id, self.world_position)?;
