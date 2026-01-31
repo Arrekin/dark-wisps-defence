@@ -68,9 +68,12 @@ impl GridObjectPlacer {
     fn follow_mouse_system(
         mut commands: Commands,
         mouse_info: Res<MouseInfo>,
-        placer: Single<Entity, With<GridObjectPlacer>>,
+        placer: Single<(Entity, &GridCoords), With<GridObjectPlacer>>,
     ) {
-        commands.entity(placer.into_inner()).insert(mouse_info.grid_coords);
+        let (placer_entity, placer_coords) = placer.into_inner();
+        if *placer_coords != mouse_info.grid_coords {
+            commands.entity(placer_entity).insert(mouse_info.grid_coords);
+        }
     }
 
     fn on_coords_changed(
