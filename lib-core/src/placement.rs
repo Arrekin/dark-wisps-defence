@@ -72,11 +72,16 @@ impl<T> Copy for BeginPlacing<T> {}
 /// Trait for dynamic event dispatch. Stored as `Box<dyn PlacementEmitter>` in ObjectPlacementInfo.
 pub trait PlacementEmitter: Send + Sync {
     fn emit(self: Box<Self>, commands: &mut Commands);
+    fn clone_box(&self) -> Box<dyn PlacementEmitter>;
 }
 
 impl<T: Send + Sync + 'static> PlacementEmitter for PlaceRequest<T> {
     fn emit(self: Box<Self>, commands: &mut Commands) {
         commands.trigger(*self);
+    }
+    
+    fn clone_box(&self) -> Box<dyn PlacementEmitter> {
+        Box::new(*self)
     }
 }
 
@@ -84,10 +89,18 @@ impl<T: Send + Sync + 'static> PlacementEmitter for RemoveRequest<T> {
     fn emit(self: Box<Self>, commands: &mut Commands) {
         commands.trigger(*self);
     }
+    
+    fn clone_box(&self) -> Box<dyn PlacementEmitter> {
+        Box::new(*self)
+    }
 }
 
 impl<T: Send + Sync + 'static> PlacementEmitter for BeginPlacing<T> {
     fn emit(self: Box<Self>, commands: &mut Commands) {
         commands.trigger(*self);
+    }
+    
+    fn clone_box(&self) -> Box<dyn PlacementEmitter> {
+        Box::new(*self)
     }
 }

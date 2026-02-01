@@ -23,7 +23,7 @@ impl Plugin for GridObjectPlacerPlugin {
             ))
             .add_systems(OnEnter(UiInteraction::PlaceGridObject), on_placing_enter_system)
             .add_systems(OnExit(UiInteraction::PlaceGridObject), on_placing_exit_system)
-            .add_observer(GridObjectPlacer::on_coords_changed)
+            .add_observer(GridObjectPlacer::revalidate_on_change)
             .add_observer(GridObjectPlacer::on_modify);
     }
 }
@@ -66,47 +66,16 @@ impl GridObjectPlacer {
         let (placer_entity, placer_coords) = placer.into_inner();
         if *placer_coords != mouse_info.grid_coords {
             commands.entity(placer_entity).insert(mouse_info.grid_coords);
+            commands.trigger(GridPlacerChanged);
         }
     }
 
-    fn on_coords_changed(
-        _trigger: On<Insert, GridCoords>,
-        mut commands: Commands,
-        obstacle_grid: Res<ObstacleGrid>,
-        energy_supply_grid: Res<EnergySupplyGrid>,
-        reserved_coords: Res<ReservedCoords>,
-        placer: Single<(&mut Sprite, &GridObjectPlacer, &GridImprint, &GridCoords)>,
-    ) {
-        let (mut sprite, grid_object_placer, grid_imprint, grid_coords) = placer.into_inner();
-        let Some(active) = &grid_object_placer.active else {
-            sprite.color = Color::srgba(1.0, 0.0, 0.0, 0.2);
-            return;
-        };
-        
-        let map_data = GridsCollection {
-            map_object: active.map_object,
-            obstacle_grid: &*obstacle_grid,
-            energy_supply_grid: &*energy_supply_grid,
-            reserved_coords: &*reserved_coords,
-        };
-        
-        let result = (active.placement_info.validate)(*grid_coords, *grid_imprint, &map_data);
-        sprite.color = result.color;
-        
-        // Emit event for systems that need to react to placer state changes
-        commands.trigger(GridPlacerChanged);
-    }
-    
     fn on_modify(
         trigger: On<GridPlacerOverridePropertyRequest>,
         mut commands: Commands,
-        obstacle_grid: Res<ObstacleGrid>,
-        energy_supply_grid: Res<EnergySupplyGrid>,
-        reserved_coords: Res<ReservedCoords>,
-        placer: Single<(&mut Sprite, &GridObjectPlacer, &mut GridImprint, &GridCoords)>,
+        placer: Single<(&mut Sprite, &mut GridImprint), With<GridObjectPlacer>>,
     ) {
-        let (mut sprite, grid_object_placer, mut grid_imprint, grid_coords) = placer.into_inner();
-        let Some(active) = &grid_object_placer.active else { return };
+        let (mut sprite, mut grid_imprint) = placer.into_inner();
         
         match *trigger.event() {
             GridPlacerOverridePropertyRequest::OverrideImprint(imprint) => {
@@ -115,7 +84,19 @@ impl GridObjectPlacer {
             }
         }
         
-        // Re-run validation
+        commands.trigger(GridPlacerChanged);
+    }
+
+    fn revalidate_on_change(
+        _trigger: On<GridPlacerChanged>,
+        obstacle_grid: Res<ObstacleGrid>,
+        energy_supply_grid: Res<EnergySupplyGrid>,
+        reserved_coords: Res<ReservedCoords>,
+        placer: Single<(&mut Sprite, &GridObjectPlacer, &GridImprint, &GridCoords)>,
+    ) {
+        let (mut sprite, grid_object_placer, grid_imprint, grid_coords) = placer.into_inner();
+        let Some(active) = &grid_object_placer.active else { return; };
+        // run validation
         let map_data = GridsCollection {
             map_object: active.map_object,
             obstacle_grid: &*obstacle_grid,
@@ -124,10 +105,9 @@ impl GridObjectPlacer {
         };
         let result = (active.placement_info.validate)(*grid_coords, *grid_imprint, &map_data);
         sprite.color = result.color;
-        
-        commands.trigger(GridPlacerChanged);
     }
 }
+
 
 
 fn on_placing_enter_system(
@@ -173,56 +153,40 @@ fn keyboard_input_system(
 }
 
 fn on_request_grid_object_placer_system(
+    mut commands: Commands,
     almanach: Res<Almanach>,
-    obstacle_grid: Res<ObstacleGrid>,
-    energy_supply_grid: Res<EnergySupplyGrid>,
-    reserved_coords: Res<ReservedCoords>,
     current_state: Res<State<UiInteraction>>,
     mut ui_interaction_state: ResMut<NextState<UiInteraction>>,
-    placer: Single<(&mut Sprite, &mut GridObjectPlacer, &mut GridImprint, &GridCoords)>,
+    placer: Single<(&mut Sprite, &mut GridObjectPlacer, &mut GridImprint)>,
     mut placer_request: ResMut<GridObjectPlacerRequest>,
 ) {
     let Some(map_object) = placer_request.take() else { return; };
-    let (mut sprite, mut grid_object_placer, mut grid_imprint, grid_coords) = placer.into_inner();
+    let (mut sprite, mut grid_object_placer, mut grid_imprint) = placer.into_inner();
     
     let placement_info = almanach.get_placement_info_for(map_object);
     
     *grid_imprint = placement_info.imprint;
     sprite.custom_size = Some(grid_imprint.world_size());
     
-    // Run validation immediately after type change
-    let map_data = GridsCollection {
-        map_object,
-        obstacle_grid: &obstacle_grid,
-        energy_supply_grid: &energy_supply_grid,
-        reserved_coords: &reserved_coords,
-    };
-    let result = (placement_info.validate)(*grid_coords, *grid_imprint, &map_data);
-    sprite.color = result.color;
+    grid_object_placer.active = Some(ActivePlacement {map_object, placement_info});
     
-    grid_object_placer.active = Some(ActivePlacement {
-        map_object,
-        placement_info,
-    });
-    
-    // Only change state if not already in PlaceGridObject (avoid re-entry clearing active)
+    // Only change state if not already in PlaceGridObject (avoid re-entry clearing active and the blink effect when it gets hidden for a frame)
     if *current_state.get() != UiInteraction::PlaceGridObject {
         ui_interaction_state.set(UiInteraction::PlaceGridObject);
     }
+    commands.trigger(GridPlacerChanged);
 }
 
 fn on_click_place_system(
     mut commands: Commands,
     mouse: Res<ButtonInput<MouseButton>>,
     mouse_info: Res<MouseInfo>,
-    almanach: Res<Almanach>,
-    mut placer: Single<&mut GridObjectPlacer>,
+    placer: Single<&GridObjectPlacer>,
 ) {
     // Block clicks through UI
     if mouse_info.is_over_ui { return; }
     
     let Some(ref active) = placer.active else { return };
-    let map_object = active.map_object;
     
     // Check placement mode for place/remove
     let should_place = match active.placement_info.place_mode {
@@ -234,25 +198,11 @@ fn on_click_place_system(
         PlacementMode::OnPress => mouse.pressed(MouseButton::Right),
     };
     
-    if !should_place && !should_remove {
-        return;
-    }
-    
-    // Take the active to consume its emitter
-    let active = placer.active.take().unwrap();
-    
-    // IMPORTANT: Restore active BEFORE emit because trigger runs immediately
-    // and observers query placer.active
-    placer.active = Some(ActivePlacement {
-        map_object,
-        placement_info: almanach.get_placement_info_for(map_object),
-    });
-    
     if should_place {
-        active.placement_info.place_emitter.emit(&mut commands);
+        active.placement_info.place_emitter.clone_box().emit(&mut commands);
     } else if should_remove {
-        if let Some(remove_emitter) = active.placement_info.remove_emitter {
-            remove_emitter.emit(&mut commands);
+        if let Some(remove_emitter) = &active.placement_info.remove_emitter {
+            remove_emitter.clone_box().emit(&mut commands);
         }
     }
 }
