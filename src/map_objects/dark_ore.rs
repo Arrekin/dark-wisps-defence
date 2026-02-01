@@ -1,5 +1,6 @@
 use std::f32::consts::PI;
 
+use lib_core::map_objects::DarkOre;
 use lib_grid::grids::obstacles::{ObstacleGrid, ReservedCoords};
 
 use crate::prelude::*;
@@ -9,14 +10,13 @@ pub struct DarkOrePlugin;
 impl Plugin for DarkOrePlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_systems(Update, (
-                onclick_spawn_system.run_if(in_state(UiInteraction::PlaceGridObject)),
-                DarkOre::remove_empty,
-            ))
+            .add_systems(Update, remove_empty)
             .add_observer(BuilderDarkOre::on_add)
             .add_observer(dark_ore_area_scanner::DarkOreAreaScanner::on_add)
             .add_observer(dark_ore_area_scanner::DarkOreAreaScanner::on_remove_dark_ore)
             .add_observer(dark_ore_area_scanner::DarkOreAreaScanner::on_add_dark_ore)
+            .add_observer(on_dark_ore_place_request)
+            .add_observer(on_dark_ore_remove_request)
             .register_db_loader::<BuilderDarkOre>(MapLoadingStage::SpawnMapElements)
             .register_db_saver(BuilderDarkOre::on_game_save)
             ;
@@ -26,24 +26,7 @@ impl Plugin for DarkOrePlugin {
 pub const DARK_ORE_GRID_IMPRINT: GridImprint = GridImprint::Rectangle { width: 1, height: 1 };
 pub const DARK_ORE_BASE_IMAGES: [&str; 2] = ["map_objects/dark_ore_1.png", "map_objects/dark_ore_2.png"];
 
-#[derive(Component)]
-#[require(MapBound, ObstacleGridObject = ObstacleGridObject::DarkOre)]
-pub struct DarkOre {
-    pub amount: i32,
-}
-impl DarkOre {
-    fn remove_empty(
-        mut commands: Commands,
-        dark_ores: Query<(Entity, &DarkOre), Changed<DarkOre>>,
-    ) {
-        for (entity, dark_ore) in dark_ores.iter() {
-            if dark_ore.amount <= 0 {
-                commands.entity(entity).despawn();
-            }
-        }
-    }
 
-}
 
 #[derive(Clone, Copy, Debug)]
 pub struct DarkOreSaveData {
@@ -148,28 +131,46 @@ impl BuilderDarkOre {
     }
 }
 
-fn onclick_spawn_system(
+fn remove_empty(
+    mut commands: Commands,
+    dark_ores: Query<(Entity, &DarkOre), Changed<DarkOre>>,
+) {
+    for (entity, dark_ore) in dark_ores.iter() {
+        if dark_ore.amount <= 0 {
+            commands.entity(entity).despawn();
+        }
+    }
+}
+
+fn on_dark_ore_place_request(
+    _trigger: On<lib_core::placement::PlaceRequest<DarkOre>>,
     mut commands: Commands,
     mut reserved_coords: ResMut<ReservedCoords>,
     obstacle_grid: Res<ObstacleGrid>,
-    mouse: Res<ButtonInput<MouseButton>>,
-    mouse_info: Res<MouseInfo>,
-    grid_object_placer: Single<&GridObjectPlacer>,
+    placer: Single<(&GridObjectPlacer, &GridCoords, &GridImprint)>,
 ) {
-    if !matches!(*grid_object_placer.into_inner(), GridObjectPlacer::DarkOre) { return; }
-    let mouse_coords = mouse_info.grid_coords;
-    if mouse_info.is_over_ui || !mouse_coords.is_in_bounds(obstacle_grid.bounds()) { return; }
-    if mouse.pressed(MouseButton::Left) {
-        // Place a dark_ore
-        if obstacle_grid.query_imprint_all(mouse_coords, DARK_ORE_GRID_IMPRINT, |field| !field.has_dark_ore()) && !reserved_coords.any_reserved(mouse_coords, DARK_ORE_GRID_IMPRINT) {
-            commands.spawn(BuilderDarkOre::new(mouse_coords, 1000));
-            reserved_coords.reserve(mouse_coords, DARK_ORE_GRID_IMPRINT);
-        }
-    } else if mouse.pressed(MouseButton::Right) {
-        // Remove a dark_ore
-        if let Some(entity) = obstacle_grid[mouse_coords].dark_ore {
-            commands.entity(entity).despawn();
-        }
+    let (grid_object_placer, coords, grid_imprint) = placer.into_inner();
+    let Some(active) = &grid_object_placer.active else { return };
+    if !matches!(active.map_object, MapObject::DarkOre) { return };
+    
+    if !coords.is_in_bounds(obstacle_grid.bounds()) { return; }
+    if obstacle_grid.query_imprint_all(*coords, *grid_imprint, |field| !field.has_dark_ore()) 
+        && !reserved_coords.any_reserved(*coords, *grid_imprint) 
+    {
+        commands.spawn(BuilderDarkOre::new(*coords, 1000));
+        reserved_coords.reserve(*coords, *grid_imprint);
+    }
+}
+
+fn on_dark_ore_remove_request(
+    _trigger: On<lib_core::placement::RemoveRequest<DarkOre>>,
+    mut commands: Commands,
+    obstacle_grid: Res<ObstacleGrid>,
+    placer: Single<&GridCoords, With<GridObjectPlacer>>,
+) {
+    let coords = placer.into_inner();
+    if let Some(entity) = obstacle_grid[*coords].dark_ore {
+        commands.entity(entity).despawn();
     }
 }
 

@@ -1,3 +1,4 @@
+use lib_core::map_objects::Wall;
 use lib_grid::grids::obstacles::{GridStructureType, ObstacleGrid, ReservedCoords};
 
 use crate::prelude::*;
@@ -7,44 +8,17 @@ pub struct WallPlugin;
 impl Plugin for WallPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_systems(Update, (
-                onclick_spawn_system.run_if(in_state(UiInteraction::PlaceGridObject)),
-                Wall::pulsate_brightness,
-            ))
+            .add_systems(Update, pulsate_brightness)
             .register_db_loader::<BuilderWall>(MapLoadingStage::SpawnMapElements)
             .register_db_saver(BuilderWall::on_game_save)
-            .add_observer(BuilderWall::on_add);
+            .add_observer(BuilderWall::on_add)
+            .add_observer(on_wall_place_request)
+            .add_observer(on_wall_remove_request);
     }
 }
 
 pub const WALL_GRID_IMPRINT: GridImprint = GridImprint::Rectangle { width: 1, height: 1 };
 pub const WALL_BASE_IMAGE: &str = "map_objects/wall_4side.png";
-
-#[derive(Component)]
-#[require(MapBound, ObstacleGridObject = ObstacleGridObject::Wall, EmissionsGridSpreadAffector)]
-pub struct Wall;
-impl Wall {
-    fn pulsate_brightness(
-        time: Res<Time>,
-        mut walls: Query<&mut Sprite, With<Wall>>,
-        mut lightness_rising: Local<bool>,
-        mut shared_lightness: Local<f32>,
-    ) {
-        let lightness_delta = time.delta_secs() / 10.;
-        *shared_lightness += if *lightness_rising { lightness_delta } else { -lightness_delta };
-        if *shared_lightness > 1.5 {
-            *lightness_rising = false;
-        } else if *shared_lightness < 1. {
-            *lightness_rising = true;
-            *shared_lightness = 1.;
-        }
-        for mut sprite in walls.iter_mut() {
-            if let Color::Hsla(Hsla{lightness, ..}) = &mut sprite.color {
-                *lightness = *shared_lightness;
-            }
-        }
-    }
-}
 
 #[derive(Component, SSS)]
 pub struct BuilderWall {
@@ -130,27 +104,53 @@ impl BuilderWall {
     }
 }
 
-pub fn onclick_spawn_system(
+fn pulsate_brightness(
+    time: Res<Time>,
+    mut walls: Query<&mut Sprite, With<Wall>>,
+    mut lightness_rising: Local<bool>,
+    mut shared_lightness: Local<f32>,
+) {
+    let lightness_delta = time.delta_secs() / 10.;
+    *shared_lightness += if *lightness_rising { lightness_delta } else { -lightness_delta };
+    if *shared_lightness > 1.5 {
+        *lightness_rising = false;
+    } else if *shared_lightness < 1. {
+        *lightness_rising = true;
+        *shared_lightness = 1.;
+    }
+    for mut sprite in walls.iter_mut() {
+        if let Color::Hsla(Hsla{lightness, ..}) = &mut sprite.color {
+            *lightness = *shared_lightness;
+        }
+    }
+}
+
+fn on_wall_place_request(
+    _trigger: On<lib_core::placement::PlaceRequest<Wall>>,
     mut commands: Commands,
     mut reserved_coords: ResMut<ReservedCoords>,
     obstacle_grid: Res<ObstacleGrid>,
-    mouse: Res<ButtonInput<MouseButton>>,
-    mouse_info: Res<MouseInfo>,
-    grid_object_placer: Single<&GridObjectPlacer>,
+    placer: Single<(&GridObjectPlacer, &GridCoords, &GridImprint)>,
 ) {
-    if !matches!(*grid_object_placer.into_inner(), GridObjectPlacer::Wall) { return; }
-    let mouse_coords = mouse_info.grid_coords;
-    if mouse_info.is_over_ui || !mouse_coords.is_in_bounds(obstacle_grid.bounds()) { return; }
-    if mouse.pressed(MouseButton::Left) {
-        // Place a wall
-        if obstacle_grid[mouse_coords].is_empty() && !reserved_coords.any_reserved(mouse_coords, WALL_GRID_IMPRINT) {
-            commands.spawn(BuilderWall::new(mouse_coords));
-            reserved_coords.reserve(mouse_coords, WALL_GRID_IMPRINT);
-        }
-    } else if mouse.pressed(MouseButton::Right) {
-        // Remove a wall
-        if let GridStructureType::Wall(entity) = obstacle_grid[mouse_coords].structure {
-            commands.entity(entity).despawn();
-        }
+    let (grid_object_placer, coords, grid_imprint) = placer.into_inner();
+    let Some(active) = &grid_object_placer.active else { return };
+    if !matches!(active.map_object, MapObject::Wall) { return };
+    
+    if !coords.is_in_bounds(obstacle_grid.bounds()) { return; }
+    if obstacle_grid[*coords].is_empty() && !reserved_coords.any_reserved(*coords, *grid_imprint) {
+        commands.spawn(BuilderWall::new(*coords));
+        reserved_coords.reserve(*coords, *grid_imprint);
+    }
+}
+
+fn on_wall_remove_request(
+    _trigger: On<lib_core::placement::RemoveRequest<Wall>>,
+    mut commands: Commands,
+    obstacle_grid: Res<ObstacleGrid>,
+    placer: Single<&GridCoords, With<GridObjectPlacer>>,
+) {
+    let coords = placer.into_inner();
+    if let GridStructureType::Wall(entity) = obstacle_grid[*coords].structure {
+        commands.entity(entity).despawn();
     }
 }

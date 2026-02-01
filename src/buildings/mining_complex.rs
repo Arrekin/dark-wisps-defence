@@ -1,7 +1,6 @@
-use crate::map_objects::dark_ore::{
-    DarkOre,
-    dark_ore_area_scanner::{DarkOreAreaScanner, DarkOreInRange},
-};
+use lib_core::map_objects::DarkOre;
+
+use crate::map_objects::dark_ore::dark_ore_area_scanner::{DarkOreAreaScanner, DarkOreInRange};
 use crate::prelude::*;
 use crate::ui::indicators::{IndicatorDisplay, IndicatorType, Indicators};
 

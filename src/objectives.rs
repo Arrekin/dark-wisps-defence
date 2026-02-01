@@ -1,7 +1,7 @@
 use std::str::FromStr;
 use strum::{AsRefStr, EnumString};
 
-use crate::map_objects::quantum_field::QuantumField;
+use crate::map_objects::quantum_field::QuantumFieldLayers;
 use crate::prelude::*;
 
 use lib_inventory::stats::StatsWispsKilled;
@@ -352,7 +352,7 @@ impl ObjectiveClearAllQuantumFields {
     fn update(
         mut commands: Commands,
         mut objectives: Query<(Entity, &Objective, &mut ObjectiveClearAllQuantumFields, &ObjectiveState)>,
-        quantum_fields: Query<&QuantumField>,
+        quantum_fields: Query<&QuantumFieldLayers>,
         mut texts: Query<&mut Text, With<ObjectiveText>>,
     ) {
         for (objective_entity, objective, mut objective_clear_all_quantum_fields, state) in &mut objectives {

@@ -3188,6 +3188,7 @@ dependencies = [
  "refinery",
  "rusqlite",
  "serde",
+ "strum",
 ]
 
 [[package]]
@@ -3214,6 +3215,7 @@ dependencies = [
  "bevy",
  "lib-core",
  "lib-derive",
+ "lib-grid",
  "serde",
  "strum",
 ]

@@ -5,6 +5,7 @@ pub mod systems;
 pub mod summoning;
 
 use bevy::sprite_render::Material2dPlugin;
+use lib_core::wisps::{WispFireType, WispWaterType, WispLightType, WispElectricType};
 
 use crate::prelude::*;
 
@@ -28,13 +29,13 @@ impl Plugin for WispsPlugin {
                     systems::collide_wisps,
                     systems::remove_dead_wisps,
                 ).run_if(in_state(GameState::Running)),
-                spawning::onclick_spawn_system.run_if(in_state(UiInteraction::PlaceGridObject)),
             ))
             .add_observer(spawning::BuilderWisp::on_add)
-            .add_observer(spawning::on_wisp_spawn_attach_material::<components::WispFireType, materials::WispFireMaterial>)
-            .add_observer(spawning::on_wisp_spawn_attach_material::<components::WispWaterType, materials::WispWaterMaterial>)
-            .add_observer(spawning::on_wisp_spawn_attach_material::<components::WispLightType, materials::WispLightMaterial>)
-            .add_observer(spawning::on_wisp_spawn_attach_material::<components::WispElectricType, materials::WispElectricMaterial>)
+            .add_observer(spawning::on_wisp_place_request)
+            .add_observer(spawning::on_wisp_spawn_attach_material::<WispFireType, materials::WispFireMaterial>)
+            .add_observer(spawning::on_wisp_spawn_attach_material::<WispWaterType, materials::WispWaterMaterial>)
+            .add_observer(spawning::on_wisp_spawn_attach_material::<WispLightType, materials::WispLightMaterial>)
+            .add_observer(spawning::on_wisp_spawn_attach_material::<WispElectricType, materials::WispElectricMaterial>)
             .register_db_loader::<spawning::BuilderWisp>(MapLoadingStage::SpawnMapElements)
             .register_db_saver(spawning::BuilderWisp::on_game_save);
     }

@@ -11,5 +11,8 @@ strum = { version = "0.27.*", features = ["derive"] }
 [dependencies.lib-core]
 path = "../lib-core"
 
+[dependencies.lib-grid]
+path = "../lib-grid"
+
 [dependencies.lib-derive]
 path = "../lib-derive"

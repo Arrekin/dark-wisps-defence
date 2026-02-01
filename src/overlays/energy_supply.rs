@@ -34,10 +34,10 @@ impl Plugin for EnergySupplyOverlayPlugin {
                 EnergySupplyOverlayConfig::on_config_change_system.run_if(resource_changed::<EnergySupplyOverlayConfig>),
                 refresh_display_system.run_if(in_state(EnergySupplyOverlayState::Show)),
                 (|mut config: ResMut<EnergySupplyOverlayConfig>| { config.is_overlay_globally_enabled ^= true; }).run_if(input_just_released(KeyCode::Digit7)), // Switch overlay on/off 
-                on_grid_placer_changed_system.run_if(in_state(UiInteraction::PlaceGridObject)),
             ))
             .add_observer(EnergySupplyOverlayConfig::on_building_ui_focused)
             .add_observer(EnergySupplyOverlayConfig::on_building_ui_unfocused)
+            .add_observer(on_grid_placer_changed)
             ;
 
     }
@@ -209,38 +209,33 @@ fn refresh_display_system(
     overlay_material.grid_data.grid_height = bounds.1 as u32;
 }
 
-fn on_grid_placer_changed_system(
+fn on_grid_placer_changed(
+    _trigger: On<lib_core::placement::GridPlacerChanged>,
     almanach: Res<Almanach>,
     mut overlay_config: ResMut<EnergySupplyOverlayConfig>,
     grid_object_placer: Single<(&GridObjectPlacer, &GridCoords)>,
-    mut last_grid_object_placer: Local<(GridObjectPlacer, GridCoords)>,
 ) {
     let (grid_object_placer, grid_coords) = grid_object_placer.into_inner();
-    if grid_object_placer != &last_grid_object_placer.0 || grid_coords != &last_grid_object_placer.1 {
-        *last_grid_object_placer = (grid_object_placer.clone(), *grid_coords);
-        match grid_object_placer {
-            GridObjectPlacer::Building(building_type) => {
-                let building_info = almanach.get_building_info(*building_type);
-                if building_type.is_energy_supplier() { 
-                    overlay_config.secondary_mode = EnergySupplyOverlaySecondaryMode::PlacingSupplier{
-                        grid_coords: *grid_coords,
-                        grid_imprint: building_info.grid_imprint,
-                        range: building_info.baseline[&ModifierType::EnergySupplyRange] as usize,
-                    };
-                }
-                else if building_type.is_energy_consumer() {
-                    overlay_config.secondary_mode = EnergySupplyOverlaySecondaryMode::PlacingConsumer{
-                        grid_coords: *grid_coords,
-                        grid_imprint: building_info.grid_imprint,
-                    };
-                } else {
-                    overlay_config.secondary_mode = EnergySupplyOverlaySecondaryMode::None;
-                }
-            }
-            _ => {
-                overlay_config.secondary_mode = EnergySupplyOverlaySecondaryMode::None;
-            }
+    let map_object = grid_object_placer.map_object();
+    if let Some(MapObject::Building(building_type)) = map_object {
+        let building_info = almanach.get_building_info(building_type);
+        if building_type.is_energy_supplier() { 
+            overlay_config.secondary_mode = EnergySupplyOverlaySecondaryMode::PlacingSupplier{
+                grid_coords: *grid_coords,
+                grid_imprint: building_info.grid_imprint,
+                range: building_info.baseline[&ModifierType::EnergySupplyRange] as usize,
+            };
         }
+        else if building_type.is_energy_consumer() {
+            overlay_config.secondary_mode = EnergySupplyOverlaySecondaryMode::PlacingConsumer{
+                grid_coords: *grid_coords,
+                grid_imprint: building_info.grid_imprint,
+            };
+        } else {
+            overlay_config.secondary_mode = EnergySupplyOverlaySecondaryMode::None;
+        }
+    } else {
+        overlay_config.secondary_mode = EnergySupplyOverlaySecondaryMode::None;
     }
 }
 

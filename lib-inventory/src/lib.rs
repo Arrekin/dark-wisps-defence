@@ -4,6 +4,7 @@ pub mod resources;
 pub mod almanach;
 pub mod stats;
 pub mod modifiers;
+pub mod placement;
 
 pub struct LibInventoryPlugin;
 impl Plugin for LibInventoryPlugin {
@@ -33,6 +34,7 @@ pub mod lib_prelude {
     pub use bevy::platform::collections::HashMap;
 
     pub use lib_core::prelude::*;
+    pub use lib_grid::prelude::*;
     
     pub use super::prelude::*;
 }

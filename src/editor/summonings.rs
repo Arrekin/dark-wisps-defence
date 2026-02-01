@@ -3,7 +3,6 @@ use strum::IntoEnumIterator;
 
 use crate::prelude::*;
 use crate::wisps::summoning::{BuilderSummoning, EdgeSide, SpawnArea, SpawnTempo, Summoning};
-use crate::wisps::components::WispType;
 
 use super::EditorState;
 

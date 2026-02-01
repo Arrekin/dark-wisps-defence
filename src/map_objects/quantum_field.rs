@@ -20,13 +20,14 @@
 
 use bevy::color::palettes::css::{AQUA, BLUE, INDIGO};
 
+use lib_core::map_objects::QuantumField;
 use lib_grid::grids::obstacles::{ObstacleGrid, ReservedCoords};
 use lib_ui::prelude::*;
 
 use crate::prelude::*;
 use crate::map_objects::common::ExpeditionZone;
 use crate::ui::display_info_panel::{DisplayInfoPanel, DisplayPanelMainContentRoot, UiMapObjectFocusedTrigger};
-use crate::ui::grid_object_placer::{GridObjectPlacer, GridObjectPlacerRequest};
+use crate::ui::grid_object_placer::GridObjectPlacer;
 use crate::units::expedition_drone::{ExpeditionDrone, DroneState, ExpeditionDroneDeploymentRequest};
 
 
@@ -39,7 +40,6 @@ impl Plugin for QuantumFieldPlugin {
                 initialize_quantum_field_panel_content_system,
             ))
             .add_systems(Update, (
-                onclick_spawn_system.run_if(in_state(UiInteraction::PlaceGridObject)),
                 operate_arrows_for_grid_placer_ui_for_quantum_field_system,
                 process_expeditions_system.run_if(in_state(GameState::Running)),
                 (
@@ -52,58 +52,27 @@ impl Plugin for QuantumFieldPlugin {
             .add_observer(ArrowButton::on_add)
             .add_observer(QuantumFieldActionButton::on_add)
             .add_observer(on_ui_map_object_focus_changed_trigger)
+            .add_observer(on_quantum_field_place_request)
             .register_db_loader::<BuilderQuantumField>(MapLoadingStage::SpawnMapElements)
             .register_db_saver(BuilderQuantumField::on_game_save)
             ;
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub struct QuantumFieldImprintSelector(i32);
-impl QuantumFieldImprintSelector {
-    pub const MIN_IMPRINT_SIZE: i32 = 3;
-    pub const MAX_IMPRINT_SIZE: i32 = 6;
-    pub fn get_size(&self) -> i32 {
-        self.0
-    }
-    pub fn get(&self) -> GridImprint {
-        GridImprint::Rectangle { width: self.0, height: self.0 }
-    }
-    pub fn set(&mut self, new_size: i32) -> Result<(), String> {
-        if new_size >= Self::MIN_IMPRINT_SIZE && new_size <= Self::MAX_IMPRINT_SIZE {
-            self.0 = new_size;
-            Ok(())
-        } else {
-            Err(format!("Quantum field imprint size must be between {} and {}", Self::MIN_IMPRINT_SIZE, Self::MAX_IMPRINT_SIZE))
-        }
-    }
-    pub fn increase(&mut self) -> Result<(), String> {
-        self.set(self.0 + 1)
-    }
-    pub fn decrease(&mut self) -> Result<(), String> {
-        self.set(self.0 - 1)
-    }
-}
-impl Default for QuantumFieldImprintSelector {
-    fn default() -> Self {
-        Self(Self::MIN_IMPRINT_SIZE)
-    }
-}
 
 /// Marker for fully-solved QuantumFields. Removes ExpeditionZone to prevent further scanning.
 #[derive(Component)]
 struct Solved;
 
-/// Progressive obstacle requiring drone scanning to solve.
 /// Layers are defined at spawn time; current_layer indexes into the layers vec.
 #[derive(Component)]
-#[require(MapBound, ObstacleGridObject = ObstacleGridObject::QuantumField)]
-pub struct QuantumField {
+#[require(QuantumField)]
+pub struct QuantumFieldLayers {
     pub layers: Vec<QuantumFieldLayer>,
     pub current_layer: usize,        // index into layers; equals layers.len() when solved
     pub current_layer_progress: f32, // scan progress toward current layer's value
 }
-impl QuantumField {
+impl QuantumFieldLayers {
     pub fn progress_layer(&mut self, amount: f32) {
         if self.is_solved() { return; }
         self.current_layer_progress = (self.current_layer_progress + amount).min(self.layers[self.current_layer].value);
@@ -129,6 +98,7 @@ impl QuantumField {
         &self.layers[self.current_layer].costs
     }
 }
+
 
 /// A single layer requiring scan progress + resource payment to complete.
 pub struct QuantumFieldLayer {
@@ -212,7 +182,7 @@ impl BuilderQuantumField {
     
     fn on_game_save(
         mut commands: Commands,
-        quantum_fields: Query<(Entity, &GridCoords, &GridImprint, &QuantumField)>,
+        quantum_fields: Query<(Entity, &GridCoords, &GridImprint, &QuantumFieldLayers)>,
     ) {
         if quantum_fields.is_empty() { return; }
         println!("Creating batch of BuilderQuantumField for saving. {} items", quantum_fields.iter().count());
@@ -235,7 +205,7 @@ impl BuilderQuantumField {
         let entity = trigger.entity;
         let Ok(builder) = builders.get(entity) else { return; };
         
-        let mut quantum_field = QuantumField {
+        let mut quantum_field = QuantumFieldLayers {
             current_layer: 0,
             current_layer_progress: 0.0,
             layers: vec![
@@ -281,35 +251,29 @@ impl BuilderQuantumField {
     }
 }
 
-fn onclick_spawn_system(
+fn on_quantum_field_place_request(
+    _trigger: On<lib_core::placement::PlaceRequest<QuantumField>>,
     mut commands: Commands,
     mut reserved_coords: ResMut<ReservedCoords>,
     obstacles_grid: Res<ObstacleGrid>,
-    mouse: Res<ButtonInput<MouseButton>>,
-    mouse_info: Res<MouseInfo>,
-    grid_object_placer: Single<&GridObjectPlacer>,
+    placer: Single<(&GridObjectPlacer, &GridCoords, &GridImprint)>,
 ) {
-    let GridObjectPlacer::QuantumField(imprint_selector) = grid_object_placer.into_inner() else { return; };
-    let grid_imprint = imprint_selector.get();
-    let mouse_coords = mouse_info.grid_coords;
-    if mouse_info.is_over_ui || !mouse_coords.is_in_bounds(obstacles_grid.bounds()) { return; }
-    if mouse.pressed(MouseButton::Left) {
-        // Place a quantum_field
-        if obstacles_grid.query_imprint_all(mouse_coords, grid_imprint, |field| !field.is_within_quantum_field()) && !reserved_coords.any_reserved(mouse_coords, grid_imprint) {
-            commands.spawn(BuilderQuantumField::new(mouse_coords, grid_imprint));
-            reserved_coords.reserve(mouse_coords, grid_imprint);
-        }
-    } else if mouse.pressed(MouseButton::Right) {
-        // Remove a quantum_field
-        if let Some(entity) = obstacles_grid[mouse_coords].quantum_field {
-            commands.entity(entity).despawn();
-        }
+    let (grid_object_placer, coords, grid_imprint) = placer.into_inner();
+    let Some(active) = &grid_object_placer.active else { return };
+    if !matches!(active.map_object, MapObject::QuantumField) { return };
+    
+    if !coords.is_in_bounds(obstacles_grid.bounds()) { return; }
+    if obstacles_grid.query_imprint_all(*coords, *grid_imprint, |field| !field.is_within_quantum_field()) 
+        && !reserved_coords.any_reserved(*coords, *grid_imprint) 
+    {
+        commands.spawn(BuilderQuantumField::new(*coords, *grid_imprint));
+        reserved_coords.reserve(*coords, *grid_imprint);
     }
 }
 
 fn process_expeditions_system(
     mut commands: Commands,
-    mut quantum_fields: Query<(Entity, &mut QuantumField, &mut ExpeditionZone), (Changed<ExpeditionZone>, Without<Solved>)>,
+    mut quantum_fields: Query<(Entity, &mut QuantumFieldLayers, &mut ExpeditionZone), (Changed<ExpeditionZone>, Without<Solved>)>,
 ) {
     for (entity, mut quantum_field, mut expedition_zone) in quantum_fields.iter_mut() {
         if expedition_zone.accumulated_scan_progress > 0. {
@@ -318,6 +282,38 @@ fn process_expeditions_system(
                 commands.entity(entity).insert(Solved).remove::<ExpeditionZone>();
             }
         }
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct QuantumFieldImprintSelector(i32);
+impl QuantumFieldImprintSelector {
+    pub const MIN_IMPRINT_SIZE: i32 = 3;
+    pub const MAX_IMPRINT_SIZE: i32 = 6;
+    pub fn get_size(&self) -> i32 {
+        self.0
+    }
+    pub fn get(&self) -> GridImprint {
+        GridImprint::Rectangle { width: self.0, height: self.0 }
+    }
+    pub fn set(&mut self, new_size: i32) -> Result<(), String> {
+        if new_size >= Self::MIN_IMPRINT_SIZE && new_size <= Self::MAX_IMPRINT_SIZE {
+            self.0 = new_size;
+            Ok(())
+        } else {
+            Err(format!("Quantum field imprint size must be between {} and {}", Self::MIN_IMPRINT_SIZE, Self::MAX_IMPRINT_SIZE))
+        }
+    }
+    pub fn increase(&mut self) -> Result<(), String> {
+        self.set(self.0 + 1)
+    }
+    pub fn decrease(&mut self) -> Result<(), String> {
+        self.set(self.0 - 1)
+    }
+}
+impl Default for QuantumFieldImprintSelector {
+    fn default() -> Self {
+        Self(Self::MIN_IMPRINT_SIZE)
     }
 }
 
@@ -391,10 +387,10 @@ impl ArrowButton {
 
     fn on_click(
         trigger: On<Pointer<Click>>,
+        mut commands: Commands,
         ui: Single<(&Children, &mut GridPlacerUiForQuantumField)>,
         arrows: Query<&ArrowButton>,
         mut texts: Query<&mut Text>,
-        mut placer_request: ResMut<GridObjectPlacerRequest>,
     ) {
         let entity = trigger.entity;
         let (ui_children, mut grid_placer_ui) = ui.into_inner();
@@ -407,20 +403,31 @@ impl ArrowButton {
     
         let ui_text = grid_placer_ui.imprint_str();
         texts.get_mut(ui_children[1]).unwrap().0 = ui_text;
-        placer_request.set(GridObjectPlacer::QuantumField(grid_placer_ui.imprint_selector));
+        
+        // Request placer to update its imprint
+        let imprint = grid_placer_ui.imprint_selector.get();
+        commands.trigger(lib_core::placement::GridPlacerOverridePropertyRequest::OverrideImprint(imprint));
     }
 }
 
 pub fn operate_arrows_for_grid_placer_ui_for_quantum_field_system(
-    ui: Single<&mut Visibility, With<GridPlacerUiForQuantumField>>,
-    grid_object_placer: Single<&GridObjectPlacer>,
+    mut commands: Commands,
+    ui: Single<(&mut Visibility, &GridPlacerUiForQuantumField)>,
+    placer: Single<&GridObjectPlacer>,
+    mut was_active: Local<bool>,
 ) {
-    let mut visibility = ui.into_inner();
-    *visibility = if let GridObjectPlacer::QuantumField(_) = grid_object_placer.into_inner() {
-        Visibility::Inherited
-    } else {
-        Visibility::Hidden
-    };
+    let (mut visibility, selector_ui) = ui.into_inner();
+    let is_active = placer.map_object() == Some(MapObject::QuantumField);
+    
+    *visibility = if is_active { Visibility::Inherited } else { Visibility::Hidden };
+    
+    // On activation: sync placer imprint with selector's current value
+    if is_active && !*was_active {
+        let size = selector_ui.imprint_selector.get_size();
+        let imprint = GridImprint::Rectangle { width: size, height: size };
+        commands.trigger(lib_core::placement::GridPlacerOverridePropertyRequest::OverrideImprint(imprint));
+    }
+    *was_active = is_active;
 }
 
 ////////////////////////////////////////////
@@ -473,7 +480,7 @@ impl QuantumFieldActionButton {
         mut stock: ResMut<Stock>,
         display_info_panel: Single<&DisplayInfoPanel>,
         action_button: Single<&mut QuantumFieldActionButton>,
-        mut quantum_fields: Query<&mut QuantumField>,
+        mut quantum_fields: Query<&mut QuantumFieldLayers>,
         drones: Query<(Entity, &ExpeditionDrone, &DroneState)>,
     ) {
         let focused_entity = display_info_panel.into_inner().current_focus;
@@ -507,7 +514,7 @@ struct QuantumFieldActionButtonText;
 
 
 fn update_quantum_field_info_panel_system(
-    quantum_fields: Query<&QuantumField>,
+    quantum_fields: Query<&QuantumFieldLayers>,
     display_info_panel: Single<&DisplayInfoPanel>,
     action_button: Single<&mut QuantumFieldActionButton>,
     healthbar: Single<&mut Healthbar, With<QuantumFieldLayerHealthbar>>,
@@ -541,7 +548,7 @@ fn update_quantum_field_info_panel_system(
 fn on_ui_map_object_focus_changed_trigger(
     trigger: On<UiMapObjectFocusedTrigger>,
     mut commands: Commands,
-    quantum_fields: Query<&QuantumField>,
+    quantum_fields: Query<&QuantumFieldLayers>,
     quantum_field_panel: Single<&mut Node, With<QuantumFieldPanel>>,
     costs_container: Single<Entity, With<QuantumFieldLayerCostsContainer>>,
     costs_panels: Query<Entity, With<QuantumFieldLayerCostPanel>>,

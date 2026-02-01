@@ -1,4 +1,6 @@
-use crate::lib_prelude::*;
+use lib_core::{map_objects::{DarkOre, QuantumField, Wall}, placement::{PlaceRequest, RemoveRequest}};
+
+use crate::{lib_prelude::*, placement::{GridsCollection, ObjectPlacementInfo, PlacementMode, PlacementValidatorFn, PlacementValidationResult}};
 
 pub mod almanach_prelude {
     pub use super::{
@@ -56,6 +58,58 @@ impl Almanach {
         self.buildings.get_mut(&building_type)
             .expect(&format!("Building {building_type:?} not found in almanach"))
     }
+
+    /// Extracts generic ObjectPlacementInfo for any MapObject.
+    pub fn get_placement_info_for(&self, map_object: MapObject) -> ObjectPlacementInfo {
+        match map_object {
+            MapObject::Building(building_type) => {
+                let info = self.get_building_info(building_type);
+                ObjectPlacementInfo {
+                    imprint: info.grid_imprint,
+                    validate: info.validate,
+                    place_emitter: Box::new(info.place_request),
+                    remove_emitter: None,
+                    place_mode: PlacementMode::OnRelease,
+                    remove_mode: PlacementMode::OnRelease,
+                }
+            }
+            MapObject::Wall => ObjectPlacementInfo {
+                imprint: self.walls.grid_imprint,
+                validate: self.walls.validate,
+                place_emitter: Box::new(self.walls.place_request),
+                remove_emitter: Some(Box::new(self.walls.remove_request)),
+                place_mode: PlacementMode::OnPress,
+                remove_mode: PlacementMode::OnPress,
+            },
+            MapObject::DarkOre => ObjectPlacementInfo {
+                imprint: self.dark_ore.grid_imprint,
+                validate: self.dark_ore.validate,
+                place_emitter: Box::new(self.dark_ore.place_request),
+                remove_emitter: Some(Box::new(self.dark_ore.remove_request)),
+                place_mode: PlacementMode::OnPress,
+                remove_mode: PlacementMode::OnPress,
+            },
+            MapObject::QuantumField => ObjectPlacementInfo {
+                imprint: self.quantum_fields.default_imprint(),
+                validate: self.quantum_fields.validate,
+                place_emitter: Box::new(self.quantum_fields.place_request),
+                remove_emitter: None,
+                place_mode: PlacementMode::OnRelease,
+                remove_mode: PlacementMode::OnRelease,
+            },
+            MapObject::Wisp(_wisp_type) => {
+                // TODO: Add WispInfo to Almanach
+                ObjectPlacementInfo {
+                    imprint: GridImprint::Rectangle { width: 1, height: 1 },
+                    validate: |_, _, _| PlacementValidationResult::valid(),
+                    place_emitter: Box::new(PlaceRequest::<WispType>::default()),
+                    remove_emitter: None,
+                    place_mode: PlacementMode::OnRelease,
+                    remove_mode: PlacementMode::OnRelease,
+                }
+            }
+        }
+    }
 }
 
 impl Default for Almanach {
@@ -68,13 +122,44 @@ impl Default for Almanach {
 // BUILDING INFO
 // ============================================================================
 
-#[derive(Clone, Serialize, Deserialize)]
+fn building_validator(coords: GridCoords, imprint: GridImprint, map_data: &GridsCollection) -> PlacementValidationResult {
+    let MapObject::Building(building_type) = map_data.map_object else {
+        return PlacementValidationResult::invalid();
+    };
+    
+    // Bounds check
+    if !coords.is_imprint_in_bounds(&imprint, map_data.obstacle_grid.bounds()) {
+        return PlacementValidationResult::invalid();
+    }
+    
+    // Reserved check
+    if map_data.reserved_coords.any_reserved(coords, imprint) {
+        return PlacementValidationResult::invalid();
+    }
+    
+    // Obstacle check
+    if !map_data.obstacle_grid.query_building_placement(coords, building_type, imprint) {
+        return PlacementValidationResult::invalid();
+    }
+    
+    // Power check
+    let needs_power = !matches!(building_type, BuildingType::MainBase | BuildingType::EnergyRelay);
+    if needs_power && !map_data.energy_supply_grid.is_imprint_powered(coords, imprint) {
+        return PlacementValidationResult::valid_unpowered();
+    }
+    
+    PlacementValidationResult::valid()
+}
+
 pub struct BuildingInfo {
     pub name: String,
     pub grid_imprint: GridImprint,
     pub cost: Vec<Cost>,
     pub baseline: HashMap<ModifierType, f32>,
     pub upgrades: HashMap<UpgradeType, UpgradeInfo>,
+    // Placement data
+    pub validate: PlacementValidatorFn,
+    pub place_request: PlaceRequest<Building>,
 }
 
 impl BuildingInfo {
@@ -90,6 +175,8 @@ impl BuildingInfo {
                     (ModifierType::EnergySupplyRange, 15.),
                 ]),
                 upgrades: HashMap::default(),
+                validate: building_validator,
+                place_request: PlaceRequest::default(),
             },
             BuildingType::EnergyRelay => Self {
                 name: "Energy Relay".to_string(),
@@ -100,6 +187,8 @@ impl BuildingInfo {
                     (ModifierType::EnergySupplyRange, 12.),
                 ]),
                 upgrades: HashMap::default(),
+                validate: building_validator,
+                place_request: PlaceRequest::default(),
             },
             BuildingType::MiningComplex => Self {
                 name: "Mining Complex".to_string(),
@@ -109,6 +198,8 @@ impl BuildingInfo {
                     (ModifierType::MaxHealth, 100.),
                 ]),
                 upgrades: HashMap::default(),
+                validate: building_validator,
+                place_request: PlaceRequest::default(),
             },
             BuildingType::ExplorationCenter => Self {
                 name: "Exploration Center".to_string(),
@@ -118,6 +209,8 @@ impl BuildingInfo {
                     (ModifierType::MaxHealth, 100.),
                 ]),
                 upgrades: HashMap::default(),
+                validate: building_validator,
+                place_request: PlaceRequest::default(),
             },
             BuildingType::Tower(TowerType::Blaster) => Self {
                 name: "Blaster Tower".to_string(),
@@ -145,6 +238,8 @@ impl BuildingInfo {
                         ],
                     }),
                 ]),
+                validate: building_validator,
+                place_request: PlaceRequest::default(),
             },
             BuildingType::Tower(TowerType::Cannon) => Self {
                 name: "Cannon Tower".to_string(),
@@ -172,6 +267,8 @@ impl BuildingInfo {
                         ],
                     }),
                 ]),
+                validate: building_validator,
+                place_request: PlaceRequest::default(),
             },
             BuildingType::Tower(TowerType::RocketLauncher) => Self {
                 name: "Rocket Launcher Tower".to_string(),
@@ -199,6 +296,8 @@ impl BuildingInfo {
                         ],
                     }),
                 ]),
+                validate: building_validator,
+                place_request: PlaceRequest::default(),
             },
             BuildingType::Tower(TowerType::Emitter) => Self {
                 name: "Emitter Tower".to_string(),
@@ -226,6 +325,8 @@ impl BuildingInfo {
                         ],
                     }),
                 ]),
+                validate: building_validator,
+                place_request: PlaceRequest::default(),
             },
         }
     }
@@ -246,11 +347,27 @@ pub struct UpgradeLevelInfo {
 // WALL INFO
 // ============================================================================
 
-#[derive(Clone, Serialize, Deserialize)]
 pub struct WallInfo {
     pub name: String,
     pub grid_imprint: GridImprint,
     pub sprite_path: String,
+    // Placement data
+    pub validate: PlacementValidatorFn,
+    pub place_request: PlaceRequest<Wall>,
+    pub remove_request: RemoveRequest<Wall>,
+}
+
+fn wall_validator(coords: GridCoords, imprint: GridImprint, map_data: &GridsCollection) -> PlacementValidationResult {
+    if !coords.is_imprint_in_bounds(&imprint, map_data.obstacle_grid.bounds()) {
+        return PlacementValidationResult::invalid();
+    }
+    if map_data.reserved_coords.any_reserved(coords, imprint) {
+        return PlacementValidationResult::invalid();
+    }
+    if !map_data.obstacle_grid.query_imprint_all(coords, imprint, |f| f.is_empty()) {
+        return PlacementValidationResult::invalid();
+    }
+    PlacementValidationResult::valid()
 }
 
 impl Default for WallInfo {
@@ -259,6 +376,9 @@ impl Default for WallInfo {
             name: "Wall".to_string(),
             grid_imprint: GridImprint::Rectangle { width: 1, height: 1 },
             sprite_path: "map_objects/wall_4side.png".to_string(),
+            validate: wall_validator,
+            place_request: PlaceRequest::default(),
+            remove_request: RemoveRequest::default(),
         }
     }
 }
@@ -267,12 +387,28 @@ impl Default for WallInfo {
 // DARK ORE INFO
 // ============================================================================
 
-#[derive(Clone, Serialize, Deserialize)]
 pub struct DarkOreInfo {
     pub name: String,
     pub grid_imprint: GridImprint,
     pub sprite_paths: Vec<String>,
     pub default_amount: u32,
+    // Placement data
+    pub validate: PlacementValidatorFn,
+    pub place_request: PlaceRequest<DarkOre>,
+    pub remove_request: RemoveRequest<DarkOre>,
+}
+
+fn dark_ore_validator(coords: GridCoords, imprint: GridImprint, map_data: &GridsCollection) -> PlacementValidationResult {
+    if !coords.is_imprint_in_bounds(&imprint, map_data.obstacle_grid.bounds()) {
+        return PlacementValidationResult::invalid();
+    }
+    if map_data.reserved_coords.any_reserved(coords, imprint) {
+        return PlacementValidationResult::invalid();
+    }
+    if !map_data.obstacle_grid.query_imprint_all(coords, imprint, |f| f.is_empty()) {
+        return PlacementValidationResult::invalid();
+    }
+    PlacementValidationResult::valid()
 }
 
 impl Default for DarkOreInfo {
@@ -285,6 +421,9 @@ impl Default for DarkOreInfo {
                 "map_objects/dark_ore_2.png".to_string(),
             ],
             default_amount: 1000,
+            validate: dark_ore_validator,
+            place_request: PlaceRequest::default(),
+            remove_request: RemoveRequest::default(),
         }
     }
 }
@@ -293,12 +432,27 @@ impl Default for DarkOreInfo {
 // QUANTUM FIELD INFO
 // ============================================================================
 
-#[derive(Clone, Serialize, Deserialize)]
 pub struct QuantumFieldInfo {
     pub name: String,
     pub min_size: i32,
     pub max_size: i32,
     pub default_size: i32,
+    // Placement data
+    pub validate: PlacementValidatorFn,
+    pub place_request: PlaceRequest<QuantumField>,
+}
+
+fn quantum_field_validator(coords: GridCoords, imprint: GridImprint, map_data: &GridsCollection) -> PlacementValidationResult {
+    if !coords.is_imprint_in_bounds(&imprint, map_data.obstacle_grid.bounds()) {
+        return PlacementValidationResult::invalid();
+    }
+    if map_data.reserved_coords.any_reserved(coords, imprint) {
+        return PlacementValidationResult::invalid();
+    }
+    if !map_data.obstacle_grid.query_imprint_all(coords, imprint, |f| f.is_empty()) {
+        return PlacementValidationResult::invalid();
+    }
+    PlacementValidationResult::valid()
 }
 
 impl Default for QuantumFieldInfo {
@@ -308,6 +462,8 @@ impl Default for QuantumFieldInfo {
             min_size: 3,
             max_size: 6,
             default_size: 3,
+            validate: quantum_field_validator,
+            place_request: PlaceRequest::default(),
         }
     }
 }
