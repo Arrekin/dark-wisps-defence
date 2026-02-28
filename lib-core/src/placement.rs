@@ -22,90 +22,41 @@ pub enum GridPlacerOverridePropertyRequest {
 /// Generic placement request event. Domain observers listen for their specific T.
 #[derive(Event)]
 pub struct PlaceRequest<T>(PhantomData<T>);
-
-impl<T> Default for PlaceRequest<T> {
-    fn default() -> Self {
-        Self(PhantomData)
-    }
-}
-
-impl<T> Clone for PlaceRequest<T> {
-    fn clone(&self) -> Self {
-        Self(PhantomData)
-    }
-}
-
+impl<T> Default for PlaceRequest<T> {fn default() -> Self { Self(PhantomData) } }
+impl<T> Clone for PlaceRequest<T> {fn clone(&self) -> Self { *self } }
 impl<T> Copy for PlaceRequest<T> {}
 
 /// Generic removal request event. Domain observers listen for their specific T.
 #[derive(Event)]
 pub struct RemoveRequest<T>(PhantomData<T>);
-
-impl<T> Default for RemoveRequest<T> {
-    fn default() -> Self {
-        Self(PhantomData)
-    }
-}
-
-impl<T> Clone for RemoveRequest<T> {
-    fn clone(&self) -> Self {
-        Self(PhantomData)
-    }
-}
-
+impl<T> Default for RemoveRequest<T> {fn default() -> Self { Self(PhantomData) } }
+impl<T> Clone for RemoveRequest<T> {fn clone(&self) -> Self { *self } }
 impl<T> Copy for RemoveRequest<T> {}
 
 /// Generic event emitted when placement mode begins for a type.
 /// Used by domains that need setup UI (e.g., QuantumField size selector).
 #[derive(Event)]
 pub struct BeginPlacing<T>(PhantomData<T>);
-
-impl<T> Default for BeginPlacing<T> {
-    fn default() -> Self {
-        Self(PhantomData)
-    }
-}
-
-impl<T> Clone for BeginPlacing<T> {
-    fn clone(&self) -> Self {
-        Self(PhantomData)
-    }
-}
-
+impl<T> Default for BeginPlacing<T> {fn default() -> Self { Self(PhantomData) } }
+impl<T> Clone for BeginPlacing<T> {fn clone(&self) -> Self { *self } }
 impl<T> Copy for BeginPlacing<T> {}
 
 /// Trait for dynamic event dispatch. Stored as `Box<dyn PlacementEmitter>` in ObjectPlacementInfo.
 pub trait PlacementEmitter: Send + Sync {
-    fn emit(self: Box<Self>, commands: &mut Commands);
-    fn clone_box(&self) -> Box<dyn PlacementEmitter>;
+    fn emit(&self, commands: &mut Commands);
 }
-
 impl<T: Send + Sync + 'static> PlacementEmitter for PlaceRequest<T> {
-    fn emit(self: Box<Self>, commands: &mut Commands) {
+    fn emit(&self, commands: &mut Commands) {
         commands.trigger(*self);
     }
-
-    fn clone_box(&self) -> Box<dyn PlacementEmitter> {
-        Box::new(*self)
-    }
 }
-
 impl<T: Send + Sync + 'static> PlacementEmitter for RemoveRequest<T> {
-    fn emit(self: Box<Self>, commands: &mut Commands) {
+    fn emit(&self, commands: &mut Commands) {
         commands.trigger(*self);
-    }
-
-    fn clone_box(&self) -> Box<dyn PlacementEmitter> {
-        Box::new(*self)
     }
 }
-
 impl<T: Send + Sync + 'static> PlacementEmitter for BeginPlacing<T> {
-    fn emit(self: Box<Self>, commands: &mut Commands) {
+    fn emit(&self, commands: &mut Commands) {
         commands.trigger(*self);
-    }
-
-    fn clone_box(&self) -> Box<dyn PlacementEmitter> {
-        Box::new(*self)
     }
 }

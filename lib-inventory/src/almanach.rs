@@ -183,7 +183,7 @@ impl From<&BuildingInfo> for ObjectPlacementInfo {
             validate: info.validate,
             place_emitter: Box::new(PlaceRequest::<Building>::default()),
             remove_emitter: None,
-            begin_placing_emitter: Some(Box::new(BeginPlacing::<Building>::default())),
+            begin_placing_emitter: None,
             place_mode: PlacementMode::OnRelease,
             remove_mode: PlacementMode::OnRelease,
         }
@@ -221,7 +221,7 @@ impl From<&WallInfo> for ObjectPlacementInfo {
             validate: info.validate,
             place_emitter: Box::new(PlaceRequest::<Wall>::default()),
             remove_emitter: Some(Box::new(RemoveRequest::<Wall>::default())),
-            begin_placing_emitter: Some(Box::new(BeginPlacing::<Wall>::default())),
+            begin_placing_emitter: None,
             place_mode: PlacementMode::OnPress,
             remove_mode: PlacementMode::OnPress,
         }
@@ -248,7 +248,7 @@ impl From<&DarkOreInfo> for ObjectPlacementInfo {
             validate: info.validate,
             place_emitter: Box::new(PlaceRequest::<DarkOre>::default()),
             remove_emitter: Some(Box::new(RemoveRequest::<DarkOre>::default())),
-            begin_placing_emitter: Some(Box::new(BeginPlacing::<DarkOre>::default())),
+            begin_placing_emitter: None,
             place_mode: PlacementMode::OnPress,
             remove_mode: PlacementMode::OnPress,
         }

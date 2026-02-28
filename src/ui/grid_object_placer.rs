@@ -211,10 +211,10 @@ fn on_click_place_system(
     };
 
     if should_place {
-        active_placement.placement_info.place_emitter.clone_box().emit(&mut commands);
+        active_placement.placement_info.place_emitter.emit(&mut commands);
     } else if should_remove {
         if let Some(remove_emitter) = &active_placement.placement_info.remove_emitter {
-            remove_emitter.clone_box().emit(&mut commands);
+            remove_emitter.emit(&mut commands);
         }
     }
 }

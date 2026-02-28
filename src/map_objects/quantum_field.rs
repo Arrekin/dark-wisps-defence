@@ -695,8 +695,6 @@ fn initialize_quantum_field_panel_content_system(
                             border: UiRect::all(Val::Px(2.0)),
                             ..default()
                         },
-                        //BackgroundColor::from(Color::linear_rgba(0., 0., 0., 0.)),
-                        //BorderColor::from(Color::linear_rgba(0., 0.2, 1., 1.)),
                         children![
                             (
                                 Node {
