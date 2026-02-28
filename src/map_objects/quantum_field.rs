@@ -71,7 +71,7 @@ impl Plugin for QuantumFieldPlugin {
 
 /// Marker for fully-solved QuantumFields. Removes ExpeditionZone to prevent further scanning.
 #[derive(Component)]
-struct Solved;
+pub struct Solved;
 
 /// Layers are defined at spawn time; current_layer indexes into the layers vec.
 #[derive(Component)]

@@ -142,7 +142,6 @@ impl BuilderExplorationCenter {
         exploration_centers: Query<(Entity, &GridCoords, &Health, Has<DisabledByPlayer>), With<ExplorationCenter>>,
     ) {
         if exploration_centers.is_empty() { return; }
-        println!("Creating batch of BuilderExplorationCenter for saving. {} items", exploration_centers.iter().count());
         let batch = exploration_centers.iter().map(|(entity, coords, health, disabled_by_player)| {
             let save_data = ExplorationCenterSaveData {
                 entity,
@@ -151,6 +150,7 @@ impl BuilderExplorationCenter {
             };
             BuilderExplorationCenter::new_for_saving(*coords, save_data)
         }).collect::<SaveableBatchCommand<_>>();
+        println!("Creating batch of BuilderExplorationCenter for saving. {} items", batch.len());
         commands.queue(batch);
     }
 

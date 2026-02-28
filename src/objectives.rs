@@ -1,10 +1,11 @@
 use std::str::FromStr;
 use strum::{AsRefStr, EnumString};
 
-use crate::map_objects::quantum_field::QuantumFieldLayers;
-use crate::prelude::*;
-
+use lib_core::map_objects::QuantumField;
 use lib_inventory::stats::StatsWispsKilled;
+
+use crate::map_objects::quantum_field::Solved;
+use crate::prelude::*;
 
 pub struct ObjectivesPlugin;
 impl Plugin for ObjectivesPlugin {
@@ -84,7 +85,6 @@ impl BuilderObjective {
         )>,
     ) {
         if objectives.is_empty() { return; }
-        println!("Creating batch of BuilderObjective for saving. {} items", objectives.iter().count());
         let batch = objectives.iter().map(|(entity, details, state, kill_wisps)| {
             let kill_wisps_data = kill_wisps.map(|kw| (kw.target_amount, kw.started_amount));
 
@@ -95,6 +95,7 @@ impl BuilderObjective {
             };
             BuilderObjective::new_for_saving(details.clone(), save_data)
         }).collect::<SaveableBatchCommand<_>>();
+        println!("Creating batch of BuilderObjective for saving. {} items", batch.len());
         commands.queue(batch);
     }
 
@@ -348,23 +349,25 @@ impl ObjectiveClearAllQuantumFields {
             text.0 = format!("Clear All Quantum Fields: 0/?");
         }
     }
-    // TODO: make it trigger only on quantum fieds change event
+    // TODO: make it trigger only on quantum fields change event
     fn update(
         mut commands: Commands,
         mut objectives: Query<(Entity, &Objective, &mut ObjectiveClearAllQuantumFields, &ObjectiveState)>,
-        quantum_fields: Query<&QuantumFieldLayers>,
+        quantum_fields: Query<(), With<QuantumField>>,
+        solved_fields: Query<(), (With<QuantumField>, With<Solved>)>,
         mut texts: Query<&mut Text, With<ObjectiveText>>,
     ) {
         for (objective_entity, objective, mut objective_clear_all_quantum_fields, state) in &mut objectives {
             if !matches!(state, ObjectiveState::InProgress) { continue; }
-            
-            objective_clear_all_quantum_fields.completed_quantum_fields = 0;
-            let total_quantum_fields = quantum_fields.iter().count();
+
+            let total = quantum_fields.iter().count();
+            let completed = solved_fields.iter().count();
+            objective_clear_all_quantum_fields.completed_quantum_fields = completed;
 
             let mut text = texts.get_mut(objective.text).unwrap();
-            text.0 = format!("Clear All Quantum Fields: {}/{}", objective_clear_all_quantum_fields.completed_quantum_fields, total_quantum_fields);
+            text.0 = format!("Clear All Quantum Fields: {}/{}", completed, total);
 
-            if objective_clear_all_quantum_fields.completed_quantum_fields == total_quantum_fields {
+            if total > 0 && completed == total {
                 commands.entity(objective_entity).insert(ObjectiveState::Completed);
             }
         }

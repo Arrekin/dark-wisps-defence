@@ -234,7 +234,7 @@ fn on_obstacle_grid_object_removed(
 }
 
 // When placing objects on map sometimes we want to reserve space so the state can be changed async later while ensuring that no other object can be placed there in parallel systems.
-// This resourvation are cleared in the Firs schedule of the following frame.
+// These reservations are cleared in the First schedule of the following frame.
 #[derive(Resource, Default)]
 pub struct ReservedCoords {
     pub for_structures: HashSet<GridCoords>,

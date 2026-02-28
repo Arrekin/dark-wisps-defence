@@ -74,9 +74,9 @@ impl From<(i32, i32)> for GridCoords {
         }
     }
 }
-impl Into<(i32, i32)> for GridCoords {
-    fn into(self) -> (i32, i32) {
-        (self.x, self.y)
+impl From<GridCoords> for (i32, i32) {
+    fn from(coords: GridCoords) -> Self {
+        (coords.x, coords.y)
     }
 }
 

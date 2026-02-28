@@ -98,7 +98,6 @@ impl BuilderMiningComplex {
         mining_complexes: Query<(Entity, &GridCoords, &Health, Has<DisabledByPlayer>), With<MiningComplex>>,
     ) {
         if mining_complexes.is_empty() { return; }
-        println!("Creating batch of BuilderMiningComplex for saving. {} items", mining_complexes.iter().count());
         let batch = mining_complexes.iter().map(|(entity, coords, health, disabled_by_player)| {
             let save_data = MiningComplexSaveData {
                 entity,
@@ -107,6 +106,7 @@ impl BuilderMiningComplex {
             };
             BuilderMiningComplex::new_for_saving(*coords, save_data)
         }).collect::<SaveableBatchCommand<_>>();
+        println!("Creating batch of BuilderMiningComplex for saving. {} items", batch.len());
         commands.queue(batch);
     }
 

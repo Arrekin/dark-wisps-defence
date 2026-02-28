@@ -46,6 +46,7 @@ impl<T: Saveable> SaveableBatchCommand<T> {
     pub fn from_single(item: T) -> Self {
         Self { data: vec![item] }
     }
+    pub fn len(&self) -> usize { self.data.len() }
 }
 impl<T: Saveable> FromIterator<T> for SaveableBatchCommand<T> {
     fn from_iter<I: IntoIterator<Item=T>>(iter: I) -> Self {

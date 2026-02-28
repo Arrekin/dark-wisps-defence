@@ -97,7 +97,7 @@ pub struct EnergySupplyField {
 }
 impl EnergySupplyField {
     // Only checks if there is any supplier, not if it has power
-    pub fn has_supply(&self) -> bool { self.suppliers.len() > 0 }
+    pub fn has_supply(&self) -> bool { !self.suppliers.is_empty() }
     pub fn add_supplier(&mut self, supplier: Entity) { self.suppliers.insert(supplier); }
     pub fn remove_supplier(&mut self, supplier: Entity) { self.suppliers.remove(&supplier); }
     pub fn has_supplier(&self, supplier: Entity) -> bool { self.suppliers.contains(&supplier) }

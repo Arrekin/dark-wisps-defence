@@ -9,7 +9,8 @@ pub struct TowerBlasterPlugin;
 impl Plugin for TowerBlasterPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_observer(BuilderTowerBlaster::on_add).add_systems(Update, (
+            .add_observer(BuilderTowerBlaster::on_add)
+            .add_systems(Update, (
                 shooting_system.run_if(in_state(GameState::Running)),
             ))
             .register_db_loader::<BuilderTowerBlaster>(MapLoadingStage::SpawnMapElements)

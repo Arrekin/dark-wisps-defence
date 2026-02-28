@@ -126,7 +126,7 @@ impl Stock {
         let info = self.get_info_mut(resource_type);
         if info.amount < amount { return false; }
         info.amount = info.amount - amount;
-        self.add_delta(resource_type, amount);
+        self.add_delta(resource_type, -amount);
         true
     }
     fn get_info(&self, resource_type: ResourceType) -> &StockInfo {

@@ -39,7 +39,7 @@ pub enum MapObject {
     Wisp(WispType),
 }
 
-// Event that carries yaml-define or constant events 
+// Event that carries string-identified or constant game events
 #[derive(Event)]
 pub struct DynamicGameEvent(pub String);
 impl DynamicGameEvent {
@@ -48,12 +48,7 @@ impl DynamicGameEvent {
 
 // Component for entities that are bound to the map and shall be removed on its change
 #[derive(Component, Default)]
-pub struct MapBound; 
-
-// Marker for tasks to be performed during MapLoading. 
-// TODO: Remove once old loading method is gone
-#[derive(Component, Default)]
-pub struct MapLoadingTask;
+pub struct MapBound;
 
 #[derive(Component)]
 pub struct Health {

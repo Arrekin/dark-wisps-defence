@@ -672,7 +672,7 @@ impl BuilderExpeditionDrone {
     }
     fn new_for_saving(drone: &ExpeditionDrone, drone_state: &DroneState, home_base: Entity, fuel: &DroneFuel, transform: &Transform, entity: Entity) -> Self {
         Self {
-            home_base: home_base,
+            home_base,
             save_data: Some(DroneSaveData {
                 entity,
                 state: *drone_state,

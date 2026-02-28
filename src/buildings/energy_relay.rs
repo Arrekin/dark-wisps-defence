@@ -95,7 +95,6 @@ impl BuilderEnergyRelay {
         relays: Query<(Entity, &GridCoords, &Health, Has<DisabledByPlayer>), With<EnergyRelay>>,
     ) {
         if relays.is_empty() { return; }
-        println!("Creating batch of BuilderEnergyRelay for saving. {} items", relays.iter().count());
         let batch = relays.iter().map(|(entity, coords, health, disabled_by_player)| {
             let save_data = EnergyRelaySaveData {
                 entity,
@@ -104,6 +103,7 @@ impl BuilderEnergyRelay {
             };
             BuilderEnergyRelay::new_for_saving(*coords, save_data)
         }).collect::<SaveableBatchCommand<_>>();
+        println!("Creating batch of BuilderEnergyRelay for saving. {} items", batch.len());
         commands.queue(batch);
     }
 

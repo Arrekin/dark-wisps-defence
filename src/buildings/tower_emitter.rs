@@ -7,7 +7,8 @@ pub struct TowerEmitterPlugin;
 impl Plugin for TowerEmitterPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_observer(BuilderTowerEmitter::on_add).add_systems(Update, (
+            .add_observer(BuilderTowerEmitter::on_add)
+            .add_systems(Update, (
                 shooting_system.run_if(in_state(GameState::Running)),
             ))
             .register_db_loader::<BuilderTowerEmitter>(MapLoadingStage::SpawnMapElements)

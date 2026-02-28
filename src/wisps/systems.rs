@@ -170,7 +170,11 @@ pub fn wisp_charge_attack(
     }
 }
 
-// For wisps not having any attack defined
+// Fallback damage for wisps that finish their path while still in MovingToTarget (no ranged attack swapped them
+// to Attacking before arrival). Safe to run alongside wisp_charge_attack since that system only acts on
+// Attacking-state wisps; the two systems handle disjoint wisp states. Stop using this for attack types that
+// require contact to trigger (i.e. melee-first attacks that should start in MovingToTarget) — at that point
+// a proper Attacking-state transition needs to be defined per wisp type.
 pub fn collide_wisps(
     mut commands: Commands,
     wisps: Query<(Entity, &WispState, &GridPath, &Health, &Transform, &GridCoords), (With<Wisp>, Without<Building>)>,

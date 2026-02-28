@@ -122,7 +122,7 @@ Reads from database and inserts builder components on pre-allocated entities. Re
 
 ### `GameDbHelpers`
 
-Extension trait on `rusqlite::Connection` providing reusable save/load operations for common data types. Check `lib-core/src/persistance/common.rs` for available helpers.
+Extension trait on `rusqlite::Connection` providing reusable save/load operations for common data types. Check `lib-core/src/persistence/common.rs` for available helpers.
 
 ## Adding a New Persistable Entity
 
@@ -252,6 +252,6 @@ Since all saves are already at the final schema state, re-running V1 with `IF NO
 
 ## File Locations
 
-- `lib-core/src/persistance/` - Core infrastructure (traits, executor, registry)
+- `lib-core/src/persistence/` - Core infrastructure (traits, executor, registry)
 - `lib-core/migrations/` - SQLite schema migrations
 - `lib-core/src/states.rs` - `MapLoadingStage` definitions
