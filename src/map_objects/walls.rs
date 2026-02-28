@@ -133,8 +133,8 @@ fn on_wall_place_request(
     placer: Single<(&GridObjectPlacer, &GridCoords, &GridImprint)>,
 ) {
     let (grid_object_placer, coords, grid_imprint) = placer.into_inner();
-    let Some(active) = &grid_object_placer.active else { return };
-    if !matches!(active.map_object, MapObject::Wall) { return };
+    let Some(active_placement) = &grid_object_placer.active_placement else { return };
+    if !matches!(active_placement.map_object, MapObject::Wall) { return };
     
     if !coords.is_in_bounds(obstacle_grid.bounds()) { return; }
     if obstacle_grid[*coords].is_empty() && !reserved_coords.any_reserved(*coords, *grid_imprint) {

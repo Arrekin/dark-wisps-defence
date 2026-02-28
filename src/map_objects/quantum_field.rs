@@ -53,6 +53,7 @@ impl Plugin for QuantumFieldPlugin {
             .add_observer(QuantumFieldActionButton::on_add)
             .add_observer(on_ui_map_object_focus_changed_trigger)
             .add_observer(on_quantum_field_place_request)
+            .add_observer(on_quantum_field_remove_request)
             .register_db_loader::<BuilderQuantumField>(MapLoadingStage::SpawnMapElements)
             .register_db_saver(BuilderQuantumField::on_game_save)
             ;
@@ -259,8 +260,8 @@ fn on_quantum_field_place_request(
     placer: Single<(&GridObjectPlacer, &GridCoords, &GridImprint)>,
 ) {
     let (grid_object_placer, coords, grid_imprint) = placer.into_inner();
-    let Some(active) = &grid_object_placer.active else { return };
-    if !matches!(active.map_object, MapObject::QuantumField) { return };
+    let Some(active_placement) = &grid_object_placer.active_placement else { return };
+    if !matches!(active_placement.map_object, MapObject::QuantumField) { return };
     
     if !coords.is_in_bounds(obstacles_grid.bounds()) { return; }
     if obstacles_grid.query_imprint_all(*coords, *grid_imprint, |field| !field.is_within_quantum_field()) 
@@ -268,6 +269,18 @@ fn on_quantum_field_place_request(
     {
         commands.spawn(BuilderQuantumField::new(*coords, *grid_imprint));
         reserved_coords.reserve(*coords, *grid_imprint);
+    }
+}
+
+fn on_quantum_field_remove_request(
+    _trigger: On<lib_core::placement::RemoveRequest<QuantumField>>,
+    mut commands: Commands,
+    obstacles_grid: Res<ObstacleGrid>,
+    placer: Single<&GridCoords, With<GridObjectPlacer>>,
+) {
+    let coords = placer.into_inner();
+    if let Some(entity) = obstacles_grid[*coords].quantum_field {
+        commands.entity(entity).despawn();
     }
 }
 

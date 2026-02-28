@@ -93,7 +93,7 @@ impl Almanach {
                 imprint: self.quantum_fields.default_imprint(),
                 validate: self.quantum_fields.validate,
                 place_emitter: Box::new(self.quantum_fields.place_request),
-                remove_emitter: None,
+                remove_emitter: Some(Box::new(self.quantum_fields.remove_request)),
                 place_mode: PlacementMode::OnRelease,
                 remove_mode: PlacementMode::OnRelease,
             },
@@ -101,11 +101,11 @@ impl Almanach {
                 // TODO: Add WispInfo to Almanach
                 ObjectPlacementInfo {
                     imprint: GridImprint::Rectangle { width: 1, height: 1 },
-                    validate: |_, _, _| PlacementValidationResult::valid(),
+                    validate: |_, _, _, _| PlacementValidationResult::valid(),
                     place_emitter: Box::new(PlaceRequest::<WispType>::default()),
-                    remove_emitter: None,
-                    place_mode: PlacementMode::OnRelease,
-                    remove_mode: PlacementMode::OnRelease,
+                    remove_emitter: Some(Box::new(RemoveRequest::<WispType>::default())),
+                    place_mode: PlacementMode::OnPress,
+                    remove_mode: PlacementMode::OnPress,
                 }
             }
         }
@@ -122,8 +122,8 @@ impl Default for Almanach {
 // BUILDING INFO
 // ============================================================================
 
-fn building_validator(coords: GridCoords, imprint: GridImprint, map_data: &GridsCollection) -> PlacementValidationResult {
-    let MapObject::Building(building_type) = map_data.map_object else {
+fn building_validator(map_object: MapObject, coords: GridCoords, imprint: GridImprint, map_data: &GridsCollection) -> PlacementValidationResult {
+    let MapObject::Building(building_type) = map_object else {
         return PlacementValidationResult::invalid();
     };
     
@@ -357,7 +357,7 @@ pub struct WallInfo {
     pub remove_request: RemoveRequest<Wall>,
 }
 
-fn wall_validator(coords: GridCoords, imprint: GridImprint, map_data: &GridsCollection) -> PlacementValidationResult {
+fn wall_validator(_map_object: MapObject, coords: GridCoords, imprint: GridImprint, map_data: &GridsCollection) -> PlacementValidationResult {
     if !coords.is_imprint_in_bounds(&imprint, map_data.obstacle_grid.bounds()) {
         return PlacementValidationResult::invalid();
     }
@@ -398,7 +398,7 @@ pub struct DarkOreInfo {
     pub remove_request: RemoveRequest<DarkOre>,
 }
 
-fn dark_ore_validator(coords: GridCoords, imprint: GridImprint, map_data: &GridsCollection) -> PlacementValidationResult {
+fn dark_ore_validator(_map_object: MapObject, coords: GridCoords, imprint: GridImprint, map_data: &GridsCollection) -> PlacementValidationResult {
     if !coords.is_imprint_in_bounds(&imprint, map_data.obstacle_grid.bounds()) {
         return PlacementValidationResult::invalid();
     }
@@ -440,9 +440,10 @@ pub struct QuantumFieldInfo {
     // Placement data
     pub validate: PlacementValidatorFn,
     pub place_request: PlaceRequest<QuantumField>,
+    pub remove_request: RemoveRequest<QuantumField>,
 }
 
-fn quantum_field_validator(coords: GridCoords, imprint: GridImprint, map_data: &GridsCollection) -> PlacementValidationResult {
+fn quantum_field_validator(_map_object: MapObject, coords: GridCoords, imprint: GridImprint, map_data: &GridsCollection) -> PlacementValidationResult {
     if !coords.is_imprint_in_bounds(&imprint, map_data.obstacle_grid.bounds()) {
         return PlacementValidationResult::invalid();
     }
@@ -464,6 +465,7 @@ impl Default for QuantumFieldInfo {
             default_size: 3,
             validate: quantum_field_validator,
             place_request: PlaceRequest::default(),
+            remove_request: RemoveRequest::default(),
         }
     }
 }

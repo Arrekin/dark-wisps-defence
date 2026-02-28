@@ -5,12 +5,12 @@ edition = "2024"
 
 [dependencies]
 bevy = { version = "0.18.*", default-features = false, features = ["dynamic_linking", "2d"] }
-bevy_egui = "0.39"
-bytemuck = { version = "1.24.*", features = ["derive"] }
+bevy_egui = "0.39.*"
+bytemuck = { version = "1.25.*", features = ["derive"] }
 nanorand = "0.7.0"
 serde = "1.0.*"
 serde_json = "1.0.*"
-strum = { version = "0.27.*", features = ["derive"] }
+strum = { version = "0.28.*", features = ["derive"] }
 
 [dependencies.lib-core]
 path = "lib-core"

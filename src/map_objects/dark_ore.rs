@@ -150,8 +150,8 @@ fn on_dark_ore_place_request(
     placer: Single<(&GridObjectPlacer, &GridCoords, &GridImprint)>,
 ) {
     let (grid_object_placer, coords, grid_imprint) = placer.into_inner();
-    let Some(active) = &grid_object_placer.active else { return };
-    if !matches!(active.map_object, MapObject::DarkOre) { return };
+    let Some(active_placement) = &grid_object_placer.active_placement else { return };
+    if !matches!(active_placement.map_object, MapObject::DarkOre) { return };
     
     if !coords.is_in_bounds(obstacle_grid.bounds()) { return; }
     if obstacle_grid.query_imprint_all(*coords, *grid_imprint, |field| !field.has_dark_ore()) 

@@ -179,11 +179,28 @@ pub fn on_wisp_place_request(
     placer: Single<(&GridObjectPlacer, &GridCoords, &GridImprint)>,
 ) {
     let (grid_object_placer, coords, grid_imprint) = placer.into_inner();
-    let Some(active) = &grid_object_placer.active else { return };
-    let MapObject::Wisp(wisp_type) = active.map_object else { return };
+    let Some(active_placement) = &grid_object_placer.active_placement else { return };
+    let MapObject::Wisp(wisp_type) = active_placement.map_object else { return };
     
     if !coords.is_in_bounds(obstacle_grid.bounds()) { return; }
     if obstacle_grid.query_imprint_all(*coords, *grid_imprint, |field| field.is_empty()) {
         commands.spawn(BuilderWisp::new(wisp_type, *coords));
+    }
+}
+
+pub fn on_wisp_remove_request(
+    _trigger: On<lib_core::placement::RemoveRequest<WispType>>,
+    mut commands: Commands,
+    mut wisps_grid: ResMut<WispsGrid>,
+    placer: Single<&GridCoords, With<GridObjectPlacer>>,
+    wisps: Query<Entity, With<Wisp>>,
+) {
+    let coords = placer.into_inner();
+    let wisp_entities = wisps_grid[*coords].clone();
+    for wisp_entity in wisp_entities {
+        if wisps.contains(wisp_entity) {
+            wisps_grid.wisp_remove(*coords, wisp_entity);
+            commands.entity(wisp_entity).despawn();
+        }
     }
 }

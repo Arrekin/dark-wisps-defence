@@ -50,12 +50,12 @@ pub struct ActivePlacement {
 #[derive(Component, Default)]
 #[require(GridImprint, GridCoords, Sprite, ZDepth = ZDepth(10.), AutoGridTransformSync)]
 pub struct GridObjectPlacer {
-    pub active: Option<ActivePlacement>,
+    pub active_placement: Option<ActivePlacement>,
 }
 
 impl GridObjectPlacer {
     pub fn map_object(&self) -> Option<MapObject> {
-        self.active.as_ref().map(|a| a.map_object)
+        self.active_placement.as_ref().map(|a| a.map_object)
     }
 
     fn follow_mouse_system(
@@ -95,15 +95,14 @@ impl GridObjectPlacer {
         placer: Single<(&mut Sprite, &GridObjectPlacer, &GridImprint, &GridCoords)>,
     ) {
         let (mut sprite, grid_object_placer, grid_imprint, grid_coords) = placer.into_inner();
-        let Some(active) = &grid_object_placer.active else { return; };
+        let Some(active_placement) = &grid_object_placer.active_placement else { return; };
         // run validation
         let map_data = GridsCollection {
-            map_object: active.map_object,
             obstacle_grid: &*obstacle_grid,
             energy_supply_grid: &*energy_supply_grid,
             reserved_coords: &*reserved_coords,
         };
-        let result = (active.placement_info.validate)(*grid_coords, *grid_imprint, &map_data);
+        let result = (active_placement.placement_info.validate)(active_placement.map_object, *grid_coords, *grid_imprint, &map_data);
         sprite.color = result.color;
     }
 }
@@ -121,7 +120,7 @@ fn on_placing_exit_system(
 ) {
     let (mut visibility, mut placer) = placer.into_inner();
     *visibility = Visibility::Hidden;
-    placer.active = None;
+    placer.active_placement = None;
 }
 
 fn keyboard_input_system(
@@ -168,9 +167,9 @@ fn on_request_grid_object_placer_system(
     *grid_imprint = placement_info.imprint;
     sprite.custom_size = Some(grid_imprint.world_size());
     
-    grid_object_placer.active = Some(ActivePlacement {map_object, placement_info});
+    grid_object_placer.active_placement = Some(ActivePlacement {map_object, placement_info});
     
-    // Only change state if not already in PlaceGridObject (avoid re-entry clearing active and the blink effect when it gets hidden for a frame)
+    // Only change state if not already in PlaceGridObject (avoid re-entry clearing active_placement and the blink effect when it gets hidden for a frame)
     if *current_state.get() != UiInteraction::PlaceGridObject {
         ui_interaction_state.set(UiInteraction::PlaceGridObject);
     }
@@ -186,22 +185,22 @@ fn on_click_place_system(
     // Block clicks through UI
     if mouse_info.is_over_ui { return; }
     
-    let Some(ref active) = placer.active else { return };
+    let Some(ref active_placement) = placer.active_placement else { return };
     
     // Check placement mode for place/remove
-    let should_place = match active.placement_info.place_mode {
+    let should_place = match active_placement.placement_info.place_mode {
         PlacementMode::OnRelease => mouse.just_released(MouseButton::Left),
         PlacementMode::OnPress => mouse.pressed(MouseButton::Left),
     };
-    let should_remove = match active.placement_info.remove_mode {
+    let should_remove = match active_placement.placement_info.remove_mode {
         PlacementMode::OnRelease => mouse.just_released(MouseButton::Right),
         PlacementMode::OnPress => mouse.pressed(MouseButton::Right),
     };
     
     if should_place {
-        active.placement_info.place_emitter.clone_box().emit(&mut commands);
+        active_placement.placement_info.place_emitter.clone_box().emit(&mut commands);
     } else if should_remove {
-        if let Some(remove_emitter) = &active.placement_info.remove_emitter {
+        if let Some(remove_emitter) = &active_placement.placement_info.remove_emitter {
             remove_emitter.clone_box().emit(&mut commands);
         }
     }

@@ -47,8 +47,8 @@ fn on_building_place_request(
     main_base: Query<Entity, With<MainBase>>,
 ) {
     let (grid_object_placer, coords, grid_imprint) = placer.into_inner();
-    let Some(active) = &grid_object_placer.active else { return };
-    let MapObject::Building(building_type) = active.map_object else { return };
+    let Some(active_placement) = &grid_object_placer.active_placement else { return };
+    let MapObject::Building(building_type) = active_placement.map_object else { return };
     
     // Full validation
     if !coords.is_imprint_in_bounds(grid_imprint, obstacle_grid.bounds())

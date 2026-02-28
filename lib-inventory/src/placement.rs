@@ -23,13 +23,13 @@ impl PlacementValidationResult {
     }
 }
 
-/// Static validator function that received map information and placable object data to return decisions if placement is valid.
+/// Static validator function that receives map information and placable object data to return decisions if placement is valid.
 /// This is used for early placement feedback, in the end the domain handler makes final decision.
-pub type PlacementValidatorFn = fn(GridCoords, GridImprint, &GridsCollection) -> PlacementValidationResult;
+/// First argument is the MapObject being placed, followed by coords, imprint, and grid data.
+pub type PlacementValidatorFn = fn(MapObject, GridCoords, GridImprint, &GridsCollection) -> PlacementValidationResult;
 
-/// Data available to validators during placement validation.
+/// Grid data available to validators during placement validation.
 pub struct GridsCollection<'a> {
-    pub map_object: MapObject,
     pub obstacle_grid: &'a ObstacleGrid,
     pub energy_supply_grid: &'a EnergySupplyGrid,
     pub reserved_coords: &'a ReservedCoords,

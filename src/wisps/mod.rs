@@ -32,6 +32,7 @@ impl Plugin for WispsPlugin {
             ))
             .add_observer(spawning::BuilderWisp::on_add)
             .add_observer(spawning::on_wisp_place_request)
+            .add_observer(spawning::on_wisp_remove_request)
             .add_observer(spawning::on_wisp_spawn_attach_material::<WispFireType, materials::WispFireMaterial>)
             .add_observer(spawning::on_wisp_spawn_attach_material::<WispWaterType, materials::WispWaterMaterial>)
             .add_observer(spawning::on_wisp_spawn_attach_material::<WispLightType, materials::WispLightMaterial>)
