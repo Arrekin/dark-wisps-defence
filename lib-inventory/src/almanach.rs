@@ -1,20 +1,28 @@
-use lib_core::{map_objects::{DarkOre, QuantumField, Wall}, placement::{PlaceRequest, RemoveRequest}};
+use lib_core::{
+    map_objects::{DarkOre, QuantumField, Wall},
+    placement::{BeginPlacing, PlaceRequest, RemoveRequest},
+};
 
-use crate::{lib_prelude::*, placement::{GridsCollection, ObjectPlacementInfo, PlacementMode, PlacementValidatorFn, PlacementValidationResult}};
+use crate::{
+    lib_prelude::*,
+    placement::{
+        GridsCollection, ObjectPlacementInfo, PlacementMode, PlacementValidationResult,
+        PlacementValidatorFn, validate_empty_placement,
+    },
+};
 
 pub mod almanach_prelude {
     pub use super::{
-        Almanach, 
-        BuildingInfo, UpgradeInfo, UpgradeLevelInfo,
-        WallInfo, DarkOreInfo, QuantumFieldInfo,
+        Almanach, BuildingInfo, DarkOreInfo, QuantumFieldInfo, UpgradeInfo, UpgradeLevelInfo,
+        WallInfo,
     };
 }
 
 pub struct AlmanachPlugin;
 impl Plugin for AlmanachPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(OnEnter(MapLoadingStage::Init), |mut commands: Commands| { 
-            commands.insert_resource(Almanach::new()); 
+        app.add_systems(OnEnter(MapLoadingStage::Init), |mut commands: Commands| {
+            commands.insert_resource(Almanach::new());
         });
     }
 }
@@ -48,7 +56,7 @@ impl Almanach {
     }
 
     // === Buildings ===
-    
+
     pub fn get_building_info(&self, building_type: BuildingType) -> &BuildingInfo {
         self.buildings.get(&building_type)
             .expect(&format!("Building {building_type:?} not found in almanach"))
@@ -69,6 +77,7 @@ impl Almanach {
                     validate: info.validate,
                     place_emitter: Box::new(info.place_request),
                     remove_emitter: None,
+                    begin_placing_emitter: Some(Box::new(BeginPlacing::<Building>::default())),
                     place_mode: PlacementMode::OnRelease,
                     remove_mode: PlacementMode::OnRelease,
                 }
@@ -78,6 +87,7 @@ impl Almanach {
                 validate: self.walls.validate,
                 place_emitter: Box::new(self.walls.place_request),
                 remove_emitter: Some(Box::new(self.walls.remove_request)),
+                begin_placing_emitter: Some(Box::new(BeginPlacing::<Wall>::default())),
                 place_mode: PlacementMode::OnPress,
                 remove_mode: PlacementMode::OnPress,
             },
@@ -86,6 +96,7 @@ impl Almanach {
                 validate: self.dark_ore.validate,
                 place_emitter: Box::new(self.dark_ore.place_request),
                 remove_emitter: Some(Box::new(self.dark_ore.remove_request)),
+                begin_placing_emitter: Some(Box::new(BeginPlacing::<DarkOre>::default())),
                 place_mode: PlacementMode::OnPress,
                 remove_mode: PlacementMode::OnPress,
             },
@@ -94,6 +105,7 @@ impl Almanach {
                 validate: self.quantum_fields.validate,
                 place_emitter: Box::new(self.quantum_fields.place_request),
                 remove_emitter: Some(Box::new(self.quantum_fields.remove_request)),
+                begin_placing_emitter: Some(Box::new(BeginPlacing::<QuantumField>::default())),
                 place_mode: PlacementMode::OnRelease,
                 remove_mode: PlacementMode::OnRelease,
             },
@@ -104,6 +116,7 @@ impl Almanach {
                     validate: |_, _, _, _| PlacementValidationResult::valid(),
                     place_emitter: Box::new(PlaceRequest::<WispType>::default()),
                     remove_emitter: Some(Box::new(RemoveRequest::<WispType>::default())),
+                    begin_placing_emitter: None,
                     place_mode: PlacementMode::OnPress,
                     remove_mode: PlacementMode::OnPress,
                 }
@@ -126,28 +139,28 @@ fn building_validator(map_object: MapObject, coords: GridCoords, imprint: GridIm
     let MapObject::Building(building_type) = map_object else {
         return PlacementValidationResult::invalid();
     };
-    
+
     // Bounds check
     if !coords.is_imprint_in_bounds(&imprint, map_data.obstacle_grid.bounds()) {
         return PlacementValidationResult::invalid();
     }
-    
+
     // Reserved check
     if map_data.reserved_coords.any_reserved(coords, imprint) {
         return PlacementValidationResult::invalid();
     }
-    
+
     // Obstacle check
     if !map_data.obstacle_grid.query_building_placement(coords, building_type, imprint) {
         return PlacementValidationResult::invalid();
     }
-    
+
     // Power check
     let needs_power = !matches!(building_type, BuildingType::MainBase | BuildingType::EnergyRelay);
     if needs_power && !map_data.energy_supply_grid.is_imprint_powered(coords, imprint) {
         return PlacementValidationResult::valid_unpowered();
     }
-    
+
     PlacementValidationResult::valid()
 }
 
@@ -168,7 +181,10 @@ impl BuildingInfo {
         match building_type {
             BuildingType::MainBase => Self {
                 name: "Main Base".to_string(),
-                grid_imprint: GridImprint::Rectangle { width: 6, height: 6 },
+                grid_imprint: GridImprint::Rectangle {
+                    width: 6,
+                    height: 6,
+                },
                 cost: vec![],
                 baseline: HashMap::from([
                     (ModifierType::MaxHealth, 10000.),
@@ -180,8 +196,14 @@ impl BuildingInfo {
             },
             BuildingType::EnergyRelay => Self {
                 name: "Energy Relay".to_string(),
-                grid_imprint: GridImprint::Rectangle { width: 2, height: 2 },
-                cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 300 }],
+                grid_imprint: GridImprint::Rectangle {
+                    width: 2,
+                    height: 2,
+                },
+                cost: vec![Cost {
+                    resource_type: ResourceType::DarkOre,
+                    amount: 300,
+                }],
                 baseline: HashMap::from([
                     (ModifierType::MaxHealth, 100.),
                     (ModifierType::EnergySupplyRange, 12.),
@@ -192,30 +214,44 @@ impl BuildingInfo {
             },
             BuildingType::MiningComplex => Self {
                 name: "Mining Complex".to_string(),
-                grid_imprint: GridImprint::Rectangle { width: 3, height: 3 },
-                cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 100 }],
-                baseline: HashMap::from([
-                    (ModifierType::MaxHealth, 100.),
-                ]),
+                grid_imprint: GridImprint::Rectangle {
+                    width: 3,
+                    height: 3,
+                },
+                cost: vec![Cost {
+                    resource_type: ResourceType::DarkOre,
+                    amount: 100,
+                }],
+                baseline: HashMap::from([(ModifierType::MaxHealth, 100.)]),
                 upgrades: HashMap::default(),
                 validate: building_validator,
                 place_request: PlaceRequest::default(),
             },
             BuildingType::ExplorationCenter => Self {
                 name: "Exploration Center".to_string(),
-                grid_imprint: GridImprint::Rectangle { width: 4, height: 4 },
-                cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 500 }],
-                baseline: HashMap::from([
-                    (ModifierType::MaxHealth, 100.),
-                ]),
+                grid_imprint: GridImprint::Rectangle {
+                    width: 4,
+                    height: 4,
+                },
+                cost: vec![Cost {
+                    resource_type: ResourceType::DarkOre,
+                    amount: 500,
+                }],
+                baseline: HashMap::from([(ModifierType::MaxHealth, 100.)]),
                 upgrades: HashMap::default(),
                 validate: building_validator,
                 place_request: PlaceRequest::default(),
             },
             BuildingType::Tower(TowerType::Blaster) => Self {
                 name: "Blaster Tower".to_string(),
-                grid_imprint: GridImprint::Rectangle { width: 2, height: 2 },
-                cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 150 }],
+                grid_imprint: GridImprint::Rectangle {
+                    width: 2,
+                    height: 2,
+                },
+                cost: vec![Cost {
+                    resource_type: ResourceType::DarkOre,
+                    amount: 150,
+                }],
                 baseline: HashMap::from([
                     (ModifierType::MaxHealth, 100.),
                     (ModifierType::AttackRange, 15.),
@@ -223,28 +259,76 @@ impl BuildingInfo {
                     (ModifierType::AttackDamage, 1.),
                 ]),
                 upgrades: HashMap::from([
-                    (UpgradeType::Modifier(ModifierType::AttackSpeed), UpgradeInfo {
-                        levels: vec![
-                            UpgradeLevelInfo { value: 0.1, cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 100 }] },
-                            UpgradeLevelInfo { value: 0.1, cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 200 }] },
-                            UpgradeLevelInfo { value: 0.1, cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 300 }] },
-                        ],
-                    }),
-                    (UpgradeType::Modifier(ModifierType::AttackDamage), UpgradeInfo {
-                        levels: vec![
-                            UpgradeLevelInfo { value: 1., cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 100 }] },
-                            UpgradeLevelInfo { value: 1., cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 200 }] },
-                            UpgradeLevelInfo { value: 1., cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 300 }] },
-                        ],
-                    }),
+                    (
+                        UpgradeType::Modifier(ModifierType::AttackSpeed),
+                        UpgradeInfo {
+                            levels: vec![
+                                UpgradeLevelInfo {
+                                    value: 0.1,
+                                    cost: vec![Cost {
+                                        resource_type: ResourceType::DarkOre,
+                                        amount: 100,
+                                    }],
+                                },
+                                UpgradeLevelInfo {
+                                    value: 0.1,
+                                    cost: vec![Cost {
+                                        resource_type: ResourceType::DarkOre,
+                                        amount: 200,
+                                    }],
+                                },
+                                UpgradeLevelInfo {
+                                    value: 0.1,
+                                    cost: vec![Cost {
+                                        resource_type: ResourceType::DarkOre,
+                                        amount: 300,
+                                    }],
+                                },
+                            ],
+                        },
+                    ),
+                    (
+                        UpgradeType::Modifier(ModifierType::AttackDamage),
+                        UpgradeInfo {
+                            levels: vec![
+                                UpgradeLevelInfo {
+                                    value: 1.,
+                                    cost: vec![Cost {
+                                        resource_type: ResourceType::DarkOre,
+                                        amount: 100,
+                                    }],
+                                },
+                                UpgradeLevelInfo {
+                                    value: 1.,
+                                    cost: vec![Cost {
+                                        resource_type: ResourceType::DarkOre,
+                                        amount: 200,
+                                    }],
+                                },
+                                UpgradeLevelInfo {
+                                    value: 1.,
+                                    cost: vec![Cost {
+                                        resource_type: ResourceType::DarkOre,
+                                        amount: 300,
+                                    }],
+                                },
+                            ],
+                        },
+                    ),
                 ]),
                 validate: building_validator,
                 place_request: PlaceRequest::default(),
             },
             BuildingType::Tower(TowerType::Cannon) => Self {
                 name: "Cannon Tower".to_string(),
-                grid_imprint: GridImprint::Rectangle { width: 3, height: 3 },
-                cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 250 }],
+                grid_imprint: GridImprint::Rectangle {
+                    width: 3,
+                    height: 3,
+                },
+                cost: vec![Cost {
+                    resource_type: ResourceType::DarkOre,
+                    amount: 250,
+                }],
                 baseline: HashMap::from([
                     (ModifierType::MaxHealth, 100.),
                     (ModifierType::AttackRange, 15.),
@@ -252,28 +336,76 @@ impl BuildingInfo {
                     (ModifierType::AttackDamage, 50.),
                 ]),
                 upgrades: HashMap::from([
-                    (UpgradeType::Modifier(ModifierType::AttackRange), UpgradeInfo {
-                        levels: vec![
-                            UpgradeLevelInfo { value: 1., cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 100 }] },
-                            UpgradeLevelInfo { value: 2., cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 200 }] },
-                            UpgradeLevelInfo { value: 3., cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 300 }] },
-                        ],
-                    }),
-                    (UpgradeType::Modifier(ModifierType::AttackDamage), UpgradeInfo {
-                        levels: vec![
-                            UpgradeLevelInfo { value: 5., cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 100 }] },
-                            UpgradeLevelInfo { value: 10., cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 200 }] },
-                            UpgradeLevelInfo { value: 15., cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 300 }] },
-                        ],
-                    }),
+                    (
+                        UpgradeType::Modifier(ModifierType::AttackRange),
+                        UpgradeInfo {
+                            levels: vec![
+                                UpgradeLevelInfo {
+                                    value: 1.,
+                                    cost: vec![Cost {
+                                        resource_type: ResourceType::DarkOre,
+                                        amount: 100,
+                                    }],
+                                },
+                                UpgradeLevelInfo {
+                                    value: 2.,
+                                    cost: vec![Cost {
+                                        resource_type: ResourceType::DarkOre,
+                                        amount: 200,
+                                    }],
+                                },
+                                UpgradeLevelInfo {
+                                    value: 3.,
+                                    cost: vec![Cost {
+                                        resource_type: ResourceType::DarkOre,
+                                        amount: 300,
+                                    }],
+                                },
+                            ],
+                        },
+                    ),
+                    (
+                        UpgradeType::Modifier(ModifierType::AttackDamage),
+                        UpgradeInfo {
+                            levels: vec![
+                                UpgradeLevelInfo {
+                                    value: 5.,
+                                    cost: vec![Cost {
+                                        resource_type: ResourceType::DarkOre,
+                                        amount: 100,
+                                    }],
+                                },
+                                UpgradeLevelInfo {
+                                    value: 10.,
+                                    cost: vec![Cost {
+                                        resource_type: ResourceType::DarkOre,
+                                        amount: 200,
+                                    }],
+                                },
+                                UpgradeLevelInfo {
+                                    value: 15.,
+                                    cost: vec![Cost {
+                                        resource_type: ResourceType::DarkOre,
+                                        amount: 300,
+                                    }],
+                                },
+                            ],
+                        },
+                    ),
                 ]),
                 validate: building_validator,
                 place_request: PlaceRequest::default(),
             },
             BuildingType::Tower(TowerType::RocketLauncher) => Self {
                 name: "Rocket Launcher Tower".to_string(),
-                grid_imprint: GridImprint::Rectangle { width: 3, height: 3 },
-                cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 350 }],
+                grid_imprint: GridImprint::Rectangle {
+                    width: 3,
+                    height: 3,
+                },
+                cost: vec![Cost {
+                    resource_type: ResourceType::DarkOre,
+                    amount: 350,
+                }],
                 baseline: HashMap::from([
                     (ModifierType::MaxHealth, 100.),
                     (ModifierType::AttackRange, 30.),
@@ -281,28 +413,76 @@ impl BuildingInfo {
                     (ModifierType::AttackDamage, 50.),
                 ]),
                 upgrades: HashMap::from([
-                    (UpgradeType::Modifier(ModifierType::AttackRange), UpgradeInfo {
-                        levels: vec![
-                            UpgradeLevelInfo { value: 2., cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 100 }] },
-                            UpgradeLevelInfo { value: 2., cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 200 }] },
-                            UpgradeLevelInfo { value: 5., cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 300 }] },
-                        ],
-                    }),
-                    (UpgradeType::Modifier(ModifierType::AttackSpeed), UpgradeInfo {
-                        levels: vec![
-                            UpgradeLevelInfo { value: 0.1, cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 100 }] },
-                            UpgradeLevelInfo { value: 0.1, cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 200 }] },
-                            UpgradeLevelInfo { value: 0.3, cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 300 }] },
-                        ],
-                    }),
+                    (
+                        UpgradeType::Modifier(ModifierType::AttackRange),
+                        UpgradeInfo {
+                            levels: vec![
+                                UpgradeLevelInfo {
+                                    value: 2.,
+                                    cost: vec![Cost {
+                                        resource_type: ResourceType::DarkOre,
+                                        amount: 100,
+                                    }],
+                                },
+                                UpgradeLevelInfo {
+                                    value: 2.,
+                                    cost: vec![Cost {
+                                        resource_type: ResourceType::DarkOre,
+                                        amount: 200,
+                                    }],
+                                },
+                                UpgradeLevelInfo {
+                                    value: 5.,
+                                    cost: vec![Cost {
+                                        resource_type: ResourceType::DarkOre,
+                                        amount: 300,
+                                    }],
+                                },
+                            ],
+                        },
+                    ),
+                    (
+                        UpgradeType::Modifier(ModifierType::AttackSpeed),
+                        UpgradeInfo {
+                            levels: vec![
+                                UpgradeLevelInfo {
+                                    value: 0.1,
+                                    cost: vec![Cost {
+                                        resource_type: ResourceType::DarkOre,
+                                        amount: 100,
+                                    }],
+                                },
+                                UpgradeLevelInfo {
+                                    value: 0.1,
+                                    cost: vec![Cost {
+                                        resource_type: ResourceType::DarkOre,
+                                        amount: 200,
+                                    }],
+                                },
+                                UpgradeLevelInfo {
+                                    value: 0.3,
+                                    cost: vec![Cost {
+                                        resource_type: ResourceType::DarkOre,
+                                        amount: 300,
+                                    }],
+                                },
+                            ],
+                        },
+                    ),
                 ]),
                 validate: building_validator,
                 place_request: PlaceRequest::default(),
             },
             BuildingType::Tower(TowerType::Emitter) => Self {
                 name: "Emitter Tower".to_string(),
-                grid_imprint: GridImprint::Rectangle { width: 2, height: 2 },
-                cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 450 }],
+                grid_imprint: GridImprint::Rectangle {
+                    width: 2,
+                    height: 2,
+                },
+                cost: vec![Cost {
+                    resource_type: ResourceType::DarkOre,
+                    amount: 450,
+                }],
                 baseline: HashMap::from([
                     (ModifierType::MaxHealth, 100.),
                     (ModifierType::AttackRange, 4.),
@@ -310,20 +490,62 @@ impl BuildingInfo {
                     (ModifierType::AttackDamage, 1.),
                 ]),
                 upgrades: HashMap::from([
-                    (UpgradeType::Modifier(ModifierType::AttackRange), UpgradeInfo {
-                        levels: vec![
-                            UpgradeLevelInfo { value: 1., cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 100 }] },
-                            UpgradeLevelInfo { value: 2., cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 200 }] },
-                            UpgradeLevelInfo { value: 3., cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 300 }] },
-                        ],
-                    }),
-                    (UpgradeType::Modifier(ModifierType::AttackSpeed), UpgradeInfo {
-                        levels: vec![
-                            UpgradeLevelInfo { value: 0.1, cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 100 }] },
-                            UpgradeLevelInfo { value: 0.1, cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 200 }] },
-                            UpgradeLevelInfo { value: 0.1, cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 300 }] },
-                        ],
-                    }),
+                    (
+                        UpgradeType::Modifier(ModifierType::AttackRange),
+                        UpgradeInfo {
+                            levels: vec![
+                                UpgradeLevelInfo {
+                                    value: 1.,
+                                    cost: vec![Cost {
+                                        resource_type: ResourceType::DarkOre,
+                                        amount: 100,
+                                    }],
+                                },
+                                UpgradeLevelInfo {
+                                    value: 2.,
+                                    cost: vec![Cost {
+                                        resource_type: ResourceType::DarkOre,
+                                        amount: 200,
+                                    }],
+                                },
+                                UpgradeLevelInfo {
+                                    value: 3.,
+                                    cost: vec![Cost {
+                                        resource_type: ResourceType::DarkOre,
+                                        amount: 300,
+                                    }],
+                                },
+                            ],
+                        },
+                    ),
+                    (
+                        UpgradeType::Modifier(ModifierType::AttackSpeed),
+                        UpgradeInfo {
+                            levels: vec![
+                                UpgradeLevelInfo {
+                                    value: 0.1,
+                                    cost: vec![Cost {
+                                        resource_type: ResourceType::DarkOre,
+                                        amount: 100,
+                                    }],
+                                },
+                                UpgradeLevelInfo {
+                                    value: 0.1,
+                                    cost: vec![Cost {
+                                        resource_type: ResourceType::DarkOre,
+                                        amount: 200,
+                                    }],
+                                },
+                                UpgradeLevelInfo {
+                                    value: 0.1,
+                                    cost: vec![Cost {
+                                        resource_type: ResourceType::DarkOre,
+                                        amount: 300,
+                                    }],
+                                },
+                            ],
+                        },
+                    ),
                 ]),
                 validate: building_validator,
                 place_request: PlaceRequest::default(),
@@ -357,26 +579,16 @@ pub struct WallInfo {
     pub remove_request: RemoveRequest<Wall>,
 }
 
-fn wall_validator(_map_object: MapObject, coords: GridCoords, imprint: GridImprint, map_data: &GridsCollection) -> PlacementValidationResult {
-    if !coords.is_imprint_in_bounds(&imprint, map_data.obstacle_grid.bounds()) {
-        return PlacementValidationResult::invalid();
-    }
-    if map_data.reserved_coords.any_reserved(coords, imprint) {
-        return PlacementValidationResult::invalid();
-    }
-    if !map_data.obstacle_grid.query_imprint_all(coords, imprint, |f| f.is_empty()) {
-        return PlacementValidationResult::invalid();
-    }
-    PlacementValidationResult::valid()
-}
-
 impl Default for WallInfo {
     fn default() -> Self {
         Self {
             name: "Wall".to_string(),
-            grid_imprint: GridImprint::Rectangle { width: 1, height: 1 },
+            grid_imprint: GridImprint::Rectangle {
+                width: 1,
+                height: 1,
+            },
             sprite_path: "map_objects/wall_4side.png".to_string(),
-            validate: wall_validator,
+            validate: validate_empty_placement,
             place_request: PlaceRequest::default(),
             remove_request: RemoveRequest::default(),
         }
@@ -398,19 +610,6 @@ pub struct DarkOreInfo {
     pub remove_request: RemoveRequest<DarkOre>,
 }
 
-fn dark_ore_validator(_map_object: MapObject, coords: GridCoords, imprint: GridImprint, map_data: &GridsCollection) -> PlacementValidationResult {
-    if !coords.is_imprint_in_bounds(&imprint, map_data.obstacle_grid.bounds()) {
-        return PlacementValidationResult::invalid();
-    }
-    if map_data.reserved_coords.any_reserved(coords, imprint) {
-        return PlacementValidationResult::invalid();
-    }
-    if !map_data.obstacle_grid.query_imprint_all(coords, imprint, |f| f.is_empty()) {
-        return PlacementValidationResult::invalid();
-    }
-    PlacementValidationResult::valid()
-}
-
 impl Default for DarkOreInfo {
     fn default() -> Self {
         Self {
@@ -421,7 +620,7 @@ impl Default for DarkOreInfo {
                 "map_objects/dark_ore_2.png".to_string(),
             ],
             default_amount: 1000,
-            validate: dark_ore_validator,
+            validate: validate_empty_placement,
             place_request: PlaceRequest::default(),
             remove_request: RemoveRequest::default(),
         }
@@ -443,19 +642,6 @@ pub struct QuantumFieldInfo {
     pub remove_request: RemoveRequest<QuantumField>,
 }
 
-fn quantum_field_validator(_map_object: MapObject, coords: GridCoords, imprint: GridImprint, map_data: &GridsCollection) -> PlacementValidationResult {
-    if !coords.is_imprint_in_bounds(&imprint, map_data.obstacle_grid.bounds()) {
-        return PlacementValidationResult::invalid();
-    }
-    if map_data.reserved_coords.any_reserved(coords, imprint) {
-        return PlacementValidationResult::invalid();
-    }
-    if !map_data.obstacle_grid.query_imprint_all(coords, imprint, |f| f.is_empty()) {
-        return PlacementValidationResult::invalid();
-    }
-    PlacementValidationResult::valid()
-}
-
 impl Default for QuantumFieldInfo {
     fn default() -> Self {
         Self {
@@ -463,7 +649,7 @@ impl Default for QuantumFieldInfo {
             min_size: 3,
             max_size: 6,
             default_size: 3,
-            validate: quantum_field_validator,
+            validate: validate_empty_placement,
             place_request: PlaceRequest::default(),
             remove_request: RemoveRequest::default(),
         }

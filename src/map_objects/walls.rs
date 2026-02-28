@@ -44,25 +44,25 @@ impl Loadable for BuilderWall {
         while let Some(row) = rows.next()? {
             let old_id: i64 = row.get(0)?;
             let grid_position = ctx.conn.get_grid_coords(old_id)?;
-            
+
             if let Some(new_entity) = ctx.get_new_entity_for_old(old_id) {
                 batch.push((new_entity, BuilderWall::new_for_saving(grid_position, new_entity)));
             } else {
                 eprintln!("Warning: Wall with old ID {} has no corresponding new entity", old_id);
             }
         }
-        
+
         let batch_size = batch.len();
         ctx.commands.insert_batch(batch);
-        
+
         Ok(batch_size.into())
     }
 }
 impl BuilderWall {
-    pub fn new(grid_position: GridCoords) -> Self { 
+    pub fn new(grid_position: GridCoords) -> Self {
         Self { grid_position, entity: None }
     }
-    pub fn new_for_saving(grid_position: GridCoords, entity: Entity) -> Self { 
+    pub fn new_for_saving(grid_position: GridCoords, entity: Entity) -> Self {
         Self { grid_position, entity: Some(entity) }
     }
 
@@ -74,21 +74,21 @@ impl BuilderWall {
     ) {
         let entity = trigger.entity;
         let Ok(builder) = builders.get(entity) else { return; };
-        
+
         commands.entity(entity)
             .remove::<BuilderWall>()
             .insert((
-                Sprite {
-                    image: asset_server.load(WALL_BASE_IMAGE),
-                    color: Color::hsla(0., 0., 1.5, 0.9), //for hdr brightness pulsation
-                    custom_size: Some(WALL_GRID_IMPRINT.world_size()),
-                    ..default()
-                },
-                Transform::from_translation(builder.grid_position.to_world_position_centered(WALL_GRID_IMPRINT).extend(Z_OBSTACLE)),
-                builder.grid_position,
-                WALL_GRID_IMPRINT,
-                Wall,
-            ));
+            Sprite {
+                image: asset_server.load(WALL_BASE_IMAGE),
+                color: Color::hsla(0., 0., 1.5, 0.9), //for hdr brightness pulsation
+                custom_size: Some(WALL_GRID_IMPRINT.world_size()),
+                ..default()
+            },
+            Transform::from_translation(builder.grid_position.to_world_position_centered(WALL_GRID_IMPRINT).extend(Z_OBSTACLE)),
+            builder.grid_position,
+            WALL_GRID_IMPRINT,
+            Wall,
+        ));
     }
 
     fn on_game_save(
@@ -132,10 +132,8 @@ fn on_wall_place_request(
     obstacle_grid: Res<ObstacleGrid>,
     placer: Single<(&GridObjectPlacer, &GridCoords, &GridImprint)>,
 ) {
-    let (grid_object_placer, coords, grid_imprint) = placer.into_inner();
-    let Some(active_placement) = &grid_object_placer.active_placement else { return };
-    if !matches!(active_placement.map_object, MapObject::Wall) { return };
-    
+    let (_grid_object_placer, coords, grid_imprint) = placer.into_inner();
+
     if !coords.is_in_bounds(obstacle_grid.bounds()) { return; }
     if obstacle_grid[*coords].is_empty() && !reserved_coords.any_reserved(*coords, *grid_imprint) {
         commands.spawn(BuilderWall::new(*coords));

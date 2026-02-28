@@ -60,13 +60,13 @@ impl Loadable for BuilderDarkOre {
     fn load(ctx: &mut LoadContext) -> rusqlite::Result<LoadResult> {
         let mut stmt = ctx.conn.prepare("SELECT id, amount FROM dark_ores LIMIT ?1 OFFSET ?2")?;
         let mut rows = stmt.query(ctx.pagination.as_params())?;
-        
+
         let mut count = 0;
         while let Some(row) = rows.next()? {
             let old_id: i64 = row.get(0)?;
             let amount: u32 = row.get(1)?;
             let grid_position = ctx.conn.get_grid_coords(old_id)?;
-            
+
             if let Some(new_entity) = ctx.get_new_entity_for_old(old_id) {
                 let save_data = DarkOreSaveData { entity: new_entity };
                 ctx.commands.entity(new_entity).insert(BuilderDarkOre::new_for_saving(grid_position, amount, save_data));
@@ -94,12 +94,12 @@ impl BuilderDarkOre {
         if dark_ores.is_empty() { return; }
         println!("Creating batch of BuilderDarkOre for saving. {} items", dark_ores.iter().count());
         let batch = dark_ores.iter().map(|(entity, coords, dark_ore)| {
-            let save_data = DarkOreSaveData { entity };
-            BuilderDarkOre::new_for_saving(*coords, dark_ore.amount as u32, save_data)
+                let save_data = DarkOreSaveData { entity };
+                BuilderDarkOre::new_for_saving(*coords, dark_ore.amount as u32, save_data)
         }).collect::<SaveableBatchCommand<_>>();
         commands.queue(batch);
     }
-    
+
     fn on_add(
         trigger: On<Add, BuilderDarkOre>,
         mut commands: Commands,
@@ -108,26 +108,26 @@ impl BuilderDarkOre {
     ) {
         let entity = trigger.entity;
         let Ok(builder) = builders.get(entity) else { return; };
-        
+
         let mut rng = nanorand::tls_rng();
         commands.entity(entity)
             .remove::<BuilderDarkOre>()
             .insert((
-                Sprite {
-                    image: asset_server.load(DARK_ORE_BASE_IMAGES[rng.generate_range(0usize..2usize)]),
-                    custom_size: Some(DARK_ORE_GRID_IMPRINT.world_size()),
-                    ..Default::default()
-                },
-                Transform {
-                    translation: builder.grid_position.to_world_position_centered(DARK_ORE_GRID_IMPRINT).extend(Z_OBSTACLE),
-                    // select one of: Left, Up, Right, Down
-                    rotation: Quat::from_rotation_z([0., PI / 2., PI, 3. * PI / 2.][rng.generate_range(0usize..4usize)] as f32),
-                    ..default()
-                },
-                builder.grid_position,
-                DarkOre { amount: builder.amount as i32 },
-                DARK_ORE_GRID_IMPRINT,
-            ));
+            Sprite {
+                image: asset_server.load(DARK_ORE_BASE_IMAGES[rng.generate_range(0usize..2usize)]),
+                custom_size: Some(DARK_ORE_GRID_IMPRINT.world_size()),
+                ..Default::default()
+            },
+            Transform {
+                translation: builder.grid_position.to_world_position_centered(DARK_ORE_GRID_IMPRINT).extend(Z_OBSTACLE),
+                // select one of: Left, Up, Right, Down
+                rotation: Quat::from_rotation_z([0., PI / 2., PI, 3. * PI / 2.][rng.generate_range(0usize..4usize)] as f32),
+                ..default()
+            },
+            builder.grid_position,
+            DarkOre { amount: builder.amount as i32 },
+            DARK_ORE_GRID_IMPRINT,
+        ));
     }
 }
 
@@ -149,13 +149,11 @@ fn on_dark_ore_place_request(
     obstacle_grid: Res<ObstacleGrid>,
     placer: Single<(&GridObjectPlacer, &GridCoords, &GridImprint)>,
 ) {
-    let (grid_object_placer, coords, grid_imprint) = placer.into_inner();
-    let Some(active_placement) = &grid_object_placer.active_placement else { return };
-    if !matches!(active_placement.map_object, MapObject::DarkOre) { return };
-    
+    let (_grid_object_placer, coords, grid_imprint) = placer.into_inner();
+
     if !coords.is_in_bounds(obstacle_grid.bounds()) { return; }
-    if obstacle_grid.query_imprint_all(*coords, *grid_imprint, |field| !field.has_dark_ore()) 
-        && !reserved_coords.any_reserved(*coords, *grid_imprint) 
+    if obstacle_grid.query_imprint_all(*coords, *grid_imprint, |field| !field.has_dark_ore())
+        && !reserved_coords.any_reserved(*coords, *grid_imprint)
     {
         commands.spawn(BuilderDarkOre::new(*coords, 1000));
         reserved_coords.reserve(*coords, *grid_imprint);
@@ -192,7 +190,7 @@ pub mod dark_ore_area_scanner {
         pub fn on_add(
             trigger: On<Add, DarkOreAreaScanner>,
             mut commands: Commands,
-            scanners: Query<&DarkOreAreaScanner>
+            scanners: Query<&DarkOreAreaScanner>,
         ) {
             let entity = trigger.entity;
             let scanner = scanners.get(entity).unwrap();
@@ -250,7 +248,7 @@ pub mod dark_ore_area_scanner {
         ) {
             let entity = trigger.entity;
             let Ok(dark_ore_grid_coords) = dark_ores.get(entity) else { return; };
-            
+
             for (scanner_entity, scanner, mut dark_ore_in_range, scanner_grid_coords) in scanners.iter_mut() {
                 if scanner.range_imprint.covers_coords(*scanner_grid_coords, *dark_ore_grid_coords) {
                     if !dark_ore_in_range.0.contains(&entity) {

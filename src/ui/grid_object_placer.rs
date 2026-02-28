@@ -1,4 +1,4 @@
-use lib_core::placement::{GridPlacerChanged, GridPlacerOverridePropertyRequest};
+use lib_core::placement::{GridPlacerChanged, GridPlacerOverridePropertyRequest, StopPlacing};
 use lib_grid::grids::energy_supply::EnergySupplyGrid;
 use lib_grid::grids::obstacles::{ObstacleGrid, ReservedCoords};
 use lib_inventory::placement::{GridsCollection, ObjectPlacementInfo, PlacementMode};
@@ -27,7 +27,6 @@ impl Plugin for GridObjectPlacerPlugin {
             .add_observer(GridObjectPlacer::on_modify);
     }
 }
-
 
 #[derive(Resource, Default)]
 pub struct GridObjectPlacerRequest(Option<MapObject>);
@@ -76,14 +75,14 @@ impl GridObjectPlacer {
         placer: Single<(&mut Sprite, &mut GridImprint), With<GridObjectPlacer>>,
     ) {
         let (mut sprite, mut grid_imprint) = placer.into_inner();
-        
+
         match *trigger.event() {
             GridPlacerOverridePropertyRequest::OverrideImprint(imprint) => {
                 *grid_imprint = imprint;
                 sprite.custom_size = Some(grid_imprint.world_size());
             }
         }
-        
+
         commands.trigger(GridPlacerChanged);
     }
 
@@ -107,20 +106,18 @@ impl GridObjectPlacer {
     }
 }
 
-
-
-fn on_placing_enter_system(
-    placer: Single<&mut Visibility, With<GridObjectPlacer>>,
-) {
+fn on_placing_enter_system(placer: Single<&mut Visibility, With<GridObjectPlacer>>) {
     *placer.into_inner() = Visibility::Inherited;
 }
 
 fn on_placing_exit_system(
+    mut commands: Commands,
     placer: Single<(&mut Visibility, &mut GridObjectPlacer)>,
 ) {
     let (mut visibility, mut placer) = placer.into_inner();
     *visibility = Visibility::Hidden;
     placer.active_placement = None;
+    commands.trigger(StopPlacing);
 }
 
 fn keyboard_input_system(
@@ -146,7 +143,7 @@ fn keyboard_input_system(
     } else if keys.just_pressed(KeyCode::Digit3) {
         MapObject::Building(BuildingType::Tower(TowerType::RocketLauncher))
     } else {
-        return
+        return;
     };
     grid_object_placer_request.set(map_object);
 }
@@ -161,14 +158,27 @@ fn on_request_grid_object_placer_system(
 ) {
     let Some(map_object) = placer_request.take() else { return; };
     let (mut sprite, mut grid_object_placer, mut grid_imprint) = placer.into_inner();
-    
-    let placement_info = almanach.get_placement_info_for(map_object);
-    
+
+    // Signal old domain UI to cleanup before switching
+    if grid_object_placer.active_placement.is_some() {
+        commands.trigger(StopPlacing);
+    }
+
+    let mut placement_info = almanach.get_placement_info_for(map_object);
+
     *grid_imprint = placement_info.imprint;
     sprite.custom_size = Some(grid_imprint.world_size());
-    
-    grid_object_placer.active_placement = Some(ActivePlacement {map_object, placement_info});
-    
+
+    // Emit begin_placing for the new object type
+    if let Some(emitter) = placement_info.begin_placing_emitter.take() {
+        emitter.emit(&mut commands);
+    }
+
+    grid_object_placer.active_placement = Some(ActivePlacement {
+        map_object,
+        placement_info,
+    });
+
     // Only change state if not already in PlaceGridObject (avoid re-entry clearing active_placement and the blink effect when it gets hidden for a frame)
     if *current_state.get() != UiInteraction::PlaceGridObject {
         ui_interaction_state.set(UiInteraction::PlaceGridObject);
@@ -184,9 +194,9 @@ fn on_click_place_system(
 ) {
     // Block clicks through UI
     if mouse_info.is_over_ui { return; }
-    
+
     let Some(ref active_placement) = placer.active_placement else { return };
-    
+
     // Check placement mode for place/remove
     let should_place = match active_placement.placement_info.place_mode {
         PlacementMode::OnRelease => mouse.just_released(MouseButton::Left),
@@ -196,7 +206,7 @@ fn on_click_place_system(
         PlacementMode::OnRelease => mouse.just_released(MouseButton::Right),
         PlacementMode::OnPress => mouse.pressed(MouseButton::Right),
     };
-    
+
     if should_place {
         active_placement.placement_info.place_emitter.clone_box().emit(&mut commands);
     } else if should_remove {

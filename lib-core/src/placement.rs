@@ -7,6 +7,11 @@ use crate::lib_prelude::*;
 #[derive(Event, Clone, Copy, Debug)]
 pub struct GridPlacerChanged;
 
+/// Non-generic event emitted when the placer deactivates or switches to a different object type.
+/// Domain UIs (e.g., QuantumField size selector) observe this to hide/cleanup.
+#[derive(Event, Clone, Copy, Debug)]
+pub struct StopPlacing;
+
 /// Event to request modification of the grid placer's state.
 /// Placer observes this and handles changes internally.
 #[derive(Event, Clone, Copy, Debug)]
@@ -79,7 +84,7 @@ impl<T: Send + Sync + 'static> PlacementEmitter for PlaceRequest<T> {
     fn emit(self: Box<Self>, commands: &mut Commands) {
         commands.trigger(*self);
     }
-    
+
     fn clone_box(&self) -> Box<dyn PlacementEmitter> {
         Box::new(*self)
     }
@@ -89,7 +94,7 @@ impl<T: Send + Sync + 'static> PlacementEmitter for RemoveRequest<T> {
     fn emit(self: Box<Self>, commands: &mut Commands) {
         commands.trigger(*self);
     }
-    
+
     fn clone_box(&self) -> Box<dyn PlacementEmitter> {
         Box::new(*self)
     }
@@ -99,7 +104,7 @@ impl<T: Send + Sync + 'static> PlacementEmitter for BeginPlacing<T> {
     fn emit(self: Box<Self>, commands: &mut Commands) {
         commands.trigger(*self);
     }
-    
+
     fn clone_box(&self) -> Box<dyn PlacementEmitter> {
         Box::new(*self)
     }

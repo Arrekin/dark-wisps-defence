@@ -1,9 +1,8 @@
 use lib_core::placement::PlacementEmitter;
-use lib_grid::grids::obstacles::{ObstacleGrid, ReservedCoords};
 use lib_grid::grids::energy_supply::EnergySupplyGrid;
+use lib_grid::grids::obstacles::{ObstacleGrid, ReservedCoords};
 
 use crate::lib_prelude::*;
-
 
 /// Result of placement validation. Placer uses this to set sprite color.
 #[derive(Clone, Copy, Debug)]
@@ -51,7 +50,30 @@ pub struct ObjectPlacementInfo {
     pub validate: PlacementValidatorFn,
     pub place_emitter: Box<dyn PlacementEmitter>,
     pub remove_emitter: Option<Box<dyn PlacementEmitter>>,
+    pub begin_placing_emitter: Option<Box<dyn PlacementEmitter>>,
     pub place_mode: PlacementMode,
     pub remove_mode: PlacementMode,
 }
 
+/// Generic validator: checks bounds, reserved coords, and that all cells are empty.
+/// Signature matches `PlacementValidatorFn` so it can be used directly as a validator.
+pub fn validate_empty_placement(
+    _: MapObject,
+    coords: GridCoords,
+    imprint: GridImprint,
+    grids: &GridsCollection,
+) -> PlacementValidationResult {
+    if !coords.is_imprint_in_bounds(&imprint, grids.obstacle_grid.bounds()) {
+        return PlacementValidationResult::invalid();
+    }
+    if grids.reserved_coords.any_reserved(coords, imprint) {
+        return PlacementValidationResult::invalid();
+    }
+    if !grids
+        .obstacle_grid
+        .query_imprint_all(coords, imprint, |f| f.is_empty())
+    {
+        return PlacementValidationResult::invalid();
+    }
+    PlacementValidationResult::valid()
+}
