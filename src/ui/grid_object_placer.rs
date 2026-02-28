@@ -1,6 +1,7 @@
 use lib_core::placement::{GridPlacerChanged, GridPlacerOverridePropertyRequest, StopPlacing};
 use lib_grid::grids::energy_supply::EnergySupplyGrid;
 use lib_grid::grids::obstacles::{ObstacleGrid, ReservedCoords};
+use lib_grid::grids::wisps::WispsGrid;
 use lib_inventory::placement::{GridsCollection, ObjectPlacementInfo, PlacementMode};
 
 use crate::prelude::*;
@@ -91,6 +92,7 @@ impl GridObjectPlacer {
         obstacle_grid: Res<ObstacleGrid>,
         energy_supply_grid: Res<EnergySupplyGrid>,
         reserved_coords: Res<ReservedCoords>,
+        wisps_grid: Res<WispsGrid>,
         placer: Single<(&mut Sprite, &GridObjectPlacer, &GridImprint, &GridCoords)>,
     ) {
         let (mut sprite, grid_object_placer, grid_imprint, grid_coords) = placer.into_inner();
@@ -100,6 +102,7 @@ impl GridObjectPlacer {
             obstacle_grid: &*obstacle_grid,
             energy_supply_grid: &*energy_supply_grid,
             reserved_coords: &*reserved_coords,
+            wisps_grid: &*wisps_grid,
         };
         let result = (active_placement.placement_info.validate)(active_placement.map_object, *grid_coords, *grid_imprint, &map_data);
         sprite.color = result.color;

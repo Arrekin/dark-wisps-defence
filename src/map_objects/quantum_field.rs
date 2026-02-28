@@ -63,7 +63,7 @@ impl Plugin for QuantumFieldPlugin {
             min_size: 3,
             max_size: 6,
             default_size: 3,
-            validate: validate_empty_placement,
+            validate: quantum_field_validator,
             place_request: PlaceRequest::default(),
             remove_request: RemoveRequest::default(),
         })
@@ -259,6 +259,24 @@ impl BuilderQuantumField {
                 ExpeditionZone::default(),
             ));
     }
+}
+
+pub fn quantum_field_validator(
+    _: MapObject,
+    coords: GridCoords,
+    imprint: GridImprint,
+    grids: &GridsCollection,
+) -> PlacementValidationResult {
+    if !coords.is_in_bounds(grids.obstacle_grid.bounds()) {
+        return PlacementValidationResult::invalid();
+    }
+    if grids.reserved_coords.any_reserved(coords, imprint) {
+        return PlacementValidationResult::invalid();
+    }
+    if !grids.obstacle_grid.query_imprint_all(coords, imprint, |f| !f.is_within_quantum_field()) {
+        return PlacementValidationResult::invalid();
+    }
+    PlacementValidationResult::valid()
 }
 
 fn on_quantum_field_place_request(

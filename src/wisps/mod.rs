@@ -41,7 +41,7 @@ impl Plugin for WispsPlugin {
             .register_db_saver(spawning::BuilderWisp::on_game_save)
             .register_wisps(WispInfo {
                 grid_imprint: spawning::WISP_GRID_IMPRINT,
-                validate: validate_empty_placement,
+                validate: spawning::wisp_validator,
                 place_request: PlaceRequest::default(),
                 remove_request: RemoveRequest::default(),
             });

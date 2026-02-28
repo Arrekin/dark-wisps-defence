@@ -1,6 +1,7 @@
 use lib_core::placement::PlacementEmitter;
 use lib_grid::grids::energy_supply::EnergySupplyGrid;
 use lib_grid::grids::obstacles::{ObstacleGrid, ReservedCoords};
+use lib_grid::grids::wisps::WispsGrid;
 
 use crate::lib_prelude::*;
 
@@ -32,6 +33,7 @@ pub struct GridsCollection<'a> {
     pub obstacle_grid: &'a ObstacleGrid,
     pub energy_supply_grid: &'a EnergySupplyGrid,
     pub reserved_coords: &'a ReservedCoords,
+    pub wisps_grid: &'a WispsGrid,
 }
 
 /// Whether placement triggers on press (burst mode) or release (single click).

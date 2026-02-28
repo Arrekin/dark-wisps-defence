@@ -161,8 +161,7 @@ fn on_dark_ore_place_request(
     let (_grid_object_placer, coords, grid_imprint) = placer.into_inner();
 
     if !coords.is_in_bounds(obstacle_grid.bounds()) { return; }
-    if obstacle_grid.query_imprint_all(*coords, *grid_imprint, |field| !field.has_dark_ore())
-        && !reserved_coords.any_reserved(*coords, *grid_imprint)
+    if obstacle_grid.query_imprint_all(*coords, *grid_imprint, |field| !field.has_dark_ore()) && !reserved_coords.any_reserved(*coords, *grid_imprint)
     {
         commands.spawn(BuilderDarkOre::new(*coords, 1000));
         reserved_coords.reserve(*coords, *grid_imprint);

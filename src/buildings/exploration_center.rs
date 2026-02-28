@@ -748,7 +748,7 @@ impl SlotTooltip {
         
         if needs_camera && !has_camera {
             // Add camera preview
-            let Some(drone_entity) = data.drone_outside_home_base() else { unreachable!(); };
+            let Some(drone_entity) = data.drone_outside_home_base() else { unreachable!() };
             if let Ok(drone_transform) = drones.get(drone_entity) {
                 let camera = commands.spawn(
                     BuilderPreviewCamera::new(

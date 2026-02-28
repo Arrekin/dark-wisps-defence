@@ -153,6 +153,24 @@ impl BuilderWisp {
     }
 }
 
+pub fn wisp_validator(
+    _: MapObject,
+    coords: GridCoords,
+    imprint: GridImprint,
+    grids: &GridsCollection,
+) -> PlacementValidationResult {
+    if !coords.is_in_bounds(grids.obstacle_grid.bounds()) {
+        return PlacementValidationResult::invalid();
+    }
+    if !grids.obstacle_grid.query_imprint_all(coords, imprint, |f| f.is_empty()) {
+        return PlacementValidationResult::invalid();
+    }
+    if !grids.wisps_grid[coords].is_empty() {
+        return PlacementValidationResult::invalid();
+    }
+    PlacementValidationResult::valid()
+}
+
 pub fn on_wisp_spawn_attach_material<WispT: Component, MaterialT: Asset + WispMaterial>(
     trigger: On<Add, WispT>,
     mut commands: Commands,
@@ -176,6 +194,7 @@ pub fn on_wisp_place_request(
     _trigger: On<lib_core::placement::PlaceRequest<WispType>>,
     mut commands: Commands,
     obstacle_grid: Res<lib_grid::grids::obstacles::ObstacleGrid>,
+    wisps_grid: Res<WispsGrid>,
     placer: Single<(&GridObjectPlacer, &GridCoords, &GridImprint)>,
 ) {
     let (grid_object_placer, coords, grid_imprint) = placer.into_inner();
@@ -183,7 +202,8 @@ pub fn on_wisp_place_request(
     let MapObject::Wisp(wisp_type) = active_placement.map_object else { return };
     
     if !coords.is_in_bounds(obstacle_grid.bounds()) { return; }
-    if obstacle_grid.query_imprint_all(*coords, *grid_imprint, |field| field.is_empty()) {
+    if obstacle_grid.query_imprint_all(*coords, *grid_imprint, |field| field.is_empty()) && wisps_grid[*coords].is_empty()
+    {
         commands.spawn(BuilderWisp::new(wisp_type, *coords));
     }
 }
