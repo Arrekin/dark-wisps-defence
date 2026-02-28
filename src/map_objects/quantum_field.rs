@@ -64,8 +64,6 @@ impl Plugin for QuantumFieldPlugin {
             max_size: 6,
             default_size: 3,
             validate: quantum_field_validator,
-            place_request: PlaceRequest::default(),
-            remove_request: RemoveRequest::default(),
         })
         ;
     }

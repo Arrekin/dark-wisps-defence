@@ -123,54 +123,11 @@ impl Almanach {
     /// Extracts generic ObjectPlacementInfo for any MapObject.
     pub fn get_placement_info_for(&self, map_object: MapObject) -> ObjectPlacementInfo {
         match map_object {
-            MapObject::Building(building_type) => {
-                let info = self.get_building_info(building_type);
-                ObjectPlacementInfo {
-                    imprint: info.grid_imprint,
-                    validate: info.validate,
-                    place_emitter: Box::new(info.place_request),
-                    remove_emitter: None,
-                    begin_placing_emitter: Some(Box::new(BeginPlacing::<Building>::default())),
-                    place_mode: PlacementMode::OnRelease,
-                    remove_mode: PlacementMode::OnRelease,
-                }
-            }
-            MapObject::Wall => ObjectPlacementInfo {
-                imprint: self.walls.grid_imprint,
-                validate: self.walls.validate,
-                place_emitter: Box::new(self.walls.place_request),
-                remove_emitter: Some(Box::new(self.walls.remove_request)),
-                begin_placing_emitter: Some(Box::new(BeginPlacing::<Wall>::default())),
-                place_mode: PlacementMode::OnPress,
-                remove_mode: PlacementMode::OnPress,
-            },
-            MapObject::DarkOre => ObjectPlacementInfo {
-                imprint: self.dark_ore.grid_imprint,
-                validate: self.dark_ore.validate,
-                place_emitter: Box::new(self.dark_ore.place_request),
-                remove_emitter: Some(Box::new(self.dark_ore.remove_request)),
-                begin_placing_emitter: Some(Box::new(BeginPlacing::<DarkOre>::default())),
-                place_mode: PlacementMode::OnPress,
-                remove_mode: PlacementMode::OnPress,
-            },
-            MapObject::QuantumField => ObjectPlacementInfo {
-                imprint: self.quantum_fields.default_imprint(),
-                validate: self.quantum_fields.validate,
-                place_emitter: Box::new(self.quantum_fields.place_request),
-                remove_emitter: Some(Box::new(self.quantum_fields.remove_request)),
-                begin_placing_emitter: Some(Box::new(BeginPlacing::<QuantumField>::default())),
-                place_mode: PlacementMode::OnRelease,
-                remove_mode: PlacementMode::OnRelease,
-            },
-            MapObject::Wisp(_) => ObjectPlacementInfo {
-                imprint: self.wisps.grid_imprint,
-                validate: self.wisps.validate,
-                place_emitter: Box::new(self.wisps.place_request),
-                remove_emitter: Some(Box::new(self.wisps.remove_request)),
-                begin_placing_emitter: None,
-                place_mode: PlacementMode::OnPress,
-                remove_mode: PlacementMode::OnPress,
-            },
+            MapObject::Building(building_type) => self.get_building_info(building_type).into(),
+            MapObject::Wall => (&self.walls).into(),
+            MapObject::DarkOre => (&self.dark_ore).into(),
+            MapObject::QuantumField => (&self.quantum_fields).into(),
+            MapObject::Wisp(_) => (&self.wisps).into(),
         }
     }
 }
@@ -216,9 +173,21 @@ pub struct BuildingInfo {
     pub cost: Vec<Cost>,
     pub baseline: HashMap<ModifierType, f32>,
     pub upgrades: HashMap<UpgradeType, UpgradeInfo>,
-    // Placement data
     pub validate: PlacementValidatorFn,
-    pub place_request: PlaceRequest<Building>,
+}
+
+impl From<&BuildingInfo> for ObjectPlacementInfo {
+    fn from(info: &BuildingInfo) -> Self {
+        Self {
+            imprint: info.grid_imprint,
+            validate: info.validate,
+            place_emitter: Box::new(PlaceRequest::<Building>::default()),
+            remove_emitter: None,
+            begin_placing_emitter: Some(Box::new(BeginPlacing::<Building>::default())),
+            place_mode: PlacementMode::OnRelease,
+            remove_mode: PlacementMode::OnRelease,
+        }
+    }
 }
 
 
@@ -242,10 +211,21 @@ pub struct WallInfo {
     pub name: String,
     pub grid_imprint: GridImprint,
     pub sprite_path: String,
-    // Placement data
     pub validate: PlacementValidatorFn,
-    pub place_request: PlaceRequest<Wall>,
-    pub remove_request: RemoveRequest<Wall>,
+}
+
+impl From<&WallInfo> for ObjectPlacementInfo {
+    fn from(info: &WallInfo) -> Self {
+        Self {
+            imprint: info.grid_imprint,
+            validate: info.validate,
+            place_emitter: Box::new(PlaceRequest::<Wall>::default()),
+            remove_emitter: Some(Box::new(RemoveRequest::<Wall>::default())),
+            begin_placing_emitter: Some(Box::new(BeginPlacing::<Wall>::default())),
+            place_mode: PlacementMode::OnPress,
+            remove_mode: PlacementMode::OnPress,
+        }
+    }
 }
 
 // ============================================================================
@@ -258,10 +238,21 @@ pub struct DarkOreInfo {
     pub grid_imprint: GridImprint,
     pub sprite_paths: Vec<String>,
     pub default_amount: u32,
-    // Placement data
     pub validate: PlacementValidatorFn,
-    pub place_request: PlaceRequest<DarkOre>,
-    pub remove_request: RemoveRequest<DarkOre>,
+}
+
+impl From<&DarkOreInfo> for ObjectPlacementInfo {
+    fn from(info: &DarkOreInfo) -> Self {
+        Self {
+            imprint: info.grid_imprint,
+            validate: info.validate,
+            place_emitter: Box::new(PlaceRequest::<DarkOre>::default()),
+            remove_emitter: Some(Box::new(RemoveRequest::<DarkOre>::default())),
+            begin_placing_emitter: Some(Box::new(BeginPlacing::<DarkOre>::default())),
+            place_mode: PlacementMode::OnPress,
+            remove_mode: PlacementMode::OnPress,
+        }
+    }
 }
 
 // ============================================================================
@@ -274,10 +265,21 @@ pub struct QuantumFieldInfo {
     pub min_size: i32,
     pub max_size: i32,
     pub default_size: i32,
-    // Placement data
     pub validate: PlacementValidatorFn,
-    pub place_request: PlaceRequest<QuantumField>,
-    pub remove_request: RemoveRequest<QuantumField>,
+}
+
+impl From<&QuantumFieldInfo> for ObjectPlacementInfo {
+    fn from(info: &QuantumFieldInfo) -> Self {
+        Self {
+            imprint: info.default_imprint(),
+            validate: info.validate,
+            place_emitter: Box::new(PlaceRequest::<QuantumField>::default()),
+            remove_emitter: Some(Box::new(RemoveRequest::<QuantumField>::default())),
+            begin_placing_emitter: Some(Box::new(BeginPlacing::<QuantumField>::default())),
+            place_mode: PlacementMode::OnRelease,
+            remove_mode: PlacementMode::OnRelease,
+        }
+    }
 }
 
 impl QuantumFieldInfo {
@@ -293,8 +295,19 @@ impl QuantumFieldInfo {
 #[derive(Clone)]
 pub struct WispInfo {
     pub grid_imprint: GridImprint,
-    // Placement data
     pub validate: PlacementValidatorFn,
-    pub place_request: PlaceRequest<WispType>,
-    pub remove_request: RemoveRequest<WispType>,
+}
+
+impl From<&WispInfo> for ObjectPlacementInfo {
+    fn from(info: &WispInfo) -> Self {
+        Self {
+            imprint: info.grid_imprint,
+            validate: info.validate,
+            place_emitter: Box::new(PlaceRequest::<WispType>::default()),
+            remove_emitter: Some(Box::new(RemoveRequest::<WispType>::default())),
+            begin_placing_emitter: None,
+            place_mode: PlacementMode::OnPress,
+            remove_mode: PlacementMode::OnPress,
+        }
+    }
 }

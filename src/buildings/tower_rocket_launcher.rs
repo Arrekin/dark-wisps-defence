@@ -110,7 +110,6 @@ impl BuilderTowerRocketLauncher {
                 }),
             ]),
             validate: building_validator,
-            place_request: PlaceRequest::default(),
         }
     }
 

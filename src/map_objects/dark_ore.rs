@@ -25,8 +25,6 @@ impl Plugin for DarkOrePlugin {
                 sprite_paths: DARK_ORE_BASE_IMAGES.iter().map(|s| s.to_string()).collect(),
                 default_amount: 1000,
                 validate: validate_empty_placement,
-                place_request: PlaceRequest::default(),
-                remove_request: RemoveRequest::default(),
             })
             ;
     }

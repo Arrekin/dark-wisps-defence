@@ -19,8 +19,6 @@ impl Plugin for WallPlugin {
                 grid_imprint: WALL_GRID_IMPRINT,
                 sprite_path: WALL_BASE_IMAGE.to_string(),
                 validate: validate_empty_placement,
-                place_request: PlaceRequest::default(),
-                remove_request: RemoveRequest::default(),
             });
     }
 }

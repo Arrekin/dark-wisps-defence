@@ -77,7 +77,6 @@ impl BuilderMainBase {
             ]),
             upgrades: HashMap::default(),
             validate: building_validator,
-            place_request: PlaceRequest::default(),
         }
     }
 

@@ -83,7 +83,6 @@ impl BuilderMiningComplex {
             baseline: HashMap::from([(ModifierType::MaxHealth, 100.)]),
             upgrades: HashMap::default(),
             validate: building_validator,
-            place_request: PlaceRequest::default(),
         }
     }
 

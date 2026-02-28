@@ -106,7 +106,6 @@ impl BuilderTowerEmitter {
                 }),
             ]),
             validate: building_validator,
-            place_request: PlaceRequest::default(),
         }
     }
 
