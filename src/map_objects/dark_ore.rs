@@ -19,6 +19,15 @@ impl Plugin for DarkOrePlugin {
             .add_observer(on_dark_ore_remove_request)
             .register_db_loader::<BuilderDarkOre>(MapLoadingStage::SpawnMapElements)
             .register_db_saver(BuilderDarkOre::on_game_save)
+            .register_dark_ore(DarkOreInfo {
+                name: "Dark Ore".to_string(),
+                grid_imprint: DARK_ORE_GRID_IMPRINT,
+                sprite_paths: DARK_ORE_BASE_IMAGES.iter().map(|s| s.to_string()).collect(),
+                default_amount: 1000,
+                validate: validate_empty_placement,
+                place_request: PlaceRequest::default(),
+                remove_request: RemoveRequest::default(),
+            })
             ;
     }
 }

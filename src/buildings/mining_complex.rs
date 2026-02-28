@@ -13,7 +13,8 @@ impl Plugin for MiningComplexPlugin {
             ))
             .add_observer(BuilderMiningComplex::on_add)
             .register_db_loader::<BuilderMiningComplex>(MapLoadingStage::SpawnMapElements)
-            .register_db_saver(BuilderMiningComplex::on_game_save);
+            .register_db_saver(BuilderMiningComplex::on_game_save)
+            .register_building(BuildingType::MiningComplex, BuilderMiningComplex::almanach_info());
     }
 }
 
@@ -74,6 +75,18 @@ impl Loadable for BuilderMiningComplex {
     }
 }
 impl BuilderMiningComplex {
+    pub fn almanach_info() -> BuildingInfo {
+        BuildingInfo {
+            name: "Mining Complex".to_string(),
+            grid_imprint: GridImprint::Rectangle { width: 3, height: 3 },
+            cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 100 }],
+            baseline: HashMap::from([(ModifierType::MaxHealth, 100.)]),
+            upgrades: HashMap::default(),
+            validate: building_validator,
+            place_request: PlaceRequest::default(),
+        }
+    }
+
     pub fn new(grid_position: GridCoords) -> Self {
         Self { grid_position, save_data: None }
     }

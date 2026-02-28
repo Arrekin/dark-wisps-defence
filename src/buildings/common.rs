@@ -12,8 +12,8 @@ pub struct TowerTopRotation {
 }
 
 #[derive(Message)]
-pub struct BuildingDestroyedmessage(pub Entity);
-impl Command for BuildingDestroyedmessage {
+pub struct BuildingDestroyedMessage(pub Entity);
+impl Command for BuildingDestroyedMessage {
     fn apply(self, world: &mut World) {
         world.write_message(self);
     }

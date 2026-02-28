@@ -38,6 +38,12 @@ impl Plugin for WispsPlugin {
             .add_observer(spawning::on_wisp_spawn_attach_material::<WispLightType, materials::WispLightMaterial>)
             .add_observer(spawning::on_wisp_spawn_attach_material::<WispElectricType, materials::WispElectricMaterial>)
             .register_db_loader::<spawning::BuilderWisp>(MapLoadingStage::SpawnMapElements)
-            .register_db_saver(spawning::BuilderWisp::on_game_save);
+            .register_db_saver(spawning::BuilderWisp::on_game_save)
+            .register_wisps(WispInfo {
+                grid_imprint: spawning::WISP_GRID_IMPRINT,
+                validate: validate_empty_placement,
+                place_request: PlaceRequest::default(),
+                remove_request: RemoveRequest::default(),
+            });
     }
 }

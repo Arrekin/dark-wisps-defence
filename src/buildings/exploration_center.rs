@@ -59,6 +59,7 @@ impl Plugin for ExplorationCenterPlugin {
             .add_observer(TargetListItemCameraPreview::on_add)
             .register_db_loader::<BuilderExplorationCenter>(MapLoadingStage::SpawnMapElements)
             .register_db_saver(BuilderExplorationCenter::on_game_save)
+            .register_building(BuildingType::ExplorationCenter, BuilderExplorationCenter::almanach_info())
             ;
     }
 }
@@ -118,6 +119,18 @@ impl Loadable for BuilderExplorationCenter {
     }
 }
 impl BuilderExplorationCenter {
+    pub fn almanach_info() -> BuildingInfo {
+        BuildingInfo {
+            name: "Exploration Center".to_string(),
+            grid_imprint: GridImprint::Rectangle { width: 4, height: 4 },
+            cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 500 }],
+            baseline: HashMap::from([(ModifierType::MaxHealth, 100.)]),
+            upgrades: HashMap::default(),
+            validate: building_validator,
+            place_request: PlaceRequest::default(),
+        }
+    }
+
     pub fn new(grid_position: GridCoords) -> Self {
         Self { grid_position, save_data: None }
     }

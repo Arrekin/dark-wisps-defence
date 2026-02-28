@@ -188,5 +188,5 @@ fn on_building_destroy_request(
     grid_imprint.covered_coords(*grid_coords).into_iter().for_each(|coords| {
         commands.spawn(BuilderExplosion(coords));
     });
-    commands.queue(BuildingDestroyedmessage(building_to_destroy));
+    commands.queue(BuildingDestroyedMessage(building_to_destroy));
 }

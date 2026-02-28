@@ -13,7 +13,15 @@ impl Plugin for WallPlugin {
             .register_db_saver(BuilderWall::on_game_save)
             .add_observer(BuilderWall::on_add)
             .add_observer(on_wall_place_request)
-            .add_observer(on_wall_remove_request);
+            .add_observer(on_wall_remove_request)
+            .register_walls(WallInfo {
+                name: "Wall".to_string(),
+                grid_imprint: WALL_GRID_IMPRINT,
+                sprite_path: WALL_BASE_IMAGE.to_string(),
+                validate: validate_empty_placement,
+                place_request: PlaceRequest::default(),
+                remove_request: RemoveRequest::default(),
+            });
     }
 }
 

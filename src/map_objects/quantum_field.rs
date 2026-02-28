@@ -58,6 +58,15 @@ impl Plugin for QuantumFieldPlugin {
         .add_observer(on_quantum_field_remove_request)
         .register_db_loader::<BuilderQuantumField>(MapLoadingStage::SpawnMapElements)
         .register_db_saver(BuilderQuantumField::on_game_save)
+        .register_quantum_field(QuantumFieldInfo {
+            name: "Quantum Field".to_string(),
+            min_size: 3,
+            max_size: 6,
+            default_size: 3,
+            validate: validate_empty_placement,
+            place_request: PlaceRequest::default(),
+            remove_request: RemoveRequest::default(),
+        })
         ;
     }
 }
