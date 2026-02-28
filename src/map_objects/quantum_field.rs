@@ -284,12 +284,12 @@ fn on_quantum_field_place_request(
     mut commands: Commands,
     mut reserved_coords: ResMut<ReservedCoords>,
     obstacles_grid: Res<ObstacleGrid>,
-    placer: Single<(&GridObjectPlacer, &GridCoords, &GridImprint)>,
+    placer: Single<(&GridCoords, &GridImprint), With<GridObjectPlacer>>,
 ) {
-    let (_grid_object_placer, coords, grid_imprint) = placer.into_inner();
+    let (coords, grid_imprint) = placer.into_inner();
     if !coords.is_in_bounds(obstacles_grid.bounds()) { return; }
 
-    let is_area_free_from_quantum_fields = obstacles_grid.query_imprint_all(*coords, *grid_imprint, |field| { !field.is_within_quantum_field()});
+    let is_area_free_from_quantum_fields = obstacles_grid.query_imprint_all(*coords, *grid_imprint, |field| !field.is_within_quantum_field());
     if is_area_free_from_quantum_fields && !reserved_coords.any_reserved(*coords, *grid_imprint) {
         commands.spawn(BuilderQuantumField::new(*coords, *grid_imprint));
         reserved_coords.reserve(*coords, *grid_imprint);

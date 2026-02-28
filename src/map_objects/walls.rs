@@ -138,9 +138,9 @@ fn on_wall_place_request(
     mut commands: Commands,
     mut reserved_coords: ResMut<ReservedCoords>,
     obstacle_grid: Res<ObstacleGrid>,
-    placer: Single<(&GridObjectPlacer, &GridCoords, &GridImprint)>,
+    placer: Single<(&GridCoords, &GridImprint), With<GridObjectPlacer>>,
 ) {
-    let (_grid_object_placer, coords, grid_imprint) = placer.into_inner();
+    let (coords, grid_imprint) = placer.into_inner();
 
     if !coords.is_in_bounds(obstacle_grid.bounds()) { return; }
     if obstacle_grid[*coords].is_empty() && !reserved_coords.any_reserved(*coords, *grid_imprint) {
