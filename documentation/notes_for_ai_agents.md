@@ -196,3 +196,16 @@ Use `pub` only for constants needed outside the module.
 UI components that belong to a specific feature live in that feature's file, not in a separate UI module. For example, `ExplorationCenterInfoPanel` is in `exploration_center.rs`.
 
 Generic/reusable UI lives in `lib-ui` or `src/ui/`.
+
+## Bevy Notes
+- `Single<>` query type — system/observer is skipped entirely when not exactly one match. Good if it should only run when a specific entity exists. For 0 or 1, use `Option<Single<>>`.
+- `EventReader`/`EventWriter` renamed to `MessageReader`/`MessageWriter`. The `Event` trait + `commands.trigger()` is now for immediate observer-based dispatch.
+
+## Code Style
+- Query variables use plural form (e.g., `tabs`, `segments`), not `_q` suffix(singular when using Single<>)
+- Encapsulate component internals behind methods. Use the API, don't reach into fields.
+- Don't put newlines between struct and its impl blocks
+- **Use `pub`, not `pub(crate)`.** `pub(crate)` adds noise with no benefit(in this case).
+- **Comments must be timeless.** Never leave comments that reference the current conversation, refactoring session, or rationale like "we moved this here because X was duplicated." Comments should make sense to a reader who has no context of how the code evolved. If the code is self-explanatory, no comment is needed.
+- Prefer `query.iter()` over `&query` (the same for `iter_mut`)
+- Avoid contractions in variable names — verbosity is preferred.

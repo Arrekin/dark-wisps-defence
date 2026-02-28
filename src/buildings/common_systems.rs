@@ -23,7 +23,6 @@ impl Plugin for CommonSystemsPlugin {
         app
             .add_systems(PreUpdate, tick_shooting_timers_system.run_if(in_state(GameState::Running)))
             .add_systems(Update,(
-                onclick_building_spawn_system.run_if(in_state(UiInteraction::PlaceGridObject)),
                 (
                     targeting_system,
                     rotate_tower_top_system,
@@ -32,65 +31,64 @@ impl Plugin for CommonSystemsPlugin {
                 ).run_if(in_state(GameState::Running)),
             ))
             .add_observer(on_building_destroy_request)
+            .add_observer(on_building_place_request)
             ;
     }
 }
 
-fn onclick_building_spawn_system(
+fn on_building_place_request(
+    _trigger: On<lib_core::placement::PlaceRequest<Building>>,
     mut commands: Commands,
     mut reserved_coords: ResMut<ReservedCoords>,
     obstacle_grid: Res<ObstacleGrid>,
-    mouse: Res<ButtonInput<MouseButton>>,
-    mouse_info: Res<MouseInfo>,
     almanach: Res<Almanach>,
     mut stock: ResMut<Stock>,
-    grid_object_placer: Single<(&GridObjectPlacer, &GridImprint)>,
+    placer: Single<(&GridObjectPlacer, &GridCoords, &GridImprint)>,
     main_base: Query<Entity, With<MainBase>>,
 ) {
-    let mouse_coords = mouse_info.grid_coords;
-    if mouse_info.is_over_ui || !mouse.just_released(MouseButton::Left) { return; }
-    let (grid_object_placer, grid_imprint) = grid_object_placer.into_inner();
-    let GridObjectPlacer::Building(building_type) = grid_object_placer else { return; };
-    // Grid Placement Validation
-    if !mouse_coords.is_imprint_in_bounds(grid_imprint, obstacle_grid.bounds())
-        || !obstacle_grid.query_building_placement(mouse_coords, *building_type, *grid_imprint) 
-        || reserved_coords.any_reserved(mouse_coords, *grid_imprint) { return; }
+    let (grid_object_placer, coords, grid_imprint) = placer.into_inner();
+    let Some(active_placement) = &grid_object_placer.active_placement else { return };
+    let MapObject::Building(building_type) = active_placement.map_object else { return };
+    
+    // Full validation
+    if !coords.is_imprint_in_bounds(grid_imprint, obstacle_grid.bounds())
+        || !obstacle_grid.query_building_placement(*coords, building_type, *grid_imprint) 
+        || reserved_coords.any_reserved(*coords, *grid_imprint) { return; }
+    
     // Payment
-    let building_costs = &almanach.get_building_info(*building_type).cost;
+    let building_costs = &almanach.get_building_info(building_type).cost;
     if !stock.try_pay_costs(building_costs) { println!("Not enough dark ore"); return; }
-    // Creation
-    // ---
-    // ---
-    reserved_coords.reserve(mouse_coords, *grid_imprint);
+    
+    // Reserve and spawn
+    reserved_coords.reserve(*coords, *grid_imprint);
     match building_type {
         BuildingType::EnergyRelay => {
-            commands.spawn(BuilderEnergyRelay::new(mouse_coords));
+            commands.spawn(BuilderEnergyRelay::new(*coords));
         }
         BuildingType::ExplorationCenter => {
-            commands.spawn(BuilderExplorationCenter::new(mouse_coords));
+            commands.spawn(BuilderExplorationCenter::new(*coords));
         }
         BuildingType::Tower(TowerType::Blaster) => {
-            commands.spawn(BuilderTowerBlaster::new(mouse_coords));
+            commands.spawn(BuilderTowerBlaster::new(*coords));
         },
         BuildingType::Tower(TowerType::Cannon) => {
-            commands.spawn(BuilderTowerCannon::new(mouse_coords));
+            commands.spawn(BuilderTowerCannon::new(*coords));
         },
         BuildingType::Tower(TowerType::RocketLauncher) => {
-            commands.spawn(BuilderTowerRocketLauncher::new(mouse_coords));
+            commands.spawn(BuilderTowerRocketLauncher::new(*coords));
         },
         BuildingType::Tower(TowerType::Emitter) => {
-            commands.spawn(BuilderTowerEmitter::new(mouse_coords));
+            commands.spawn(BuilderTowerEmitter::new(*coords));
         },
         BuildingType::MainBase => {
             let Ok(main_base_entity) = main_base.single() else { return; };
             // Remove/Insert ObstacleGridObject to trigger grid reprint
-            commands.entity(main_base_entity).remove::<ObstacleGridObject>().insert(mouse_coords).insert(ObstacleGridObject::Building);
+            commands.entity(main_base_entity).remove::<ObstacleGridObject>().insert(*coords).insert(ObstacleGridObject::Building);
         },
         BuildingType::MiningComplex => {
-            commands.spawn(BuilderMiningComplex::new(mouse_coords));
+            commands.spawn(BuilderMiningComplex::new(*coords));
         },
     };
-
 }
 
 fn targeting_system(
@@ -190,5 +188,5 @@ fn on_building_destroy_request(
     grid_imprint.covered_coords(*grid_coords).into_iter().for_each(|coords| {
         commands.spawn(BuilderExplosion(coords));
     });
-    commands.queue(BuildingDestroyedmessage(building_to_destroy));
+    commands.queue(BuildingDestroyedMessage(building_to_destroy));
 }

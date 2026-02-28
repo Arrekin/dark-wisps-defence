@@ -29,6 +29,16 @@ pub trait Property {
     fn new(value: f32) -> Self;
 }
 
+/// Global identifier for all placeable objects on the map.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum MapObject {
+    Building(BuildingType),
+    Wall,
+    DarkOre,
+    QuantumField,
+    Wisp(WispType),
+}
+
 // Event that carries yaml-define or constant events 
 #[derive(Event)]
 pub struct DynamicGameEvent(pub String);

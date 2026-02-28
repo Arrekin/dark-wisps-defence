@@ -20,7 +20,7 @@ pub struct BuildingsPlugin;
 impl Plugin for BuildingsPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_message::<common::BuildingDestroyedmessage>()
+            .add_message::<common::BuildingDestroyedMessage>()
             .add_plugins((
                 common_systems::CommonSystemsPlugin,
                 info_panel::InfoPanelPlugin,

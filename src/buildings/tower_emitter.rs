@@ -11,7 +11,8 @@ impl Plugin for TowerEmitterPlugin {
                 shooting_system.run_if(in_state(GameState::Running)),
             ))
             .register_db_loader::<BuilderTowerEmitter>(MapLoadingStage::SpawnMapElements)
-            .register_db_saver(BuilderTowerEmitter::on_game_save);
+            .register_db_saver(BuilderTowerEmitter::on_game_save)
+            .register_building(BuildingType::Tower(TowerType::Emitter), BuilderTowerEmitter::almanach_info());
     }
 }
 
@@ -77,6 +78,37 @@ impl Loadable for BuilderTowerEmitter {
 }
 
 impl BuilderTowerEmitter {
+    pub fn almanach_info() -> BuildingInfo {
+        BuildingInfo {
+            name: "Emitter Tower".to_string(),
+            grid_imprint: GridImprint::Rectangle { width: 2, height: 2 },
+            cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 450 }],
+            baseline: HashMap::from([
+                (ModifierType::MaxHealth, 100.),
+                (ModifierType::AttackRange, 4.),
+                (ModifierType::AttackSpeed, 0.5),
+                (ModifierType::AttackDamage, 1.),
+            ]),
+            upgrades: HashMap::from([
+                (UpgradeType::Modifier(ModifierType::AttackRange), UpgradeInfo {
+                    levels: vec![
+                        UpgradeLevelInfo { value: 1., cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 100 }] },
+                        UpgradeLevelInfo { value: 2., cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 200 }] },
+                        UpgradeLevelInfo { value: 3., cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 300 }] },
+                    ],
+                }),
+                (UpgradeType::Modifier(ModifierType::AttackSpeed), UpgradeInfo {
+                    levels: vec![
+                        UpgradeLevelInfo { value: 0.1, cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 100 }] },
+                        UpgradeLevelInfo { value: 0.1, cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 200 }] },
+                        UpgradeLevelInfo { value: 0.1, cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 300 }] },
+                    ],
+                }),
+            ]),
+            validate: building_validator,
+        }
+    }
+
     pub fn new(grid_position: GridCoords) -> Self { Self { grid_position, save_data: None } }
     pub fn new_for_saving(grid_position: GridCoords, save_data: TowerEmitterSaveData) -> Self {
         Self { grid_position, save_data: Some(save_data) }

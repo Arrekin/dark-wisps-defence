@@ -4,10 +4,13 @@ pub mod buildings;
 pub mod camera;
 pub mod grids;
 pub mod mouse;
+pub mod placement;
 pub mod states;
 pub mod common;
 pub mod utils;
 pub mod persistence;
+pub mod wisps;
+pub mod map_objects;
 
 pub struct LibCorePlugin;
 impl Plugin for LibCorePlugin {
@@ -32,6 +35,7 @@ pub mod prelude {
     pub use crate::states::states_prelude::*;
     pub use crate::common::common_prelude::*;
     pub use crate::persistence::load_save_prelude::*;
+    pub use crate::wisps::wisps_prelude::*;
     // Re-export the derive macros
     pub use lib_derive::{Property, SSS};
 }

@@ -1,11 +1,12 @@
 use std::str::FromStr;
 
 use lib_grid::grids::wisps::WispsGrid;
+use lib_core::wisps::{WispFireType, WispWaterType, WispLightType, WispElectricType};
 
 use crate::prelude::*;
 use crate::ui::grid_object_placer::GridObjectPlacer;
 
-use super::components::{Wisp, WispElectricType, WispFireType, WispLightType, WispState, WispType, WispWaterType};
+use super::components::{Wisp, WispState};
 use super::materials::WispMaterial;
 
 pub const WISP_GRID_IMPRINT: GridImprint = GridImprint::Rectangle { width: 1, height: 1 };
@@ -152,6 +153,24 @@ impl BuilderWisp {
     }
 }
 
+pub fn wisp_validator(
+    _: MapObject,
+    coords: GridCoords,
+    imprint: GridImprint,
+    grids: &GridsCollection,
+) -> PlacementValidationResult {
+    if !coords.is_in_bounds(grids.obstacle_grid.bounds()) {
+        return PlacementValidationResult::invalid();
+    }
+    if !grids.obstacle_grid.query_imprint_all(coords, imprint, |f| f.is_empty()) {
+        return PlacementValidationResult::invalid();
+    }
+    if !grids.wisps_grid[coords].is_empty() {
+        return PlacementValidationResult::invalid();
+    }
+    PlacementValidationResult::valid()
+}
+
 pub fn on_wisp_spawn_attach_material<WispT: Component, MaterialT: Asset + WispMaterial>(
     trigger: On<Add, WispT>,
     mut commands: Commands,
@@ -171,26 +190,37 @@ pub fn on_wisp_spawn_attach_material<WispT: Component, MaterialT: Asset + WispMa
     ));
 }
 
-pub fn onclick_spawn_system(
+pub fn on_wisp_place_request(
+    _trigger: On<lib_core::placement::PlaceRequest<WispType>>,
     mut commands: Commands,
     obstacle_grid: Res<lib_grid::grids::obstacles::ObstacleGrid>,
     wisps_grid: Res<WispsGrid>,
-    mouse: Res<ButtonInput<MouseButton>>,
-    mouse_info: Res<MouseInfo>,
-    grid_object_placer: Single<&GridObjectPlacer>,
+    placer: Single<(&GridObjectPlacer, &GridCoords, &GridImprint)>,
 ) {
-    let GridObjectPlacer::Wisp(wisp_type) = *grid_object_placer.into_inner() else { return; };
-    let mouse_coords = mouse_info.grid_coords;
-    if mouse_info.is_over_ui || !mouse_coords.is_in_bounds(obstacle_grid.bounds()) { return; }
-    if mouse.just_released(MouseButton::Left) {
-        // Place a wisp
-        if obstacle_grid.query_imprint_all(mouse_coords, WISP_GRID_IMPRINT, |field| field.is_empty()) {
-            commands.spawn(BuilderWisp::new(wisp_type, mouse_coords));
-        }
-    } else if mouse.just_released(MouseButton::Right) {
-        // Remove all wisps from given cell
-        for wisp in wisps_grid[mouse_coords].iter() {
-            commands.entity(*wisp).despawn();
+    let (grid_object_placer, coords, grid_imprint) = placer.into_inner();
+    let Some(active_placement) = &grid_object_placer.active_placement else { return };
+    let MapObject::Wisp(wisp_type) = active_placement.map_object else { return };
+    
+    if !coords.is_in_bounds(obstacle_grid.bounds()) { return; }
+    if obstacle_grid.query_imprint_all(*coords, *grid_imprint, |field| field.is_empty()) && wisps_grid[*coords].is_empty()
+    {
+        commands.spawn(BuilderWisp::new(wisp_type, *coords));
+    }
+}
+
+pub fn on_wisp_remove_request(
+    _trigger: On<lib_core::placement::RemoveRequest<WispType>>,
+    mut commands: Commands,
+    mut wisps_grid: ResMut<WispsGrid>,
+    placer: Single<&GridCoords, With<GridObjectPlacer>>,
+    wisps: Query<Entity, With<Wisp>>,
+) {
+    let coords = placer.into_inner();
+    let wisp_entities = wisps_grid[*coords].clone();
+    for wisp_entity in wisp_entities {
+        if wisps.contains(wisp_entity) {
+            wisps_grid.wisp_remove(*coords, wisp_entity);
+            commands.entity(wisp_entity).despawn();
         }
     }
 }

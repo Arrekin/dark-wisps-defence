@@ -4,8 +4,6 @@ use serde::{Deserialize, Serialize};
 use lib_grid::grids::obstacles::ObstacleGrid;
 
 use crate::prelude::*;
-
-use super::components::WispType;
 use super::spawning::BuilderWisp;
 
 pub struct SummoningPlugin;

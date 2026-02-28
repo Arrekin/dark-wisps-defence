@@ -12,9 +12,7 @@ use crate::buildings::tower_blaster::TOWER_BLASTER_BASE_IMAGE;
 use crate::buildings::tower_cannon::TOWER_CANNON_BASE_IMAGE;
 use crate::buildings::tower_rocket_launcher::TOWER_ROCKET_LAUNCHER_BASE_IMAGE;
 use crate::map_objects::dark_ore::DARK_ORE_BASE_IMAGES;
-use crate::map_objects::quantum_field::QuantumFieldImprintSelector;
-use crate::ui::grid_object_placer::{GridObjectPlacer, GridObjectPlacerRequest};
-use crate::wisps::components::WispType;
+use crate::ui::grid_object_placer::GridObjectPlacerRequest;
 
 const NOT_HOVERED_ALPHA: f32 = 0.2;
 const CONSTRUCT_MENU_BUTTON_WIDTH: f32 = 65.;
@@ -142,18 +140,18 @@ impl ConstructMenuListPicker {
 #[derive(Component)]
 #[require(Button, FocusPolicy)]
 pub struct ConstructObjectButton {
-    pub object_type: GridObjectPlacer,
+    pub object_type: MapObject,
     pub background_color: Color,
 }
 impl ConstructObjectButton{
-    pub fn new(object_type: GridObjectPlacer) -> Self {
+    pub fn new(object_type: MapObject) -> Self {
         Self { 
             object_type,
             background_color: TURQUOISE.into(),
         }
     }
 
-    pub fn new_admin(object_type: GridObjectPlacer) -> Self {
+    pub fn new_admin(object_type: MapObject) -> Self {
         Self { 
             object_type,
             background_color: Color::srgb(0.8, 0.3, 0.1), // Custom reddish-orange
@@ -189,8 +187,8 @@ impl ConstructObjectButton{
             .observe(Self::on_click)
             .with_children(|parent| {
                 let object_type = &button.object_type;
-                let image_handle = match &object_type {
-                    GridObjectPlacer::Building(building_type) => match building_type {
+                let image_handle = match object_type {
+                    MapObject::Building(building_type) => match building_type {
                         BuildingType::Tower(tower_type) => {
                             match tower_type {
                                 TowerType::Blaster => Some(TOWER_BLASTER_BASE_IMAGE),
@@ -204,8 +202,8 @@ impl ConstructObjectButton{
                         BuildingType::ExplorationCenter => Some(EXPLORATION_CENTER_BASE_IMAGE),
                         BuildingType::MiningComplex => Some(MINING_COMPLEX_BASE_IMAGE),
                     },
-                    GridObjectPlacer::DarkOre => Some(DARK_ORE_BASE_IMAGES[0]),
-                    GridObjectPlacer::Wall => Some(WALL_BASE_IMAGE),
+                    MapObject::DarkOre => Some(DARK_ORE_BASE_IMAGES[0]),
+                    MapObject::Wall => Some(WALL_BASE_IMAGE),
                     _ => None,
                 };
                 if let Some(image_handle) = image_handle {
@@ -230,7 +228,7 @@ impl ConstructObjectButton{
     ) {
         let entity = trigger.entity;
         let Ok(button) = menu_buttons.get(entity) else { return; };
-        grid_object_placer_request.set(button.object_type.clone());
+        grid_object_placer_request.set(button.object_type);
         list_pickers.iter_mut().for_each(|(mut interaction, mut visibility)| { *visibility = Visibility::Hidden; *interaction = Interaction::None; });
     }
 }
@@ -260,10 +258,10 @@ impl SideMenu {
                         ConstructMenuListPicker,
                         children![
                             // Specific tower to construct
-                            ConstructObjectButton::new(BuildingType::Tower(TowerType::Blaster).into()),
-                            ConstructObjectButton::new(BuildingType::Tower(TowerType::Cannon).into()),
-                            ConstructObjectButton::new(BuildingType::Tower(TowerType::RocketLauncher).into()),
-                            ConstructObjectButton::new(BuildingType::Tower(TowerType::Emitter).into()),
+                            ConstructObjectButton::new(MapObject::Building(BuildingType::Tower(TowerType::Blaster))),
+                            ConstructObjectButton::new(MapObject::Building(BuildingType::Tower(TowerType::Cannon))),
+                            ConstructObjectButton::new(MapObject::Building(BuildingType::Tower(TowerType::RocketLauncher))),
+                            ConstructObjectButton::new(MapObject::Building(BuildingType::Tower(TowerType::Emitter))),
                         ]
                     )]
                 ),
@@ -275,9 +273,9 @@ impl SideMenu {
                         ConstructMenuListPicker,
                         children![
                             // Specific building to construct
-                            ConstructObjectButton::new(BuildingType::EnergyRelay.into()),
-                            ConstructObjectButton::new(BuildingType::MiningComplex.into()),
-                            ConstructObjectButton::new(BuildingType::ExplorationCenter.into()),
+                            ConstructObjectButton::new(MapObject::Building(BuildingType::EnergyRelay)),
+                            ConstructObjectButton::new(MapObject::Building(BuildingType::MiningComplex)),
+                            ConstructObjectButton::new(MapObject::Building(BuildingType::ExplorationCenter)),
                         ]
                     )]
                 ),
@@ -314,10 +312,10 @@ impl SideMenu {
                         ConstructMenuListPicker,
                         children![
                             // Specific editor building to construct
-                            ConstructObjectButton::new_admin(BuildingType::MainBase.into()),
-                            ConstructObjectButton::new_admin(GridObjectPlacer::DarkOre),
-                            ConstructObjectButton::new_admin(GridObjectPlacer::Wall),
-                            ConstructObjectButton::new_admin(GridObjectPlacer::QuantumField(QuantumFieldImprintSelector::default())),
+                            ConstructObjectButton::new_admin(MapObject::Building(BuildingType::MainBase)),
+                            ConstructObjectButton::new_admin(MapObject::DarkOre),
+                            ConstructObjectButton::new_admin(MapObject::Wall),
+                            ConstructObjectButton::new_admin(MapObject::QuantumField),
                         ]
                     )]
                 ),
@@ -330,10 +328,10 @@ impl SideMenu {
                         ConstructMenuListPicker,
                         children![
                             // Specific wisp to construct
-                            ConstructObjectButton::new_admin(WispType::Fire.into()),
-                            ConstructObjectButton::new_admin(WispType::Water.into()),
-                            ConstructObjectButton::new_admin(WispType::Light.into()),
-                            ConstructObjectButton::new_admin(WispType::Electric.into()),
+                            ConstructObjectButton::new_admin(MapObject::Wisp(WispType::Fire)),
+                            ConstructObjectButton::new_admin(MapObject::Wisp(WispType::Water)),
+                            ConstructObjectButton::new_admin(MapObject::Wisp(WispType::Light)),
+                            ConstructObjectButton::new_admin(MapObject::Wisp(WispType::Electric)),
                         ]
                     )],
                 ),

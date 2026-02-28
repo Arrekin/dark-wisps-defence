@@ -9,6 +9,7 @@ nanorand = { version = "0.7.*", features = ["tls"] }
 refinery = { version = "0.9.*", features = ["rusqlite"]}
 rusqlite = { version = "0.37.*", features = ["bundled"] }
 serde = "1.0.*"
+strum = { version = "0.28.*", features = ["derive"] }
 
 [dependencies.lib-derive]
 path = "../lib-derive"

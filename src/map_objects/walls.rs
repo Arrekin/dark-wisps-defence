@@ -1,3 +1,4 @@
+use lib_core::map_objects::Wall;
 use lib_grid::grids::obstacles::{GridStructureType, ObstacleGrid, ReservedCoords};
 
 use crate::prelude::*;
@@ -7,44 +8,23 @@ pub struct WallPlugin;
 impl Plugin for WallPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_systems(Update, (
-                onclick_spawn_system.run_if(in_state(UiInteraction::PlaceGridObject)),
-                Wall::pulsate_brightness,
-            ))
+            .add_systems(Update, pulsate_brightness)
             .register_db_loader::<BuilderWall>(MapLoadingStage::SpawnMapElements)
             .register_db_saver(BuilderWall::on_game_save)
-            .add_observer(BuilderWall::on_add);
+            .add_observer(BuilderWall::on_add)
+            .add_observer(on_wall_place_request)
+            .add_observer(on_wall_remove_request)
+            .register_walls(WallInfo {
+                name: "Wall".to_string(),
+                grid_imprint: WALL_GRID_IMPRINT,
+                sprite_path: WALL_BASE_IMAGE.to_string(),
+                validate: validate_empty_placement,
+            });
     }
 }
 
 pub const WALL_GRID_IMPRINT: GridImprint = GridImprint::Rectangle { width: 1, height: 1 };
 pub const WALL_BASE_IMAGE: &str = "map_objects/wall_4side.png";
-
-#[derive(Component)]
-#[require(MapBound, ObstacleGridObject = ObstacleGridObject::Wall, EmissionsGridSpreadAffector)]
-pub struct Wall;
-impl Wall {
-    fn pulsate_brightness(
-        time: Res<Time>,
-        mut walls: Query<&mut Sprite, With<Wall>>,
-        mut lightness_rising: Local<bool>,
-        mut shared_lightness: Local<f32>,
-    ) {
-        let lightness_delta = time.delta_secs() / 10.;
-        *shared_lightness += if *lightness_rising { lightness_delta } else { -lightness_delta };
-        if *shared_lightness > 1.5 {
-            *lightness_rising = false;
-        } else if *shared_lightness < 1. {
-            *lightness_rising = true;
-            *shared_lightness = 1.;
-        }
-        for mut sprite in walls.iter_mut() {
-            if let Color::Hsla(Hsla{lightness, ..}) = &mut sprite.color {
-                *lightness = *shared_lightness;
-            }
-        }
-    }
-}
 
 #[derive(Component, SSS)]
 pub struct BuilderWall {
@@ -70,25 +50,25 @@ impl Loadable for BuilderWall {
         while let Some(row) = rows.next()? {
             let old_id: i64 = row.get(0)?;
             let grid_position = ctx.conn.get_grid_coords(old_id)?;
-            
+
             if let Some(new_entity) = ctx.get_new_entity_for_old(old_id) {
                 batch.push((new_entity, BuilderWall::new_for_saving(grid_position, new_entity)));
             } else {
                 eprintln!("Warning: Wall with old ID {} has no corresponding new entity", old_id);
             }
         }
-        
+
         let batch_size = batch.len();
         ctx.commands.insert_batch(batch);
-        
+
         Ok(batch_size.into())
     }
 }
 impl BuilderWall {
-    pub fn new(grid_position: GridCoords) -> Self { 
+    pub fn new(grid_position: GridCoords) -> Self {
         Self { grid_position, entity: None }
     }
-    pub fn new_for_saving(grid_position: GridCoords, entity: Entity) -> Self { 
+    pub fn new_for_saving(grid_position: GridCoords, entity: Entity) -> Self {
         Self { grid_position, entity: Some(entity) }
     }
 
@@ -100,21 +80,21 @@ impl BuilderWall {
     ) {
         let entity = trigger.entity;
         let Ok(builder) = builders.get(entity) else { return; };
-        
+
         commands.entity(entity)
             .remove::<BuilderWall>()
             .insert((
-                Sprite {
-                    image: asset_server.load(WALL_BASE_IMAGE),
-                    color: Color::hsla(0., 0., 1.5, 0.9), //for hdr brightness pulsation
-                    custom_size: Some(WALL_GRID_IMPRINT.world_size()),
-                    ..default()
-                },
-                Transform::from_translation(builder.grid_position.to_world_position_centered(WALL_GRID_IMPRINT).extend(Z_OBSTACLE)),
-                builder.grid_position,
-                WALL_GRID_IMPRINT,
-                Wall,
-            ));
+            Sprite {
+                image: asset_server.load(WALL_BASE_IMAGE),
+                color: Color::hsla(0., 0., 1.5, 0.9), //for hdr brightness pulsation
+                custom_size: Some(WALL_GRID_IMPRINT.world_size()),
+                ..default()
+            },
+            Transform::from_translation(builder.grid_position.to_world_position_centered(WALL_GRID_IMPRINT).extend(Z_OBSTACLE)),
+            builder.grid_position,
+            WALL_GRID_IMPRINT,
+            Wall,
+        ));
     }
 
     fn on_game_save(
@@ -130,27 +110,51 @@ impl BuilderWall {
     }
 }
 
-pub fn onclick_spawn_system(
+fn pulsate_brightness(
+    time: Res<Time>,
+    mut walls: Query<&mut Sprite, With<Wall>>,
+    mut lightness_rising: Local<bool>,
+    mut shared_lightness: Local<f32>,
+) {
+    let lightness_delta = time.delta_secs() / 10.;
+    *shared_lightness += if *lightness_rising { lightness_delta } else { -lightness_delta };
+    if *shared_lightness > 1.5 {
+        *lightness_rising = false;
+    } else if *shared_lightness < 1. {
+        *lightness_rising = true;
+        *shared_lightness = 1.;
+    }
+    for mut sprite in walls.iter_mut() {
+        if let Color::Hsla(Hsla{lightness, ..}) = &mut sprite.color {
+            *lightness = *shared_lightness;
+        }
+    }
+}
+
+fn on_wall_place_request(
+    _trigger: On<lib_core::placement::PlaceRequest<Wall>>,
     mut commands: Commands,
     mut reserved_coords: ResMut<ReservedCoords>,
     obstacle_grid: Res<ObstacleGrid>,
-    mouse: Res<ButtonInput<MouseButton>>,
-    mouse_info: Res<MouseInfo>,
-    grid_object_placer: Single<&GridObjectPlacer>,
+    placer: Single<(&GridCoords, &GridImprint), With<GridObjectPlacer>>,
 ) {
-    if !matches!(*grid_object_placer.into_inner(), GridObjectPlacer::Wall) { return; }
-    let mouse_coords = mouse_info.grid_coords;
-    if mouse_info.is_over_ui || !mouse_coords.is_in_bounds(obstacle_grid.bounds()) { return; }
-    if mouse.pressed(MouseButton::Left) {
-        // Place a wall
-        if obstacle_grid[mouse_coords].is_empty() && !reserved_coords.any_reserved(mouse_coords, WALL_GRID_IMPRINT) {
-            commands.spawn(BuilderWall::new(mouse_coords));
-            reserved_coords.reserve(mouse_coords, WALL_GRID_IMPRINT);
-        }
-    } else if mouse.pressed(MouseButton::Right) {
-        // Remove a wall
-        if let GridStructureType::Wall(entity) = obstacle_grid[mouse_coords].structure {
-            commands.entity(entity).despawn();
-        }
+    let (coords, grid_imprint) = placer.into_inner();
+
+    if !coords.is_in_bounds(obstacle_grid.bounds()) { return; }
+    if obstacle_grid[*coords].is_empty() && !reserved_coords.any_reserved(*coords, *grid_imprint) {
+        commands.spawn(BuilderWall::new(*coords));
+        reserved_coords.reserve(*coords, *grid_imprint);
+    }
+}
+
+fn on_wall_remove_request(
+    _trigger: On<lib_core::placement::RemoveRequest<Wall>>,
+    mut commands: Commands,
+    obstacle_grid: Res<ObstacleGrid>,
+    placer: Single<&GridCoords, With<GridObjectPlacer>>,
+) {
+    let coords = placer.into_inner();
+    if let GridStructureType::Wall(entity) = obstacle_grid[*coords].structure {
+        commands.entity(entity).despawn();
     }
 }

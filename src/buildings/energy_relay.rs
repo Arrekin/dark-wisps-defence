@@ -11,7 +11,8 @@ impl Plugin for EnergyRelayPlugin {
         app
             .add_observer(BuilderEnergyRelay::on_add)
             .register_db_loader::<BuilderEnergyRelay>(MapLoadingStage::SpawnMapElements)
-            .register_db_saver(BuilderEnergyRelay::on_game_save);
+            .register_db_saver(BuilderEnergyRelay::on_game_save)
+            .register_building(BuildingType::EnergyRelay, BuilderEnergyRelay::almanach_info());
     }
 }
 
@@ -68,6 +69,20 @@ impl Loadable for BuilderEnergyRelay {
     }
 }
 impl BuilderEnergyRelay {
+    pub fn almanach_info() -> BuildingInfo {
+        BuildingInfo {
+            name: "Energy Relay".to_string(),
+            grid_imprint: GridImprint::Rectangle { width: 2, height: 2 },
+            cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 300 }],
+            baseline: HashMap::from([
+                (ModifierType::MaxHealth, 100.),
+                (ModifierType::EnergySupplyRange, 12.),
+            ]),
+            upgrades: HashMap::default(),
+            validate: building_validator,
+        }
+    }
+
     pub fn new(grid_position: GridCoords) -> Self {
         Self { grid_position, save_data: None }
     }

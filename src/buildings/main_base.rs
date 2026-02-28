@@ -11,7 +11,8 @@ impl Plugin for MainBasePlugin {
         app
             .add_observer(BuilderMainBase::on_add)
             .register_db_loader::<BuilderMainBase>(MapLoadingStage::SpawnMapElements)
-            .register_db_saver(BuilderMainBase::on_game_save);
+            .register_db_saver(BuilderMainBase::on_game_save)
+            .register_building(BuildingType::MainBase, BuilderMainBase::almanach_info());
     }
 }
 
@@ -65,6 +66,20 @@ impl Loadable for BuilderMainBase {
     }
 }
 impl BuilderMainBase {
+    pub fn almanach_info() -> BuildingInfo {
+        BuildingInfo {
+            name: "Main Base".to_string(),
+            grid_imprint: GridImprint::Rectangle { width: 6, height: 6 },
+            cost: vec![],
+            baseline: HashMap::from([
+                (ModifierType::MaxHealth, 10000.),
+                (ModifierType::EnergySupplyRange, 15.),
+            ]),
+            upgrades: HashMap::default(),
+            validate: building_validator,
+        }
+    }
+
     pub fn new_for_saving(grid_position: GridCoords, save_data: MainBaseSaveData) -> Self {
         Self { grid_position, save_data: Some(save_data) }
     }
