@@ -1,3 +1,4 @@
+mod console;
 mod objectives;
 mod summonings;
 
@@ -9,13 +10,18 @@ use crate::prelude::*;
 use crate::wisps::summoning::Summoning;
 
 pub struct EditorPlugin;
-
 impl Plugin for EditorPlugin {
     fn build(&self, app: &mut App) {
         app
             .add_plugins(bevy_egui::EguiPlugin::default())
+            .insert_resource(bevy_egui::EguiGlobalSettings {
+                enable_absorb_bevy_input_system: true,
+                ..default()
+            })
+            .add_plugins(console::LogConsolePlugin)
             .init_resource::<EditorState>()
-            .add_systems(EguiPrimaryContextPass, editor_ui.run_if(in_state(AdminMode::Enabled)));
+            .add_systems(EguiPrimaryContextPass, editor_ui.run_if(in_state(AdminMode::Enabled)))
+            ;
     }
 }
 

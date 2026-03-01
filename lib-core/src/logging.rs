@@ -8,10 +8,10 @@
 //! ## Usage
 //!
 //! ```rust
-//! Log::info().dev().tag(Tag::GameLoading).message("EntityMap populated");
+//! Log::info().dev().tag(Tag::GameLoad).message("EntityMap populated");
 //!
 //! Log::warn().player()
-//!     .tags([Tag::Wave, Tag::Combat])
+//!     .tags([Tag::Wave, Tag::Resources])
 //!     .message(format!("Wave {} started with {} enemies", wave, count));
 //! ```
 
@@ -21,6 +21,7 @@ use std::collections::VecDeque;
 use std::fmt;
 use std::sync::OnceLock;
 use std::time::SystemTime;
+use strum::{AsRefStr, EnumIter};
 
 use crate::lib_prelude::*;
 
@@ -46,6 +47,7 @@ impl Plugin for LoggingPlugin {
 
 pub mod logging_prelude {
     pub use super::{Audience, Log, LogBuffer, LogEntryData, LogLevel, Tag};
+    pub use strum::IntoEnumIterator;
 }
 
 // ── LogLevel ──────────────────────────────────────────────────────────────────
@@ -86,7 +88,7 @@ impl fmt::Display for Audience {
 
 // ── Tag ───────────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumIter, AsRefStr)]
 pub enum Tag {
     GameLoad,
     GameSave,
@@ -231,7 +233,7 @@ fn format_entry_for_display(entry: &LogEntryData) -> String {
         format!("[{}] {}", entry.audience, entry.message)
     } else {
         let tags_display = entry.tags.iter()
-            .map(|tag| format!("{tag:?}"))
+            .map(|tag| tag.as_ref())
             .collect::<Vec<_>>()
             .join(", ");
         format!("[{}][{}] {}", entry.audience, tags_display, entry.message)
