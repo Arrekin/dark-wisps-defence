@@ -288,6 +288,7 @@ impl Objective {
             if !matches!(state, ObjectiveState::Inactive) { continue; }
             if event != &objective_details.activation_event { continue; }
             commands.entity(objective_entity).insert(ObjectiveState::InProgress);
+            Log::info().player().tag(Tag::Objectives).message(format!("Objective activated: {}", objective_details.id_name));
         }
     }
     fn on_objective_state_changed(
@@ -352,12 +353,12 @@ impl ObjectiveClearAllQuantumFields {
     // TODO: make it trigger only on quantum fields change event
     fn update(
         mut commands: Commands,
-        mut objectives: Query<(Entity, &Objective, &mut ObjectiveClearAllQuantumFields, &ObjectiveState)>,
+        mut objectives: Query<(Entity, &Objective, &mut ObjectiveClearAllQuantumFields, &ObjectiveState, &ObjectiveDetails)>,
         quantum_fields: Query<(), With<QuantumField>>,
         solved_fields: Query<(), (With<QuantumField>, With<Solved>)>,
         mut texts: Query<&mut Text, With<ObjectiveText>>,
     ) {
-        for (objective_entity, objective, mut objective_clear_all_quantum_fields, state) in &mut objectives {
+        for (objective_entity, objective, mut objective_clear_all_quantum_fields, state, details) in &mut objectives {
             if !matches!(state, ObjectiveState::InProgress) { continue; }
 
             let total = quantum_fields.iter().count();
@@ -368,6 +369,7 @@ impl ObjectiveClearAllQuantumFields {
             text.0 = format!("Clear All Quantum Fields: {}/{}", completed, total);
 
             if total > 0 && completed == total {
+                Log::info().player().tag(Tag::Objectives).message(format!("Objective completed: {}", details.id_name));
                 commands.entity(objective_entity).insert(ObjectiveState::Completed);
             }
         }
@@ -395,10 +397,10 @@ impl ObjectiveKillWisps {
     fn update(
         mut commands: Commands,
         stats_wisps_killed: Res<StatsWispsKilled>,
-        mut objectives: Query<(Entity, &Objective, &ObjectiveKillWisps, &ObjectiveState)>,
+        mut objectives: Query<(Entity, &Objective, &ObjectiveKillWisps, &ObjectiveState, &ObjectiveDetails)>,
         mut texts: Query<&mut Text, With<ObjectiveText>>,
     ) {
-        for (objective_entity, objective, objective_kill_wisps, state)  in &mut objectives {
+        for (objective_entity, objective, objective_kill_wisps, state, details) in &mut objectives {
             if !matches!(state, ObjectiveState::InProgress) { continue; }
             
             let current_amount = std::cmp::min(stats_wisps_killed.0 - objective_kill_wisps.started_amount, objective_kill_wisps.target_amount);
@@ -406,6 +408,7 @@ impl ObjectiveKillWisps {
             text.0 = format!("Kill Wisps: {}/{}", current_amount, objective_kill_wisps.target_amount);
 
             if current_amount == objective_kill_wisps.target_amount {
+                Log::info().player().tag(Tag::Objectives).message(format!("Objective completed: {}", details.id_name));
                 commands.entity(objective_entity).insert(ObjectiveState::Completed);
             }
 

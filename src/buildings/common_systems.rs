@@ -61,6 +61,7 @@ fn on_building_place_request(
     
     // Reserve and spawn
     reserved_coords.reserve(*coords, *grid_imprint);
+    Log::info().player().tag(Tag::Build).message(format!("'{}' placed at ({}, {})", almanach.get_building_info(building_type).name, coords.x, coords.y));
     match building_type {
         BuildingType::EnergyRelay => {
             commands.spawn(BuilderEnergyRelay::new(*coords));
@@ -179,12 +180,14 @@ fn rotational_aiming_system(
 fn on_building_destroy_request(
     trigger: On<BuildingDestroyRequest>,
     mut commands: Commands,
-    buildings: Query<(&GridImprint, &GridCoords), With<Building>>,
+    almanach: Res<Almanach>,
+    buildings: Query<(&GridImprint, &GridCoords, &BuildingType), With<Building>>,
 ) {
     let building_to_destroy = trigger.0;
-    let Ok((grid_imprint, grid_coords)) = buildings.get(building_to_destroy) else { return; };
+    let Ok((grid_imprint, grid_coords, building_type)) = buildings.get(building_to_destroy) else { return; };
 
     commands.entity(building_to_destroy).despawn();
+    Log::info().player().tag(Tag::Build).message(format!("'{}' destroyed at ({}, {})", almanach.get_building_info(*building_type).name, grid_coords.x, grid_coords.y));
     grid_imprint.covered_coords(*grid_coords).into_iter().for_each(|coords| {
         commands.spawn(BuilderExplosion(coords));
     });

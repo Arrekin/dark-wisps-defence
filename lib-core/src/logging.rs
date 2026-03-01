@@ -94,6 +94,8 @@ pub enum Tag {
     Wave,
     Ui,
     Editor,
+    Objectives,
+    Resources,
 }
 
 // ── LogEntryData ──────────────────────────────────────────────────────────────

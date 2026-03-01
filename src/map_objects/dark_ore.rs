@@ -140,10 +140,11 @@ impl BuilderDarkOre {
 
 fn remove_empty(
     mut commands: Commands,
-    dark_ores: Query<(Entity, &DarkOre), Changed<DarkOre>>,
+    dark_ores: Query<(Entity, &DarkOre, &GridCoords), Changed<DarkOre>>,
 ) {
-    for (entity, dark_ore) in dark_ores.iter() {
+    for (entity, dark_ore, coords) in dark_ores.iter() {
         if dark_ore.amount <= 0 {
+            Log::debug().dev().tag(Tag::Resources).message(format!("Dark ore at ({}, {}) depleted", coords.x, coords.y));
             commands.entity(entity).despawn();
         }
     }

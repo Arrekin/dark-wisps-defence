@@ -221,6 +221,8 @@ impl Loadable for BuilderSummoning {
                     is_active: is_active != 0,
                 };
                 ctx.commands.entity(new_entity).insert(BuilderSummoning::new_for_saving(summoning, save_data));
+            } else {
+                Log::warn().dev().tag(Tag::GameLoad).message(format!("Summoning with old ID {old_id} has no corresponding new entity"));
             }
             count += 1;
         }
@@ -327,5 +329,6 @@ fn on_summoning_activation_event(
     for (entity, summoning) in summonings.iter() {
         if event != &summoning.activation_event { continue; }
         commands.entity(entity).insert(SummoningMarkerActive);
+        Log::info().player().tag(Tag::Wave).message(format!("Summoning '{}' activated", summoning.id_name));
     }
 }
