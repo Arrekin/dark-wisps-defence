@@ -20,20 +20,19 @@ use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 
 use crate::prelude::*;
 
-const COL_TIME: f32     = 70.0;
-const COL_LEVEL: f32    = 48.0;
-const COL_AUDIENCE: f32 = 58.0;
-const COL_TAGS: f32     = 160.0;
+const TIME_COL_WIDTH: f32     = 70.0;
+const LEVEL_COL_WIDTH: f32    = 48.0;
+const AUDIENCE_COL_WIDTH: f32 = 58.0;
+const TAGS_COL_WIDTH: f32     = 160.0;
 
 pub struct LogConsolePlugin;
 impl Plugin for LogConsolePlugin {
     fn build(&self, app: &mut App) {
         app
             .init_resource::<LogConsoleState>()
-            .add_systems(Update,
-                LogConsoleState::toggle_visibility
-                    .run_if(input_just_pressed(KeyCode::Backquote))
-            )
+            .add_systems(Update, (
+                LogConsoleState::toggle_visibility.run_if(input_just_pressed(KeyCode::Backquote)),
+            ))
             .add_systems(EguiPrimaryContextPass, LogConsoleState::render)
             ;
     }
@@ -82,10 +81,8 @@ impl LogConsoleState {
             Audience::Developer => self.show_developer,
             Audience::Player    => self.show_player,
         };
-        let tag_ok = self.active_tags.is_empty()
-            || !entry.tags.is_disjoint(&self.active_tags);
-        let text_ok = text_filter_lower.is_empty()
-            || entry.message.to_lowercase().contains(text_filter_lower);
+        let tag_ok = self.active_tags.is_empty() || !entry.tags.is_disjoint(&self.active_tags);
+        let text_ok = text_filter_lower.is_empty() || entry.message.to_lowercase().contains(text_filter_lower);
         level_ok && audience_ok && tag_ok && text_ok
     }
 
@@ -142,10 +139,10 @@ impl LogConsoleState {
 
                 let row_height = ui.text_style_height(&egui::TextStyle::Body);
                 ui.horizontal(|ui| {
-                    ui.add_sized([COL_TIME, row_height],     egui::Label::new(egui::RichText::new("Time").strong()));
-                    ui.add_sized([COL_LEVEL, row_height],    egui::Label::new(egui::RichText::new("Level").strong()));
-                    ui.add_sized([COL_AUDIENCE, row_height], egui::Label::new(egui::RichText::new("Audience").strong()));
-                    ui.add_sized([COL_TAGS, row_height],     egui::Label::new(egui::RichText::new("Tags").strong()));
+                    ui.add_sized([TIME_COL_WIDTH, row_height],     egui::Label::new(egui::RichText::new("Time").strong()));
+                    ui.add_sized([LEVEL_COL_WIDTH, row_height],    egui::Label::new(egui::RichText::new("Level").strong()));
+                    ui.add_sized([AUDIENCE_COL_WIDTH, row_height], egui::Label::new(egui::RichText::new("Audience").strong()));
+                    ui.add_sized([TAGS_COL_WIDTH, row_height],     egui::Label::new(egui::RichText::new("Tags").strong()));
                     ui.label(egui::RichText::new("Message").strong());
                 });
                 ui.separator();
@@ -163,19 +160,19 @@ impl LogConsoleState {
                         ui.set_width(ui.available_width());
                         for index in row_range {
                             let entry = filtered[index];
-                            let color = level_color(entry.level);
+                            let color = entry.level.egui_color();
                             ui.horizontal(|ui| {
-                                ui.add_sized([COL_TIME, row_height],
+                                ui.add_sized([TIME_COL_WIDTH, row_height],
                                     egui::Label::new(egui::RichText::new(format_timestamp(entry.timestamp)).color(color)).truncate()
                                 );
-                                ui.add_sized([COL_LEVEL, row_height],
+                                ui.add_sized([LEVEL_COL_WIDTH, row_height],
                                     egui::Label::new(egui::RichText::new(format!("{}", entry.level)).color(color)).truncate()
                                 );
-                                ui.add_sized([COL_AUDIENCE, row_height],
+                                ui.add_sized([AUDIENCE_COL_WIDTH, row_height],
                                     egui::Label::new(egui::RichText::new(format!("{}", entry.audience)).color(color)).truncate()
                                 );
-                                ui.add_sized([COL_TAGS, row_height],
-                                    egui::Label::new(egui::RichText::new(format_tags(&entry.tags)).color(color)).truncate()
+                                ui.add_sized([TAGS_COL_WIDTH, row_height],
+                                    egui::Label::new(egui::RichText::new(entry.tags_sorted_as_string()).color(color)).truncate()
                                 );
                                 ui.add(
                                     egui::Label::new(egui::RichText::new(entry.message.as_ref()).color(color)).truncate()
@@ -189,25 +186,23 @@ impl LogConsoleState {
     }
 }
 
+// ── LogLevel egui extension ───────────────────────────────────────────────────
+
+trait LogLevelColor {
+    fn egui_color(self) -> egui::Color32;
+}
+impl LogLevelColor for LogLevel {
+    fn egui_color(self) -> egui::Color32 {
+        match self {
+            LogLevel::Debug => egui::Color32::from_gray(140),
+            LogLevel::Info  => egui::Color32::WHITE,
+            LogLevel::Warn  => egui::Color32::from_rgb(255, 200, 0),
+            LogLevel::Error => egui::Color32::from_rgb(255, 80, 80),
+        }
+    }
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-fn level_color(level: LogLevel) -> egui::Color32 {
-    match level {
-        LogLevel::Debug => egui::Color32::from_gray(140),
-        LogLevel::Info  => egui::Color32::WHITE,
-        LogLevel::Warn  => egui::Color32::from_rgb(255, 200, 0),
-        LogLevel::Error => egui::Color32::from_rgb(255, 80, 80),
-    }
-}
-
-fn format_tags(tags: &HashSet<Tag>) -> String {
-    if tags.is_empty() {
-        return String::new();
-    }
-    let mut sorted: Vec<&str> = tags.iter().map(|tag| tag.as_ref()).collect();
-    sorted.sort_unstable();
-    sorted.join(", ")
-}
 
 fn format_timestamp(time: SystemTime) -> String {
     let total_seconds = time.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();

@@ -109,6 +109,16 @@ pub struct LogEntryData {
     pub message: Cow<'static, str>,
     pub timestamp: SystemTime,
 }
+impl LogEntryData {
+    pub fn tags_sorted_as_string(&self) -> String {
+        if self.tags.is_empty() {
+            return String::new();
+        }
+        let mut sorted: Vec<&str> = self.tags.iter().map(|tag| tag.as_ref()).collect();
+        sorted.sort_unstable();
+        sorted.join(", ")
+    }
+}
 
 // ── Log ───────────────────────────────────────────────────────────────────────
 
