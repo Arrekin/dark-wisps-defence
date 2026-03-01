@@ -3213,6 +3213,7 @@ name = "lib-core"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "crossbeam-channel",
  "lib-derive",
  "nanorand",
  "refinery",

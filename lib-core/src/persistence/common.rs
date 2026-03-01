@@ -31,7 +31,6 @@ impl GameDbConnection {
     }
 
     fn reconnect(&mut self, path: &str, generation: usize) -> rusqlite::Result<()> {
-        println!("Opening new connection");
         let connection = rusqlite::Connection::open(path)?;
         self.state = Some(ConnectionState {
             path: path.to_string(),

@@ -67,7 +67,7 @@ impl<T: Saveable> SaveableBatch for SaveableBatchCommand<T> {
 impl<T: Saveable> Command for SaveableBatchCommand<T> {
     fn apply(self, world: &mut World) {
         let mut buffer = world.resource_mut::<GameSaveExecutor>();
-        println!("Added {} objects to GameSaveExecutor", self.data.len());
+        Log::debug().dev().tag(Tag::GameSave).message(format!("Queued {} objects for saving", self.data.len()));
         // Box since we store dyn in GameSaveExecutor
         buffer.objects_to_save.push(Box::new(self));
     }
@@ -87,11 +87,12 @@ impl GameSaveExecutor {
         
         let objects = std::mem::take(&mut save_executor.objects_to_save);
         let save_name = save_executor.save_name.clone();
+        Log::info().dev().tag(Tag::GameSave).message(format!("Saving game to '{save_name}'"));
 
         std::thread::spawn(move || {
             fn save_process(save_name: &str, objects: Vec<Box<dyn SaveableBatch>>) -> Result<(), Box<dyn std::error::Error>> {
                 if std::path::Path::new(save_name).exists() {
-                    println!("Removing existing save file '{}'", save_name);
+                    Log::debug().dev().tag(Tag::GameSave).message(format!("Replacing existing save file '{save_name}'"));
                     std::fs::remove_file(save_name)?;
                 }
                 
@@ -116,9 +117,9 @@ impl GameSaveExecutor {
             }
 
             if let Err(e) = save_process(&save_name, objects) {
-                eprintln!("Failed to save game: {}", e);
+                Log::error().dev().tag(Tag::GameSave).message(format!("Save failed: {e}"));
             } else {
-                println!("Game saved successfully to '{}'", save_name);
+                Log::info().player().tag(Tag::GameSave).message(format!("Game saved to '{save_name}'"));
                 increment_db_generation();
             }
         });

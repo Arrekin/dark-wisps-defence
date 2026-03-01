@@ -201,6 +201,10 @@ Generic/reusable UI lives in `lib-ui` or `src/ui/`.
 - `Single<>` query type — system/observer is skipped entirely when not exactly one match. Good if it should only run when a specific entity exists. For 0 or 1, use `Option<Single<>>`.
 - `EventReader`/`EventWriter` renamed to `MessageReader`/`MessageWriter`. The `Event` trait + `commands.trigger()` is now for immediate observer-based dispatch.
 
+## Agent Guidelines
+- **Think before implementing.** When asked to fix a bug or add a feature, first consider whether the change reveals a deeper architectural issue. Prefer fixing the root cause over patching symptoms.
+- **Avoid tunnel vision.** Don't just implement the literal request — evaluate whether it fits the existing patterns. If it doesn't, flag it and suggest an approach that does.
+
 ## Code Style
 - Query variables use plural form (e.g., `tabs`, `segments`), not `_q` suffix(singular when using Single<>)
 - Encapsulate component internals behind methods. Use the API, don't reach into fields.
@@ -209,3 +213,28 @@ Generic/reusable UI lives in `lib-ui` or `src/ui/`.
 - **Comments must be timeless.** Never leave comments that reference the current conversation, refactoring session, or rationale like "we moved this here because X was duplicated." Comments should make sense to a reader who has no context of how the code evolved. If the code is self-explanatory, no comment is needed.
 - Prefer `query.iter()` over `&query` (the same for `iter_mut`)
 - Avoid contractions in variable names — verbosity is preferred.
+
+### Plugin code style
+```rust
+pub struct InputPlugin;
+impl Plugin for InputPlugin {
+    fn build(&self, app: &mut App) {
+        app
+            .add_systems(Update, handle_input)
+            ;
+    }
+}
+```
+No newline between struct and impl. Each app builder call on its own line. Trailing semicolon on its own line.
+Plugins and preludes are at the top of the file(see examples in other files)
+
+### System parameter order
+```rust
+fn my_bevy_system(
+    trigger: Trigger<T>,
+    mut commands: Commands,
+    <resources>
+    <queries>
+    <locals>
+)
+```

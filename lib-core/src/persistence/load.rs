@@ -10,9 +10,10 @@ impl Plugin for MapLoadPlugin {
             .add_systems(OnEnter(MapLoadingStage::LoadMapInfo), spawn_loading_tasks)
             .add_systems(OnEnter(MapLoadingStage::LoadResources), spawn_loading_tasks)
             .add_systems(OnEnter(MapLoadingStage::SpawnMapElements), spawn_loading_tasks)
-            .add_systems(OnEnter(MapLoadingStage::Ready), |mut commands: Commands, mut next_game_state: ResMut<NextState<GameState>>| { 
+            .add_systems(OnEnter(MapLoadingStage::Ready), |mut commands: Commands, mut next_game_state: ResMut<NextState<GameState>>| {
+                Log::info().player().tag(Tag::GameLoad).message("Game loaded");
                 commands.trigger(DynamicGameEvent::game_started());
-                next_game_state.set(GameState::Running); 
+                next_game_state.set(GameState::Running);
             })
             .add_systems(Update, (
                 progress_map_loading_state.run_if(in_state(GameState::Loading)),
@@ -34,7 +35,7 @@ impl LoadGameSignal {
     fn emit(
         mut commands: Commands,
     ) {
-        println!("Loading game");
+        Log::debug().dev().tag(Tag::GameLoad).message("Triggering load signal");
         commands.trigger(LoadGameSignal("test_save.dwd".into()));
     }
     fn on_trigger(
@@ -47,6 +48,7 @@ impl LoadGameSignal {
         map_bound_entities: Query<Entity, With<MapBound>>,
     ) {
         save_executor.save_name = trigger.event().0.clone();
+        Log::info().dev().tag(Tag::GameLoad).message(format!("Loading '{}'", trigger.event().0));
         
         // Run migrations synchronously on main thread before parallel loading starts
         GameDbConnection::with_db_connection(&save_executor.save_name, |conn| {
@@ -140,7 +142,7 @@ impl Loadable for PopulateDbEntityMapTask {
             count += 1;
         }
         
-        println!("Populated EntityMap with {} entities", count);
+        Log::debug().dev().tag(Tag::GameLoad).message(format!("EntityMap populated: {} entities", count));
         ctx.commands.insert_resource(DbEntityMap { map });
         Ok(LoadResult::Finished)
     }
@@ -181,7 +183,7 @@ pub fn process_loading_tasks_system(
                              // Continue loop to process more if time permits
                          },
                          Err(e) => {
-                             eprintln!("Loading task failed: {}", e);
+                             Log::error().dev().tag(Tag::GameLoad).message(format!("Loading task failed: {e}"));
                              cmd.entity(entity).despawn(); // Stop on error
                              break;
                          }
@@ -200,8 +202,8 @@ fn progress_map_loading_state(
     loading_tasks: Query<(), With<DbLoadingTask>>,
 ) {
     if !loading_tasks.is_empty() { return; }
-    let next = stage.get().next();
-    println!("All loading tasks completed, moving to next stage: {:?}", next);
+    let Some(next) = stage.get().next() else { return; };
+    Log::debug().dev().tag(Tag::GameLoad).message(format!("Stage complete, advancing to {next:?}"));
     next_stage.set(next);
 }
 
@@ -210,7 +212,7 @@ fn spawn_loading_tasks(
     registry: Res<GameLoadRegistry>,
     stage: ResMut<State<MapLoadingStage>>,
 ) {
-    println!("Spawning loading tasks for phase: {:?}", stage.get());
+    Log::debug().dev().tag(Tag::GameLoad).message(format!("Starting load phase {:?}", stage.get()));
     let target_phase = stage.get();
     if let Some(loaders) = registry.loaders.get(target_phase) {
         for loader in loaders {
