@@ -54,7 +54,7 @@ impl Loadable for BuilderWall {
             if let Some(new_entity) = ctx.get_new_entity_for_old(old_id) {
                 batch.push((new_entity, BuilderWall::new_for_saving(grid_position, new_entity)));
             } else {
-                eprintln!("Warning: Wall with old ID {} has no corresponding new entity", old_id);
+                Log::warn().dev().tag(Tag::GameLoad).message(format!("Wall with old ID {old_id} has no corresponding new entity"));
             }
         }
 
@@ -101,7 +101,7 @@ impl BuilderWall {
         mut commands: Commands,
         walls: Query<(Entity, &GridCoords), With<Wall>>,
     ) {
-        println!("Creating batch of BuilderWalls for saving. {} walls", walls.iter().count());
+        Log::debug().dev().tag(Tag::GameSave).message(format!("Saving {} walls", walls.iter().count()));
         let batch = walls
             .iter()
             .map(|(entity, grid_coords)| BuilderWall::new_for_saving(*grid_coords, entity))

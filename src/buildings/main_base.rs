@@ -57,7 +57,7 @@ impl Loadable for BuilderMainBase {
                 let save_data = MainBaseSaveData { entity: new_entity, health };
                 ctx.commands.entity(new_entity).insert(BuilderMainBase::new_for_saving(grid_position, save_data));
             } else {
-                eprintln!("Warning: MainBase with old ID {} has no corresponding new entity", old_id);
+                Log::warn().dev().tag(Tag::GameLoad).message(format!("MainBase with old ID {old_id} has no corresponding new entity"));
             }
             count += 1;
         }

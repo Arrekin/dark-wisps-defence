@@ -78,7 +78,7 @@ impl Loadable for BuilderDarkOre {
                 let save_data = DarkOreSaveData { entity: new_entity };
                 ctx.commands.entity(new_entity).insert(BuilderDarkOre::new_for_saving(grid_position, amount, save_data));
             } else {
-                eprintln!("Warning: DarkOre with old ID {} has no corresponding new entity", old_id);
+                Log::warn().dev().tag(Tag::GameLoad).message(format!("DarkOre with old ID {old_id} has no corresponding new entity"));
             }
             count += 1;
         }
@@ -99,7 +99,7 @@ impl BuilderDarkOre {
         dark_ores: Query<(Entity, &GridCoords, &DarkOre)>,
     ) {
         if dark_ores.is_empty() { return; }
-        println!("Creating batch of BuilderDarkOre for saving. {} items", dark_ores.iter().count());
+        Log::debug().dev().tag(Tag::GameSave).message(format!("Saving {} dark ores", dark_ores.iter().count()));
         let batch = dark_ores.iter().map(|(entity, coords, dark_ore)| {
                 let save_data = DarkOreSaveData { entity };
                 BuilderDarkOre::new_for_saving(*coords, dark_ore.amount as u32, save_data)

@@ -95,7 +95,7 @@ impl BuilderObjective {
             };
             BuilderObjective::new_for_saving(details.clone(), save_data)
         }).collect::<SaveableBatchCommand<_>>();
-        println!("Creating batch of BuilderObjective for saving. {} items", batch.len());
+        Log::debug().dev().tag(Tag::GameSave).message(format!("Saving {} objectives", batch.len()));
         commands.queue(batch);
     }
 
@@ -243,7 +243,7 @@ impl Loadable for BuilderObjective {
                     }
                 }
                 _ => {
-                    eprintln!("Unknown objective type: {}", objective_type_str);
+                    Log::error().dev().tag(Tag::GameLoad).message(format!("Unknown objective type '{objective_type_str}'"));
                     continue;
                 }
             };
@@ -257,7 +257,7 @@ impl Loadable for BuilderObjective {
                 };
                 ctx.commands.entity(new_entity).insert(BuilderObjective::new_for_saving(objective_details, save_data));
             } else {
-                eprintln!("Warning: Objective with old ID {} has no corresponding new entity", old_id);
+                Log::warn().dev().tag(Tag::GameLoad).message(format!("Objective with old ID {old_id} has no corresponding new entity"));
             }
             count += 1;
         }

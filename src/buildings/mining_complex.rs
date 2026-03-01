@@ -66,7 +66,7 @@ impl Loadable for BuilderMiningComplex {
                 let save_data = MiningComplexSaveData { entity: new_entity, health, disabled_by_player };
                 ctx.commands.entity(new_entity).insert(BuilderMiningComplex::new_for_saving(grid_position, save_data));
             } else {
-                eprintln!("Warning: MiningComplex with old ID {} has no corresponding new entity", old_id);
+                Log::warn().dev().tag(Tag::GameLoad).message(format!("MiningComplex with old ID {old_id} has no corresponding new entity"));
             }
             count += 1;
         }
@@ -106,7 +106,7 @@ impl BuilderMiningComplex {
             };
             BuilderMiningComplex::new_for_saving(*coords, save_data)
         }).collect::<SaveableBatchCommand<_>>();
-        println!("Creating batch of BuilderMiningComplex for saving. {} items", batch.len());
+        Log::debug().dev().tag(Tag::GameSave).message(format!("Saving {} mining complexes", batch.len()));
         commands.queue(batch);
     }
 

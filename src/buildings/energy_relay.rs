@@ -60,7 +60,7 @@ impl Loadable for BuilderEnergyRelay {
                 let save_data = EnergyRelaySaveData { entity: new_entity, health, disabled_by_player };
                 ctx.commands.entity(new_entity).insert(BuilderEnergyRelay::new_for_saving(grid_position, save_data));
             } else {
-                eprintln!("Warning: EnergyRelay with old ID {} has no corresponding new entity", old_id);
+                Log::warn().dev().tag(Tag::GameLoad).message(format!("EnergyRelay with old ID {old_id} has no corresponding new entity"));
             }
             count += 1;
         }
@@ -103,7 +103,7 @@ impl BuilderEnergyRelay {
             };
             BuilderEnergyRelay::new_for_saving(*coords, save_data)
         }).collect::<SaveableBatchCommand<_>>();
-        println!("Creating batch of BuilderEnergyRelay for saving. {} items", batch.len());
+        Log::debug().dev().tag(Tag::GameSave).message(format!("Saving {} energy relays", batch.len()));
         commands.queue(batch);
     }
 

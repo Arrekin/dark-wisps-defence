@@ -57,7 +57,7 @@ fn on_building_place_request(
     
     // Payment
     let building_costs = &almanach.get_building_info(building_type).cost;
-    if !stock.try_pay_costs(building_costs) { println!("Not enough dark ore"); return; }
+    if !stock.try_pay_costs(building_costs) { Log::info().player().tag(Tag::Build).message("Not enough resources"); return; }
     
     // Reserve and spawn
     reserved_coords.reserve(*coords, *grid_imprint);

@@ -171,7 +171,7 @@ impl Loadable for BuilderQuantumField {
                 };
                 ctx.commands.entity(new_entity).insert(BuilderQuantumField::new_for_saving(grid_position, grid_imprint, save_data));
             } else {
-                eprintln!("Warning: QuantumField with old ID {} has no corresponding new entity", old_id);
+                Log::warn().dev().tag(Tag::GameLoad).message(format!("QuantumField with old ID {old_id} has no corresponding new entity"));
             }
             count += 1;
         }
@@ -193,7 +193,7 @@ impl BuilderQuantumField {
         quantum_fields: Query<(Entity, &GridCoords, &GridImprint, &QuantumFieldLayers)>,
     ) {
         if quantum_fields.is_empty() { return; }
-        println!("Creating batch of BuilderQuantumField for saving. {} items", quantum_fields.iter().count());
+        Log::debug().dev().tag(Tag::GameSave).message(format!("Saving {} quantum fields", quantum_fields.iter().count()));
         let batch = quantum_fields.iter().map(|(entity, coords, imprint, quantum_field)| {
                 let save_data = QuantumFieldSaveData {
                     entity,

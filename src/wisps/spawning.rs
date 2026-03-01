@@ -54,9 +54,9 @@ impl Loadable for BuilderWisp {
             let old_id: i64 = row.get(0)?;
             let type_str: String = row.get(1)?;
             
-            let Ok(wisp_type) = WispType::from_str(&type_str) else { 
-                eprintln!("Failed to parse WispType '{}'", type_str);
-                continue; 
+            let Ok(wisp_type) = WispType::from_str(&type_str) else {
+                Log::warn().dev().tag(Tag::GameLoad).message(format!("Unknown WispType '{type_str}'"));
+                continue;
             };
 
             let grid_coords = ctx.conn.get_grid_coords(old_id)?;

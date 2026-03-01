@@ -167,7 +167,7 @@ impl MapEntryButton {
     fn on_click(trigger: On<Pointer<Click>>, mut commands: Commands, entries: Query<&MapEntryButton>) {
         let entity = trigger.entity;
         let Ok(entry) = entries.get(entity) else { return; };
-        println!("Map selected: {}", entry.name);
+        Log::debug().dev().tag(Tag::Ui).message(format!("Map selected: {}", entry.name));
         commands.trigger(lib_core::persistence::load::LoadGameSignal(format!("maps/{}.dwd", entry.name.clone())));
     }
 }
