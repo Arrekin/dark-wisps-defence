@@ -1,10 +1,17 @@
+//! Ripple wave effect spawned by the emitter tower.
+//!
+//! Each ripple is a circle mesh on render layer 1 that samples the pre-rendered
+//! scene texture and applies a radial displacement as the band passes through
+//! objects. See `documentation/scene_capture_effects.md` for the rendering architecture.
+
 use bevy::{
-    color::palettes::css::RED, 
-    render::render_resource::AsBindGroup, 
+    camera::visibility::RenderLayers,
+    render::render_resource::AsBindGroup,
     shader::ShaderRef,
-    sprite_render::{AlphaMode2d, Material2d, Material2dPlugin}
+    sprite_render::{AlphaMode2d, Material2d, Material2dPlugin},
 };
 
+use lib_core::camera::SceneTexture;
 use lib_grid::grids::wisps::WispsGrid;
 
 use crate::prelude::*;
@@ -113,11 +120,12 @@ impl BuilderRipple {
         mut commands: Commands,
         mut ripple_materials: ResMut<Assets<RippleMaterial>>,
         mut meshes: ResMut<Assets<Mesh>>,
+        scene_texture: Res<SceneTexture>,
         builders: Query<&BuilderRipple>,
     ) {
         let entity = trigger.entity;
         let Ok(builder) = builders.get(entity) else { return; };
-        
+
         let current_radius = builder.save_data.as_ref().map_or(0., |d| d.current_radius);
 
         commands.entity(entity)
@@ -125,26 +133,27 @@ impl BuilderRipple {
             .insert((
                 Mesh2d(meshes.add(Circle::new(builder.radius))),
                 MeshMaterial2d(ripple_materials.add(RippleMaterial {
+                    scene_texture: scene_texture.0.clone(),
                     current_radius: current_radius / (builder.radius * 2.),
-                    wave_width: 0.35,
-                    wave_exponent: 0.8,
+                    wave_width: 0.15,
                 })),
                 Transform::from_translation(builder.world_position.extend(Z_GROUND_EFFECT)),
                 Ripple{ max_radius: builder.radius, current_radius },
-                MovementSpeed(70.0),
+                MovementSpeed(50.0),
+                RenderLayers::layer(1),
             ));
     }
 }
 
-
 #[derive(Asset, TypePath, Debug, Clone, AsBindGroup)]
 pub struct RippleMaterial {
-    #[uniform(0)]
+    #[texture(0)]
+    #[sampler(1)]
+    pub scene_texture: Handle<Image>,
+    #[uniform(2)]
     pub current_radius: f32,
-    #[uniform(0)]
+    #[uniform(2)]
     pub wave_width: f32,
-    #[uniform(0)]
-    pub wave_exponent: f32,
 }
 
 impl Material2d for RippleMaterial {
@@ -201,21 +210,11 @@ pub fn ripple_hit_system(
                 for wisp in &wisps_grid[GridCoords{ x, y }] {
                     let Ok((mut wisp_health, wisp_transform)) = wisps.get_mut(*wisp) else { continue; };
                     let distance = wisp_transform.translation.distance(ripple_transform.translation);
-                    // Hit only wisps that are up to 5 units away from the front of the ripple
+                    // Hit only wisps within 1 world unit of the leading edge
                     if distance > ripple.current_radius || distance < ripple.current_radius - 1. { continue; }
                     wisp_health.decrease(1.);
                 }
             }
         }
-    }
-}
-
-#[allow(dead_code)]
-fn debug_draw_ripple_outline_system(
-    mut gizmos: Gizmos,
-    ripples: Query<(&Ripple, &Transform)>,
-) {
-    for (ripple, transform) in ripples.iter() {
-        gizmos.circle_2d(transform.translation.xy(), ripple.current_radius, RED);
     }
 }

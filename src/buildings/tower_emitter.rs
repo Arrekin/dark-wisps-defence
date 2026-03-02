@@ -87,7 +87,7 @@ impl BuilderTowerEmitter {
             baseline: HashMap::from([
                 (ModifierType::MaxHealth, 100.),
                 (ModifierType::AttackRange, 4.),
-                (ModifierType::AttackSpeed, 0.5),
+                (ModifierType::AttackSpeed, 0.2),
                 (ModifierType::AttackDamage, 1.),
             ]),
             upgrades: HashMap::from([
