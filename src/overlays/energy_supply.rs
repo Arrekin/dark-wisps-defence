@@ -15,7 +15,7 @@ use lib_grid::{
 
 use crate::prelude::*;
 use crate::ui::{
-    display_info_panel::{UiMapObjectFocusedTrigger, UiMapObjectUnfocusedTrigger},
+    display_info_panel::FocusedMapObject,
     grid_object_placer::GridObjectPlacer,
 };
 
@@ -35,8 +35,8 @@ impl Plugin for EnergySupplyOverlayPlugin {
                 refresh_display_system.run_if(in_state(EnergySupplyOverlayState::Show)),
                 (|mut config: ResMut<EnergySupplyOverlayConfig>| { config.is_overlay_globally_enabled ^= true; }).run_if(input_just_released(KeyCode::Digit7)), // Switch overlay on/off 
             ))
-            .add_observer(EnergySupplyOverlayConfig::on_building_ui_focused)
-            .add_observer(EnergySupplyOverlayConfig::on_building_ui_unfocused)
+            .add_observer(EnergySupplyOverlayConfig::on_map_object_focused)
+            .add_observer(EnergySupplyOverlayConfig::on_map_object_unfocused)
             .add_observer(on_grid_placer_changed)
             ;
 
@@ -69,20 +69,20 @@ impl EnergySupplyOverlayConfig {
             overlay_state.set(EnergySupplyOverlayState::Hide);
         }
     }
-    fn on_building_ui_focused(
-        trigger: On<UiMapObjectFocusedTrigger>,
+    fn on_map_object_focused(
+        trigger: On<Insert, FocusedMapObject>,
         mut overlay_config: ResMut<EnergySupplyOverlayConfig>,
         buildings: Query<&BuildingType>,
     ) {
         let focused_building = trigger.entity;
         if buildings.contains(focused_building) {
-            overlay_config.secondary_mode = EnergySupplyOverlaySecondaryMode::Highlight{building: focused_building};
+            overlay_config.secondary_mode = EnergySupplyOverlaySecondaryMode::Highlight { building: focused_building };
         } else {
             overlay_config.secondary_mode = EnergySupplyOverlaySecondaryMode::None;
         }
     }
-    fn on_building_ui_unfocused(
-        _trigger: On<UiMapObjectUnfocusedTrigger>,
+    fn on_map_object_unfocused(
+        _trigger: On<Remove, FocusedMapObject>,
         mut overlay_config: ResMut<EnergySupplyOverlayConfig>,
     ) {
         overlay_config.secondary_mode = EnergySupplyOverlaySecondaryMode::None;

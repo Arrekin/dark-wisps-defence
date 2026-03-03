@@ -26,9 +26,7 @@ use lib_ui::prelude::*;
 
 use crate::map_objects::common::ExpeditionZone;
 use crate::prelude::*;
-use crate::ui::display_info_panel::{
-    DisplayInfoPanel, DisplayPanelMainContentRoot, UiMapObjectFocusedTrigger,
-};
+use crate::ui::display_info_panel::{DisplayPanelMainContentRoot, FocusedMapObject};
 use crate::ui::grid_object_placer::GridObjectPlacer;
 use crate::units::expedition_drone::{
     DroneState, ExpeditionDrone, ExpeditionDroneDeploymentRequest,
@@ -53,7 +51,7 @@ impl Plugin for QuantumFieldPlugin {
         .add_observer(GridPlacerUiForQuantumField::on_stop_placing)
         .add_observer(ArrowButton::on_add)
         .add_observer(QuantumFieldActionButton::on_add)
-        .add_observer(on_ui_map_object_focus_changed_trigger)
+        .add_observer(on_focused_map_object_insert)
         .add_observer(on_quantum_field_place_request)
         .add_observer(on_quantum_field_remove_request)
         .register_db_loader::<BuilderQuantumField>(MapLoadingStage::SpawnMapElements)
@@ -526,12 +524,12 @@ impl QuantumFieldActionButton {
         _trigger: On<Pointer<Click>>,
         mut commands: Commands,
         mut stock: ResMut<Stock>,
-        display_info_panel: Single<&DisplayInfoPanel>,
+        focused_quantum_field: Single<Entity, With<FocusedMapObject>>,
         action_button: Single<&mut QuantumFieldActionButton>,
         mut quantum_fields: Query<&mut QuantumFieldLayers>,
         drones: Query<(Entity, &ExpeditionDrone, &DroneState)>,
     ) {
-        let focused_entity = display_info_panel.into_inner().current_focus;
+        let focused_entity = focused_quantum_field.into_inner();
         let mut action_button = action_button.into_inner();
         match *action_button {
             QuantumFieldActionButton::SendIdleDrones => {
@@ -549,7 +547,7 @@ impl QuantumFieldActionButton {
                 let Ok(mut quantum_field) = quantum_fields.get_mut(focused_entity) else { return; };
                 if stock.try_pay_costs(quantum_field.get_current_layer_costs()) {
                     quantum_field.move_to_next_layer();
-                    commands.trigger(UiMapObjectFocusedTrigger { entity: focused_entity });
+                    commands.entity(focused_entity).insert(FocusedMapObject);
                 }
             }
             QuantumFieldActionButton::Hidden => {}
@@ -561,14 +559,12 @@ impl QuantumFieldActionButton {
 struct QuantumFieldActionButtonText;
 
 fn update_quantum_field_info_panel_system(
-    quantum_fields: Query<&QuantumFieldLayers>,
-    display_info_panel: Single<&DisplayInfoPanel>,
+    focused_quantum_field: Single<&QuantumFieldLayers, With<FocusedMapObject>>,
     action_button: Single<&mut QuantumFieldActionButton>,
     healthbar: Single<&mut Healthbar, With<QuantumFieldLayerHealthbar>>,
     text: Single<&mut Text, With<QuantumFieldLayerText>>,
 ) {
-    let focused_entity = display_info_panel.into_inner().current_focus;
-    let Ok(quantum_field) = quantum_fields.get(focused_entity) else { return; };
+    let quantum_field = focused_quantum_field.into_inner();
     // Update the layer text
     text.into_inner().0 = if quantum_field.is_solved() {
         "All Quantum Layers Solved".to_string()
@@ -592,8 +588,8 @@ fn update_quantum_field_info_panel_system(
     };
 }
 
-fn on_ui_map_object_focus_changed_trigger(
-    trigger: On<UiMapObjectFocusedTrigger>,
+fn on_focused_map_object_insert(
+    trigger: On<Insert, FocusedMapObject>,
     mut commands: Commands,
     quantum_fields: Query<&QuantumFieldLayers>,
     quantum_field_panel: Single<&mut Node, With<QuantumFieldPanel>>,

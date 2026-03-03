@@ -2,7 +2,7 @@ use bevy::color::palettes::css::{BLUE, WHITE};
 use lib_ui::prelude::{Healthbar, UpgradeLineBuilder};
 
 use crate::prelude::*;
-use crate::ui::display_info_panel::{DisplayInfoPanel, DisplayPanelMainContentRoot, UiMapObjectFocusedTrigger};
+use crate::ui::display_info_panel::{DisplayPanelMainContentRoot, FocusedMapObject};
 
 pub struct InfoPanelPlugin;
 impl Plugin for InfoPanelPlugin {
@@ -10,7 +10,7 @@ impl Plugin for InfoPanelPlugin {
         app
             .add_systems(PostStartup, initialize_building_panel_content_system)
             .add_systems(Update, update_building_info_panel_system.run_if(in_state(UiInteraction::DisplayInfoPanel)))
-            .add_observer(on_ui_map_object_focus_changed_trigger)
+            .add_observer(on_focused_map_object_insert)
             .add_observer(on_building_info_panel_enabled_for_towers_trigger)
             .add_observer(BuildingInfoPanelTowerUpgradeCountText::refresh_upgrade_count_on::<BuildingInfoPanelEnabledTrigger, ()>) // Refresh upgrade text on panel enabled
             .add_observer(BuildingInfoPanelTowerUpgradeCountText::refresh_upgrade_count_on::<LevelUpUpgradeAppliedEvent, ()>) // Refresh upgrade text after upgrade applied
@@ -38,12 +38,10 @@ struct BuildingInfoPanelTowerUpgradeCountText;
 impl BuildingInfoPanelTowerUpgradeCountText {
     fn refresh_upgrade_count_on<T: Event, B: Bundle> (
         _trigger: On<T, B>,
-        display_info_panel: Single<&DisplayInfoPanel>,
-        upgrades_query: Query<&Upgrades>,
+        focused_tower: Single<&Upgrades, With<FocusedMapObject>>,
         upgrade_count_text: Single<&mut Text, With<BuildingInfoPanelTowerUpgradeCountText>>,
     ) {
-        let focused_entity = display_info_panel.into_inner().current_focus;
-        let Ok(upgrades) = upgrades_query.get(focused_entity) else { return; };
+        let upgrades = focused_tower.into_inner();
         let purchased = upgrades.total_upgrades_purchased();
         let available = upgrades.total_upgrades_available();
 
@@ -54,12 +52,10 @@ impl BuildingInfoPanelTowerUpgradeCountText {
 struct BuildingInfoPanelTowerUpgradesContainer;
 
 fn update_building_info_panel_system(
-    buildings: Query<&Health, With<Building>>,
-    display_info_panel: Single<&DisplayInfoPanel>,
+    focused_building: Single<&Health, (With<FocusedMapObject>, With<Building>)>,
     healthbar: Single<&mut Healthbar, With<BuildingInfoPanelHealthbar>>,
 ) {
-    let focused_entity = display_info_panel.into_inner().current_focus;
-    let Ok(health) = buildings.get(focused_entity) else { return; };
+    let health = focused_building.into_inner();
     // Update the healthbar
     let mut healthbar = healthbar.into_inner();
     healthbar.value = health.get_current() as f32;
@@ -68,8 +64,8 @@ fn update_building_info_panel_system(
     healthbar.color = Color::linear_rgba(1. - health_percentage, health_percentage, 0., 1.);
 }
 
-fn on_ui_map_object_focus_changed_trigger(
-    trigger: On<UiMapObjectFocusedTrigger>,
+fn on_focused_map_object_insert(
+    trigger: On<Insert, FocusedMapObject>,
     mut commands: Commands,
     almanach: Res<Almanach>,
     building_name_text: Single<&mut Text, With<BuildingInfoPanelNameText>>,
@@ -289,12 +285,10 @@ impl BuildingInfoPanelDisableButton {
     fn on_click(
         _trigger: On<Pointer<Click>>,
         mut commands: Commands,
-        display_info_panel: Single<&DisplayInfoPanel>,
-        disabled_by_player: Query<(), With<DisabledByPlayer>>,
+        focused_building: Single<(Entity, Has<DisabledByPlayer>), With<FocusedMapObject>>,
         icon: Single<&mut ImageNode, With<BuildingInfoPanelDisableButtonIcon>>,
     ) {
-        let focused_entity = display_info_panel.into_inner().current_focus;
-        let is_disabled = disabled_by_player.contains(focused_entity);
+        let (focused_entity, is_disabled) = focused_building.into_inner();
         if is_disabled {
             commands.entity(focused_entity).remove::<DisabledByPlayer>();
         } else {
@@ -344,9 +338,9 @@ impl BuildingInfoPanelDestroyButton {
     fn on_click(
         _trigger: On<Pointer<Click>>,
         mut commands: Commands,
-        display_info_panel: Single<&DisplayInfoPanel>,
+        focused_building: Single<Entity, With<FocusedMapObject>>,
     ) {
-        let focused_entity = display_info_panel.into_inner().current_focus;
+        let focused_entity = focused_building.into_inner();
         
         // Emit building destroy request event
         commands.trigger(BuildingDestroyRequest(focused_entity));

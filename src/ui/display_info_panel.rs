@@ -16,10 +16,11 @@ impl Plugin for DisplayInfoPanelPlugin {
             .add_systems(Update, (
                 hide_system.run_if(in_state(UiInteraction::DisplayInfoPanel)),
                 show_on_click_system.run_if(in_state(UiInteraction::Free).or(in_state(UiInteraction::DisplayInfoPanel))),
-                on_building_destroyed_system.run_if(in_state(UiInteraction::DisplayInfoPanel).and(on_message::<BuildingDestroyedMessage>)),
             ))
             .add_systems(OnEnter(UiInteraction::DisplayInfoPanel), on_display_enter_system)
-            .add_systems(OnExit(UiInteraction::DisplayInfoPanel), on_display_exit_system);
+            .add_systems(OnExit(UiInteraction::DisplayInfoPanel), on_display_exit_system)
+            .add_observer(on_focused_entity_despawned)
+            ;
     }
 }
 
@@ -27,25 +28,19 @@ impl Plugin for DisplayInfoPanelPlugin {
 #[derive(Component)]
 pub struct DisplayPanelMainContentRoot;
 
+/// Marker component on the info panel UI entity.
 #[derive(Component)]
-pub struct DisplayInfoPanel {
-    pub current_focus: Entity,
-}
-impl Default for DisplayInfoPanel {
-    fn default() -> Self {
-        Self {
-            current_focus: Entity::PLACEHOLDER,
-        }
-    }
-}
+pub struct DisplayInfoPanel;
+
+/// Marker placed on the currently selected map object.
+/// Insert to select, remove to deselect.
+/// Observers on `On<Insert, FocusedMapObject>` and `On<Remove, FocusedMapObject>` drive
+/// overlay highlights, info panel content, and other selection-dependent UI.
+#[derive(Component)]
+pub struct FocusedMapObject;
+
 #[derive(Component)]
 struct DisplayInfoPanelCamera;
-
-/// Triggers emitted when the user clicks on a map object
-#[derive(EntityEvent)]
-pub struct UiMapObjectFocusedTrigger{ pub entity: Entity }
-#[derive(Event)]
-pub struct UiMapObjectUnfocusedTrigger;
 
 fn on_display_enter_system(
     display_info_panel: Single<&mut Visibility, With<DisplayInfoPanel>>,
@@ -59,10 +54,13 @@ fn on_display_exit_system(
     mut commands: Commands,
     display_info_panel: Single<&mut Visibility, With<DisplayInfoPanel>>,
     info_panel_camera: Single<&mut Camera, With<DisplayInfoPanelCamera>>,
+    currently_focused: Option<Single<Entity, With<FocusedMapObject>>>,
 ) {
     *display_info_panel.into_inner() = Visibility::Hidden;
     info_panel_camera.into_inner().is_active = false;
-    commands.trigger(UiMapObjectUnfocusedTrigger);
+    if let Some(focused) = currently_focused {
+        commands.entity(focused.into_inner()).remove::<FocusedMapObject>();
+    }
 }
 
 fn hide_system(
@@ -80,13 +78,13 @@ fn show_on_click_system(
     mouse_info: Res<MouseInfo>,
     obstacle_grid: Res<ObstacleGrid>,
     mut next_ui_interaction_state: ResMut<NextState<UiInteraction>>,
-    display_info_panel: Single<&mut DisplayInfoPanel>,
+    currently_focused: Option<Single<Entity, With<FocusedMapObject>>>,
     info_panel_camera: Single<Entity, With<DisplayInfoPanelCamera>>,
 ) {
     if mouse_info.is_over_ui || !mouse.just_pressed(MouseButton::Left) || !mouse_info.grid_coords.is_in_bounds(obstacle_grid.bounds()) { return; }
 
     let field = &obstacle_grid[mouse_info.grid_coords];
-    let focused_element =  match &field.structure {
+    let focused_element = match &field.structure {
         GridStructureType::Building(entity, _) => *entity,
         _ => {
             if let Some(entity) = &field.quantum_field {
@@ -100,35 +98,32 @@ fn show_on_click_system(
     // Center the camera on the focused structure
     commands.entity(info_panel_camera.into_inner()).insert(CameraAutoFollowEntity(focused_element));
 
-    display_info_panel.into_inner().current_focus = focused_element;
-    commands.trigger(UiMapObjectFocusedTrigger { entity: focused_element });
-    next_ui_interaction_state.set(UiInteraction::DisplayInfoPanel);
+    // Defocus the previous selection before focusing the new one
+    if let Some(old_focused) = currently_focused {
+        commands.entity(old_focused.into_inner()).remove::<FocusedMapObject>();
+    }
+    commands.entity(focused_element).insert(FocusedMapObject);
+    (*next_ui_interaction_state).set_if_neq(UiInteraction::DisplayInfoPanel);
 }
 
-fn on_building_destroyed_system(
+fn on_focused_entity_despawned(
+    _trigger: On<Despawn, FocusedMapObject>,
     mut ui_interaction_state: ResMut<NextState<UiInteraction>>,
-    mut events: MessageReader<BuildingDestroyedMessage>,
-    display_info_panel: Single<&DisplayInfoPanel>,
 ) {
-    let current_display_entity = display_info_panel.into_inner().current_focus;
-    for event in events.read() {
-        if event.0 == current_display_entity {
-            ui_interaction_state.set(UiInteraction::Free);
-        }
-    }
+    ui_interaction_state.set(UiInteraction::Free);
 }
 
 fn initialize_display_info_panel_system(
     mut commands: Commands,
 ) {
     let info_panel_entity = commands.spawn_empty().id();
-    
+
     // Spawn camera that renders to the image
     let camera = commands.spawn((
         BuilderPreviewCamera::new(info_panel_entity, Vec2::ZERO, 2.),
         DisplayInfoPanelCamera,
     )).id();
-    
+
     commands.spawn((
         Node {
             position_type: PositionType::Absolute,
@@ -146,7 +141,7 @@ fn initialize_display_info_panel_system(
         BackgroundColor::from(Color::linear_rgba(0.46, 0.62, 0.67, 1.)),
         BorderColor::from(Color::linear_rgba(0., 0.2, 1., 1.)),
         Visibility::Hidden,
-        DisplayInfoPanel::default(),
+        DisplayInfoPanel,
         children![
             // Camera viewport (Left side) using ViewportNode
             (

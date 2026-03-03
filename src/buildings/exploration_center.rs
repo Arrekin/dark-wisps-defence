@@ -26,7 +26,7 @@ use lib_ui::utils::recolor_background_on;
 
 use crate::prelude::*;
 use crate::ui::indicators::{IndicatorDisplay, IndicatorType, Indicators};
-use crate::ui::display_info_panel::{DisplayInfoPanel, UiMapObjectFocusedTrigger, UiMapObjectUnfocusedTrigger};
+use crate::ui::display_info_panel::FocusedMapObject;
 use crate::buildings::info_panel::BuildingInfoPanelEnabledTrigger;
 use crate::units::expedition_drone::{BuilderExpeditionDrone, DroneState, ExpeditionDrone, DroneFuel, DRONE_COST_ORE, ExpeditionDroneDeploymentRequest, RecallDrone};
 use crate::map_objects::common::ExpeditionZone;
@@ -53,8 +53,8 @@ impl Plugin for ExplorationCenterPlugin {
             .add_observer(TargetSelectionPanel::on_add)
             .add_observer(TargetSelectionPanel::on_open)
             .add_observer(TargetSelectionPanel::on_select_target)
-            .add_observer(TargetSelectionPanel::on_global_focused)
-            .add_observer(TargetSelectionPanel::on_global_unfocused)
+            .add_observer(TargetSelectionPanel::on_map_object_focused)
+            .add_observer(TargetSelectionPanel::on_map_object_unfocused)
             .add_observer(TargetListItem::on_add)
             .add_observer(TargetListItemCameraPreview::on_add)
             .register_db_loader::<BuilderExplorationCenter>(MapLoadingStage::SpawnMapElements)
@@ -241,15 +241,13 @@ impl ExplorationCenterInfoPanel {
     fn on_rebuild_drone_slots(
         _trigger: On<RebuildDroneSlotsUi>,
         mut commands: Commands,
-        display_info_panel: Single<&DisplayInfoPanel>,
-        exploration_centers: Query<(&ExplorationCenter, Option<&HomeBaseLinkedObjects>)>,
+        focused_center: Single<(&ExplorationCenter, Option<&HomeBaseLinkedObjects>), With<FocusedMapObject>>,
         drone_count_text: Single<&mut Text, With<ExplorationCenterDroneCountText>>,
         slots_container: Single<Entity, With<DroneSlotsContainer>>,
         existing_slots: Query<Entity, Or<(With<DroneSlotRow>, With<BuyDroneSlot>)>>,
         selection_panels: Query<Entity, With<TargetSelectionPanel>>,
     ) {
-        let focused_entity = display_info_panel.into_inner().current_focus;
-        let Ok((center, linked_objects)) = exploration_centers.get(focused_entity) else { return; };
+        let (center, linked_objects) = focused_center.into_inner();
 
         // Despawn existing slots and any open selection panels
         for slot_entity in existing_slots.iter() {
@@ -821,11 +819,9 @@ impl BuyDroneSlot {
         _trigger: On<Pointer<Click>>,
         mut commands: Commands,
         mut stock: ResMut<Stock>,
-        display_info_panel: Single<&DisplayInfoPanel>,
-        exploration_centers: Query<(&ExplorationCenter, Option<&HomeBaseLinkedObjects>)>,
+        focused_center: Single<(Entity, &ExplorationCenter, Option<&HomeBaseLinkedObjects>), With<FocusedMapObject>>,
     ) {
-        let focused_entity = display_info_panel.into_inner().current_focus;
-        let Ok((center, linked_objects)) = exploration_centers.get(focused_entity) else { return; };
+        let (focused_entity, center, linked_objects) = focused_center.into_inner();
         
         // Check slot availability
         let owned_count = linked_objects.map(|lo| lo.len()).unwrap_or(0);
@@ -1024,16 +1020,16 @@ impl TargetSelectionPanel {
         }
     }
 
-    fn on_global_focused(
-        _trigger: On<UiMapObjectFocusedTrigger>,
+    fn on_map_object_focused(
+        _trigger: On<Insert, FocusedMapObject>,
         mut commands: Commands,
         selection_panels: Single<Entity, With<TargetSelectionPanel>>,
     ) {
         commands.entity(selection_panels.into_inner()).despawn();
     }
 
-    fn on_global_unfocused(
-        _trigger: On<UiMapObjectUnfocusedTrigger>,
+    fn on_map_object_unfocused(
+        _trigger: On<Remove, FocusedMapObject>,
         mut commands: Commands,
         selection_panels: Single<Entity, With<TargetSelectionPanel>>,
     ) {

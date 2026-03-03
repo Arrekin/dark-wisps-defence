@@ -154,7 +154,6 @@ fn keyboard_input_system(
 fn on_request_grid_object_placer_system(
     mut commands: Commands,
     almanach: Res<Almanach>,
-    current_state: Res<State<UiInteraction>>,
     mut ui_interaction_state: ResMut<NextState<UiInteraction>>,
     placer: Single<(&mut Sprite, &mut GridObjectPlacer, &mut GridImprint)>,
     mut placer_request: ResMut<GridObjectPlacerRequest>,
@@ -182,10 +181,7 @@ fn on_request_grid_object_placer_system(
         placement_info,
     });
 
-    // Only change state if not already in PlaceGridObject (avoid re-entry clearing active_placement and the blink effect when it gets hidden for a frame)
-    if *current_state.get() != UiInteraction::PlaceGridObject {
-        ui_interaction_state.set(UiInteraction::PlaceGridObject);
-    }
+    (*ui_interaction_state).set_if_neq(UiInteraction::PlaceGridObject);
     commands.trigger(GridPlacerChanged);
 }
 

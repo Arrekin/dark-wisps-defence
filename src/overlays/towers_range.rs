@@ -15,7 +15,7 @@ use lib_grid::{
 
 use crate::prelude::*;
 use crate::ui::{
-    display_info_panel::{UiMapObjectFocusedTrigger, UiMapObjectUnfocusedTrigger},
+    display_info_panel::FocusedMapObject,
     grid_object_placer::GridObjectPlacer,
 };
 
@@ -38,8 +38,8 @@ impl Plugin for TowersRangeOverlayPlugin {
                     (|mut config: ResMut<TowersRangeOverlayConfig>| { config.is_overlay_globally_enabled ^= true; }).run_if(input_just_released(KeyCode::Digit8)), // Switch overlay on/off 
                 ),
             )
-            .add_observer(TowersRangeOverlayConfig::on_building_ui_focused)
-            .add_observer(TowersRangeOverlayConfig::on_building_ui_unfocused)
+            .add_observer(TowersRangeOverlayConfig::on_map_object_focused)
+            .add_observer(TowersRangeOverlayConfig::on_map_object_unfocused)
             .add_observer(on_grid_placer_changed)
             ;
     }
@@ -68,10 +68,10 @@ impl TowersRangeOverlayConfig {
             overlay_state.set(TowersRangeOverlayState::Hide);
         }
     }
-    fn on_building_ui_focused(
-        trigger: On<UiMapObjectFocusedTrigger>,
+    fn on_map_object_focused(
+        trigger: On<Insert, FocusedMapObject>,
         mut overlay_config: ResMut<TowersRangeOverlayConfig>,
-        towers: Query<(), With<Tower>>, // Is focused a tower?
+        towers: Query<(), With<Tower>>,
     ) {
         let focused_entity = trigger.entity;
         if towers.contains(focused_entity) {
@@ -80,8 +80,8 @@ impl TowersRangeOverlayConfig {
             overlay_config.secondary_mode = TowersRangeOverlaySecondaryMode::None;
         }
     }
-    fn on_building_ui_unfocused(
-        _trigger: On<UiMapObjectUnfocusedTrigger>,
+    fn on_map_object_unfocused(
+        _trigger: On<Remove, FocusedMapObject>,
         mut overlay_config: ResMut<TowersRangeOverlayConfig>,
     ) {
         overlay_config.secondary_mode = TowersRangeOverlaySecondaryMode::None;
