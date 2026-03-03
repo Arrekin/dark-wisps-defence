@@ -1,17 +1,12 @@
 //! Ripple wave effect spawned by the emitter tower.
 //!
-//! Each ripple is a circle mesh on render layer 1 that samples the pre-rendered
-//! scene texture and applies a radial displacement as the band passes through
-//! objects. See `documentation/scene_capture_effects.md` for the rendering architecture.
+//! Each active ripple is a pure-data entity (`Ripple` + `Transform` + `MovementSpeed`)
+//! with no mesh or material. Rendering is handled by [`super::ripple_post_process`],
+//! which packs all ripples into a per-camera uniform and runs a fullscreen
+//! displacement pass after tonemapping.
+//!
+//! Game logic: radial propagation, wisp hit detection, save/load.
 
-use bevy::{
-    camera::visibility::RenderLayers,
-    render::render_resource::AsBindGroup,
-    shader::ShaderRef,
-    sprite_render::{AlphaMode2d, Material2d, Material2dPlugin},
-};
-
-use lib_core::camera::SceneTexture;
 use lib_grid::grids::wisps::WispsGrid;
 
 use crate::prelude::*;
@@ -21,9 +16,6 @@ pub struct RipplePlugin;
 impl Plugin for RipplePlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_plugins((
-                Material2dPlugin::<RippleMaterial>::default(),
-            ))
             .add_systems(Update, (
                 (
                     ripple_propagate_system,
@@ -118,9 +110,6 @@ impl BuilderRipple {
     fn on_add(
         trigger: On<Add, BuilderRipple>,
         mut commands: Commands,
-        mut ripple_materials: ResMut<Assets<RippleMaterial>>,
-        mut meshes: ResMut<Assets<Mesh>>,
-        scene_texture: Res<SceneTexture>,
         builders: Query<&BuilderRipple>,
     ) {
         let entity = trigger.entity;
@@ -131,63 +120,41 @@ impl BuilderRipple {
         commands.entity(entity)
             .remove::<BuilderRipple>()
             .insert((
-                Mesh2d(meshes.add(Circle::new(builder.radius))),
-                MeshMaterial2d(ripple_materials.add(RippleMaterial {
-                    scene_texture: scene_texture.0.clone(),
-                    current_radius: current_radius / (builder.radius * 2.),
-                    wave_width: 0.15,
-                })),
                 Transform::from_translation(builder.world_position.extend(Z_GROUND_EFFECT)),
-                Ripple{ max_radius: builder.radius, current_radius },
+                Ripple { max_radius: builder.radius, current_radius },
                 MovementSpeed(50.0),
-                RenderLayers::layer(1),
             ));
-    }
-}
-
-#[derive(Asset, TypePath, Debug, Clone, AsBindGroup)]
-pub struct RippleMaterial {
-    #[texture(0)]
-    #[sampler(1)]
-    pub scene_texture: Handle<Image>,
-    #[uniform(2)]
-    pub current_radius: f32,
-    #[uniform(2)]
-    pub wave_width: f32,
-}
-
-impl Material2d for RippleMaterial {
-    fn fragment_shader() -> ShaderRef {
-        "shaders/ripple.wgsl".into()
-    }
-    fn alpha_mode(&self) -> AlphaMode2d {
-        AlphaMode2d::Blend
     }
 }
 
 #[derive(Component)]
 #[require(MapBound)]
 pub struct Ripple {
-    max_radius: f32, // Must be half the mesh size
+    max_radius: f32,
     current_radius: f32,
+}
+impl Ripple {
+    /// Current radius as a fraction of the full diameter, range 0..0.5.
+    /// Matches the normalised radius the shader uses internally.
+    pub fn normalized_radius(&self) -> f32 {
+        self.current_radius / (self.max_radius * 2.0)
+    }
+
+    pub fn max_radius(&self) -> f32 {
+        self.max_radius
+    }
 }
 
 fn ripple_propagate_system(
     mut commands: Commands,
     time: Res<Time>,
-    mut wave_materials: ResMut<Assets<RippleMaterial>>,
-    mut ripples: Query<(Entity, &mut Ripple, &MovementSpeed, &MeshMaterial2d<RippleMaterial>)>,
+    mut ripples: Query<(Entity, &mut Ripple, &MovementSpeed)>,
 ) {
-    for (entity, mut ripple, speed, material_handle) in ripples.iter_mut() {
-        let Some(material) = wave_materials.get_mut(material_handle) else { continue; };
+    for (entity, mut ripple, speed) in ripples.iter_mut() {
         ripple.current_radius += speed.0 * time.delta_secs();
         if ripple.current_radius > ripple.max_radius {
             commands.entity(entity).despawn();
         }
-
-        // Update the ripple radius. Shader needs a normalized value from 0.0 to 1.0 over the mesh size.
-        let mesh_size = ripple.max_radius * 2.;
-        material.current_radius = ripple.current_radius / mesh_size;
     }
 }
 

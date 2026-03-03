@@ -2,15 +2,13 @@
 //!
 //! This module provides:
 //! - Main game camera with zoom and movement controls
-//! - [`SceneTexture`] / [`SceneCaptureCamera`]: off-screen pre-pass used by in-world displacement effects
 //! - `CameraOf` / `OwnedCameras` relationship for automatic camera lifecycle management
 //! - `CameraAutoFollowEntity` for automatically following an entity
 
-use bevy::{post_process::bloom::Bloom, input::mouse::MouseWheel, window::{PrimaryWindow, WindowResized}};
+use bevy::{post_process::bloom::Bloom, input::mouse::MouseWheel};
 use bevy::asset::RenderAssetUsages;
 use bevy::camera::RenderTarget;
-use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages};
-use bevy::camera::visibility::RenderLayers;
+use bevy::render::render_resource::{TextureDimension, TextureFormat, TextureUsages};
 use bevy::render::view::Hdr;
 use crate::lib_prelude::*;
 
@@ -27,66 +25,10 @@ impl Plugin for CameraPlugin {
             .add_systems(Update, (
                 camera_zoom,
                 camera_movement,
-                SceneCaptureCamera::sync_with_main,
-                SceneCaptureCamera::update_texture.run_if(on_message::<WindowResized>),
             ))
             .add_systems(PostUpdate, CameraAutoFollowEntity::update)
             .add_observer(BuilderPreviewCamera::on_add)
             ;
-    }
-}
-
-/// Handle to the off-screen scene image rendered by [`SceneCaptureCamera`] each frame.
-///
-/// Shared with any material that needs to sample the pre-rendered scene
-/// (see `documentation/scene_capture_effects.md`).
-#[derive(Resource)]
-pub struct SceneTexture(pub Handle<Image>);
-
-/// Off-screen camera that renders layer 0 to [`SceneTexture`] before the main pass.
-///
-/// Kept in sync with [`MainCamera`] every frame so the captured scene matches
-/// the player's view exactly.
-#[derive(Component)]
-pub struct SceneCaptureCamera;
-impl SceneCaptureCamera {
-    fn sync_with_main(
-        main_cam: Single<(&Transform, &Projection), (With<MainCamera>, Without<SceneCaptureCamera>)>,
-        capture_cam: Option<Single<(&mut Transform, &mut Projection), (With<SceneCaptureCamera>, Without<MainCamera>)>>,
-    ) {
-        let Some(capture_cam) = capture_cam else { return; };
-        let (main_transform, main_proj) = main_cam.into_inner();
-        let (mut cap_transform, mut cap_proj) = capture_cam.into_inner();
-        *cap_transform = *main_transform;
-        *cap_proj = main_proj.clone();
-    }
-
-    /// Creates or recreates [`SceneTexture`] at the current physical window size and
-    /// points the capture camera's render target at it.
-    fn update_texture(
-        mut commands: Commands,
-        mut images: ResMut<Assets<Image>>,
-        mut scene_texture: ResMut<SceneTexture>,
-        window: Single<&Window, With<PrimaryWindow>>,
-        capture_camera: Single<Entity, With<SceneCaptureCamera>>,
-    ) {
-        println!("run");
-
-        let width  = window.physical_width().max(1);
-        let height = window.physical_height().max(1);
-
-        let mut scene_image = Image::new_uninit(
-            Extent3d { width, height, depth_or_array_layers: 1 },
-            TextureDimension::D2,
-            TextureFormat::Bgra8UnormSrgb,
-            RenderAssetUsages::all(),
-        );
-        scene_image.texture_descriptor.usage =
-            TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST | TextureUsages::RENDER_ATTACHMENT;
-        let new_handle = images.add(scene_image);
-
-        scene_texture.0 = new_handle.clone();
-        commands.entity(*capture_camera).insert(RenderTarget::Image(new_handle.into()));
     }
 }
 
@@ -98,14 +40,7 @@ fn startup(mut commands: Commands) {
         Camera2d::default(),
         Transform::from_xyz(500., 500., 0.),
         Bloom { high_pass_frequency: 0.5, ..default() },
-        RenderLayers::from_layers(&[0, 1]),
         MainCamera,
-    ));
-    commands.insert_resource(SceneTexture(default()));
-    commands.spawn((
-        Camera2d::default(),
-        Camera { order: -1, ..default() },
-        SceneCaptureCamera,
     ));
 }
 
