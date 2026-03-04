@@ -931,7 +931,7 @@ impl TargetSelectionPanel {
             Node {
                 flex_direction: FlexDirection::Column,
                 overflow: Overflow::scroll_y(),
-                max_height: Val::Percent(50.),
+                flex_grow: 1.0,
                 ..default()
             },
             ScrollPosition::default(),
