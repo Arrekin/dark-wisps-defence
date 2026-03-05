@@ -138,7 +138,9 @@ impl BuilderMainBase {
                 }),
                 GeneratorEnergy,
                 SupplierEnergy,
-                ModifiersBank::from_baseline(&building_info.baseline),
+                related![EffectInstances[
+                    (ModifierContributions(building_info.baseline.clone()), BaselineEffect),
+                ]],
             ));
     }
 }

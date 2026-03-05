@@ -4,8 +4,8 @@ use lib_grid::search::common::ALL_DIRECTIONS;
 use lib_grid::grids::wisps::WispsGrid;
 
 use crate::prelude::*;
-use crate::effects::explosions::BuilderExplosion;
-use crate::projectiles::components::Projectile;
+use crate::visual_effects::explosions::BuilderExplosion;
+use crate::weaponry::components::Projectile;
 use crate::wisps::components::Wisp;
 
 pub struct CannonballPlugin;
@@ -59,7 +59,7 @@ impl Saveable for BuilderCannonball {
         tx.save_world_position(entity_id, self.world_position)?;
         tx.execute(
             "INSERT OR REPLACE INTO cannonballs (id, target_x, target_y, damage, initial_distance) VALUES (?1, ?2, ?3, ?4, ?5)",
-            rusqlite::params![entity_id, self.target_position.x, self.target_position.y, self.damage.0, save_data.initial_distance],
+            rusqlite::params![entity_id, self.target_position.x, self.target_position.y, self.damage.get(), save_data.initial_distance],
         )?;
         Ok(())
     }
@@ -83,7 +83,7 @@ impl Loadable for BuilderCannonball {
             ctx.commands.entity(new_entity).insert(BuilderCannonball::new_for_saving(
                 world_position,
                 Vec2::new(target_x, target_y),
-                AttackDamage(damage_val),
+                AttackDamage::new(damage_val),
                 save_data
             ));
             count += 1;
@@ -184,7 +184,7 @@ pub fn cannonball_hit_system(
     mut commands: Commands,
     cannonballs: Query<(Entity, &Transform, &CannonballTarget, &AttackDamage), With<Cannonball>>,
     wisps_grid: Res<WispsGrid>,
-    mut wisps: Query<&mut Health, With<Wisp>>,
+    mut wisps: Query<(&mut Health, &IncomingDamageMultiplier), With<Wisp>>,
 ) {
     for (entity, cannonball_transform, target, attack_damage) in cannonballs.iter() {
         if cannonball_transform.translation.xy().distance(target.target_position) > 4. { continue; } // TODO: 1. and 2. are causing cannonballs jitters at landing. Investigate.
@@ -198,8 +198,8 @@ pub fn cannonball_hit_system(
 
             let wisps_in_coords = &wisps_grid[blast_zone_coords];
             for wisp in wisps_in_coords {
-                let Ok(mut health) = wisps.get_mut(*wisp) else { continue }; // May not find wisp if the wisp spawned at the same frame.
-                health.decrease(attack_damage.0);
+                let Ok((mut health, damage_mult)) = wisps.get_mut(*wisp) else { continue }; // May not find wisp if the wisp spawned at the same frame.
+                health.decrease(attack_damage.get() * damage_mult.get());
             }
         }
         commands.entity(entity).despawn();

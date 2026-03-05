@@ -188,10 +188,12 @@ impl BuilderExplorationCenter {
                 builder.grid_position,
                 grid_imprint,
                 NeedsPower::default(),
-                ModifiersBank::from_baseline(&building_info.baseline),
                 related![Indicators[
                     IndicatorType::NoPower,
                     IndicatorType::DisabledByPlayer,
+                ]],
+                related![EffectInstances[
+                    (ModifierContributions(building_info.baseline.clone()), BaselineEffect),
                 ]],
                 children![
                     IndicatorDisplay::default(),

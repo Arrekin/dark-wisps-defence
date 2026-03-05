@@ -3,7 +3,7 @@ use lib_grid::grids::wisps::WispsGrid;
 use lib_grid::search::targetfinding::target_find_closest_wisp;
 use lib_core::utils::angle_difference;
 
-use crate::effects::explosions::BuilderExplosion;
+use crate::visual_effects::explosions::BuilderExplosion;
 use crate::prelude::*;
 use crate::ui::grid_object_placer::GridObjectPlacer;
 use crate::wisps::components::Wisp;

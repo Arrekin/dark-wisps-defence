@@ -148,10 +148,12 @@ impl BuilderEnergyRelay {
                     mode: FloodEmissionsMode::Increase,
                 }),
                 SupplierEnergy,
-                ModifiersBank::from_baseline(&building_info.baseline),
                 related![Indicators[
                     IndicatorType::NoPower,
                     IndicatorType::DisabledByPlayer,
+                ]],
+                related![EffectInstances[
+                    (ModifierContributions(building_info.baseline.clone()), BaselineEffect),
                 ]],
                 children![
                     IndicatorDisplay::default(),
@@ -163,7 +165,6 @@ impl BuilderEnergyRelay {
             .observe(|trigger: On<Remove, DisabledByPlayer>, mut commands: Commands| { commands.trigger(RequestTechnicalStateUpdate{ entity: trigger.entity }); })
             .observe(RequestTechnicalStateUpdate::on_trigger)
             ;
-
         commands.trigger(RequestTechnicalStateUpdate{ entity });
     }
 }

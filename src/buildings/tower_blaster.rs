@@ -2,7 +2,7 @@ use lib_core::utils::angle_difference;
 
 use crate::prelude::*;
 use crate::ui::indicators::{IndicatorDisplay, IndicatorType, Indicators};
-use crate::projectiles::laser_dart::BuilderLaserDart;
+use crate::weaponry::laser_dart::BuilderLaserDart;
 use crate::wisps::components::Wisp;
 
 pub struct TowerBlasterPlugin;
@@ -174,11 +174,13 @@ impl BuilderTowerBlaster {
                 grid_imprint,
                 TowerTopRotation { speed: 10.0, current_angle: 0. },
                 NeedsPower::default(),
-                ModifiersBank::from_baseline(&building_info.baseline),
                 Upgrades::from_almanach(&building_info.upgrades, builder.save_data.as_ref().map(|d| &d.upgrade_levels)),
                 related![Indicators[
                     IndicatorType::NoPower,
                     IndicatorType::DisabledByPlayer,
+                ]],
+                related![EffectInstances[
+                    (ModifierContributions(building_info.baseline.clone()), BaselineEffect),
                 ]],
                 children![
                     IndicatorDisplay::default(),

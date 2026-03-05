@@ -4,7 +4,7 @@ use lib_grid::grids::wisps::WispsGrid;
 use lib_grid::search::pathfinding::path_find_energy_beckon;
 use lib_inventory::stats::StatsWispsKilled;
 
-use crate::effects::wisp_attack::BuilderWispAttackEffect;
+use crate::visual_effects::wisp_attack::BuilderWispAttackEffect;
 use crate::prelude::*;
 
 use super::components::{Wisp, WispChargeAttack, WispState};
@@ -21,7 +21,7 @@ pub fn move_wisps(
         let interim_target_world_coords = next_target.to_world_position_centered(GridImprint::default());
         let direction = interim_target_world_coords - curr_world_coords;
         let (sx, sy) = (direction.x.signum(), direction.y.signum());
-        let wisp_speed = speed.0;
+        let wisp_speed = speed.get();
         transform.translation += Vec3::new(sx * time.delta_secs() * wisp_speed, sy * time.delta_secs() * wisp_speed, 0.);
         // If close enough, remove from path.
         if (transform.translation.truncate().distance(interim_target_world_coords)) < 1. {
@@ -131,7 +131,7 @@ pub fn wisp_charge_attack(
                         health.decrease(1.);
                     });
                 } else {
-                    let wisp_speed = time.delta_secs() * speed.0 * 5.; // Speed up during charge
+                    let wisp_speed = time.delta_secs() * speed.get() * 5.; // Speed up during charge
                     if wisp_speed >= distance {
                         // Would overshoot, just move to target position
                         transform.translation = Vec3::new(interim_target_world_coords.x, interim_target_world_coords.y, transform.translation.z);
@@ -154,7 +154,7 @@ pub fn wisp_charge_attack(
                     // Already close enough, start charging again
                     *attack = WispChargeAttack::Charge;
                 } else {
-                    let wisp_speed = time.delta_secs() * speed.0 * 0.5;
+                    let wisp_speed = time.delta_secs() * speed.get() * 0.5;
                     if wisp_speed >= distance {
                         // Would overshoot, just move to target position
                         transform.translation = Vec3::new(interim_target_world_coords.x, interim_target_world_coords.y, transform.translation.z);

@@ -2,6 +2,7 @@ use bevy::app::{App, Plugin};
 
 pub mod buildings;
 pub mod camera;
+pub mod game_clock;
 pub mod grids;
 pub mod logging;
 pub mod mouse;
@@ -12,6 +13,8 @@ pub mod utils;
 pub mod persistence;
 pub mod wisps;
 pub mod map_objects;
+pub mod modifiers;
+pub mod effects;
 
 pub struct LibCorePlugin;
 impl Plugin for LibCorePlugin {
@@ -25,6 +28,9 @@ impl Plugin for LibCorePlugin {
             grids::GridPlugin,
             buildings::BuildingsPlugin,
             persistence::LoadSavePlugin,
+            game_clock::GameClockPlugin,
+            modifiers::ModifiersPlugin,
+            effects::EffectsPlugin,
         ));
     }
 }
@@ -41,6 +47,8 @@ pub mod prelude {
     pub use crate::common::common_prelude::*;
     pub use crate::persistence::load_save_prelude::*;
     pub use crate::wisps::wisps_prelude::*;
+    pub use crate::modifiers::modifiers_prelude::*;
+    pub use crate::effects::effects_prelude::*;
     // Re-export the derive macros
     pub use lib_derive::{Property, SSS};
 }

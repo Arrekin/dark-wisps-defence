@@ -1,7 +1,10 @@
 use crate::prelude::*;
 
 #[derive(Component, Debug, Default, PartialEq)]
-#[require(WispState, WispChargeAttack, GridPath, MovementSpeed, AttackRange, MaxHealth, MapBound)]
+#[require(
+    WispState, WispChargeAttack, GridPath, ModifierBank, MapBound,
+    MovementSpeed, AttackRange, MaxHealth, IncomingDamageMultiplier
+)]
 pub struct Wisp;
 #[derive(Component, Default)]
 pub enum WispState {

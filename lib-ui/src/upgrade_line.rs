@@ -23,43 +23,44 @@ impl UpgradeLineBuilder {
     fn on_add(
         trigger: On<Add, UpgradeLineBuilder>,
         mut commands: Commands,
-        builders: Query<&UpgradeLineBuilder>,
-        targets: Query<(&Upgrades, &ModifiersBank)>,
+        // Upgrades are disabled — despawn the line immediately.
+        // Original logic kept below as reference for the future migration.
+        // builders: Query<&UpgradeLineBuilder>,
+        // targets: Query<(&Upgrades, &ModifiersBank)>,
     ) {
-        let line_entity = trigger.entity;
-        let Ok(builder) = builders.get(line_entity) else { return; };
-        let Ok((upgrades, modifiers_bank)) = targets.get(builder.target_entity) else {
-            commands.entity(line_entity).despawn();
-            return;
-        };
+        commands.entity(trigger.entity).despawn();
 
-        let Some(upgrade_info) = upgrades.upgrades.get(&builder.upgrade_type) else {
-            commands.entity(line_entity).despawn();
-            return;
-        };
-
-        // Check if there are more levels available (current_level is the next level to purchase)
-        if upgrade_info.current_level >= upgrade_info.static_info.levels.len() {
-            // No more upgrades available for this type
-            commands.entity(line_entity).despawn();
-            return;
-        }
-
-        // Get current and next values based on upgrade type
-        let UpgradeType::Modifier(modifier_type) = builder.upgrade_type;
-        let current_value = modifiers_bank.get_sum(modifier_type);
-        let next_level_info = &upgrade_info.static_info.levels[upgrade_info.current_level];
-        let next_value = current_value + next_level_info.value;
-
-        commands.entity(line_entity)
-            .remove::<UpgradeLineBuilder>()
-            .insert(UpgradeLine {
-                target_entity: builder.target_entity,
-                upgrade_type: builder.upgrade_type,
-                costs: next_level_info.cost.clone(),
-                current_value,
-                next_value,
-            });
+        // let line_entity = trigger.entity;
+        // let Ok(builder) = builders.get(line_entity) else { return; };
+        // let Ok((upgrades, modifiers_bank)) = targets.get(builder.target_entity) else {
+        //     commands.entity(line_entity).despawn();
+        //     return;
+        // };
+        //
+        // let Some(upgrade_info) = upgrades.upgrades.get(&builder.upgrade_type) else {
+        //     commands.entity(line_entity).despawn();
+        //     return;
+        // };
+        //
+        // if upgrade_info.current_level >= upgrade_info.static_info.levels.len() {
+        //     commands.entity(line_entity).despawn();
+        //     return;
+        // }
+        //
+        // let UpgradeType::Modifier(modifier_type) = builder.upgrade_type;
+        // let current_value = modifiers_bank.get_sum(modifier_type);
+        // let next_level_info = &upgrade_info.static_info.levels[upgrade_info.current_level];
+        // let next_value = current_value + next_level_info.value;
+        //
+        // commands.entity(line_entity)
+        //     .remove::<UpgradeLineBuilder>()
+        //     .insert(UpgradeLine {
+        //         target_entity: builder.target_entity,
+        //         upgrade_type: builder.upgrade_type,
+        //         costs: next_level_info.cost.clone(),
+        //         current_value,
+        //         next_value,
+        //     });
     }
 }
 #[derive(Component)]

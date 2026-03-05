@@ -4,7 +4,7 @@ use lib_core::utils::angle_difference;
 
 use crate::prelude::*;
 use crate::ui::indicators::{IndicatorDisplay, IndicatorType, Indicators};
-use crate::projectiles::rocket::BuilderRocket;
+use crate::weaponry::rocket::BuilderRocket;
 use crate::wisps::components::Wisp;
 
 pub struct TowerRocketLauncherPlugin;
@@ -170,11 +170,13 @@ impl BuilderTowerRocketLauncher {
                 grid_imprint,
                 TowerTopRotation { speed: 1.0, current_angle: 0. },
                 NeedsPower::default(),
-                ModifiersBank::from_baseline(&building_info.baseline),
                 Upgrades::from_almanach(&building_info.upgrades, builder.save_data.as_ref().map(|d| &d.upgrade_levels)),
                 related![Indicators[
                     IndicatorType::NoPower,
                     IndicatorType::DisabledByPlayer,
+                ]],
+                related![EffectInstances[
+                    (ModifierContributions(building_info.baseline.clone()), BaselineEffect),
                 ]],
                 children![
                     IndicatorDisplay::default(),

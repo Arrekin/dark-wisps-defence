@@ -4,9 +4,9 @@ use lib_grid::search::common::ALL_DIRECTIONS;
 use lib_grid::grids::wisps::WispsGrid;
 
 use crate::prelude::*;
-use crate::projectiles::components::Projectile;
+use crate::weaponry::components::Projectile;
 use crate::wisps::components::Wisp;
-use crate::effects::explosions::BuilderExplosion;
+use crate::visual_effects::explosions::BuilderExplosion;
 
 /// Plugin for the Rocket projectile
 pub struct RocketPlugin;
@@ -67,7 +67,7 @@ impl Saveable for BuilderRocket {
         tx.save_world_position(entity_id, self.world_position)?;
         tx.execute(
             "INSERT OR REPLACE INTO rockets (id, target_wisp_id, rotation_z, damage) VALUES (?1, ?2, ?3, ?4)",
-            rusqlite::params![entity_id, target_wisp_id, rotation_z, self.damage.0],
+            rusqlite::params![entity_id, target_wisp_id, rotation_z, self.damage.get()],
         )?;
         Ok(())
     }
@@ -95,7 +95,7 @@ impl Loadable for BuilderRocket {
                     world_position,
                     Quat::from_rotation_z(rotation_z),
                     new_target_wisp,
-                    AttackDamage(damage_val),
+                    AttackDamage::new(damage_val),
                     save_data
                 ));
             }
@@ -222,7 +222,7 @@ pub fn rocket_hit_system(
     rockets: Query<(Entity, &Transform, &RocketTarget, &AttackDamage), (With<Rocket>, Without<Wisp>)>,
     wisps_grid: Res<WispsGrid>,
     wisps_transforms: Query<&Transform, (With<Wisp>, Without<Rocket>)>,
-    mut wisps_health: Query<&mut Health, With<Wisp>>,
+    mut wisps_health: Query<(&mut Health, &IncomingDamageMultiplier), With<Wisp>>,
 ) {
     for (entity, rocket_transform, target, attack_damage) in rockets.iter() {
         let rocket_coords = GridCoords::from_transform(&rocket_transform);
@@ -243,8 +243,8 @@ pub fn rocket_hit_system(
 
             let wisps_in_coords = &wisps_grid[blast_zone_coords];
             for wisp in wisps_in_coords {
-                let Ok(mut health) = wisps_health.get_mut(*wisp) else { continue }; // May not find wisp if the wisp spawned at the same frame.
-                health.decrease(attack_damage.0);
+                let Ok((mut health, damage_mult)) = wisps_health.get_mut(*wisp) else { continue }; // May not find wisp if the wisp spawned at the same frame.
+                health.decrease(attack_damage.get() * damage_mult.get());
             }
         }
         commands.entity(entity).despawn();

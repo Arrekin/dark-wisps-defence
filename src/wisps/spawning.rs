@@ -126,7 +126,13 @@ impl BuilderWisp {
              builder.grid_coords.to_world_position_centered(WISP_GRID_IMPRINT).extend(Z_WISP)
         };
 
-        entity_commands
+        let wisp_type_bundle = match builder.wisp_type {
+            WispType::Fire => entity_commands.insert((WispFireType, EssencesContainer::from(EssenceContainer::new(EssenceType::Fire, 1)))),
+            WispType::Water => entity_commands.insert((WispWaterType, EssencesContainer::from(EssenceContainer::new(EssenceType::Water, 1)))),
+            WispType::Light => entity_commands.insert((WispLightType, EssencesContainer::from(EssenceContainer::new(EssenceType::Light, 1)))),
+            WispType::Electric => entity_commands.insert((WispElectricType, EssencesContainer::from(EssenceContainer::new(EssenceType::Electric, 1)))),
+        };
+        wisp_type_bundle
             .remove::<BuilderWisp>()
             .insert((
                 builder.grid_coords,
@@ -137,18 +143,14 @@ impl BuilderWisp {
                 },
                 Wisp,
                 builder.wisp_type,
-                ModifiersBank::from_baseline(&HashMap::from([
-                    (ModifierType::MaxHealth, 10.),
-                    (ModifierType::AttackRange, 1.),
-                    (ModifierType::MovementSpeed, 60.),
-                ])),
+                related![EffectInstances[
+                    (ModifierContributions(HashMap::from([
+                        (ModifierType::MaxHealth, 10.),
+                        (ModifierType::AttackRange, 1.),
+                        (ModifierType::MovementSpeed, 60.),
+                    ])), BaselineEffect),
+                ]],
             ));
-        match builder.wisp_type {
-            WispType::Fire => entity_commands.insert((WispFireType, EssencesContainer::from(EssenceContainer::new(EssenceType::Fire, 1)))),
-            WispType::Water => entity_commands.insert((WispWaterType, EssencesContainer::from(EssenceContainer::new(EssenceType::Water, 1)))),
-            WispType::Light => entity_commands.insert((WispLightType, EssencesContainer::from(EssenceContainer::new(EssenceType::Light, 1)))),
-            WispType::Electric => entity_commands.insert((WispElectricType, EssencesContainer::from(EssenceContainer::new(EssenceType::Electric, 1)))),
-        };
         wisps_grid.wisp_add(builder.grid_coords, entity);
     }
 }

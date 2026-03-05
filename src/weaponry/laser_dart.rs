@@ -1,7 +1,7 @@
 use lib_grid::grids::wisps::WispsGrid;
 
 use crate::prelude::*;
-use crate::projectiles::components::Projectile;
+use crate::weaponry::components::Projectile;
 use crate::wisps::components::Wisp;
 
 pub struct LaserDartPlugin;
@@ -54,7 +54,7 @@ impl Saveable for BuilderLaserDart {
         tx.save_world_position(entity_id, self.world_position)?;
         tx.execute(
             "INSERT OR REPLACE INTO laser_darts (id, target_wisp_id, vector_x, vector_y, damage) VALUES (?1, ?2, ?3, ?4, ?5)",
-            rusqlite::params![entity_id, target_wisp_id, self.target_vector.x, self.target_vector.y, self.damage.0],
+            rusqlite::params![entity_id, target_wisp_id, self.target_vector.x, self.target_vector.y, self.damage.get()],
         )?;
         Ok(())
     }
@@ -81,7 +81,7 @@ impl Loadable for BuilderLaserDart {
                 world_position,
                 new_target_wisp,
                 Vec2::new(vector_x, vector_y),
-                AttackDamage(damage_val),
+                AttackDamage::new(damage_val),
                 save_data
             ));
             count += 1;
@@ -166,7 +166,7 @@ pub fn laser_dart_hit_system(
     mut commands: Commands,
     laser_darts: Query<(Entity, &Transform, &AttackDamage), With<LaserDart>>,
     wisps_grid: Res<WispsGrid>,
-    mut wisps: Query<(&mut Health, &Transform), With<Wisp>>,
+    mut wisps: Query<(&mut Health, &Transform, &IncomingDamageMultiplier), With<Wisp>>,
 ) {
     for (entity, laser_dart_transform, damage) in laser_darts.iter() {
         let coords = GridCoords::from_transform(&laser_dart_transform);
@@ -176,9 +176,9 @@ pub fn laser_dart_hit_system(
         }
         let wisps_in_coords = &wisps_grid[coords];
         for wisp in wisps_in_coords {
-            let Ok((mut health, wisp_transform)) = wisps.get_mut(*wisp) else { continue }; // May not find wisp if the wisp spawned at the same frame.
+            let Ok((mut health, wisp_transform, damage_mult)) = wisps.get_mut(*wisp) else { continue }; // May not find wisp if the wisp spawned at the same frame.
             if laser_dart_transform.translation.xy().distance(wisp_transform.translation.xy()) < 8. {
-                health.decrease(damage.0);
+                health.decrease(damage.get() * damage_mult.get());
                 commands.entity(entity).despawn();
                 break;
             }

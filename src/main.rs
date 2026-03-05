@@ -1,11 +1,11 @@
 mod buildings;
 mod editor;
-mod effects;
+mod visual_effects;
 mod map_objects;
 mod overlays;
 mod objectives;
 mod prelude;
-mod projectiles;
+mod weaponry;
 mod ui;
 mod units;
 mod wisps;
@@ -22,11 +22,11 @@ fn main() {
                 .set(WindowPlugin{ primary_window: Some(Window { present_mode: bevy::window::PresentMode::AutoNoVsync, ..default()}), ..default() }),
             MeshPickingPlugin,
             buildings::BuildingsPlugin,
-            effects::EffectsPlugin,
+            visual_effects::VisualEffectsPlugin,
             map_objects::MapObjectsPlugin,
             objectives::ObjectivesPlugin,
             overlays::OverlaysPlugin,
-            projectiles::ProjectilesPlugin,
+            weaponry::ProjectilesPlugin,
             ui::UiPlugin,
             units::UnitsPlugin,
             wisps::WispsPlugin,

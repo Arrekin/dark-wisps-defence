@@ -14,7 +14,6 @@ impl Plugin for CommonPlugin {
                 ColorPulsation::pulsate_sprites_system,
             ))
             .add_observer(ZDepth::on_insert)
-            .add_observer(MaxHealth::on_insert)
             .add_observer(ColorPulsation::on_remove)
             ;
     }
@@ -52,8 +51,8 @@ pub struct MapBound;
 
 #[derive(Component)]
 pub struct Health {
-    current: f32,
-    max: f32, // A helper, source of truth is in MaxHealth component
+    pub current: f32,
+    pub max: f32, // A helper, source of truth is in MaxHealth component
 }
 impl Health {
     pub fn new(max: f32) -> Self {
@@ -80,43 +79,6 @@ impl Default for Health {
         Self { current: f32::MAX, max: f32::MAX }
     }
 }
-
-#[derive(Component, Clone, Copy, Property)]
-#[component(immutable)]
-#[require(Health)]
-pub struct MaxHealth(pub f32);
-impl MaxHealth {   
-    fn on_insert(
-        trigger: On<Insert, MaxHealth>,
-        mut healths: Query<(&mut Health, &MaxHealth)>,
-    ) {
-        let Ok((mut health, max_health)) = healths.get_mut(trigger.entity) else { return; };
-        health.max = max_health.0;
-        if health.current > max_health.0 {
-            health.current = max_health.0;
-        }
-    }
-}
-impl Default for MaxHealth {
-    fn default() -> Self {
-        Self(f32::MAX)
-    }
-}
-#[derive(Component, Default, Clone, Copy, Property)]
-#[component(immutable)]
-pub struct MovementSpeed(pub f32);
-#[derive(Component, Default, Clone, Copy, Property)]
-#[component(immutable)]
-pub struct AttackSpeed(pub f32);
-#[derive(Component, Default, Clone, Copy, Property)]
-#[component(immutable)]
-pub struct AttackDamage(pub f32);
-#[derive(Component, Default, Clone, Copy, Property)]
-#[component(immutable)]
-pub struct AttackRange(pub f32);
-#[derive(Component, Default, Clone, Copy, Property)]
-#[component(immutable)]
-pub struct EnergySupplyRange(pub f32);
 
 
 #[derive(Component, Default)]

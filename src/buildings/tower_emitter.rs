@@ -1,4 +1,4 @@
-use crate::effects::ripple::BuilderRipple;
+use crate::weaponry::ripple::BuilderRipple;
 use crate::prelude::*;
 use crate::ui::indicators::{IndicatorDisplay, IndicatorType, Indicators};
 use crate::wisps::components::Wisp;
@@ -166,11 +166,13 @@ impl BuilderTowerEmitter {
                 builder.grid_position,
                 grid_imprint,
                 NeedsPower::default(),
-                ModifiersBank::from_baseline(&building_info.baseline),
                 Upgrades::from_almanach(&building_info.upgrades, builder.save_data.as_ref().map(|d| &d.upgrade_levels)),
                 related![Indicators[
                     IndicatorType::NoPower,
                     IndicatorType::DisabledByPlayer,
+                ]],
+                related![EffectInstances[
+                    (ModifierContributions(building_info.baseline.clone()), BaselineEffect),
                 ]],
                 children![
                     IndicatorDisplay::default(),
@@ -194,7 +196,7 @@ pub fn shooting_system(
             continue;
         };
 
-        commands.spawn(BuilderRipple::new(transform.translation.xy(), range.0 as f32 * CELL_SIZE));
+        commands.spawn(BuilderRipple::new(transform.translation.xy(), range.get() * CELL_SIZE));
         timer.0.reset();
     }
 }

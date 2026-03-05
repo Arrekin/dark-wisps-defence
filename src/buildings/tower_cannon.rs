@@ -1,6 +1,6 @@
 use crate::prelude::*;
 use crate::ui::indicators::{IndicatorDisplay, IndicatorType, Indicators};
-use crate::projectiles::cannonball::BuilderCannonball;
+use crate::weaponry::cannonball::BuilderCannonball;
 use crate::wisps::components::Wisp;
 use crate::wisps::spawning::WISP_GRID_IMPRINT;
 
@@ -169,11 +169,13 @@ impl BuilderTowerCannon {
                 builder.grid_position,
                 grid_imprint,
                 NeedsPower::default(),
-                ModifiersBank::from_baseline(&building_info.baseline),
                 Upgrades::from_almanach(&building_info.upgrades, builder.save_data.as_ref().map(|d| &d.upgrade_levels)),
                 related![Indicators[
                     IndicatorType::NoPower,
                     IndicatorType::DisabledByPlayer,
+                ]],
+                related![EffectInstances[
+                    (ModifierContributions(building_info.baseline.clone()), BaselineEffect),
                 ]],
                 children![
                     IndicatorDisplay::default(),

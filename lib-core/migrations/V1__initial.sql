@@ -9,6 +9,11 @@ CREATE TABLE IF NOT EXISTS map_info (
     name TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS game_clock (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    elapsed REAL NOT NULL DEFAULT 0.0
+);
+
 CREATE TABLE IF NOT EXISTS walls (
     id INTEGER PRIMARY KEY,
     FOREIGN KEY(id) REFERENCES entities(id)
@@ -143,6 +148,14 @@ CREATE TABLE IF NOT EXISTS ripples (
     id INTEGER PRIMARY KEY,
     max_radius REAL NOT NULL,
     current_radius REAL NOT NULL,
+    FOREIGN KEY(id) REFERENCES entities(id)
+);
+
+CREATE TABLE IF NOT EXISTS brittle_effects (
+    id INTEGER PRIMARY KEY,
+    target_id INTEGER NOT NULL,
+    expires_at REAL,
+    damage_multiplier REAL NOT NULL DEFAULT 1.0,
     FOREIGN KEY(id) REFERENCES entities(id)
 );
 

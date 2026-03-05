@@ -31,7 +31,7 @@ impl TowerRangesGrid {
     ) {
         let entity = trigger.entity;
         let Ok((grid_coords, grid_imprint, attack_range)) = towers.get(entity) else { return; };
-        flood_tower_range(&mut tower_ranges_grid, &grid_imprint.covered_coords(*grid_coords), FloodTowerRangeMode::Add, attack_range.0 as usize, entity);
+        flood_tower_range(&mut tower_ranges_grid, &grid_imprint.covered_coords(*grid_coords), FloodTowerRangeMode::Add, attack_range.get() as usize, entity);
     }
     fn on_tower_removed(
         trigger: On<Replace, AttackRange>,
@@ -40,6 +40,7 @@ impl TowerRangesGrid {
     ) {
         let entity = trigger.entity;
         let Ok((grid_coords, grid_imprint, attack_range)) = towers.get(entity) else { return; };
-        flood_tower_range(&mut tower_ranges_grid, &grid_imprint.covered_coords(*grid_coords), FloodTowerRangeMode::Remove, attack_range.0 as usize, entity);
+        flood_tower_range(&mut tower_ranges_grid, &grid_imprint.covered_coords(*grid_coords), FloodTowerRangeMode::Remove, attack_range.get() as usize, entity);
     }
 }
+

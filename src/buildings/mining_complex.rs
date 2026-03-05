@@ -146,11 +146,13 @@ impl BuilderMiningComplex {
                 NeedsPower::default(),
                 DarkOreAreaScanner{range_imprint: grid_imprint},
                 MiningComplexDeliveryTimer(Timer::from_seconds(1.0, TimerMode::Repeating)),
-                ModifiersBank::from_baseline(&building_info.baseline),
                 related![Indicators[
                     IndicatorType::NoPower,
                     IndicatorType::OreDepleted,
                     IndicatorType::DisabledByPlayer,
+                ]],
+                related![EffectInstances[
+                    (ModifierContributions(building_info.baseline.clone()), BaselineEffect),
                 ]],
                 children![
                     IndicatorDisplay::default(),

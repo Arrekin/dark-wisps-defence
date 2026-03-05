@@ -55,7 +55,7 @@ pub enum TowerType {
 }
 
 #[derive(Component, Clone, Debug, Default)]
-#[require(AutoGridTransformSync, ZDepth = Z_BUILDING, MaxHealth, MapBound, ObstacleGridObject = ObstacleGridObject::Building)]
+#[require(AutoGridTransformSync, ZDepth = Z_BUILDING, MaxHealth, MapBound, ObstacleGridObject = ObstacleGridObject::Building, ModifierBank)]
 pub struct Building;
 
 #[derive(Component)]
@@ -113,8 +113,8 @@ impl TowerShootingTimer {
     ) {
         let entity = trigger.entity;
         let Ok((mut timer, attack_speed)) = timers.get_mut(entity) else { return; };
-        if attack_speed.0 == 0. { return; }
-        timer.0.set_duration(Duration::from_secs_f32(1. / attack_speed.0));
+        if attack_speed.get() == 0. { return; }
+        timer.0.set_duration(Duration::from_secs_f32(1. / attack_speed.get()));
     }
 }
 

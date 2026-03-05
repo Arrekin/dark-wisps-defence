@@ -10,6 +10,7 @@ impl Plugin for MapLoadPlugin {
             .add_systems(OnEnter(MapLoadingStage::LoadMapInfo), spawn_loading_tasks)
             .add_systems(OnEnter(MapLoadingStage::LoadResources), spawn_loading_tasks)
             .add_systems(OnEnter(MapLoadingStage::SpawnMapElements), spawn_loading_tasks)
+            .add_systems(OnEnter(MapLoadingStage::SpawnEffectInstances), spawn_loading_tasks)
             .add_systems(OnEnter(MapLoadingStage::Ready), |mut commands: Commands, mut next_game_state: ResMut<NextState<GameState>>| {
                 Log::info().player().tag(Tag::GameLoad).message("Game loaded");
                 commands.trigger(DynamicGameEvent::game_started());

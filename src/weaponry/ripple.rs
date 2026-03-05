@@ -7,10 +7,16 @@
 //!
 //! Game logic: radial propagation, wisp hit detection, save/load.
 
+use lib_core::game_clock::GameClock;
 use lib_grid::grids::wisps::WispsGrid;
+use lib_inventory::effects::brittle::BuilderBrittleEffect;
 
 use crate::prelude::*;
 use crate::wisps::components::Wisp;
+
+// Brittle debuff parameters applied by this ripple source
+const BRITTLE_DURATION_SECS: f64 = 10.0;
+const BRITTLE_DAMAGE_MULTIPLIER: f32 = 1.5;
 
 pub struct RipplePlugin;
 impl Plugin for RipplePlugin {
@@ -24,7 +30,8 @@ impl Plugin for RipplePlugin {
             ))
             .add_observer(BuilderRipple::on_add)
             .register_db_loader::<BuilderRipple>(MapLoadingStage::SpawnMapElements)
-            .register_db_saver(BuilderRipple::on_game_save);
+            .register_db_saver(BuilderRipple::on_game_save)
+            ;
     }
 }
 
@@ -58,14 +65,14 @@ impl Loadable for BuilderRipple {
     fn load(ctx: &mut LoadContext) -> rusqlite::Result<LoadResult> {
         let mut stmt = ctx.conn.prepare("SELECT id, max_radius, current_radius FROM ripples LIMIT ?1 OFFSET ?2")?;
         let mut rows = stmt.query(ctx.pagination.as_params())?;
-        
+
         let mut count = 0;
         while let Some(row) = rows.next()? {
             let old_id: i64 = row.get(0)?;
             let max_radius: f32 = row.get(1)?;
             let current_radius: f32 = row.get(2)?;
             let world_position = ctx.conn.get_world_position(old_id)?;
-            
+
             if let Some(new_entity) = ctx.get_new_entity_for_old(old_id) {
                 let save_data = RippleSaveData { entity: new_entity, current_radius };
                 ctx.commands.entity(new_entity).insert(BuilderRipple::new_for_saving(
@@ -87,7 +94,7 @@ impl BuilderRipple {
     pub fn new_for_saving(world_position: Vec2, radius: f32, save_data: RippleSaveData) -> Self {
         Self { world_position, radius, save_data: Some(save_data) }
     }
-    
+
     fn on_game_save(
         mut commands: Commands,
         ripples: Query<(Entity, &Transform, &Ripple)>,
@@ -121,8 +128,8 @@ impl BuilderRipple {
             .remove::<BuilderRipple>()
             .insert((
                 Transform::from_translation(builder.world_position.extend(Z_GROUND_EFFECT)),
-                Ripple { max_radius: builder.radius, current_radius },
-                MovementSpeed(50.0),
+                Ripple { max_radius: builder.radius, current_radius, hit_wisps: HashSet::default() },
+                MovementSpeed::new(50.0),
             ));
     }
 }
@@ -132,6 +139,7 @@ impl BuilderRipple {
 pub struct Ripple {
     max_radius: f32,
     current_radius: f32,
+    hit_wisps: HashSet<Entity>,
 }
 impl Ripple {
     /// Current radius as a fraction of the full diameter, range 0..0.5.
@@ -151,7 +159,7 @@ fn ripple_propagate_system(
     mut ripples: Query<(Entity, &mut Ripple, &MovementSpeed)>,
 ) {
     for (entity, mut ripple, speed) in ripples.iter_mut() {
-        ripple.current_radius += speed.0 * time.delta_secs();
+        ripple.current_radius += speed.get() * time.delta_secs();
         if ripple.current_radius > ripple.max_radius {
             commands.entity(entity).despawn();
         }
@@ -159,11 +167,13 @@ fn ripple_propagate_system(
 }
 
 pub fn ripple_hit_system(
+    mut commands: Commands,
+    game_clock: Res<GameClock>,
     wisps_grid: Res<WispsGrid>,
-    ripples: Query<(&Ripple, &Transform)>,
-    mut wisps: Query<(&mut Health, &Transform), With<Wisp>>,
+    mut ripples: Query<(&mut Ripple, &Transform)>,
+    wisps: Query<&Transform, With<Wisp>>,
 ) {
-    for (ripple, ripple_transform) in ripples.iter() {
+    for (mut ripple, ripple_transform) in ripples.iter_mut() {
         // Check all fields covered by the ripple for wisp collisions
         let starting_grid_coords = GridCoords::from_transform(&ripple_transform);
         let bounds_range = (ripple.current_radius / CELL_SIZE) as i32;
@@ -175,11 +185,15 @@ pub fn ripple_hit_system(
         for x in lower_bound_x..=upper_bound_x {
             for y in lower_bound_y..=upper_bound_y {
                 for wisp in &wisps_grid[GridCoords{ x, y }] {
-                    let Ok((mut wisp_health, wisp_transform)) = wisps.get_mut(*wisp) else { continue; };
+                    if ripple.hit_wisps.contains(wisp) { continue; }
+                    let Ok(wisp_transform) = wisps.get(*wisp) else { continue; };
                     let distance = wisp_transform.translation.distance(ripple_transform.translation);
                     // Hit only wisps within 1 world unit of the leading edge
                     if distance > ripple.current_radius || distance < ripple.current_radius - 1. { continue; }
-                    wisp_health.decrease(1.);
+                    commands.spawn(
+                        BuilderBrittleEffect::new(*wisp, BRITTLE_DAMAGE_MULTIPLIER).with_expiry(ExpiresAt(game_clock.elapsed + BRITTLE_DURATION_SECS))
+                    );
+                    ripple.hit_wisps.insert(*wisp);
                 }
             }
         }

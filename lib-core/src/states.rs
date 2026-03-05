@@ -100,6 +100,7 @@ pub enum MapLoadingStage {
     LoadMapInfo,
     LoadResources,
     SpawnMapElements,
+    SpawnEffectInstances,
     Ready,
 }
 impl MapLoadingStage {
@@ -108,7 +109,8 @@ impl MapLoadingStage {
             MapLoadingStage::Init => Some(MapLoadingStage::LoadMapInfo),
             MapLoadingStage::LoadMapInfo => Some(MapLoadingStage::LoadResources),
             MapLoadingStage::LoadResources => Some(MapLoadingStage::SpawnMapElements),
-            MapLoadingStage::SpawnMapElements => Some(MapLoadingStage::Ready),
+            MapLoadingStage::SpawnMapElements => Some(MapLoadingStage::SpawnEffectInstances),
+            MapLoadingStage::SpawnEffectInstances => Some(MapLoadingStage::Ready),
             MapLoadingStage::Ready => None,
         }
     }
