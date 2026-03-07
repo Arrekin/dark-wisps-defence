@@ -164,9 +164,10 @@ pub fn laser_dart_move_system(
 
 pub fn laser_dart_hit_system(
     mut commands: Commands,
+    mut damage_messages: MessageWriter<DamageMessage>,
     laser_darts: Query<(Entity, &Transform, &AttackDamage), With<LaserDart>>,
     wisps_grid: Res<WispsGrid>,
-    mut wisps: Query<(&mut Health, &Transform, &IncomingDamageMultiplier), With<Wisp>>,
+    wisps: Query<&Transform, With<Wisp>>,
 ) {
     for (entity, laser_dart_transform, damage) in laser_darts.iter() {
         let coords = GridCoords::from_transform(&laser_dart_transform);
@@ -176,9 +177,12 @@ pub fn laser_dart_hit_system(
         }
         let wisps_in_coords = &wisps_grid[coords];
         for wisp in wisps_in_coords {
-            let Ok((mut health, wisp_transform, damage_mult)) = wisps.get_mut(*wisp) else { continue }; // May not find wisp if the wisp spawned at the same frame.
+            let Ok(wisp_transform) = wisps.get(*wisp) else { continue }; // May not find wisp if the wisp spawned at the same frame.
             if laser_dart_transform.translation.xy().distance(wisp_transform.translation.xy()) < 8. {
-                health.decrease(damage.get() * damage_mult.get());
+                damage_messages.write(DamageMessage {
+                    target: *wisp,
+                    amount: damage.get(),
+                });
                 commands.entity(entity).despawn();
                 break;
             }

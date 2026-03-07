@@ -3,7 +3,7 @@ use crate::prelude::*;
 #[derive(Component, Debug, Default, PartialEq)]
 #[require(
     WispState, WispChargeAttack, GridPath, ModifierBank, MapBound,
-    MovementSpeed, AttackRange, MaxHealth, IncomingDamageMultiplier
+    MovementSpeed, AttackRange, MaxIntegrityPoints, IncomingDamageMultiplier
 )]
 pub struct Wisp;
 #[derive(Component, Default)]

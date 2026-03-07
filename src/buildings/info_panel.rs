@@ -52,16 +52,16 @@ impl BuildingInfoPanelTowerUpgradeCountText {
 struct BuildingInfoPanelTowerUpgradesContainer;
 
 fn update_building_info_panel_system(
-    focused_building: Single<&Health, (With<FocusedMapObject>, With<Building>)>,
+    focused_building: Single<&IntegrityPoints, (With<FocusedMapObject>, With<Building>)>,
     healthbar: Single<&mut Healthbar, With<BuildingInfoPanelHealthbar>>,
 ) {
-    let health = focused_building.into_inner();
+    let integrity_points = focused_building.into_inner();
     // Update the healthbar
     let mut healthbar = healthbar.into_inner();
-    healthbar.value = health.get_current() as f32;
-    healthbar.max_value = health.get_max() as f32;
-    let health_percentage = health.get_percent();
-    healthbar.color = Color::linear_rgba(1. - health_percentage, health_percentage, 0., 1.);
+    healthbar.value = integrity_points.get_current() as f32;
+    healthbar.max_value = integrity_points.get_max() as f32;
+    let integrity_points_percentage = integrity_points.get_percent();
+    healthbar.color = Color::linear_rgba(1. - integrity_points_percentage, integrity_points_percentage, 0., 1.);
 }
 
 fn on_focused_map_object_insert(

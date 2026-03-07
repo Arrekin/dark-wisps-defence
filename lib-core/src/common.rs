@@ -50,11 +50,11 @@ impl DynamicGameEvent {
 pub struct MapBound;
 
 #[derive(Component)]
-pub struct Health {
+pub struct IntegrityPoints {
     pub current: f32,
-    pub max: f32, // A helper, source of truth is in MaxHealth component
+    pub max: f32, // A helper, source of truth is in MaxIntegrityPoints component
 }
-impl Health {
+impl IntegrityPoints {
     pub fn new(max: f32) -> Self {
         Self { current: max, max }
     }
@@ -74,7 +74,7 @@ impl Health {
         self.current <= 0.
     }
 }
-impl Default for Health {
+impl Default for IntegrityPoints {
     fn default() -> Self {
         Self { current: f32::MAX, max: f32::MAX }
     }

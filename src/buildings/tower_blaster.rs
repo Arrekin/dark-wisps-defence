@@ -25,7 +25,7 @@ pub const TOWER_BLASTER_TOP_IMAGE: &str = "buildings/tower_blaster_top.png";
 #[derive(Clone, Debug)]
 pub struct TowerBlasterSaveData {
     entity: Entity,
-    health: f32,
+    integrity_points: f32,
     disabled_by_player: bool,
     upgrade_levels: HashMap<UpgradeType, usize>,
 }
@@ -42,7 +42,7 @@ impl Saveable for BuilderTowerBlaster {
 
         tx.save_marker("tower_blasters", entity_index)?;
         tx.save_grid_coords(entity_index, self.grid_position)?;
-        tx.save_health(entity_index, save_data.health)?;
+        tx.save_integrity_points(entity_index, save_data.integrity_points)?;
         if save_data.disabled_by_player {
             tx.save_disabled_by_player(entity_index)?;
         }
@@ -62,7 +62,7 @@ impl Loadable for BuilderTowerBlaster {
         while let Some(row) = rows.next()? {
             let old_id: i64 = row.get(0)?;
             let grid_position = ctx.conn.get_grid_coords(old_id)?;
-            let health = ctx.conn.get_health(old_id)?;
+            let integrity_points = ctx.conn.get_integrity_points(old_id)?;
             let disabled_by_player = ctx.conn.get_disabled_by_player(old_id)?;
             let upgrade_levels_raw = ctx.conn.get_upgrade_levels_raw(old_id)?;
             let upgrade_levels: HashMap<UpgradeType, usize> = upgrade_levels_raw
@@ -73,7 +73,7 @@ impl Loadable for BuilderTowerBlaster {
                 .collect();
             
             if let Some(new_entity) = ctx.get_new_entity_for_old(old_id) {
-                let save_data = TowerBlasterSaveData { entity: new_entity, health, disabled_by_player, upgrade_levels };
+                let save_data = TowerBlasterSaveData { entity: new_entity, integrity_points, disabled_by_player, upgrade_levels };
                 ctx.commands.entity(new_entity).insert(BuilderTowerBlaster::new_for_saving(grid_position, save_data));
             }
             count += 1;
@@ -90,7 +90,7 @@ impl BuilderTowerBlaster {
             grid_imprint: GridImprint::Rectangle { width: 2, height: 2 },
             cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 150 }],
             baseline: HashMap::from([
-                (ModifierType::MaxHealth, 100.),
+                (ModifierType::MaxIntegrityPoints, 100.),
                 (ModifierType::AttackRange, 15.),
                 (ModifierType::AttackSpeed, 5.),
                 (ModifierType::AttackDamage, 1.),
@@ -124,13 +124,13 @@ impl BuilderTowerBlaster {
 
     fn on_game_save(
         mut commands: Commands,
-        towers: Query<(Entity, &GridCoords, &Health, Has<DisabledByPlayer>, &Upgrades), With<TowerBlaster>>,
+        towers: Query<(Entity, &GridCoords, &IntegrityPoints, Has<DisabledByPlayer>, &Upgrades), With<TowerBlaster>>,
     ) {
         if towers.is_empty() { return; }
-        let batch = towers.iter().map(|(entity, coords, health, disabled_by_player, upgrades)| {
+        let batch = towers.iter().map(|(entity, coords, integrity_points, disabled_by_player, upgrades)| {
             let save_data = TowerBlasterSaveData {
                 entity,
-                health: health.get_current(),
+                integrity_points: integrity_points.get_current(),
                 disabled_by_player,
                 upgrade_levels: upgrades.get_levels(),
             };
@@ -154,7 +154,7 @@ impl BuilderTowerBlaster {
 
         let mut entity_commands = commands.entity(entity);
         if let Some(save_data) = &builder.save_data {
-            entity_commands.insert(Health::new(save_data.health));
+            entity_commands.insert(IntegrityPoints::new(save_data.integrity_points));
             if save_data.disabled_by_player {
                 entity_commands.insert(DisabledByPlayer);
             }

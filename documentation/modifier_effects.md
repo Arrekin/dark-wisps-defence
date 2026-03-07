@@ -66,7 +66,7 @@ bank update the entries and immediately re-aggregate and materialize the affecte
 Immutable stat components populated by the bank's materialization step:
 
 ```
-MaxHealth(f32)          MovementSpeed(f32)      AttackSpeed(f32)
+MaxIntegrityPoints(f32) MovementSpeed(f32)      AttackSpeed(f32)
 AttackDamage(f32)       AttackRange(f32)        EnergySupplyRange(f32)
 IncomingDamageMultiplier(f32)
 ```

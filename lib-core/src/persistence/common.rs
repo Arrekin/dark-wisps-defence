@@ -76,7 +76,7 @@ pub trait GameDbHelpers {
     fn register_entity(&self, entity_id: i64) -> rusqlite::Result<usize>;
     fn save_grid_coords(&self, entity_id: i64, pos: GridCoords) -> rusqlite::Result<usize>;
     fn save_world_position(&self, entity_id: i64, pos: Vec2) -> rusqlite::Result<usize>;
-    fn save_health(&self, entity_id: i64, current: f32) -> rusqlite::Result<usize>;    
+    fn save_integrity_points(&self, entity_id: i64, current: f32) -> rusqlite::Result<usize>;
     fn save_grid_imprint(&self, entity_id: i64, imprint: GridImprint) -> rusqlite::Result<usize>;
     
     fn save_marker(&self, table_name: &str, entity_id: i64) -> rusqlite::Result<usize>;
@@ -88,7 +88,7 @@ pub trait GameDbHelpers {
     fn get_grid_coords(&self, entity_id: i64) -> rusqlite::Result<GridCoords>;
     fn get_disabled_by_player(&self, entity_id: i64) -> rusqlite::Result<bool>;
     fn get_world_position(&self, entity_id: i64) -> rusqlite::Result<Vec2>;
-    fn get_health(&self, entity_id: i64) -> rusqlite::Result<f32>;
+    fn get_integrity_points(&self, entity_id: i64) -> rusqlite::Result<f32>;
     fn get_grid_imprint(&self, entity_id: i64) -> rusqlite::Result<GridImprint>;
     fn get_stat(&self, stat_name: &str) -> rusqlite::Result<f32>;
     fn get_stock_resource(&self, resource_name: &str) -> rusqlite::Result<i32>;
@@ -116,9 +116,9 @@ impl GameDbHelpers for rusqlite::Connection {
         )
     }
 
-    fn save_health(&self, entity_id: i64, current: f32) -> rusqlite::Result<usize> {
+    fn save_integrity_points(&self, entity_id: i64, current: f32) -> rusqlite::Result<usize> {
         self.execute(
-            "INSERT OR REPLACE INTO healths (entity_id, current) VALUES (?1, ?2)",
+            "INSERT OR REPLACE INTO integrity_points (entity_id, current) VALUES (?1, ?2)",
             (entity_id, current),
         )
     }
@@ -205,8 +205,8 @@ impl GameDbHelpers for rusqlite::Connection {
         Ok(Vec2::new(row.get(0)?, row.get(1)?))
     }
     
-    fn get_health(&self, entity_id: i64) -> rusqlite::Result<f32> {
-        let mut stmt = self.prepare("SELECT current FROM healths WHERE entity_id = ?1")?;
+    fn get_integrity_points(&self, entity_id: i64) -> rusqlite::Result<f32> {
+        let mut stmt = self.prepare("SELECT current FROM integrity_points WHERE entity_id = ?1")?;
         let mut rows = stmt.query([entity_id])?;
         let row = rows.next()?.ok_or(rusqlite::Error::QueryReturnedNoRows)?;
         Ok(row.get(0)?)

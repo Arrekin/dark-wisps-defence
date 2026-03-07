@@ -21,13 +21,15 @@ impl Plugin for WispsPlugin {
                 
             ))
             .add_plugins(summoning::SummoningPlugin)
+            .add_systems(PreUpdate,
+                systems::remove_dead_wisps.run_if(in_state(GameState::Running)),
+            )
             .add_systems(Update, (
                 (
                     systems::move_wisps,
                     systems::target_wisps,
                     systems::wisp_charge_attack,
                     systems::collide_wisps,
-                    systems::remove_dead_wisps,
                 ).run_if(in_state(GameState::Running)),
             ))
             .add_observer(spawning::BuilderWisp::on_add)

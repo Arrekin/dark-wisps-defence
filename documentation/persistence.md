@@ -77,7 +77,7 @@ The `save_data` field distinguishes:
 - `None` → Fresh spawn (from editor or gameplay)
 - `Some(...)` → Loaded from save (contains persisted state)
 
-The `on_add` observer checks this to apply saved state (health, upgrades, etc.) before spawning the full entity.
+The `on_add` observer checks this to apply saved state (integrity points, upgrades, etc.) before spawning the full entity.
 
 ## Database Design
 
@@ -90,7 +90,7 @@ Common data types have dedicated tables to avoid duplication:
 - `entities` - Master registry; all saved entities register here first
 - `grid_coords` - Grid-based positions
 - `world_positions` - Pixel-precise positions (for smooth movement resume)
-- `healths` - Health values
+- `integrity_points` - Integrity-point values
 
 ### Marker Tables
 
@@ -151,14 +151,14 @@ The saver needs a system that queries live entities and produces builders when `
 ```rust
 fn on_game_save(
     mut commands: Commands,
-    entities: Query<(Entity, &MyData, &Health), With<MyEntity>>,
+    entities: Query<(Entity, &MyData, &IntegrityPoints), With<MyEntity>>,
 ) {
     if entities.is_empty() { return; }
     
-    let batch = entities.iter().map(|(entity, data, health)| {
+    let batch = entities.iter().map(|(entity, data, integrity_points)| {
         let save_data = MyEntitySaveData { 
             entity, 
-            health: health.get_current(),
+            integrity_points: integrity_points.get_current(),
             // ... other persisted state
         };
         BuilderMyEntity::new_for_saving(data.clone(), save_data)

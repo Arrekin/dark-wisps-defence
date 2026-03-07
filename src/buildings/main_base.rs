@@ -23,7 +23,7 @@ pub const MAIN_BASE_BASE_IMAGE: &str = "buildings/main_base.png";
 #[derive(Clone, Copy, Debug)]
 pub struct MainBaseSaveData {
     pub entity: Entity,
-    pub health: f32,
+    pub integrity_points: f32,
 }
 
 #[derive(Component, SSS)]
@@ -38,7 +38,7 @@ impl Saveable for BuilderMainBase {
 
         tx.save_marker("main_bases", entity_index)?;
         tx.save_grid_coords(entity_index, self.grid_position)?;
-        tx.save_health(entity_index, save_data.health)?;
+        tx.save_integrity_points(entity_index, save_data.integrity_points)?;
         Ok(())
     }
 }
@@ -51,10 +51,10 @@ impl Loadable for BuilderMainBase {
         while let Some(row) = rows.next()? {
             let old_id: i64 = row.get(0)?;
             let grid_position = ctx.conn.get_grid_coords(old_id)?;
-            let health = ctx.conn.get_health(old_id)?;
+            let integrity_points = ctx.conn.get_integrity_points(old_id)?;
             
             if let Some(new_entity) = ctx.get_new_entity_for_old(old_id) {
-                let save_data = MainBaseSaveData { entity: new_entity, health };
+                let save_data = MainBaseSaveData { entity: new_entity, integrity_points };
                 ctx.commands.entity(new_entity).insert(BuilderMainBase::new_for_saving(grid_position, save_data));
             } else {
                 Log::warn().dev().tag(Tag::GameLoad).message(format!("MainBase with old ID {old_id} has no corresponding new entity"));
@@ -72,7 +72,7 @@ impl BuilderMainBase {
             grid_imprint: GridImprint::Rectangle { width: 6, height: 6 },
             cost: vec![],
             baseline: HashMap::from([
-                (ModifierType::MaxHealth, 10000.),
+                (ModifierType::MaxIntegrityPoints, 10000.),
                 (ModifierType::EnergySupplyRange, 15.),
             ]),
             upgrades: HashMap::default(),
@@ -86,12 +86,12 @@ impl BuilderMainBase {
 
     fn on_game_save(
         mut commands: Commands,
-        main_base: Query<(Entity, &GridCoords, &Health), With<MainBase>>,
+        main_base: Query<(Entity, &GridCoords, &IntegrityPoints), With<MainBase>>,
     ) {
-        if let Ok((entity, coords, health)) = main_base.single() {
+        if let Ok((entity, coords, integrity_points)) = main_base.single() {
             let save_data = MainBaseSaveData {
                 entity,
-                health: health.get_current(),
+                integrity_points: integrity_points.get_current(),
             };
             commands.queue(SaveableBatchCommand::from_single(BuilderMainBase::new_for_saving(*coords, save_data)));
         }
@@ -115,7 +115,7 @@ impl BuilderMainBase {
             // Save data
             entity_commands
                 .insert((
-                    Health::new(save_data.health),
+                    IntegrityPoints::new(save_data.integrity_points),
                 ));
         }
         // Common

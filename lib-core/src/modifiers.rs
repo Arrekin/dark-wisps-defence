@@ -5,7 +5,7 @@ use crate::lib_prelude::*;
 pub mod modifiers_prelude {
     pub use super::{
         ModifierType, ModifierBank,
-        MaxHealth, MovementSpeed, AttackSpeed, AttackDamage, AttackRange,
+        MaxIntegrityPoints, MovementSpeed, AttackSpeed, AttackDamage, AttackRange,
         EnergySupplyRange, IncomingDamageMultiplier,
     };
 }
@@ -16,7 +16,7 @@ impl Plugin for ModifiersPlugin {
         app
             .add_observer(ModifierBank::on_modifier_contributions_added)
             .add_observer(ModifierBank::on_modifier_contributions_removed)
-            .add_observer(MaxHealth::on_insert)
+            .add_observer(MaxIntegrityPoints::on_insert)
             ;
     }
 }
@@ -30,7 +30,7 @@ pub enum ModifierType {
     AttackSpeed,
     AttackRange,
     AttackDamage,
-    MaxHealth,
+    MaxIntegrityPoints,
     MovementSpeed,
     EnergySupplyRange,
     IncomingDamageMultiplier,
@@ -41,7 +41,7 @@ impl ModifierType {
             Self::AttackSpeed
             | Self::AttackRange
             | Self::AttackDamage
-            | Self::MaxHealth
+            | Self::MaxIntegrityPoints
             | Self::MovementSpeed
             | Self::EnergySupplyRange => values.fold(0.0, |acc, v| acc + v),
             Self::IncomingDamageMultiplier => values.fold(1.0, f32::max),
@@ -53,7 +53,7 @@ impl ModifierType {
             Self::AttackSpeed => { entity_commands.insert(AttackSpeed::new(value)); }
             Self::AttackRange => { entity_commands.insert(AttackRange::new(value)); }
             Self::AttackDamage => { entity_commands.insert(AttackDamage::new(value)); }
-            Self::MaxHealth => { entity_commands.insert(MaxHealth::new(value)); }
+            Self::MaxIntegrityPoints => { entity_commands.insert(MaxIntegrityPoints::new(value)); }
             Self::MovementSpeed => { entity_commands.insert(MovementSpeed::new(value)); }
             Self::EnergySupplyRange => { entity_commands.insert(EnergySupplyRange::new(value)); }
             Self::IncomingDamageMultiplier => { entity_commands.insert(IncomingDamageMultiplier::new(value)); }
@@ -63,21 +63,21 @@ impl ModifierType {
 
 #[derive(Component, Clone, Copy, Property)]
 #[component(immutable)]
-#[require(Health)]
-pub struct MaxHealth(pub f32);
-impl MaxHealth {   
+#[require(IntegrityPoints)]
+pub struct MaxIntegrityPoints(pub f32);
+impl MaxIntegrityPoints {   
     fn on_insert(
-        trigger: On<Insert, MaxHealth>,
-        mut healths: Query<(&mut Health, &MaxHealth)>,
+        trigger: On<Insert, MaxIntegrityPoints>,
+        mut integrity_points_components: Query<(&mut IntegrityPoints, &MaxIntegrityPoints)>,
     ) {
-        let Ok((mut health, max_health)) = healths.get_mut(trigger.entity) else { return; };
-        health.max = max_health.get();
-        if health.current > max_health.get() {
-            health.current = max_health.get();
+        let Ok((mut integrity_points, max_integrity_points)) = integrity_points_components.get_mut(trigger.entity) else { return; };
+        integrity_points.max = max_integrity_points.get();
+        if integrity_points.current > max_integrity_points.get() {
+            integrity_points.current = max_integrity_points.get();
         }
     }
 }
-impl Default for MaxHealth {
+impl Default for MaxIntegrityPoints {
     fn default() -> Self {
         Self::new(f32::MAX)
     }

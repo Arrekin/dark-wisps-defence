@@ -219,10 +219,10 @@ pub fn rocket_move_system(
 
 pub fn rocket_hit_system(
     mut commands: Commands,
+    mut damage_messages: MessageWriter<DamageMessage>,
     rockets: Query<(Entity, &Transform, &RocketTarget, &AttackDamage), (With<Rocket>, Without<Wisp>)>,
     wisps_grid: Res<WispsGrid>,
     wisps_transforms: Query<&Transform, (With<Wisp>, Without<Rocket>)>,
-    mut wisps_health: Query<(&mut Health, &IncomingDamageMultiplier), With<Wisp>>,
 ) {
     for (entity, rocket_transform, target, attack_damage) in rockets.iter() {
         let rocket_coords = GridCoords::from_transform(&rocket_transform);
@@ -243,8 +243,11 @@ pub fn rocket_hit_system(
 
             let wisps_in_coords = &wisps_grid[blast_zone_coords];
             for wisp in wisps_in_coords {
-                let Ok((mut health, damage_mult)) = wisps_health.get_mut(*wisp) else { continue }; // May not find wisp if the wisp spawned at the same frame.
-                health.decrease(attack_damage.get() * damage_mult.get());
+                if !wisps_transforms.contains(*wisp) { continue; } // May not find wisp if the wisp spawned at the same frame.
+                damage_messages.write(DamageMessage {
+                    target: *wisp,
+                    amount: attack_damage.get(),
+                });
             }
         }
         commands.entity(entity).despawn();

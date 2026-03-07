@@ -14,7 +14,7 @@ pub const WISP_GRID_IMPRINT: GridImprint = GridImprint::Rectangle { width: 1, he
 #[derive(Clone, Copy, Debug)]
 pub struct WispSaveData {
     pub entity: Entity,
-    pub health: f32,
+    pub integrity_points: f32,
     pub world_position: Vec2,
 }
 
@@ -33,7 +33,7 @@ impl Saveable for BuilderWisp {
         tx.register_entity(entity_index)?;
         tx.save_world_position(entity_index, save_data.world_position)?;
         tx.save_grid_coords(entity_index, self.grid_coords)?;
-        tx.save_health(entity_index, save_data.health)?;
+        tx.save_integrity_points(entity_index, save_data.integrity_points)?;
 
         let type_str = self.wisp_type.as_ref();
         tx.execute(
@@ -60,11 +60,11 @@ impl Loadable for BuilderWisp {
             };
 
             let grid_coords = ctx.conn.get_grid_coords(old_id)?;
-            let health = ctx.conn.get_health(old_id)?;
+            let integrity_points = ctx.conn.get_integrity_points(old_id)?;
             let world_position = ctx.conn.get_world_position(old_id)?;
 
             if let Some(new_entity) = ctx.get_new_entity_for_old(old_id) {
-                let save_data = WispSaveData { entity: new_entity, health, world_position };
+                let save_data = WispSaveData { entity: new_entity, integrity_points, world_position };
                 ctx.commands.entity(new_entity).insert(BuilderWisp::new_for_saving(wisp_type, grid_coords, save_data));
             }
             count += 1;
@@ -83,10 +83,10 @@ impl BuilderWisp {
 
     pub fn on_game_save(
         mut commands: Commands,
-        wisps: Query<(Entity, &WispType, &GridCoords, &Health, &Transform, &WispState), With<Wisp>>,
+        wisps: Query<(Entity, &WispType, &GridCoords, &IntegrityPoints, &Transform, &WispState), With<Wisp>>,
     ) {
         if wisps.is_empty() { return; }
-        let batch = wisps.iter().map(|(entity, wisp_type, coords, health, transform, wisp_state)| {
+        let batch = wisps.iter().map(|(entity, wisp_type, coords, integrity_points, transform, wisp_state)| {
             // TODO: Once the wisps logic is mature, save the full wisp state properly. Right now we are ignoring some states(for exmple, attacking) and simply allow wisp to retarget on spawn, and continue from there.
             let world_position = if matches!(wisp_state, WispState::Attacking) {
                 coords.to_world_position_centered(WISP_GRID_IMPRINT)
@@ -96,7 +96,7 @@ impl BuilderWisp {
             
             let save_data = WispSaveData {
                 entity,
-                health: health.get_current(),
+                integrity_points: integrity_points.get_current(),
                 world_position,
             };
             BuilderWisp::new_for_saving(*wisp_type, *coords, save_data)
@@ -117,7 +117,7 @@ impl BuilderWisp {
         let mut entity_commands = commands.entity(entity);
         
         if let Some(save_data) = &builder.save_data {
-             entity_commands.insert(Health::new(save_data.health));
+             entity_commands.insert(IntegrityPoints::new(save_data.integrity_points));
         }
 
         let translation = if let Some(save_data) = &builder.save_data {
@@ -145,7 +145,7 @@ impl BuilderWisp {
                 builder.wisp_type,
                 related![EffectInstances[
                     (ModifierContributions(HashMap::from([
-                        (ModifierType::MaxHealth, 10.),
+                        (ModifierType::MaxIntegrityPoints, 10.),
                         (ModifierType::AttackRange, 1.),
                         (ModifierType::MovementSpeed, 60.),
                     ])), BaselineEffect),

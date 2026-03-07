@@ -71,7 +71,7 @@ pub const EXPLORATION_CENTER_BASE_IMAGE: &str = "buildings/exploration_center.pn
 #[derive(Clone, Copy, Debug)]
 pub struct ExplorationCenterSaveData {
     pub entity: Entity,
-    pub health: f32,
+    pub integrity_points: f32,
     pub disabled_by_player: bool,
 }
 
@@ -87,7 +87,7 @@ impl Saveable for BuilderExplorationCenter {
 
         tx.save_marker("exploration_centers", entity_index)?;
         tx.save_grid_coords(entity_index, self.grid_position)?;
-        tx.save_health(entity_index, save_data.health)?;
+        tx.save_integrity_points(entity_index, save_data.integrity_points)?;
         if save_data.disabled_by_player {
             tx.save_disabled_by_player(entity_index)?;
         }
@@ -103,11 +103,11 @@ impl Loadable for BuilderExplorationCenter {
         while let Some(row) = rows.next()? {
             let old_id: i64 = row.get(0)?;
             let grid_position = ctx.conn.get_grid_coords(old_id)?;
-            let health = ctx.conn.get_health(old_id)?;
+            let integrity_points = ctx.conn.get_integrity_points(old_id)?;
             let disabled_by_player = ctx.conn.get_disabled_by_player(old_id)?;
             
             if let Some(new_entity) = ctx.get_new_entity_for_old(old_id) {
-                let save_data = ExplorationCenterSaveData { entity: new_entity, health, disabled_by_player };
+                let save_data = ExplorationCenterSaveData { entity: new_entity, integrity_points, disabled_by_player };
                 ctx.commands.entity(new_entity).insert(BuilderExplorationCenter::new_for_saving(grid_position, save_data));
             } else {
                 Log::warn().dev().tag(Tag::GameLoad).message(format!("ExplorationCenter with old ID {old_id} has no corresponding new entity"));
@@ -124,7 +124,7 @@ impl BuilderExplorationCenter {
             name: "Exploration Center".to_string(),
             grid_imprint: GridImprint::Rectangle { width: 4, height: 4 },
             cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 500 }],
-            baseline: HashMap::from([(ModifierType::MaxHealth, 100.)]),
+            baseline: HashMap::from([(ModifierType::MaxIntegrityPoints, 100.)]),
             upgrades: HashMap::default(),
             validate: building_validator,
         }
@@ -139,13 +139,13 @@ impl BuilderExplorationCenter {
 
     fn on_game_save(
         mut commands: Commands,
-        exploration_centers: Query<(Entity, &GridCoords, &Health, Has<DisabledByPlayer>), With<ExplorationCenter>>,
+        exploration_centers: Query<(Entity, &GridCoords, &IntegrityPoints, Has<DisabledByPlayer>), With<ExplorationCenter>>,
     ) {
         if exploration_centers.is_empty() { return; }
-        let batch = exploration_centers.iter().map(|(entity, coords, health, disabled_by_player)| {
+        let batch = exploration_centers.iter().map(|(entity, coords, integrity_points, disabled_by_player)| {
             let save_data = ExplorationCenterSaveData {
                 entity,
-                health: health.get_current(),
+                integrity_points: integrity_points.get_current(),
                 disabled_by_player,
             };
             BuilderExplorationCenter::new_for_saving(*coords, save_data)
@@ -170,7 +170,7 @@ impl BuilderExplorationCenter {
         let mut entity_commands = commands.entity(entity);
         if let Some(save_data) = &builder.save_data {
             // Save data
-            entity_commands.insert(Health::new(save_data.health));
+            entity_commands.insert(IntegrityPoints::new(save_data.integrity_points));
             if save_data.disabled_by_player {
                 entity_commands.insert(DisabledByPlayer);
             }

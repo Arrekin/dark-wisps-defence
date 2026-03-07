@@ -182,9 +182,10 @@ pub fn cannonball_move_system(
 
 pub fn cannonball_hit_system(
     mut commands: Commands,
+    mut damage_messages: MessageWriter<DamageMessage>,
     cannonballs: Query<(Entity, &Transform, &CannonballTarget, &AttackDamage), With<Cannonball>>,
     wisps_grid: Res<WispsGrid>,
-    mut wisps: Query<(&mut Health, &IncomingDamageMultiplier), With<Wisp>>,
+    wisps: Query<(), With<Wisp>>,
 ) {
     for (entity, cannonball_transform, target, attack_damage) in cannonballs.iter() {
         if cannonball_transform.translation.xy().distance(target.target_position) > 4. { continue; } // TODO: 1. and 2. are causing cannonballs jitters at landing. Investigate.
@@ -198,8 +199,11 @@ pub fn cannonball_hit_system(
 
             let wisps_in_coords = &wisps_grid[blast_zone_coords];
             for wisp in wisps_in_coords {
-                let Ok((mut health, damage_mult)) = wisps.get_mut(*wisp) else { continue }; // May not find wisp if the wisp spawned at the same frame.
-                health.decrease(attack_damage.get() * damage_mult.get());
+                if !wisps.contains(*wisp) { continue; } // May not find wisp if the wisp spawned at the same frame.
+                damage_messages.write(DamageMessage {
+                    target: *wisp,
+                    amount: attack_damage.get(),
+                });
             }
         }
         commands.entity(entity).despawn();

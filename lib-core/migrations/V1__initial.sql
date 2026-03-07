@@ -67,7 +67,7 @@ CREATE TABLE IF NOT EXISTS quantum_fields (
     FOREIGN KEY(id) REFERENCES entities(id)
 );
 
-CREATE TABLE IF NOT EXISTS healths (
+CREATE TABLE IF NOT EXISTS integrity_points (
     entity_id INTEGER PRIMARY KEY,
     current REAL NOT NULL,
     FOREIGN KEY(entity_id) REFERENCES entities(id)

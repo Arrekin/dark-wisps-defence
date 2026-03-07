@@ -23,7 +23,7 @@ pub struct BuilderFoo {
 
 pub struct FooSaveData {
     entity: Entity,
-    health: f32,
+    integrity_points: f32,
     // ... other runtime state to persist
 }
 ```

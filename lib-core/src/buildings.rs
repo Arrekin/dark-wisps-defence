@@ -55,7 +55,7 @@ pub enum TowerType {
 }
 
 #[derive(Component, Clone, Debug, Default)]
-#[require(AutoGridTransformSync, ZDepth = Z_BUILDING, MaxHealth, MapBound, ObstacleGridObject = ObstacleGridObject::Building, ModifierBank)]
+#[require(AutoGridTransformSync, ZDepth = Z_BUILDING, MaxIntegrityPoints, MapBound, ObstacleGridObject = ObstacleGridObject::Building, ModifierBank)]
 pub struct Building;
 
 #[derive(Component)]

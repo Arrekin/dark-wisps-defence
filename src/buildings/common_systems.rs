@@ -21,13 +21,15 @@ pub struct CommonSystemsPlugin;
 impl Plugin for CommonSystemsPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_systems(PreUpdate, tick_shooting_timers_system.run_if(in_state(GameState::Running)))
+            .add_systems(PreUpdate, (
+                tick_shooting_timers_system,
+                damage_control_system,
+            ).run_if(in_state(GameState::Running)))
             .add_systems(Update,(
                 (
                     targeting_system,
                     rotate_tower_top_system,
                     rotational_aiming_system,
-                    damage_control_system,
                 ).run_if(in_state(GameState::Running)),
             ))
             .add_observer(on_building_destroy_request)
@@ -136,10 +138,10 @@ fn tick_shooting_timers_system(
 
 fn damage_control_system(
     mut commands: Commands,
-    buildings: Query<(Entity, &Health), With<Building>>,
+    buildings: Query<(Entity, &IntegrityPoints), With<Building>>,
 ) {
-    for (entity, health) in buildings.iter() {
-        if health.is_dead() {
+    for (entity, integrity_points) in buildings.iter() {
+        if integrity_points.is_dead() {
             commands.trigger(BuildingDestroyRequest(entity));
         }
     }
