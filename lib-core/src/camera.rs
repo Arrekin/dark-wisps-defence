@@ -35,12 +35,17 @@ impl Plugin for CameraPlugin {
 #[derive(Component)]
 pub struct MainCamera;
 
+// Post process effect auto-hook themselves to cameras with this component
+#[derive(Component)]
+pub struct PostProcessCamera;
+
 fn startup(mut commands: Commands) {
     commands.spawn((
         Camera2d::default(),
         Transform::from_xyz(500., 500., 0.),
         Bloom { high_pass_frequency: 0.5, ..default() },
         MainCamera,
+        PostProcessCamera,
     ));
 }
 
@@ -231,6 +236,7 @@ impl BuilderPreviewCamera {
                     order: -1, // Render before main camera
                     ..default()
                 },
+                PostProcessCamera,
                 RenderTarget::Image(image_handle.into()),
                 Hdr,
                 Projection::Orthographic(OrthographicProjection {

@@ -2,7 +2,7 @@
 //!
 //! Each active ripple is a pure-data entity (`Ripple` + `Transform` + `MovementSpeed`)
 //! with no mesh or material. Rendering is handled by [`super::ripple_post_process`],
-//! which packs all ripples into a per-camera uniform and runs a fullscreen
+//! which uploads all ripples into a shared GPU storage buffer and runs a fullscreen
 //! displacement pass after tonemapping.
 //!
 //! Game logic: radial propagation, wisp hit detection, save/load.

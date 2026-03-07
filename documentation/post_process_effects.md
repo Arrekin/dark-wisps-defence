@@ -29,9 +29,10 @@ Camera entity                        Camera entity (extracted)
         packed into MyEffect
 ```
 
-The main-world `update` system fills the component with all active effect data **plus**
-the camera's own world position and orthographic size. Because each camera entity owns an
-independent copy, cameras at different positions/zoom levels project correctly.
+The main-world `update` system fills the component with the camera's own world position
+and orthographic size. Per-camera data is kept slim; shared effect data (e.g. all active
+ripple entries) lives in a separate `Resource` extracted via `ExtractResourcePlugin` and
+uploaded to a GPU storage buffer once per frame.
 
 ## Render Graph
 
@@ -141,11 +142,11 @@ non-uniform control flow. Use `continue` to skip loop iterations instead of `ret
 exit the function early.
 
 **GPU struct alignment** — uniform array elements need stride ≥ 16 bytes, aligned to 16.
-Use `vec4<f32>` pairs (`data0` / `data1`) rather than packed structs with `vec3<f32>` or
-mixed sizes.
+For unbounded instance data, prefer a `var<storage, read>` buffer over uniform arrays.
+Avoid `vec3<f32>` in GPU structs (implicit padding to 16 bytes).
 
 ## Existing Effects
 
 | Effect | Component | Shader |
 |--------|-----------|--------|
-| Ripple displacement | `RipplePostProcess` in `effects/ripple_post_process.rs` | `shaders/ripple_post_process.wgsl` |
+| Ripple displacement | `RipplePostProcess` in `weaponry/ripple_post_process.rs` | `shaders/ripple_post_process.wgsl` |
