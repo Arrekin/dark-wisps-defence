@@ -26,7 +26,7 @@ impl Plugin for RipplePlugin {
                 (
                     ripple_propagate_system,
                     ripple_hit_system,
-                ).run_if(in_state(GameState::Running)),
+                ).chain().run_if(in_state(GameState::Running)), // Chained as otherwise ripples may try to apply effects as they are removed, causing relations issues.
             ))
             .add_observer(BuilderRipple::on_add)
             .register_db_loader::<BuilderRipple>(MapLoadingStage::SpawnMapElements)
@@ -128,7 +128,7 @@ impl BuilderRipple {
             .remove::<BuilderRipple>()
             .insert((
                 Transform::from_translation(builder.world_position.extend(Z_GROUND_EFFECT)),
-                Ripple { max_radius: builder.radius, current_radius, hit_wisps: HashSet::default() },
+                Ripple { max_radius: builder.radius, current_radius },
                 MovementSpeed::new(50.0),
             ));
     }
@@ -139,7 +139,6 @@ impl BuilderRipple {
 pub struct Ripple {
     max_radius: f32,
     current_radius: f32,
-    hit_wisps: HashSet<Entity>,
 }
 impl Ripple {
     /// Current radius as a fraction of the full diameter, range 0..0.5.
@@ -159,21 +158,22 @@ fn ripple_propagate_system(
     mut ripples: Query<(Entity, &mut Ripple, &MovementSpeed)>,
 ) {
     for (entity, mut ripple, speed) in ripples.iter_mut() {
-        ripple.current_radius += speed.get() * time.delta_secs();
         if ripple.current_radius > ripple.max_radius {
             commands.entity(entity).despawn();
         }
+        ripple.current_radius += speed.get() * time.delta_secs();
     }
 }
 
-pub fn ripple_hit_system(
+fn ripple_hit_system(
     mut commands: Commands,
     game_clock: Res<GameClock>,
     wisps_grid: Res<WispsGrid>,
-    mut ripples: Query<(&mut Ripple, &Transform)>,
+    ripples: Query<(Entity, &Ripple, &Transform, Option<&EffectSourceOf>)>,
     wisps: Query<&Transform, With<Wisp>>,
+    effect_targets: Query<&EffectTarget>,
 ) {
-    for (mut ripple, ripple_transform) in ripples.iter_mut() {
+    for (ripple_entity, ripple, ripple_transform, sourced_effects) in ripples.iter() {
         // Check all fields covered by the ripple for wisp collisions
         let starting_grid_coords = GridCoords::from_transform(&ripple_transform);
         let bounds_range = (ripple.current_radius / CELL_SIZE) as i32;
@@ -185,17 +185,34 @@ pub fn ripple_hit_system(
         for x in lower_bound_x..=upper_bound_x {
             for y in lower_bound_y..=upper_bound_y {
                 for wisp in &wisps_grid[GridCoords{ x, y }] {
-                    if ripple.hit_wisps.contains(wisp) { continue; }
+                    if already_hit_this_target(sourced_effects, *wisp, &effect_targets) { continue; }
                     let Ok(wisp_transform) = wisps.get(*wisp) else { continue; };
                     let distance = wisp_transform.translation.distance(ripple_transform.translation);
                     // Hit only wisps within 1 world unit of the leading edge
                     if distance > ripple.current_radius || distance < ripple.current_radius - 1. { continue; }
                     commands.spawn(
-                        BuilderBrittleEffect::new(*wisp, BRITTLE_DAMAGE_MULTIPLIER).with_expiry(ExpiresAt(game_clock.elapsed + BRITTLE_DURATION_SECS))
+                        BuilderBrittleEffect::new(*wisp, BRITTLE_DAMAGE_MULTIPLIER)
+                            .with_source(ripple_entity)
+                            .with_expiry(ExpiresAt(game_clock.elapsed + BRITTLE_DURATION_SECS))
                     );
-                    ripple.hit_wisps.insert(*wisp);
                 }
             }
         }
     }
+}
+
+fn already_hit_this_target(
+    sourced_effects: Option<&EffectSourceOf>,
+    target_entity: Entity,
+    effect_targets: &Query<&EffectTarget>,
+) -> bool {
+    sourced_effects
+        .map(|effects| {
+            effects.iter().any(|effect_entity| {
+                effect_targets
+                    .get(effect_entity)
+                    .is_ok_and(|effect_target| effect_target.0 == target_entity)
+            })
+        })
+        .unwrap_or(false)
 }

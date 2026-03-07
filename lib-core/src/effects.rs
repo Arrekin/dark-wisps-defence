@@ -54,16 +54,13 @@ pub struct EffectInstances(Vec<Entity>);
 ////////////////////////////
 
 /// Relationship from an effect instance entity to the entity that spawned it.
-///
-/// `linked_spawn` on `EffectSourceOf` ensures despawning the source cascades to all
-/// effect instances it owns.
 #[derive(Component)]
 #[relationship(relationship_target = EffectSourceOf)]
 pub struct EffectSource(pub Entity);
 
 /// Inverse of `EffectSource`.
 #[derive(Component, Default)]
-#[relationship_target(relationship = EffectSource, linked_spawn)]
+#[relationship_target(relationship = EffectSource)]
 pub struct EffectSourceOf(Vec<Entity>);
 
 /////////////////////

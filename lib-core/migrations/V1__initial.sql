@@ -154,6 +154,7 @@ CREATE TABLE IF NOT EXISTS ripples (
 CREATE TABLE IF NOT EXISTS brittle_effects (
     id INTEGER PRIMARY KEY,
     target_id INTEGER NOT NULL,
+    source_id INTEGER,
     expires_at REAL,
     damage_multiplier REAL NOT NULL DEFAULT 1.0,
     FOREIGN KEY(id) REFERENCES entities(id)
