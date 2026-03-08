@@ -14,7 +14,7 @@ use crate::{
 pub mod almanach_prelude {
     pub use super::{
         Almanach, AlmanachAppExt, AlmanachRegistrations, BuildingInfo, DarkOreInfo,
-        QuantumFieldInfo, UpgradeInfo, UpgradeLevelInfo, WallInfo, WispInfo,
+        QuantumFieldInfo, WallInfo, WispInfo,
         building_validator,
     };
     pub use super::super::placement::{GridsCollection, PlacementValidationResult, PlacementValidatorFn, validate_empty_placement};
@@ -172,7 +172,6 @@ pub struct BuildingInfo {
     pub grid_imprint: GridImprint,
     pub cost: Vec<Cost>,
     pub baseline: HashMap<ModifierType, f32>,
-    pub upgrades: HashMap<UpgradeType, UpgradeInfo>,
     pub validate: PlacementValidatorFn,
 }
 
@@ -188,18 +187,6 @@ impl From<&BuildingInfo> for ObjectPlacementInfo {
             remove_mode: PlacementMode::OnRelease,
         }
     }
-}
-
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct UpgradeInfo {
-    pub levels: Vec<UpgradeLevelInfo>,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct UpgradeLevelInfo {
-    pub cost: Vec<Cost>,
-    pub value: f32,
 }
 
 // ============================================================================

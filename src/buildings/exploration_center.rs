@@ -125,7 +125,6 @@ impl BuilderExplorationCenter {
             grid_imprint: GridImprint::Rectangle { width: 4, height: 4 },
             cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 500 }],
             baseline: HashMap::from([(ModifierType::MaxIntegrityPoints, 100.)]),
-            upgrades: HashMap::default(),
             validate: building_validator,
         }
     }

@@ -27,7 +27,6 @@ pub struct TowerRocketLauncherSaveData {
     entity: Entity,
     integrity_points: f32,
     disabled_by_player: bool,
-    upgrade_levels: HashMap<UpgradeType, usize>,
 }
 
 #[derive(Component, SSS)]
@@ -47,9 +46,6 @@ impl Saveable for BuilderTowerRocketLauncher {
         if save_data.disabled_by_player {
             tx.save_disabled_by_player(entity_index)?;
         }
-        for (upgrade_type, level) in &save_data.upgrade_levels {
-            tx.save_upgrade_level(entity_index, &upgrade_type.as_db_str(), *level)?;
-        }
         Ok(())
     }
 }
@@ -65,13 +61,8 @@ impl Loadable for BuilderTowerRocketLauncher {
             let grid_position = ctx.conn.get_grid_coords(old_id)?;
             let integrity_points = ctx.conn.get_integrity_points(old_id)?;
             let disabled_by_player = ctx.conn.get_disabled_by_player(old_id)?;
-            let upgrade_levels: HashMap<UpgradeType, usize> = ctx.conn.get_upgrade_levels_raw(old_id)?
-                .into_iter()
-                .filter_map(|(type_str, level)| UpgradeType::from_db_str(&type_str).map(|t| (t, level)))
-                .collect();
-            
             if let Some(new_entity) = ctx.get_new_entity_for_old(old_id) {
-                let save_data = TowerRocketLauncherSaveData { entity: new_entity, integrity_points, disabled_by_player, upgrade_levels };
+                let save_data = TowerRocketLauncherSaveData { entity: new_entity, integrity_points, disabled_by_player };
                 ctx.commands.entity(new_entity).insert(BuilderTowerRocketLauncher::new_for_saving(grid_position, save_data));
             }
             count += 1;
@@ -93,22 +84,6 @@ impl BuilderTowerRocketLauncher {
                 (ModifierType::AttackSpeed, 0.33),
                 (ModifierType::AttackDamage, 50.),
             ]),
-            upgrades: HashMap::from([
-                (UpgradeType::Modifier(ModifierType::AttackRange), UpgradeInfo {
-                    levels: vec![
-                        UpgradeLevelInfo { value: 2., cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 100 }] },
-                        UpgradeLevelInfo { value: 2., cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 200 }] },
-                        UpgradeLevelInfo { value: 5., cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 300 }] },
-                    ],
-                }),
-                (UpgradeType::Modifier(ModifierType::AttackSpeed), UpgradeInfo {
-                    levels: vec![
-                        UpgradeLevelInfo { value: 0.1, cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 100 }] },
-                        UpgradeLevelInfo { value: 0.1, cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 200 }] },
-                        UpgradeLevelInfo { value: 0.3, cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 300 }] },
-                    ],
-                }),
-            ]),
             validate: building_validator,
         }
     }
@@ -120,15 +95,14 @@ impl BuilderTowerRocketLauncher {
 
     fn on_game_save(
         mut commands: Commands,
-        towers: Query<(Entity, &GridCoords, &IntegrityPoints, Has<DisabledByPlayer>, &Upgrades), With<TowerRocketLauncher>>,
+        towers: Query<(Entity, &GridCoords, &IntegrityPoints, Has<DisabledByPlayer>), With<TowerRocketLauncher>>,
     ) {
         if towers.is_empty() { return; }
-        let batch = towers.iter().map(|(entity, coords, integrity_points, disabled_by_player, upgrades)| {
+        let batch = towers.iter().map(|(entity, coords, integrity_points, disabled_by_player)| {
             let save_data = TowerRocketLauncherSaveData {
                 entity,
                 integrity_points: integrity_points.get_current(),
                 disabled_by_player,
-                upgrade_levels: upgrades.get_levels(),
             };
             BuilderTowerRocketLauncher::new_for_saving(*coords, save_data)
         }).collect::<SaveableBatchCommand<_>>();
@@ -170,7 +144,7 @@ impl BuilderTowerRocketLauncher {
                 grid_imprint,
                 TowerTopRotation { speed: 1.0, current_angle: 0. },
                 NeedsPower::default(),
-                Upgrades::from_almanach(&building_info.upgrades, builder.save_data.as_ref().map(|d| &d.upgrade_levels)),
+                ShardSlots::new(3),
                 related![Indicators[
                     IndicatorType::NoPower,
                     IndicatorType::DisabledByPlayer,
@@ -181,7 +155,9 @@ impl BuilderTowerRocketLauncher {
                 children![
                     IndicatorDisplay::default(),
                 ],
-            )).id();
+            ))
+            .observe(Self::on_shard_apply)
+            .id();
         let world_size = grid_imprint.world_size();
         let tower_top = commands.spawn((
             Sprite {
@@ -194,6 +170,18 @@ impl BuilderTowerRocketLauncher {
             MarkerTowerRotationalTop(tower_base_entity),
         )).id();
         commands.entity(entity).add_child(tower_top);
+    }
+
+    fn on_shard_apply(
+        trigger: On<ShardApplyEvent>,
+        mut commands: Commands,
+    ) {
+        let tower_entity = trigger.tower_entity;
+        match trigger.shard_type {
+            ShardType::Range => {
+                commands.spawn(ShardEffect::from_modifiers(tower_entity, HashMap::from([(ModifierType::AttackRange, 2.0)])));
+            }
+        }
     }
 }
 

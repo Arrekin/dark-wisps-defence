@@ -81,7 +81,6 @@ impl BuilderMiningComplex {
             grid_imprint: GridImprint::Rectangle { width: 3, height: 3 },
             cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 100 }],
             baseline: HashMap::from([(ModifierType::MaxIntegrityPoints, 100.)]),
-            upgrades: HashMap::default(),
             validate: building_validator,
         }
     }

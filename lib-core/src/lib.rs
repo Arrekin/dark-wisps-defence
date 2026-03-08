@@ -16,6 +16,7 @@ pub mod map_objects;
 pub mod modifiers;
 pub mod effects;
 pub mod damage;
+pub mod shards;
 
 pub struct LibCorePlugin;
 impl Plugin for LibCorePlugin {
@@ -33,6 +34,7 @@ impl Plugin for LibCorePlugin {
             modifiers::ModifiersPlugin,
             effects::EffectsPlugin,
             damage::DamagePlugin,
+            shards::ShardsPlugin,
         ));
     }
 }
@@ -52,6 +54,7 @@ pub mod prelude {
     pub use crate::modifiers::modifiers_prelude::*;
     pub use crate::effects::effects_prelude::*;
     pub use crate::damage::damage_prelude::*;
+    pub use crate::shards::shards_prelude::*;
     // Re-export the derive macros
     pub use lib_derive::{Property, SSS};
 }

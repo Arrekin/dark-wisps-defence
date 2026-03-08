@@ -3,7 +3,6 @@ use bevy::app::{App, Plugin};
 pub mod healthbar;
 pub mod cost_indicator;
 pub mod utils;
-pub mod upgrade_line;
 pub mod mouse_scrolling;
 pub mod tooltip;
 
@@ -14,7 +13,6 @@ impl Plugin for LibUiPlugin {
             .add_plugins((
                 healthbar::HealthbarPlugin,
                 cost_indicator::CostIndicatorPlugin,
-                upgrade_line::CommonPlugin,
                 tooltip::TooltipPlugin,
                 mouse_scrolling::MouseScrollingPlugin,
             ));
@@ -24,7 +22,6 @@ impl Plugin for LibUiPlugin {
 pub mod prelude {
     pub use crate::healthbar::Healthbar;
     pub use crate::cost_indicator::CostIndicator;
-    pub use crate::upgrade_line::UpgradeLineBuilder;
     pub use crate::tooltip::{TooltipOf, Tooltips};
 }
 

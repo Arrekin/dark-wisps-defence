@@ -75,7 +75,6 @@ impl BuilderMainBase {
                 (ModifierType::MaxIntegrityPoints, 10000.),
                 (ModifierType::EnergySupplyRange, 15.),
             ]),
-            upgrades: HashMap::default(),
             validate: building_validator,
         }
     }

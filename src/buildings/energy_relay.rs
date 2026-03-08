@@ -78,7 +78,6 @@ impl BuilderEnergyRelay {
                 (ModifierType::MaxIntegrityPoints, 100.),
                 (ModifierType::EnergySupplyRange, 12.),
             ]),
-            upgrades: HashMap::default(),
             validate: building_validator,
         }
     }

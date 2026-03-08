@@ -1,5 +1,7 @@
 use bevy::color::palettes::css::{BLUE, WHITE};
-use lib_ui::prelude::{Healthbar, UpgradeLineBuilder};
+use bevy::ui::FocusPolicy;
+use lib_ui::prelude::Healthbar;
+use lib_ui::utils::recolor_background_on;
 
 use crate::prelude::*;
 use crate::ui::display_info_panel::{DisplayPanelMainContentRoot, FocusedMapObject};
@@ -12,8 +14,12 @@ impl Plugin for InfoPanelPlugin {
             .add_systems(Update, update_building_info_panel_system.run_if(in_state(UiInteraction::DisplayInfoPanel)))
             .add_observer(on_focused_map_object_insert)
             .add_observer(on_building_info_panel_enabled_for_towers_trigger)
-            .add_observer(BuildingInfoPanelTowerUpgradeCountText::refresh_upgrade_count_on::<BuildingInfoPanelEnabledTrigger, ()>) // Refresh upgrade text on panel enabled
-            .add_observer(BuildingInfoPanelTowerUpgradeCountText::refresh_upgrade_count_on::<LevelUpUpgradeAppliedEvent, ()>) // Refresh upgrade text after upgrade applied
+            .add_observer(on_rebuild_tower_shard_slots)
+            .add_observer(ShardSlotOccupied::on_add)
+            .add_observer(ShardSlotEmpty::on_add)
+            .add_observer(ShardSelectionPanel::on_add)
+            .add_observer(ShardInventoryRow::on_add)
+            .add_observer(ShardSelectionPanel::on_focused_map_object_removed)
             .add_observer(BuildingInfoPanelDisableButton::on_add)
             .add_observer(BuildingInfoPanelDestroyButton::on_add)
             ;
@@ -34,22 +40,9 @@ pub struct BuildingInfoPanelEnabledTrigger { pub entity: Entity }
 #[derive(Component)]
 struct BuildingInfoPanelTowerRoot;
 #[derive(Component)]
-struct BuildingInfoPanelTowerUpgradeCountText;
-impl BuildingInfoPanelTowerUpgradeCountText {
-    fn refresh_upgrade_count_on<T: Event, B: Bundle> (
-        _trigger: On<T, B>,
-        focused_tower: Single<&Upgrades, With<FocusedMapObject>>,
-        upgrade_count_text: Single<&mut Text, With<BuildingInfoPanelTowerUpgradeCountText>>,
-    ) {
-        let upgrades = focused_tower.into_inner();
-        let purchased = upgrades.total_upgrades_purchased();
-        let available = upgrades.total_upgrades_available();
-
-        upgrade_count_text.into_inner().0 = format!("--- Upgrades {} / {} ---", purchased, available);
-    }
-}
-#[derive(Component)]
-struct BuildingInfoPanelTowerUpgradesContainer;
+struct TowerShardSlotsContainer;
+#[derive(Event)]
+struct RebuildTowerShardSlotsUi;
 
 fn update_building_info_panel_system(
     focused_building: Single<&IntegrityPoints, (With<FocusedMapObject>, With<Building>)>,
@@ -181,34 +174,47 @@ pub fn initialize_building_panel_content_system(
     });
 }
 
-// Tower subpanel section
 fn on_building_info_panel_enabled_for_towers_trigger(
     trigger: On<BuildingInfoPanelEnabledTrigger>,
     mut commands: Commands,
     tower_subpanel_root: Single<&mut Node, With<BuildingInfoPanelTowerRoot>>,
-    towers: Query<&Upgrades, With<Tower>>,
-    upgrades_container: Single<Entity, With<BuildingInfoPanelTowerUpgradesContainer>>,
-){
+    towers: Query<(), With<Tower>>,
+) {
     let focused_entity = trigger.entity;
-    let Ok(upgrades) = towers.get(focused_entity) else {
+    if towers.contains(focused_entity) {
+        tower_subpanel_root.into_inner().display = Display::Flex;
+        commands.trigger(RebuildTowerShardSlotsUi);
+    } else {
         tower_subpanel_root.into_inner().display = Display::None;
-        return;
-    };
-    tower_subpanel_root.into_inner().display = Display::Flex;
+    }
+}
 
-    // Rebuild the upgrades container
-    commands.entity(upgrades_container.into_inner())
-        // Clear all existing children
-        .despawn_related::<Children>()
-        // Create upgrade buttons for each available upgrade
-        .with_children(|parent| {
-            for upgrade_type in upgrades.upgrades.keys().copied() {
-                parent.spawn(UpgradeLineBuilder {
-                    target_entity: focused_entity,
-                    upgrade_type,
-                });
-            }
-        });
+fn on_rebuild_tower_shard_slots(
+    _trigger: On<RebuildTowerShardSlotsUi>,
+    mut commands: Commands,
+    focused_tower: Single<(Entity, &ShardSlots), With<FocusedMapObject>>,
+    shards_container: Single<(Entity, Option<&Children>), With<TowerShardSlotsContainer>>,
+    existing_selection_panel: Option<Single<Entity, With<ShardSelectionPanel>>>,
+) {
+    let (tower_entity, shard_slots) = focused_tower.into_inner();
+    let (container_entity, children) = shards_container.into_inner();
+
+    if let Some(children) = children {
+        for child in children.iter() {
+            commands.entity(child).despawn();
+        }
+    }
+    if let Some(panel) = existing_selection_panel {
+        commands.entity(panel.into_inner()).despawn();
+    }
+
+    for shard_type in shard_slots.iter() {
+        commands.entity(container_entity).with_child(ShardSlotOccupied { shard_type });
+    }
+    let empty_count = shard_slots.capacity() - shard_slots.len();
+    for _ in 0..empty_count {
+        commands.entity(container_entity).with_child(ShardSlotEmpty { tower_entity });
+    }
 }
 
 fn tower_subpanel_content_bundle() -> impl Bundle {
@@ -224,26 +230,294 @@ fn tower_subpanel_content_bundle() -> impl Bundle {
         BuildingInfoPanelTowerRoot,
         children![
             (
-                Text::new("--- Upgrades ##/## ---"),
+                Text::new("--- Shards ---"),
                 TextColor::from(BLUE),
                 TextLayout::new_with_linebreak(LineBreak::NoWrap),
                 Node {
                     margin: UiRect{ left: Val::Px(4.), right: Val::Px(4.), ..default() },
                     ..default()
                 },
-                BuildingInfoPanelTowerUpgradeCountText,
             ),
             (
                 Node {
                     width: Val::Percent(100.),
-                    justify_items: JustifyItems::Center,
-                    flex_direction: FlexDirection::Column,
+                    flex_direction: FlexDirection::Row,
+                    flex_wrap: FlexWrap::Wrap,
                     ..default()
                 },
-                BuildingInfoPanelTowerUpgradesContainer,
+                TowerShardSlotsContainer,
             ),
         ],
     )
+}
+
+// Shard slot: filled slot (read-only display)
+#[derive(Component)]
+struct ShardSlotOccupied {
+    shard_type: ShardType,
+}
+impl ShardSlotOccupied {
+    fn on_add(
+        trigger: On<Add, ShardSlotOccupied>,
+        mut commands: Commands,
+        slots: Query<&ShardSlotOccupied>,
+    ) {
+        let entity = trigger.entity;
+        let Ok(slot) = slots.get(entity) else { return };
+        let shard_name = slot.shard_type.to_string();
+        commands.entity(entity)
+            .insert((
+                Node {
+                    width: Val::Px(48.),
+                    height: Val::Px(48.),
+                    margin: UiRect::all(Val::Px(3.)),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    border: UiRect::all(Val::Px(1.)),
+                    ..default()
+                },
+                BackgroundColor(Color::linear_rgba(0.1, 0.3, 0.1, 0.9)),
+                BorderColor::all(Color::linear_rgba(0.2, 0.6, 0.2, 1.0)),
+            ))
+            .with_children(|parent| {
+                parent.spawn((
+                    Text::new(shard_name),
+                    TextLayout::new_with_linebreak(LineBreak::NoWrap),
+                    TextFont::default().with_font_size(10.0),
+                    TextColor::from(Color::WHITE),
+                ));
+            });
+    }
+}
+
+// Shard slot: empty slot (clickable)
+#[derive(Component)]
+#[require(Button)]
+struct ShardSlotEmpty {
+    tower_entity: Entity,
+}
+impl ShardSlotEmpty {
+    fn on_add(
+        trigger: On<Add, ShardSlotEmpty>,
+        mut commands: Commands,
+    ) {
+        let entity = trigger.entity;
+        commands.entity(entity)
+            .insert((
+                Node {
+                    width: Val::Px(48.),
+                    height: Val::Px(48.),
+                    margin: UiRect::all(Val::Px(3.)),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    border: UiRect::all(Val::Px(1.)),
+                    ..default()
+                },
+                BackgroundColor(Color::linear_rgba(0.15, 0.15, 0.15, 0.9)),
+                BorderColor::all(Color::linear_rgba(0.4, 0.4, 0.4, 1.0)),
+            ))
+            .observe(Self::on_click)
+            .observe(recolor_background_on::<Pointer<Over>>(Color::linear_rgba(0.2, 0.2, 0.4, 0.9)))
+            .observe(recolor_background_on::<Pointer<Out>>(Color::linear_rgba(0.15, 0.15, 0.15, 0.9)))
+            .with_children(|parent| {
+                parent.spawn((
+                    Text::new("+"),
+                    TextFont::default().with_font_size(20.0),
+                    TextColor::from(Color::WHITE),
+                ));
+            });
+    }
+
+    fn on_click(
+        trigger: On<Pointer<Click>>,
+        mut commands: Commands,
+        slots: Query<&ShardSlotEmpty>,
+        existing_panel: Option<Single<Entity, With<ShardSelectionPanel>>>,
+    ) {
+        let entity = trigger.entity;
+        let Ok(slot) = slots.get(entity) else { return };
+        if let Some(panel) = existing_panel {
+            commands.entity(panel.into_inner()).despawn();
+        }
+        commands.spawn(ShardSelectionPanel { tower_entity: slot.tower_entity });
+    }
+}
+
+// Modal panel for selecting a shard from inventory
+#[derive(Component)]
+struct ShardSelectionPanel {
+    tower_entity: Entity,
+}
+impl ShardSelectionPanel {
+    fn on_add(
+        trigger: On<Add, ShardSelectionPanel>,
+        mut commands: Commands,
+        panels: Query<&ShardSelectionPanel>,
+        inventory: Res<ShardInventory>,
+    ) {
+        let entity = trigger.entity;
+        let Ok(panel) = panels.get(entity) else { return };
+        let tower_entity = panel.tower_entity;
+
+        commands.entity(entity)
+            .insert((
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(0.),
+                    top: Val::Px(0.),
+                    width: Val::Percent(100.),
+                    height: Val::Percent(100.),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    ..default()
+                },
+                GlobalZIndex(100),
+                FocusPolicy::Pass,
+                Pickable::IGNORE,
+            ))
+            .with_children(|parent| {
+                parent.spawn((
+                    Node {
+                        width: Val::Px(220.),
+                        flex_direction: FlexDirection::Column,
+                        padding: UiRect::all(Val::Px(8.)),
+                        row_gap: Val::Px(4.),
+                        border: UiRect::all(Val::Px(1.)),
+                        ..default()
+                    },
+                    BackgroundColor(Color::linear_rgba(0.05, 0.05, 0.1, 0.97)),
+                    BorderColor::all(Color::linear_rgba(0.3, 0.3, 0.5, 1.0)),
+                ))
+                .with_children(|parent| {
+                    parent.spawn((
+                        Text::new("Select Shard"),
+                        TextFont::default().with_font_size(14.0),
+                        TextColor::from(BLUE),
+                        Node { margin: UiRect::bottom(Val::Px(4.)), ..default() },
+                    ));
+
+                    let available: Vec<(ShardType, usize)> = inventory.iter()
+                        .filter(|(_, count)| *count > 0)
+                        .collect();
+
+                    if available.is_empty() {
+                        parent.spawn((
+                            Text::new("No shards available"),
+                            TextFont::default().with_font_size(12.0),
+                            TextColor::from(Color::srgb(0.5, 0.5, 0.5)),
+                        ));
+                    } else {
+                        for (shard_type, count) in available {
+                            parent.spawn(ShardInventoryRow { tower_entity, shard_type, count });
+                        }
+                    }
+
+                    parent.spawn((
+                        Button,
+                        Node {
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            padding: UiRect::axes(Val::Px(8.), Val::Px(4.)),
+                            margin: UiRect::top(Val::Px(4.)),
+                            border: UiRect::all(Val::Px(1.)),
+                            ..default()
+                        },
+                        BackgroundColor(Color::linear_rgba(0.2, 0.1, 0.1, 0.9)),
+                        BorderColor::all(Color::linear_rgba(0.5, 0.2, 0.2, 1.0)),
+                    ))
+                    .observe(Self::on_cancel_click)
+                    .with_children(|parent| {
+                        parent.spawn((
+                            Text::new("Cancel"),
+                            TextFont::default().with_font_size(12.0),
+                            TextColor::from(Color::WHITE),
+                        ));
+                    });
+                });
+            });
+    }
+
+    fn on_cancel_click(
+        _trigger: On<Pointer<Click>>,
+        mut commands: Commands,
+        panel: Single<Entity, With<ShardSelectionPanel>>,
+    ) {
+        commands.entity(panel.into_inner()).despawn();
+    }
+
+    fn on_focused_map_object_removed(
+        _trigger: On<Remove, FocusedMapObject>,
+        mut commands: Commands,
+        panel: Single<Entity, With<ShardSelectionPanel>>,
+    ) {
+        commands.entity(panel.into_inner()).despawn();
+    }
+}
+
+// Row inside ShardSelectionPanel representing one available shard type
+#[derive(Component)]
+struct ShardInventoryRow {
+    tower_entity: Entity,
+    shard_type: ShardType,
+    count: usize,
+}
+impl ShardInventoryRow {
+    fn on_add(
+        trigger: On<Add, ShardInventoryRow>,
+        mut commands: Commands,
+        rows: Query<&ShardInventoryRow>,
+    ) {
+        let entity = trigger.entity;
+        let Ok(row) = rows.get(entity) else { return };
+        let label = format!("{} x{}", row.shard_type, row.count);
+        commands.entity(entity)
+            .insert((
+                Button,
+                Node {
+                    justify_content: JustifyContent::SpaceBetween,
+                    align_items: AlignItems::Center,
+                    padding: UiRect::axes(Val::Px(6.), Val::Px(4.)),
+                    border: UiRect::all(Val::Px(1.)),
+                    ..default()
+                },
+                BackgroundColor(Color::linear_rgba(0.15, 0.15, 0.25, 0.9)),
+                BorderColor::all(Color::linear_rgba(0.3, 0.3, 0.5, 1.0)),
+            ))
+            .observe(Self::on_click)
+            .observe(recolor_background_on::<Pointer<Over>>(Color::linear_rgba(0.25, 0.3, 0.5, 0.95)))
+            .observe(recolor_background_on::<Pointer<Out>>(Color::linear_rgba(0.15, 0.15, 0.25, 0.9)))
+            .with_children(|parent| {
+                parent.spawn((
+                    Text::new(label),
+                    TextFont::default().with_font_size(12.0),
+                    TextColor::from(Color::WHITE),
+                ));
+            });
+    }
+
+    fn on_click(
+        trigger: On<Pointer<Click>>,
+        mut commands: Commands,
+        rows: Query<&ShardInventoryRow>,
+        mut shard_slots: Query<&mut ShardSlots>,
+        mut inventory: ResMut<ShardInventory>,
+        panel: Single<Entity, With<ShardSelectionPanel>>,
+    ) {
+        let entity = trigger.entity;
+        let Ok(row) = rows.get(entity) else { return };
+        let tower_entity = row.tower_entity;
+        let shard_type = row.shard_type;
+
+        if !inventory.has(shard_type) { return; }
+        let Ok(mut slots) = shard_slots.get_mut(tower_entity) else { return; };
+        if slots.is_full() { return; }
+
+        inventory.remove(shard_type);
+        slots.insert(shard_type, tower_entity, &mut commands);
+
+        commands.entity(panel.into_inner()).despawn();
+        commands.trigger(RebuildTowerShardSlotsUi);
+    }
 }
 
 // Disable/Enable button

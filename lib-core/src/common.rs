@@ -247,5 +247,6 @@ define_z_indexes!(
     Z_MAP_UI,
     Z_AERIAL_UNIT,
     Z_PROJECTILE_UNDER,
-    Z_PROJECTILE
+    Z_PROJECTILE,
+    Z_ABOVE_ALL
 );

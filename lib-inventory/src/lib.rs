@@ -4,8 +4,8 @@ pub mod almanach;
 pub mod effects;
 pub mod placement;
 pub mod resources;
+pub mod shard_inventory;
 pub mod stats;
-pub mod upgrades;
 
 pub struct LibInventoryPlugin;
 impl Plugin for LibInventoryPlugin {
@@ -16,7 +16,7 @@ impl Plugin for LibInventoryPlugin {
                 effects::EffectsPlugin,
                 resources::ResourcesPlugin,
                 stats::StatsPlugin,
-                upgrades::UpgradesPlugin,
+                shard_inventory::ShardInventoryPlugin,
             ));
     }
 }
@@ -24,7 +24,7 @@ impl Plugin for LibInventoryPlugin {
 pub mod prelude {
     pub use crate::almanach::almanach_prelude::*;
     pub use crate::resources::resources_prelude::*;
-    pub use crate::upgrades::upgrades_prelude::*;
+    pub use crate::shard_inventory::shard_inventory_prelude::*;
 }
 
 pub mod lib_prelude {

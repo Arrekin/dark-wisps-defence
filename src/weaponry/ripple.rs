@@ -127,7 +127,7 @@ impl BuilderRipple {
         commands.entity(entity)
             .remove::<BuilderRipple>()
             .insert((
-                Transform::from_translation(builder.world_position.extend(Z_GROUND_EFFECT)),
+                Transform::from_translation(builder.world_position.extend(Z_ABOVE_ALL)),
                 Ripple { max_radius: builder.radius, current_radius },
                 MovementSpeed::new(50.0),
             ));

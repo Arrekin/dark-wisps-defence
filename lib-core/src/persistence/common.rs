@@ -83,7 +83,6 @@ pub trait GameDbHelpers {
     fn save_disabled_by_player(&self, entity_id: i64) -> rusqlite::Result<usize>;
     fn save_stat(&self, stat_name: &str, stat_value: f32) -> rusqlite::Result<usize>;
     fn save_stock_resource(&self, resource_name: &str, amount: i32) -> rusqlite::Result<usize>;
-    fn save_upgrade_level(&self, entity_id: i64, upgrade_type: &str, level: usize) -> rusqlite::Result<usize>;
     
     fn get_grid_coords(&self, entity_id: i64) -> rusqlite::Result<GridCoords>;
     fn get_disabled_by_player(&self, entity_id: i64) -> rusqlite::Result<bool>;
@@ -92,7 +91,6 @@ pub trait GameDbHelpers {
     fn get_grid_imprint(&self, entity_id: i64) -> rusqlite::Result<GridImprint>;
     fn get_stat(&self, stat_name: &str) -> rusqlite::Result<f32>;
     fn get_stock_resource(&self, resource_name: &str) -> rusqlite::Result<i32>;
-    fn get_upgrade_levels_raw(&self, entity_id: i64) -> rusqlite::Result<Vec<(String, usize)>>;
 }
 impl GameDbHelpers for rusqlite::Connection {
     fn register_entity(&self, entity_id: i64) -> rusqlite::Result<usize> {
@@ -163,13 +161,6 @@ impl GameDbHelpers for rusqlite::Connection {
         )
     }
 
-    fn save_upgrade_level(&self, entity_id: i64, upgrade_type: &str, level: usize) -> rusqlite::Result<usize> {
-        self.execute(
-            "INSERT OR REPLACE INTO upgrade_levels (entity_id, upgrade_type, current_level) VALUES (?1, ?2, ?3)",
-            rusqlite::params![entity_id, upgrade_type, level as i64],
-        )
-    }
-
 
     fn get_disabled_by_player(&self, entity_id: i64) -> rusqlite::Result<bool> {
         let mut stmt = self.prepare("SELECT 1 FROM disabled_by_player WHERE entity_id = ?1")?;
@@ -228,17 +219,6 @@ impl GameDbHelpers for rusqlite::Connection {
         }
     }
 
-    fn get_upgrade_levels_raw(&self, entity_id: i64) -> rusqlite::Result<Vec<(String, usize)>> {
-        let mut stmt = self.prepare("SELECT upgrade_type, current_level FROM upgrade_levels WHERE entity_id = ?1")?;
-        let mut rows = stmt.query([entity_id])?;
-        let mut levels = Vec::new();
-        while let Some(row) = rows.next()? {
-            let type_str: String = row.get(0)?;
-            let level: i64 = row.get(1)?;
-            levels.push((type_str, level as usize));
-        }
-        Ok(levels)
-    }
 }
 
 pub trait AppGameLoadSaveExtension {
