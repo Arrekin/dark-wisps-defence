@@ -22,6 +22,8 @@ use bevy::color::palettes::css::{AQUA, BLUE, INDIGO};
 
 use lib_core::map_objects::QuantumField;
 use lib_grid::grids::obstacles::{ObstacleGrid, ReservedCoords};
+use lib_inventory::almanach::QuantumFieldInfo;
+use lib_inventory::placement::{GridsCollection, PlacementValidationResult};
 use lib_ui::prelude::*;
 
 use crate::map_objects::common::ExpeditionZone;

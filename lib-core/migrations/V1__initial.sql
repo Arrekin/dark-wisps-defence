@@ -1,3 +1,7 @@
+-- ========================
+-- Core infrastructure
+-- ========================
+
 CREATE TABLE IF NOT EXISTS entities (
     id INTEGER PRIMARY KEY
 );
@@ -14,10 +18,23 @@ CREATE TABLE IF NOT EXISTS game_clock (
     elapsed REAL NOT NULL DEFAULT 0.0
 );
 
-CREATE TABLE IF NOT EXISTS walls (
-    id INTEGER PRIMARY KEY,
-    FOREIGN KEY(id) REFERENCES entities(id)
+-- ========================
+-- Economy
+-- ========================
+
+CREATE TABLE IF NOT EXISTS stats (
+    stat_name TEXT PRIMARY KEY,
+    stat_value REAL NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS stock (
+    resource_name TEXT PRIMARY KEY,
+    amount INTEGER NOT NULL
+);
+
+-- ========================
+-- Map layout
+-- ========================
 
 CREATE TABLE IF NOT EXISTS grid_coords (
     entity_id INTEGER,
@@ -26,12 +43,42 @@ CREATE TABLE IF NOT EXISTS grid_coords (
     FOREIGN KEY(entity_id) REFERENCES entities(id)
 );
 
-CREATE TABLE IF NOT EXISTS main_bases (
+CREATE TABLE IF NOT EXISTS grid_imprints (
+    id INTEGER PRIMARY KEY,
+    shape TEXT NOT NULL,
+    width INTEGER,
+    height INTEGER,
+    FOREIGN KEY(id) REFERENCES entities(id)
+);
+
+CREATE TABLE IF NOT EXISTS world_positions (
+    entity_id INTEGER PRIMARY KEY,
+    x REAL NOT NULL,
+    y REAL NOT NULL,
+    FOREIGN KEY(entity_id) REFERENCES entities(id)
+);
+
+-- ========================
+-- Buildings (shared)
+-- ========================
+
+CREATE TABLE IF NOT EXISTS integrity_points (
+    entity_id INTEGER PRIMARY KEY,
+    current REAL NOT NULL,
+    FOREIGN KEY(entity_id) REFERENCES entities(id)
+);
+
+CREATE TABLE IF NOT EXISTS disabled_by_player (
+    entity_id INTEGER PRIMARY KEY,
+    FOREIGN KEY(entity_id) REFERENCES entities(id)
+);
+
+CREATE TABLE IF NOT EXISTS walls (
     id INTEGER PRIMARY KEY,
     FOREIGN KEY(id) REFERENCES entities(id)
 );
 
-CREATE TABLE IF NOT EXISTS exploration_centers (
+CREATE TABLE IF NOT EXISTS main_bases (
     id INTEGER PRIMARY KEY,
     FOREIGN KEY(id) REFERENCES entities(id)
 );
@@ -52,11 +99,8 @@ CREATE TABLE IF NOT EXISTS dark_ores (
     FOREIGN KEY(id) REFERENCES entities(id)
 );
 
-CREATE TABLE IF NOT EXISTS grid_imprints (
+CREATE TABLE IF NOT EXISTS exploration_centers (
     id INTEGER PRIMARY KEY,
-    shape TEXT NOT NULL,
-    width INTEGER,
-    height INTEGER,
     FOREIGN KEY(id) REFERENCES entities(id)
 );
 
@@ -67,36 +111,49 @@ CREATE TABLE IF NOT EXISTS quantum_fields (
     FOREIGN KEY(id) REFERENCES entities(id)
 );
 
-CREATE TABLE IF NOT EXISTS integrity_points (
-    entity_id INTEGER PRIMARY KEY,
-    current REAL NOT NULL,
-    FOREIGN KEY(entity_id) REFERENCES entities(id)
-);
+-- ========================
+-- Towers
+-- ========================
 
-CREATE TABLE IF NOT EXISTS world_positions (
-    entity_id INTEGER PRIMARY KEY,
-    x REAL NOT NULL,
-    y REAL NOT NULL,
-    FOREIGN KEY(entity_id) REFERENCES entities(id)
-);
-
-CREATE TABLE IF NOT EXISTS disabled_by_player (
-    entity_id INTEGER PRIMARY KEY,
-    FOREIGN KEY(entity_id) REFERENCES entities(id)
-);
-
-CREATE TABLE IF NOT EXISTS expedition_drones (
+CREATE TABLE IF NOT EXISTS tower_cannons (
     id INTEGER PRIMARY KEY,
-    home_base_id INTEGER NOT NULL,
-    state INTEGER NOT NULL,
-    mission_target_id INTEGER,
-    heading REAL NOT NULL,
-    waypoint_x REAL NOT NULL,
-    waypoint_y REAL NOT NULL,
-    fuel_current REAL NOT NULL,
-    fuel_max REAL NOT NULL,
     FOREIGN KEY(id) REFERENCES entities(id)
 );
+
+CREATE TABLE IF NOT EXISTS tower_blasters (
+    id INTEGER PRIMARY KEY,
+    FOREIGN KEY(id) REFERENCES entities(id)
+);
+
+CREATE TABLE IF NOT EXISTS tower_rocket_launchers (
+    id INTEGER PRIMARY KEY,
+    FOREIGN KEY(id) REFERENCES entities(id)
+);
+
+CREATE TABLE IF NOT EXISTS tower_emitters (
+    id INTEGER PRIMARY KEY,
+    FOREIGN KEY(id) REFERENCES entities(id)
+);
+
+-- ========================
+-- Shards
+-- ========================
+
+CREATE TABLE IF NOT EXISTS entity_shards (
+    shard_target_id INTEGER NOT NULL,
+    shard_index INTEGER NOT NULL,
+    shard_type TEXT NOT NULL,
+    PRIMARY KEY (shard_target_id, shard_index)
+);
+
+CREATE TABLE IF NOT EXISTS shard_inventory (
+    shard_type TEXT PRIMARY KEY,
+    count INTEGER NOT NULL
+);
+
+-- ========================
+-- Projectiles
+-- ========================
 
 CREATE TABLE IF NOT EXISTS cannonballs (
     id INTEGER PRIMARY KEY,
@@ -124,30 +181,20 @@ CREATE TABLE IF NOT EXISTS rockets (
     FOREIGN KEY(id) REFERENCES entities(id)
 );
 
-CREATE TABLE IF NOT EXISTS tower_cannons (
-    id INTEGER PRIMARY KEY,
-    FOREIGN KEY(id) REFERENCES entities(id)
-);
-
-CREATE TABLE IF NOT EXISTS tower_blasters (
-    id INTEGER PRIMARY KEY,
-    FOREIGN KEY(id) REFERENCES entities(id)
-);
-
-CREATE TABLE IF NOT EXISTS tower_rocket_launchers (
-    id INTEGER PRIMARY KEY,
-    FOREIGN KEY(id) REFERENCES entities(id)
-);
-
-CREATE TABLE IF NOT EXISTS tower_emitters (
-    id INTEGER PRIMARY KEY,
-    FOREIGN KEY(id) REFERENCES entities(id)
-);
-
 CREATE TABLE IF NOT EXISTS ripples (
     id INTEGER PRIMARY KEY,
     max_radius REAL NOT NULL,
     current_radius REAL NOT NULL,
+    FOREIGN KEY(id) REFERENCES entities(id)
+);
+
+-- ========================
+-- Wisps
+-- ========================
+
+CREATE TABLE IF NOT EXISTS wisps (
+    id INTEGER PRIMARY KEY,
+    wisp_type TEXT NOT NULL,
     FOREIGN KEY(id) REFERENCES entities(id)
 );
 
@@ -160,11 +207,22 @@ CREATE TABLE IF NOT EXISTS brittle_effects (
     FOREIGN KEY(id) REFERENCES entities(id)
 );
 
-CREATE TABLE IF NOT EXISTS wisps (
+CREATE TABLE IF NOT EXISTS expedition_drones (
     id INTEGER PRIMARY KEY,
-    wisp_type TEXT NOT NULL,
+    home_base_id INTEGER NOT NULL,
+    state INTEGER NOT NULL,
+    mission_target_id INTEGER,
+    heading REAL NOT NULL,
+    waypoint_x REAL NOT NULL,
+    waypoint_y REAL NOT NULL,
+    fuel_current REAL NOT NULL,
+    fuel_max REAL NOT NULL,
     FOREIGN KEY(id) REFERENCES entities(id)
 );
+
+-- ========================
+-- Objectives
+-- ========================
 
 CREATE TABLE IF NOT EXISTS objectives (
     id INTEGER PRIMARY KEY,
@@ -180,16 +238,6 @@ CREATE TABLE IF NOT EXISTS objective_kill_wisps (
     target_amount INTEGER NOT NULL,
     started_amount INTEGER NOT NULL,
     FOREIGN KEY(id) REFERENCES objectives(id)
-);
-
-CREATE TABLE IF NOT EXISTS stats (
-    stat_name TEXT PRIMARY KEY,
-    stat_value REAL NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS stock (
-    resource_name TEXT PRIMARY KEY,
-    amount INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS summonings (

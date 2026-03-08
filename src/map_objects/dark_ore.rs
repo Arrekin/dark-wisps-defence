@@ -2,6 +2,8 @@ use std::f32::consts::PI;
 
 use lib_core::map_objects::DarkOre;
 use lib_grid::grids::obstacles::{ObstacleGrid, ReservedCoords};
+use lib_inventory::almanach::DarkOreInfo;
+use lib_inventory::placement::validate_empty_placement;
 
 use crate::prelude::*;
 use crate::ui::grid_object_placer::GridObjectPlacer;

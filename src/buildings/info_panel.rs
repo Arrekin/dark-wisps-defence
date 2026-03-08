@@ -18,7 +18,7 @@ impl Plugin for InfoPanelPlugin {
             .add_observer(ShardSlotOccupied::on_add)
             .add_observer(ShardSlotEmpty::on_add)
             .add_observer(ShardSelectionPanel::on_add)
-            .add_observer(ShardInventoryRow::on_add)
+            .add_observer(ShardPickerItem::on_add)
             .add_observer(ShardSelectionPanel::on_focused_map_object_removed)
             .add_observer(BuildingInfoPanelDisableButton::on_add)
             .add_observer(BuildingInfoPanelDestroyButton::on_add)
@@ -196,7 +196,7 @@ fn on_rebuild_tower_shard_slots(
     shards_container: Single<(Entity, Option<&Children>), With<TowerShardSlotsContainer>>,
     existing_selection_panel: Option<Single<Entity, With<ShardSelectionPanel>>>,
 ) {
-    let (tower_entity, shard_slots) = focused_tower.into_inner();
+    let (shard_target, shard_slots) = focused_tower.into_inner();
     let (container_entity, children) = shards_container.into_inner();
 
     if let Some(children) = children {
@@ -208,12 +208,11 @@ fn on_rebuild_tower_shard_slots(
         commands.entity(panel.into_inner()).despawn();
     }
 
-    for shard_type in shard_slots.iter() {
-        commands.entity(container_entity).with_child(ShardSlotOccupied { shard_type });
-    }
-    let empty_count = shard_slots.capacity() - shard_slots.len();
-    for _ in 0..empty_count {
-        commands.entity(container_entity).with_child(ShardSlotEmpty { tower_entity });
+    for slot_index in 0..shard_slots.capacity() {
+        match shard_slots.get(slot_index) {
+            Some(shard_type) => { commands.entity(container_entity).with_child(ShardSlotOccupied { shard_type }); }
+            None => { commands.entity(container_entity).with_child(ShardSlotEmpty { shard_target, slot_index }); }
+        }
     }
 }
 
@@ -294,7 +293,8 @@ impl ShardSlotOccupied {
 #[derive(Component)]
 #[require(Button)]
 struct ShardSlotEmpty {
-    tower_entity: Entity,
+    shard_target: Entity,
+    slot_index: usize,
 }
 impl ShardSlotEmpty {
     fn on_add(
@@ -339,14 +339,15 @@ impl ShardSlotEmpty {
         if let Some(panel) = existing_panel {
             commands.entity(panel.into_inner()).despawn();
         }
-        commands.spawn(ShardSelectionPanel { tower_entity: slot.tower_entity });
+        commands.spawn(ShardSelectionPanel { shard_target: slot.shard_target, slot_index: slot.slot_index });
     }
 }
 
 // Modal panel for selecting a shard from inventory
 #[derive(Component)]
 struct ShardSelectionPanel {
-    tower_entity: Entity,
+    shard_target: Entity,
+    slot_index: usize,
 }
 impl ShardSelectionPanel {
     fn on_add(
@@ -357,7 +358,8 @@ impl ShardSelectionPanel {
     ) {
         let entity = trigger.entity;
         let Ok(panel) = panels.get(entity) else { return };
-        let tower_entity = panel.tower_entity;
+        let shard_target = panel.shard_target;
+        let slot_index = panel.slot_index;
 
         commands.entity(entity)
             .insert((
@@ -408,7 +410,7 @@ impl ShardSelectionPanel {
                         ));
                     } else {
                         for (shard_type, count) in available {
-                            parent.spawn(ShardInventoryRow { tower_entity, shard_type, count });
+                            parent.spawn(ShardPickerItem { shard_target, slot_index, shard_type, count });
                         }
                     }
 
@@ -426,6 +428,8 @@ impl ShardSelectionPanel {
                         BorderColor::all(Color::linear_rgba(0.5, 0.2, 0.2, 1.0)),
                     ))
                     .observe(Self::on_cancel_click)
+                    .observe(recolor_background_on::<Pointer<Over>>(Color::linear_rgba(0.3, 0.15, 0.15, 0.95)))
+                    .observe(recolor_background_on::<Pointer<Out>>(Color::linear_rgba(0.2, 0.1, 0.1, 0.9)))
                     .with_children(|parent| {
                         parent.spawn((
                             Text::new("Cancel"),
@@ -454,22 +458,23 @@ impl ShardSelectionPanel {
     }
 }
 
-// Row inside ShardSelectionPanel representing one available shard type
+// Selectable shard entry inside ShardSelectionPanel
 #[derive(Component)]
-struct ShardInventoryRow {
-    tower_entity: Entity,
+struct ShardPickerItem {
+    shard_target: Entity,
+    slot_index: usize,
     shard_type: ShardType,
     count: usize,
 }
-impl ShardInventoryRow {
+impl ShardPickerItem {
     fn on_add(
-        trigger: On<Add, ShardInventoryRow>,
+        trigger: On<Add, ShardPickerItem>,
         mut commands: Commands,
-        rows: Query<&ShardInventoryRow>,
+        items: Query<&ShardPickerItem>,
     ) {
         let entity = trigger.entity;
-        let Ok(row) = rows.get(entity) else { return };
-        let label = format!("{} x{}", row.shard_type, row.count);
+        let Ok(item) = items.get(entity) else { return };
+        let label = format!("{} x{}", item.shard_type, item.count);
         commands.entity(entity)
             .insert((
                 Button,
@@ -498,22 +503,20 @@ impl ShardInventoryRow {
     fn on_click(
         trigger: On<Pointer<Click>>,
         mut commands: Commands,
-        rows: Query<&ShardInventoryRow>,
+        items: Query<&ShardPickerItem>,
         mut shard_slots: Query<&mut ShardSlots>,
         mut inventory: ResMut<ShardInventory>,
         panel: Single<Entity, With<ShardSelectionPanel>>,
     ) {
         let entity = trigger.entity;
-        let Ok(row) = rows.get(entity) else { return };
-        let tower_entity = row.tower_entity;
-        let shard_type = row.shard_type;
+        let Ok(item) = items.get(entity) else { return };
 
-        if !inventory.has(shard_type) { return; }
-        let Ok(mut slots) = shard_slots.get_mut(tower_entity) else { return; };
-        if slots.is_full() { return; }
+        if !inventory.has(item.shard_type) { return; }
+        let Ok(mut slots) = shard_slots.get_mut(item.shard_target) else { return; };
+        if slots.get(item.slot_index).is_some() { return; }
 
-        inventory.remove(shard_type);
-        slots.insert(shard_type, tower_entity, &mut commands);
+        inventory.remove(item.shard_type);
+        slots.insert_at(item.slot_index, item.shard_type, item.shard_target, &mut commands);
 
         commands.entity(panel.into_inner()).despawn();
         commands.trigger(RebuildTowerShardSlotsUi);

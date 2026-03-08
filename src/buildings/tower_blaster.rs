@@ -45,6 +45,7 @@ impl Saveable for BuilderTowerBlaster {
         if save_data.disabled_by_player {
             tx.save_disabled_by_player(entity_index)?;
         }
+
         Ok(())
     }
 }
@@ -53,13 +54,14 @@ impl Loadable for BuilderTowerBlaster {
     fn load(ctx: &mut LoadContext) -> rusqlite::Result<LoadResult> {
         let mut stmt = ctx.conn.prepare("SELECT id FROM tower_blasters LIMIT ?1 OFFSET ?2")?;
         let mut rows = stmt.query(ctx.pagination.as_params())?;
-        
+
         let mut count = 0;
         while let Some(row) = rows.next()? {
             let old_id: i64 = row.get(0)?;
             let grid_position = ctx.conn.get_grid_coords(old_id)?;
             let integrity_points = ctx.conn.get_integrity_points(old_id)?;
             let disabled_by_player = ctx.conn.get_disabled_by_player(old_id)?;
+
             if let Some(new_entity) = ctx.get_new_entity_for_old(old_id) {
                 let save_data = TowerBlasterSaveData { entity: new_entity, integrity_points, disabled_by_player };
                 ctx.commands.entity(new_entity).insert(BuilderTowerBlaster::new_for_saving(grid_position, save_data));
@@ -176,10 +178,9 @@ impl BuilderTowerBlaster {
         trigger: On<ShardApplyEvent>,
         mut commands: Commands,
     ) {
-        let tower_entity = trigger.tower_entity;
         match trigger.shard_type {
             ShardType::Range => {
-                commands.spawn(ShardEffect::from_modifiers(tower_entity, HashMap::from([(ModifierType::AttackRange, 2.0)])));
+                commands.spawn(ShardEffect::from_modifiers(trigger.shard_target, HashMap::from([(ModifierType::AttackRange, 2.0)])));
             }
         }
     }

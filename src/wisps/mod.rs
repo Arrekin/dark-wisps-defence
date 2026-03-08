@@ -6,6 +6,7 @@ pub mod summoning;
 
 use bevy::sprite_render::Material2dPlugin;
 use lib_core::wisps::{WispFireType, WispWaterType, WispLightType, WispElectricType};
+use lib_inventory::almanach::WispInfo;
 
 use crate::prelude::*;
 

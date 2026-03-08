@@ -1,5 +1,7 @@
 use lib_core::map_objects::Wall;
 use lib_grid::grids::obstacles::{GridStructureType, ObstacleGrid, ReservedCoords};
+use lib_inventory::almanach::WallInfo;
+use lib_inventory::placement::validate_empty_placement;
 
 use crate::prelude::*;
 use crate::ui::grid_object_placer::GridObjectPlacer;

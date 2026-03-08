@@ -38,6 +38,7 @@ pub enum EditorTab {
     General,
     Summonings,
     Objectives,
+    Shards,
 }
 
 fn editor_ui(
@@ -46,6 +47,7 @@ fn editor_ui(
     mut commands: Commands,
     mut summonings: Query<(Entity, &mut Summoning)>,
     mut objectives_query: Query<(Entity, &mut ObjectiveDetails, Option<&mut ObjectiveKillWisps>)>,
+    mut inventory: ResMut<ShardInventory>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
     egui::Window::new("Editor")
@@ -66,10 +68,52 @@ fn editor_ui(
                 EditorTab::General => tab_general(ui),
                 EditorTab::Summonings => summonings::tab_summonings(ui, &mut state, &mut commands, &mut summonings),
                 EditorTab::Objectives => objectives::tab_objectives(ui, &mut state, &mut commands, &mut objectives_query),
+                EditorTab::Shards => tab_shards(ui, &mut inventory),
             }
         });
 }
 
 fn tab_general(ui: &mut egui::Ui) {
     ui.label("General settings");
+}
+
+fn tab_shards(ui: &mut egui::Ui, inventory: &mut ResMut<ShardInventory>) {
+    ui.heading("Shard Inventory");
+
+    ui.horizontal(|ui| {
+        ui.menu_button("+ Add Shard", |ui| {
+            for shard_type in ShardType::iter() {
+                if ui.button(shard_type.to_string()).clicked() {
+                    inventory.add(shard_type, 1);
+                    ui.close();
+                }
+            }
+        });
+    });
+
+    ui.separator();
+
+    let shards: Vec<(ShardType, usize)> = inventory.iter().collect();
+
+    if shards.is_empty() {
+        ui.label("No shards in inventory");
+    } else {
+        egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
+            for (shard_type, count) in shards {
+                ui.horizontal(|ui| {
+                    ui.label(format!("{}: {}", shard_type, count));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button("−").clicked() {
+                            if inventory.has(shard_type) {
+                                inventory.remove(shard_type);
+                            }
+                        }
+                        if ui.button("+").clicked() {
+                            inventory.add(shard_type, 1);
+                        }
+                    });
+                });
+            }
+        });
+    }
 }

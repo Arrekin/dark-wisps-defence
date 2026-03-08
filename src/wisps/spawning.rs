@@ -2,6 +2,7 @@ use std::str::FromStr;
 
 use lib_grid::grids::wisps::WispsGrid;
 use lib_core::wisps::{WispFireType, WispWaterType, WispLightType, WispElectricType};
+use lib_inventory::placement::{GridsCollection, PlacementValidationResult};
 
 use crate::prelude::*;
 use crate::ui::grid_object_placer::GridObjectPlacer;
