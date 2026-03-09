@@ -1,5 +1,3 @@
-use std::fs;
-
 use crate::prelude::*;
 
 pub struct MainMenuPlugin;
@@ -83,35 +81,22 @@ impl LoadMapButton {
     fn on_click(
         _trigger: On<Pointer<Click>>,
         mut commands: Commands,
+        map_list: Res<GameMapList>,
         map_list_container: Single<(Entity, &mut Node), With<MapListContainer>>,
     ) {
         let (container_entity, mut node) = map_list_container.into_inner();
 
-        if node.display == Display::Flex { 
+        if node.display == Display::Flex {
             node.display = Display::None;
             return;
         }
-        
-        // Rebuild the list when showing
+
         node.display = Display::Flex;
         commands.entity(container_entity).despawn_related::<Children>();
 
-        // Enumerate maps/*.yaml and create entry buttons
-        let map_names = fs::read_dir("maps")
-            .ok()
-            .into_iter()
-            .flat_map(|rd| rd.filter_map(|e| e.ok()))
-            .filter_map(|e| {
-                let path = e.path();
-                if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("dwd") {
-                    path.file_stem().and_then(|s| s.to_str()).map(|s| s.to_string())
-                } else { None }
-            })
-            .collect::<Vec<_>>();
-
         commands.entity(container_entity).with_children(|parent| {
-            for name in map_names {
-                parent.spawn(MapEntryButton { name });
+            for name in &map_list.names {
+                parent.spawn(MapEntryButton { name: name.clone() });
             }
         });
     }
@@ -168,7 +153,7 @@ impl MapEntryButton {
         let entity = trigger.entity;
         let Ok(entry) = entries.get(entity) else { return; };
         Log::debug().dev().tag(Tag::Ui).message(format!("Map selected: {}", entry.name));
-        commands.trigger(lib_core::persistence::load::LoadGameSignal(format!("maps/{}.dwd", entry.name.clone())));
+        commands.trigger(LoadGameSignal(LoadMapConfig::new(format!("maps/{}.dwd", entry.name))));
     }
 }
 

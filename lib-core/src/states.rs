@@ -24,7 +24,7 @@ impl Plugin for StatesPlugin {
     }
 }
 
-#[derive(Default, Clone, Debug, States, PartialEq, Eq, Hash)]
+#[derive(Default, Clone, Copy, Debug, States, PartialEq, Eq, Hash)]
 pub enum GameState {
     #[default]
     Init,
@@ -46,7 +46,7 @@ impl GameState {
     }
 }
 
-#[derive(Default, Clone, Debug, States, PartialEq, Eq, Hash)]
+#[derive(Default, Clone, Copy, Debug, States, PartialEq, Eq, Hash)]
 pub enum AdminMode {
     #[default]
     Disabled,

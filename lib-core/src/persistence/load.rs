@@ -7,15 +7,12 @@ impl Plugin for MapLoadPlugin {
         app
             .init_resource::<DbEntityMap>()
             .init_resource::<GameLoadRegistry>()
+            .init_resource::<GameMapList>()
             .add_systems(OnEnter(MapLoadingStage::LoadMapInfo), spawn_loading_tasks)
             .add_systems(OnEnter(MapLoadingStage::LoadResources), spawn_loading_tasks)
             .add_systems(OnEnter(MapLoadingStage::SpawnMapElements), spawn_loading_tasks)
             .add_systems(OnEnter(MapLoadingStage::SpawnEffectInstances), spawn_loading_tasks)
-            .add_systems(OnEnter(MapLoadingStage::Ready), |mut commands: Commands, mut next_game_state: ResMut<NextState<GameState>>| {
-                Log::info().player().tag(Tag::GameLoad).message("Game loaded");
-                commands.trigger(DynamicGameEvent::game_started());
-                next_game_state.set(GameState::Running);
-            })
+            .add_systems(OnEnter(MapLoadingStage::Ready), on_map_load_ready)
             .add_systems(Update, (
                 progress_map_loading_state.run_if(in_state(GameState::Loading)),
                 process_loading_tasks_system,
@@ -30,14 +27,57 @@ pub trait Loadable {
     fn load(ctx: &mut LoadContext) -> rusqlite::Result<LoadResult>;
 }
 
+/// All .dwd map files found in the maps/ directory at startup.
+#[derive(Resource)]
+pub struct GameMapList {
+    pub names: Vec<String>,
+}
+impl Default for GameMapList {
+    fn default() -> Self {
+        let names = std::fs::read_dir("maps")
+            .ok()
+            .into_iter()
+            .flat_map(|rd| rd.filter_map(|e| e.ok()))
+            .filter_map(|e| {
+                let path = e.path();
+                if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("dwd") {
+                    path.file_stem().and_then(|s| s.to_str()).map(|s| s.to_string())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        Self { names }
+    }
+}
+impl GameMapList {
+    pub fn paths(&self) -> Vec<String> {
+        self.names.iter().map(|name| format!("maps/{}.dwd", name)).collect()
+    }
+}
+
+#[derive(Resource, Clone)]
+pub struct LoadMapConfig {
+    pub map_path: String,
+    pub game_start_state: GameState,
+    pub admin_mode: AdminMode,
+}
+impl LoadMapConfig {
+    pub fn new(map_path: impl Into<String>) -> Self {
+        Self {
+            map_path: map_path.into(),
+            game_start_state: GameState::Running,
+            admin_mode: AdminMode::Disabled,
+        }
+    }
+}
+
 #[derive(Event)]
-pub struct LoadGameSignal(pub String);
+pub struct LoadGameSignal(pub LoadMapConfig);
 impl LoadGameSignal {
-    fn emit(
-        mut commands: Commands,
-    ) {
+    fn emit(mut commands: Commands) {
         Log::debug().dev().tag(Tag::GameLoad).message("Triggering load signal");
-        commands.trigger(LoadGameSignal("test_save.dwd".into()));
+        commands.trigger(LoadGameSignal(LoadMapConfig::new("test_save.dwd")));
     }
     fn on_trigger(
         trigger: On<LoadGameSignal>,
@@ -48,16 +88,18 @@ impl LoadGameSignal {
         mut save_executor: ResMut<GameSaveExecutor>,
         map_bound_entities: Query<Entity, With<MapBound>>,
     ) {
-        save_executor.save_name = trigger.event().0.clone();
-        Log::info().dev().tag(Tag::GameLoad).message(format!("Loading '{}'", trigger.event().0));
-        
+        let config = trigger.event().0.clone();
+        save_executor.save_name = config.map_path.clone();
+        Log::info().dev().tag(Tag::GameLoad).message(format!("Loading '{}'", config.map_path));
+
         // Run migrations synchronously on main thread before parallel loading starts
-        GameDbConnection::with_db_connection(&save_executor.save_name, |conn| {
-            //conn.execute("DELETE FROM refinery_schema_history;", []); // Used to clear rafinery migrations history, uncomment when in need.
+        GameDbConnection::with_db_connection(&config.map_path, |conn| {
+            //conn.execute("DELETE FROM refinery_schema_history;", [])?; // Used to clear refinery migrations history, uncomment when in need.
             db_migrations::migrations::runner().run(conn)?;
             Ok(())
         }).expect("Failed to run migrations on load");
-        
+
+        commands.insert_resource(config);
         next_game_state.set(GameState::Loading);
         next_map_loading_stage.set(MapLoadingStage::Init);
         next_ui_state.set(UiInteraction::Free);
@@ -65,6 +107,19 @@ impl LoadGameSignal {
         // Despawn all existing map elements
         map_bound_entities.iter().for_each(|entity| commands.entity(entity).despawn());
     }
+}
+
+fn on_map_load_ready(
+    mut commands: Commands,
+    mut next_game_state: ResMut<NextState<GameState>>,
+    mut next_admin_mode: ResMut<NextState<AdminMode>>,
+    load_config: Res<LoadMapConfig>,
+) {
+    Log::info().player().tag(Tag::GameLoad).message("Game loaded");
+    commands.trigger(DynamicGameEvent::game_started());
+    next_game_state.set(load_config.game_start_state);
+    (*next_admin_mode).set_if_neq(load_config.admin_mode);
+    commands.remove_resource::<LoadMapConfig>();
 }
 
 #[derive(Resource, Default)]
@@ -115,7 +170,6 @@ pub type LoaderFn = fn(&mut LoadContext) -> rusqlite::Result<LoadResult>;
 pub struct GameLoadRegistry {
     pub loaders: HashMap<MapLoadingStage, Vec<LoaderFn>>,
 }
-
 impl GameLoadRegistry {
     pub fn register<T: Loadable>(&mut self, phase: MapLoadingStage) {
         self.loaders.entry(phase).or_default().push(T::load);
@@ -134,7 +188,7 @@ impl Loadable for PopulateDbEntityMapTask {
         let mut map = HashMap::new();
         let mut stmt = ctx.conn.prepare("SELECT id FROM entities")?;
         let rows = stmt.query_map([], |row| row.get::<_, i64>(0))?;
-        
+
         let mut count = 0;
         for row in rows {
             let old_id = row?;
@@ -142,7 +196,7 @@ impl Loadable for PopulateDbEntityMapTask {
             map.insert(old_id, new_entity);
             count += 1;
         }
-        
+
         Log::debug().dev().tag(Tag::GameLoad).message(format!("EntityMap populated: {} entities", count));
         ctx.commands.insert_resource(DbEntityMap { map });
         Ok(LoadResult::Finished)
@@ -173,7 +227,7 @@ pub fn process_loading_tasks_system(
                          entity_map: &entity_map,
                          pagination: task.pagination,
                      };
-                     
+
                      match (task.loader)(&mut ctx) {
                          Ok(LoadResult::Finished) => {
                              cmd.entity(entity).despawn();
