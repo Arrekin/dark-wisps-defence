@@ -238,8 +238,10 @@ macro_rules! define_z_indexes {
 }
 
 define_z_indexes!(
+    Z_OVERLAY_EMISSIONS,
     Z_OBSTACLE,
     Z_OVERLAY_ENERGY_SUPPLY,
+    Z_OVERLAY_TOWER_RANGES,
     Z_BUILDING,
     Z_WISP,
     Z_GROUND_EFFECT,

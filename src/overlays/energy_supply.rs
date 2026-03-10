@@ -127,21 +127,16 @@ impl EnergySupplyOverlay {
         mut materials: ResMut<Assets<EnergySupplyHeatmapMaterial>>,
         overlay: Query<Entity, With<EnergySupplyOverlay>>,
     ) {
-        // First remove old overlay if exists
         if let Ok(overlay_entity) = overlay.single() {
             commands.entity(overlay_entity).despawn();
         };
 
         commands.spawn((
-            Mesh2d(meshes.add(Rectangle::new(1.0, 1.0))),
-            MeshMaterial2d(materials.add(EnergySupplyHeatmapMaterial::default())),
-            Transform::from_xyz(map_info.world_width as f32 / 2., map_info.world_height as f32 / 2., Z_OVERLAY_ENERGY_SUPPLY)
-                    .with_scale(Vec3::new(map_info.world_width as f32, -map_info.world_height as f32, 1.)), // Flip vertically due to coordinate system
+            super::overlay_bundle(&mut meshes, &mut materials, &map_info),
             EnergySupplyOverlay,
-            Visibility::Hidden,
+            ZDepth(Z_OVERLAY_ENERGY_SUPPLY),
         ));
     }
-
 }
 
 fn refresh_display_system(

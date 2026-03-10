@@ -124,41 +124,6 @@ impl EmissionsGrid {
         });
         self.version.energy = self.version.energy.wrapping_add(1);
     }
-    pub fn imprint_into_heatmap(&self, heatmap: &mut Vec<u8>, emissions_type: EmissionsType) {
-        let (min_emission, max_emission) = match emissions_type {
-            EmissionsType::Energy => {
-                let (mut min, mut max) = (f32::MAX, f32::MIN);
-                for emissions in self.grid.iter() {
-                    if emissions.energy != 0. {
-                        min = min.min(emissions.energy);
-                    }
-                    max = max.max(emissions.energy);
-                }
-                (min, max)
-            },
-        };
-        let emissions_range = max_emission - min_emission;
-        let mut idx = 0;
-        heatmap.chunks_mut(4).for_each(|chunk| {
-            let emissions = &self.grid[idx];
-            match emissions_type {
-                EmissionsType::Energy => {
-                    let value = {
-                        if emissions_range == 0. || emissions.energy == 0. {
-                            0
-                        } else {
-                            ((emissions.energy - min_emission) / emissions_range * 255.) as u8
-                        }
-                    };
-                    chunk[0] = 0;
-                    chunk[1] = value;
-                    chunk[2] = value;
-                    chunk[3] = 127;
-                }
-            }
-            idx += 1;
-        });
-    }
 }
 
 fn emissions_calculations_system(
