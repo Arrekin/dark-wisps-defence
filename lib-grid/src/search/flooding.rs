@@ -47,7 +47,7 @@ pub enum FloodEmissionsMode {
 pub fn flood_emissions<'a>(
     emissions_grid: &mut EmissionsGrid,
     obstacles_grid: &ObstacleGrid,
-    start_coords: impl IntoIterator<Item = &'a GridCoords> + Copy,
+    start_coords: impl IntoIterator<Item = GridCoords>,
     emissions_details: impl IntoIterator<Item = &'a FloodEmissionsDetails> + Copy,
     should_field_be_flooded: fn(&Field) -> bool,
 ) {
@@ -56,10 +56,10 @@ pub fn flood_emissions<'a>(
         let mut queue = VecDeque::new();
         let max_range = emissions_details.into_iter().map(|details| details.range).max().unwrap();
         start_coords.into_iter().for_each(|coords| {
-            queue.push_back((1, *coords));
-            visited_grid.set_visited(*coords);
+            queue.push_back((1, coords));
+            visited_grid.set_visited(coords);
             for details in emissions_details {
-                apply_emissions_details(emissions_grid, *coords, details, 1);
+                apply_emissions_details(emissions_grid, coords, details, 1);
             }
         });
         while let Some((distance, coords)) = queue.pop_front() {
@@ -116,9 +116,9 @@ pub enum FloodEnergySupplyMode {
 }
 
 /// Given start_coords, flood the supply in every direction in range
-pub fn flood_energy_supply<'a>(
+pub fn flood_energy_supply(
     energy_supply_grid: &mut EnergySupplyGrid,
-    start_coords: impl IntoIterator<Item = &'a GridCoords> + Copy,
+    start_coords: impl IntoIterator<Item = GridCoords>,
     mode: FloodEnergySupplyMode,
     range: EnergySupplyRange,
     supplier: Entity,
@@ -128,11 +128,11 @@ pub fn flood_energy_supply<'a>(
         let mut queue = VecDeque::new();
         start_coords.into_iter().for_each(|coords| {
             match mode {
-                FloodEnergySupplyMode::Increase => energy_supply_grid.add_supplier(*coords, supplier),
-                FloodEnergySupplyMode::Decrease => energy_supply_grid.remove_supplier(*coords, supplier),
+                FloodEnergySupplyMode::Increase => energy_supply_grid.add_supplier(coords, supplier),
+                FloodEnergySupplyMode::Decrease => energy_supply_grid.remove_supplier(coords, supplier),
             }
-            queue.push_back((0, *coords));
-            visited_grid.set_visited(*coords);
+            queue.push_back((0, coords));
+            visited_grid.set_visited(coords);
         });
         while let Some((distance, coords)) = queue.pop_front() {
             for (delta_x, delta_y) in CARDINAL_DIRECTIONS {
@@ -159,18 +159,18 @@ pub fn flood_energy_supply<'a>(
 
 
 /// Start with the list of generators coords and flood over all connected cells with energy supply
-pub fn flood_power_coverage<'a>(
+pub fn flood_power_coverage(
     energy_supply_grid: &mut EnergySupplyGrid,
-    start_coords: impl IntoIterator<Item = &'a GridCoords> + Copy,
+    start_coords: impl IntoIterator<Item = GridCoords>,
 ){
     energy_supply_grid.reset_all_power_indicators();
     VISITED_GRID.with_borrow_mut(|visited_grid| {
         visited_grid.resize_and_reset(energy_supply_grid.bounds());
         let mut queue = VecDeque::new();
         start_coords.into_iter().for_each(|coords| {
-            queue.push_back(*coords);
-            visited_grid.set_visited(*coords);
-            energy_supply_grid[*coords].set_power(true);
+            queue.push_back(coords);
+            visited_grid.set_visited(coords);
+            energy_supply_grid[coords].set_power(true);
         });
         while let Some(coords) = queue.pop_front() {
             for (delta_x, delta_y) in CARDINAL_DIRECTIONS {
@@ -198,9 +198,9 @@ pub enum FloodTowerRangeMode {
     Remove,
 }
 
-pub fn flood_tower_range<'a>(
+pub fn flood_tower_range(
     tower_ranges_grid: &mut TowerRangesGrid,
-    start_coords: impl IntoIterator<Item = &'a GridCoords> + Copy,
+    start_coords: impl IntoIterator<Item = GridCoords>,
     mode: FloodTowerRangeMode,
     range: usize,
     tower_entity: Entity,
@@ -210,11 +210,11 @@ pub fn flood_tower_range<'a>(
         let mut queue = VecDeque::new();
         start_coords.into_iter().for_each(|coords| {
             match mode {
-                FloodTowerRangeMode::Add => tower_ranges_grid.add_tower(*coords, tower_entity),
-                FloodTowerRangeMode::Remove => tower_ranges_grid.remove_tower(*coords, tower_entity),
+                FloodTowerRangeMode::Add => tower_ranges_grid.add_tower(coords, tower_entity),
+                FloodTowerRangeMode::Remove => tower_ranges_grid.remove_tower(coords, tower_entity),
             }
-            queue.push_back((0, *coords));
-            visited_grid.set_visited(*coords);
+            queue.push_back((0, coords));
+            visited_grid.set_visited(coords);
         });
         while let Some((distance, coords)) = queue.pop_front() {
             for (delta_x, delta_y) in CARDINAL_DIRECTIONS {

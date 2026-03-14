@@ -1,6 +1,7 @@
 use bevy::app::{App, Plugin};
 
 pub mod brittle;
+pub mod slow;
 
 pub struct EffectsPlugin;
 impl Plugin for EffectsPlugin {
@@ -8,6 +9,7 @@ impl Plugin for EffectsPlugin {
         app
             .add_plugins((
                 brittle::BrittleEffectPlugin,
+                slow::SlowEffectPlugin,
             ));
     }
 }

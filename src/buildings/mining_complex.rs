@@ -1,12 +1,55 @@
 use lib_core::map_objects::DarkOre;
+use lib_inventory::placement::{CellHighlight, PlacementValidity};
 
 use crate::map_objects::dark_ore::dark_ore_area_scanner::{DarkOreAreaScanner, DarkOreInRange};
 use crate::prelude::*;
 use crate::ui::indicators::{IndicatorDisplay, IndicatorType, Indicators};
 
+pub fn mining_complex_validator(_: MapObject, coords: GridCoords, imprint: GridImprint, map_data: &GridsCollectionParam) -> PlacementValidity {
+    if !coords.is_imprint_in_bounds(&imprint, map_data.obstacle_grid.bounds()) {
+        return PlacementValidity::Invalid;
+    }
+    if map_data.reserved_coords.any_reserved(coords, imprint) {
+        return PlacementValidity::Invalid;
+    }
+    let mut has_ore = false;
+    for cell in imprint.iter(coords) {
+        let field = &map_data.obstacle_grid[cell];
+        if field.has_structure() || field.is_within_quantum_field() {
+            return PlacementValidity::Invalid;
+        }
+        if field.has_dark_ore() { has_ore = true; }
+    }
+    if !has_ore {
+        return PlacementValidity::Invalid;
+    }
+    if !map_data.energy_supply_grid.is_imprint_powered(coords, imprint) {
+        return PlacementValidity::ValidUnpowered;
+    }
+    PlacementValidity::Valid
+}
+
+pub fn mining_complex_annotator(_: MapObject, coords: GridCoords, imprint: GridImprint, validity: PlacementValidity, map_data: &GridsCollectionParam) -> Vec<(GridCoords, CellHighlight)> {
+    match validity {
+        PlacementValidity::Invalid => imprint.iter(coords)
+            .filter(|c| {
+                !c.is_in_bounds(map_data.obstacle_grid.bounds())
+                    || map_data.obstacle_grid[*c].has_structure()
+                    || map_data.obstacle_grid[*c].is_within_quantum_field()
+            })
+            .map(|c| (c, CellHighlight::Negative))
+            .collect(),
+        _ => imprint.iter_in_bounds(coords, map_data.obstacle_grid.bounds())
+            .filter(|c| map_data.obstacle_grid[*c].has_dark_ore())
+            .map(|c| (c, CellHighlight::Positive))
+            .collect(),
+    }
+}
+
 pub struct MiningComplexPlugin;
 impl Plugin for MiningComplexPlugin {
     fn build(&self, app: &mut App) {
+        let almanach_info = BuilderMiningComplex::almanach_info(app.world().resource::<AssetServer>());
         app
             .add_systems(Update, (
                 mine_ore_system.run_if(in_state(GameState::Running)),
@@ -14,11 +57,10 @@ impl Plugin for MiningComplexPlugin {
             .add_observer(BuilderMiningComplex::on_add)
             .register_db_loader::<BuilderMiningComplex>(MapLoadingStage::SpawnMapElements)
             .register_db_saver(BuilderMiningComplex::on_game_save)
-            .register_building(BuildingType::MiningComplex, BuilderMiningComplex::almanach_info());
+            .register_building(BuildingType::MiningComplex, almanach_info)
+            ;
     }
 }
-
-pub const MINING_COMPLEX_BASE_IMAGE: &str = "buildings/mining_complex.png";
 
 
 #[derive(Component)]
@@ -75,13 +117,16 @@ impl Loadable for BuilderMiningComplex {
     }
 }
 impl BuilderMiningComplex {
-    pub fn almanach_info() -> BuildingInfo {
+    pub fn almanach_info(asset_server: &AssetServer) -> BuildingInfo {
         BuildingInfo {
             name: "Mining Complex".to_string(),
+            sprite: asset_server.load("buildings/mining_complex.png"),
+            top_sprite: None,
             grid_imprint: GridImprint::Rectangle { width: 3, height: 3 },
             cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 100 }],
             baseline: HashMap::from([(ModifierType::MaxIntegrityPoints, 100.)]),
-            validate: building_validator,
+            validate: mining_complex_validator,
+            annotate: mining_complex_annotator,
         }
     }
 
@@ -113,7 +158,6 @@ impl BuilderMiningComplex {
         trigger: On<Add, BuilderMiningComplex>,
         mut commands: Commands,
         builders: Query<&BuilderMiningComplex>,
-        asset_server: Res<AssetServer>,
         almanach: Res<Almanach>,
     ) {
         let entity = trigger.entity;
@@ -136,7 +180,7 @@ impl BuilderMiningComplex {
             .insert((
                 MiningComplex,
                 Sprite {
-                    image: asset_server.load(MINING_COMPLEX_BASE_IMAGE),
+                    image: building_info.sprite.clone(),
                     custom_size: Some(grid_imprint.world_size()),
                     ..Default::default()
                 },

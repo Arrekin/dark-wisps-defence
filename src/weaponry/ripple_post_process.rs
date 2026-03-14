@@ -164,7 +164,7 @@ impl RipplePostProcess {
 // ── Render graph ──────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, RenderLabel)]
-struct RipplePostProcessLabel;
+pub struct RipplePostProcessLabel;
 
 #[derive(Default)]
 struct RipplePostProcessNode;

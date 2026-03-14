@@ -6,6 +6,7 @@ use crate::wisps::components::Wisp;
 pub struct TowerEmitterPlugin;
 impl Plugin for TowerEmitterPlugin {
     fn build(&self, app: &mut App) {
+        let almanach_info = BuilderTowerEmitter::almanach_info(app.world().resource::<AssetServer>());
         app
             .add_observer(BuilderTowerEmitter::on_add)
             .add_systems(Update, (
@@ -13,11 +14,10 @@ impl Plugin for TowerEmitterPlugin {
             ))
             .register_db_loader::<BuilderTowerEmitter>(MapLoadingStage::SpawnMapElements)
             .register_db_saver(BuilderTowerEmitter::on_game_save)
-            .register_building(BuildingType::Tower(TowerType::Emitter), BuilderTowerEmitter::almanach_info());
+            .register_building(BuildingType::Tower(TowerType::Emitter), almanach_info)
+            ;
     }
 }
-
-pub const TOWER_EMITTER_BASE_IMAGE: &str = "buildings/tower_emitter.png";
 
 #[derive(Clone, Debug)]
 pub struct TowerEmitterSaveData {
@@ -72,9 +72,11 @@ impl Loadable for BuilderTowerEmitter {
 }
 
 impl BuilderTowerEmitter {
-    pub fn almanach_info() -> BuildingInfo {
+    pub fn almanach_info(asset_server: &AssetServer) -> BuildingInfo {
         BuildingInfo {
             name: "Emitter Tower".to_string(),
+            sprite: asset_server.load("buildings/tower_emitter.png"),
+            top_sprite: None,
             grid_imprint: GridImprint::Rectangle { width: 2, height: 2 },
             cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 450 }],
             baseline: HashMap::from([
@@ -84,6 +86,7 @@ impl BuilderTowerEmitter {
                 (ModifierType::AttackDamage, 1.),
             ]),
             validate: building_validator,
+            annotate: annotate_non_empty,
         }
     }
 
@@ -112,7 +115,6 @@ impl BuilderTowerEmitter {
         trigger: On<Add, BuilderTowerEmitter>,
         mut commands: Commands,
         builders: Query<&BuilderTowerEmitter>,
-        asset_server: Res<AssetServer>,
         almanach: Res<Almanach>,
     ) {
         let entity = trigger.entity;
@@ -134,11 +136,10 @@ impl BuilderTowerEmitter {
             .insert((
                 TowerEmitter,
                 Sprite {
-                    image: asset_server.load(TOWER_EMITTER_BASE_IMAGE),
+                    image: building_info.sprite.clone(),
                     custom_size: Some(grid_imprint.world_size()),
                     ..Default::default()
                 },
-                Tower,
                 builder.grid_position,
                 grid_imprint,
                 NeedsPower::default(),

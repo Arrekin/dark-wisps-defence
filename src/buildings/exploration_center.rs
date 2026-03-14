@@ -35,6 +35,7 @@ use crate::map_objects::common::ExpeditionZone;
 pub struct ExplorationCenterPlugin;
 impl Plugin for ExplorationCenterPlugin {
     fn build(&self, app: &mut App) {
+        let almanach_info = BuilderExplorationCenter::almanach_info(app.world().resource::<AssetServer>());
         app
             .add_systems(Update, (
                 DroneSlot::update,
@@ -59,12 +60,10 @@ impl Plugin for ExplorationCenterPlugin {
             .add_observer(TargetListItemCameraPreview::on_add)
             .register_db_loader::<BuilderExplorationCenter>(MapLoadingStage::SpawnMapElements)
             .register_db_saver(BuilderExplorationCenter::on_game_save)
-            .register_building(BuildingType::ExplorationCenter, BuilderExplorationCenter::almanach_info())
+            .register_building(BuildingType::ExplorationCenter, almanach_info)
             ;
     }
 }
-
-pub const EXPLORATION_CENTER_BASE_IMAGE: &str = "buildings/exploration_center.png";
 
 
 
@@ -119,13 +118,16 @@ impl Loadable for BuilderExplorationCenter {
     }
 }
 impl BuilderExplorationCenter {
-    pub fn almanach_info() -> BuildingInfo {
+    pub fn almanach_info(asset_server: &AssetServer) -> BuildingInfo {
         BuildingInfo {
             name: "Exploration Center".to_string(),
+            sprite: asset_server.load("buildings/exploration_center.png"),
+            top_sprite: None,
             grid_imprint: GridImprint::Rectangle { width: 4, height: 4 },
             cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 500 }],
             baseline: HashMap::from([(ModifierType::MaxIntegrityPoints, 100.)]),
             validate: building_validator,
+            annotate: annotate_non_empty,
         }
     }
 
@@ -157,7 +159,6 @@ impl BuilderExplorationCenter {
         trigger: On<Add, BuilderExplorationCenter>,
         mut commands: Commands,
         builders: Query<&BuilderExplorationCenter>,
-        asset_server: Res<AssetServer>,
         almanach: Res<Almanach>,
     ) {
         let entity = trigger.entity;
@@ -180,7 +181,7 @@ impl BuilderExplorationCenter {
             .insert((
                 ExplorationCenter::new(2),
                 Sprite {
-                    image: asset_server.load(EXPLORATION_CENTER_BASE_IMAGE),
+                    image: building_info.sprite.clone(),
                     custom_size: Some(grid_imprint.world_size()),
                     ..Default::default()
                 },

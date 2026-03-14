@@ -8,15 +8,15 @@ use crate::ui::indicators::{IndicatorDisplay, IndicatorType, Indicators};
 pub struct EnergyRelayPlugin;
 impl Plugin for EnergyRelayPlugin {
     fn build(&self, app: &mut App) {
+        let almanach_info = BuilderEnergyRelay::almanach_info(app.world().resource::<AssetServer>());
         app
             .add_observer(BuilderEnergyRelay::on_add)
             .register_db_loader::<BuilderEnergyRelay>(MapLoadingStage::SpawnMapElements)
             .register_db_saver(BuilderEnergyRelay::on_game_save)
-            .register_building(BuildingType::EnergyRelay, BuilderEnergyRelay::almanach_info());
+            .register_building(BuildingType::EnergyRelay, almanach_info)
+            ;
     }
 }
-
-pub const ENERGY_RELAY_BASE_IMAGE: &str = "buildings/energy_relay.png";
 
 #[derive(Clone, Copy, Debug)]
 pub struct EnergyRelaySaveData {
@@ -69,9 +69,11 @@ impl Loadable for BuilderEnergyRelay {
     }
 }
 impl BuilderEnergyRelay {
-    pub fn almanach_info() -> BuildingInfo {
+    pub fn almanach_info(asset_server: &AssetServer) -> BuildingInfo {
         BuildingInfo {
             name: "Energy Relay".to_string(),
+            sprite: asset_server.load("buildings/energy_relay.png"),
+            top_sprite: None,
             grid_imprint: GridImprint::Rectangle { width: 2, height: 2 },
             cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 300 }],
             baseline: HashMap::from([
@@ -79,6 +81,7 @@ impl BuilderEnergyRelay {
                 (ModifierType::EnergySupplyRange, 12.),
             ]),
             validate: building_validator,
+            annotate: annotate_non_empty,
         }
     }
 
@@ -110,14 +113,13 @@ impl BuilderEnergyRelay {
         trigger: On<Add, BuilderEnergyRelay>,
         mut commands: Commands,
         builders: Query<&BuilderEnergyRelay>,
-        asset_server: Res<AssetServer>,
         almanach: Res<Almanach>,
     ) {
         let entity = trigger.entity;
         let Ok(builder) = builders.get(entity) else { return; };
-        
+
         let building_info = almanach.get_building_info(BuildingType::EnergyRelay);
-        
+
         let mut entity_commands = commands.entity(entity);
         if let Some(save_data) = &builder.save_data {
             // Save data
@@ -132,7 +134,7 @@ impl BuilderEnergyRelay {
             .insert((
                 EnergyRelay,
                 Sprite {
-                    image: asset_server.load(ENERGY_RELAY_BASE_IMAGE),
+                    image: building_info.sprite.clone(),
                     custom_size: Some(building_info.grid_imprint.world_size()),
                     color: Color::hsla(0., 0.2, 1.0, 1.0), // 1.6 is a good value if the pulsation is off.
                     ..Default::default()

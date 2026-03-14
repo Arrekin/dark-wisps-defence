@@ -6,13 +6,15 @@ use lib_core::{
 use crate::{
     lib_prelude::*,
     placement::{
-        GridsCollection, ObjectPlacementInfo, PlacementMode, PlacementValidationResult,
-        PlacementValidatorFn,
+        ObjectPlacementInfo,
+        PlacementAnnotatorFn, PlacementMode, PlacementValidity, PlacementValidatorFn,
+        validator_all_empty,
     },
 };
 
 pub mod almanach_prelude {
     pub use super::{Almanach, AlmanachAppExt, BuildingInfo, building_validator};
+    pub use crate::placement::{annotate_non_empty, GridsCollectionParam, PlacementValidity};
 }
 
 pub struct AlmanachPlugin;
@@ -131,33 +133,21 @@ impl Almanach {
 // BUILDING INFO
 // ============================================================================
 
-pub fn building_validator(map_object: MapObject, coords: GridCoords, imprint: GridImprint, map_data: &GridsCollection) -> PlacementValidationResult {
+pub fn building_validator(map_object: MapObject, coords: GridCoords, imprint: GridImprint, map_data: &GridsCollectionParam) -> PlacementValidity {
     let MapObject::Building(building_type) = map_object else {
-        return PlacementValidationResult::invalid();
+        return PlacementValidity::Invalid;
     };
 
-    // Bounds check
-    if !coords.is_imprint_in_bounds(&imprint, map_data.obstacle_grid.bounds()) {
-        return PlacementValidationResult::invalid();
+    if validator_all_empty(map_object, coords, imprint, map_data) == PlacementValidity::Invalid {
+        return PlacementValidity::Invalid;
     }
 
-    // Reserved check
-    if map_data.reserved_coords.any_reserved(coords, imprint) {
-        return PlacementValidationResult::invalid();
-    }
-
-    // Obstacle check
-    if !map_data.obstacle_grid.query_building_placement(coords, building_type, imprint) {
-        return PlacementValidationResult::invalid();
-    }
-
-    // Power check
     let needs_power = !matches!(building_type, BuildingType::MainBase | BuildingType::EnergyRelay);
     if needs_power && !map_data.energy_supply_grid.is_imprint_powered(coords, imprint) {
-        return PlacementValidationResult::valid_unpowered();
+        return PlacementValidity::ValidUnpowered;
     }
 
-    PlacementValidationResult::valid()
+    PlacementValidity::Valid
 }
 
 #[derive(Clone)]
@@ -167,6 +157,9 @@ pub struct BuildingInfo {
     pub cost: Vec<Cost>,
     pub baseline: HashMap<ModifierType, f32>,
     pub validate: PlacementValidatorFn,
+    pub annotate: PlacementAnnotatorFn,
+    pub sprite: Handle<Image>,
+    pub top_sprite: Option<Handle<Image>>,
 }
 
 impl From<&BuildingInfo> for ObjectPlacementInfo {
@@ -174,11 +167,13 @@ impl From<&BuildingInfo> for ObjectPlacementInfo {
         Self {
             imprint: info.grid_imprint,
             validate: info.validate,
+            annotate: info.annotate,
             place_emitter: Box::new(PlaceRequest::<Building>::default()),
             remove_emitter: None,
             begin_placing_emitter: None,
             place_mode: PlacementMode::OnRelease,
             remove_mode: PlacementMode::OnRelease,
+            preview_image: Some(info.sprite.clone()),
         }
     }
 }
@@ -191,8 +186,9 @@ impl From<&BuildingInfo> for ObjectPlacementInfo {
 pub struct WallInfo {
     pub name: String,
     pub grid_imprint: GridImprint,
-    pub sprite_path: String,
+    pub sprite: Handle<Image>,
     pub validate: PlacementValidatorFn,
+    pub annotate: PlacementAnnotatorFn,
 }
 
 impl From<&WallInfo> for ObjectPlacementInfo {
@@ -200,11 +196,13 @@ impl From<&WallInfo> for ObjectPlacementInfo {
         Self {
             imprint: info.grid_imprint,
             validate: info.validate,
+            annotate: info.annotate,
             place_emitter: Box::new(PlaceRequest::<Wall>::default()),
             remove_emitter: Some(Box::new(RemoveRequest::<Wall>::default())),
             begin_placing_emitter: None,
             place_mode: PlacementMode::OnPress,
             remove_mode: PlacementMode::OnPress,
+            preview_image: Some(info.sprite.clone()),
         }
     }
 }
@@ -217,9 +215,10 @@ impl From<&WallInfo> for ObjectPlacementInfo {
 pub struct DarkOreInfo {
     pub name: String,
     pub grid_imprint: GridImprint,
-    pub sprite_paths: Vec<String>,
+    pub sprites: Vec<Handle<Image>>,
     pub default_amount: u32,
     pub validate: PlacementValidatorFn,
+    pub annotate: PlacementAnnotatorFn,
 }
 
 impl From<&DarkOreInfo> for ObjectPlacementInfo {
@@ -227,11 +226,13 @@ impl From<&DarkOreInfo> for ObjectPlacementInfo {
         Self {
             imprint: info.grid_imprint,
             validate: info.validate,
+            annotate: info.annotate,
             place_emitter: Box::new(PlaceRequest::<DarkOre>::default()),
             remove_emitter: Some(Box::new(RemoveRequest::<DarkOre>::default())),
             begin_placing_emitter: None,
             place_mode: PlacementMode::OnPress,
             remove_mode: PlacementMode::OnPress,
+            preview_image: info.sprites.first().cloned(),
         }
     }
 }
@@ -247,6 +248,7 @@ pub struct QuantumFieldInfo {
     pub max_size: i32,
     pub default_size: i32,
     pub validate: PlacementValidatorFn,
+    pub annotate: PlacementAnnotatorFn,
 }
 
 impl From<&QuantumFieldInfo> for ObjectPlacementInfo {
@@ -254,11 +256,13 @@ impl From<&QuantumFieldInfo> for ObjectPlacementInfo {
         Self {
             imprint: info.default_imprint(),
             validate: info.validate,
+            annotate: info.annotate,
             place_emitter: Box::new(PlaceRequest::<QuantumField>::default()),
             remove_emitter: Some(Box::new(RemoveRequest::<QuantumField>::default())),
             begin_placing_emitter: Some(Box::new(BeginPlacing::<QuantumField>::default())),
             place_mode: PlacementMode::OnRelease,
             remove_mode: PlacementMode::OnRelease,
+            preview_image: None,
         }
     }
 }
@@ -277,6 +281,7 @@ impl QuantumFieldInfo {
 pub struct WispInfo {
     pub grid_imprint: GridImprint,
     pub validate: PlacementValidatorFn,
+    pub annotate: PlacementAnnotatorFn,
 }
 
 impl From<&WispInfo> for ObjectPlacementInfo {
@@ -284,11 +289,13 @@ impl From<&WispInfo> for ObjectPlacementInfo {
         Self {
             imprint: info.grid_imprint,
             validate: info.validate,
+            annotate: info.annotate,
             place_emitter: Box::new(PlaceRequest::<WispType>::default()),
             remove_emitter: Some(Box::new(RemoveRequest::<WispType>::default())),
             begin_placing_emitter: None,
             place_mode: PlacementMode::OnPress,
             remove_mode: PlacementMode::OnPress,
+            preview_image: None,
         }
     }
 }

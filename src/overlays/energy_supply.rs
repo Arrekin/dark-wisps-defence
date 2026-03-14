@@ -165,9 +165,7 @@ fn refresh_display_system(
             overlay_creator.generate_buffer_data(&HighlightMode::Selected(vec![*building]))
         }
         EnergySupplyOverlaySecondaryMode::PlacingConsumer{grid_coords, grid_imprint} => {
-            let suppliers = grid_imprint.covered_coords(*grid_coords)
-                .into_iter()
-                .filter(|coords| coords.is_in_bounds(energy_supply_grid.bounds()))
+            let suppliers = grid_imprint.iter_in_bounds(*grid_coords, energy_supply_grid.bounds())
                 .flat_map(|coords| energy_supply_grid[coords].suppliers())
                 .collect::<HashSet<_>>()
                 .into_iter()
@@ -177,12 +175,10 @@ fn refresh_display_system(
         }
         EnergySupplyOverlaySecondaryMode::PlacingSupplier{grid_coords, grid_imprint, range} => {
             if grid_coords.is_in_bounds(energy_supply_grid.bounds()) {
-                let covered_coords = grid_imprint.covered_coords(*grid_coords)
-                    .iter()
-                    .copied()
-                    .filter(|coords| coords.is_in_bounds(energy_supply_grid.bounds()))
-                    .collect::<Vec<_>>();
-                overlay_creator.flood_potential_energy_supply_to_overlay_heatmap(&covered_coords, *range)
+                overlay_creator.flood_potential_energy_supply_to_overlay_heatmap(
+                    grid_imprint.iter_in_bounds(*grid_coords, energy_supply_grid.bounds()),
+                    *range,
+                )
             } else {
                 overlay_creator.generate_buffer_data(&HighlightMode::All)
             }
@@ -322,22 +318,24 @@ impl<'a> OverlayBufferCreator<'a> {
     /// It writes directly to the overlay texture, so it's only a visual cue that does not affect the actual grid.
     fn flood_potential_energy_supply_to_overlay_heatmap(
         &mut self,
-        start_coords: impl IntoIterator<Item = &'a GridCoords> + Copy,
+        start_coords: impl IntoIterator<Item = GridCoords>,
         range: usize,
     ) {
         use std::collections::VecDeque;
-        
+        // Collected because this function needs two passes over the start coords.
+        let start_coords: Vec<GridCoords> = start_coords.into_iter().collect();
+
         // Start with base buffer data
         self.generate_buffer_data(&HighlightMode::All);
         let buffer_data = self.local_buffer_data.take().unwrap();
         let bounds = self.energy_supply_grid.bounds();
-        
+
         VISITED_GRID.with_borrow_mut(|visited_grid| {
             visited_grid.resize_and_reset(bounds);
             let mut queue = VecDeque::new();
-            
+
             // Start Flood from all fields to ensure event distance from buildings that are bigger than one cell
-            start_coords.into_iter().for_each(|coords| {
+            start_coords.iter().for_each(|coords| {
                 let index = self.energy_supply_grid.index(*coords);
                 buffer_data[index] = EnergySupplyCell::with_supply(false, HighlightLevel::Highlighted);
                 queue.push_back((0, *coords));
@@ -383,7 +381,7 @@ impl<'a> OverlayBufferCreator<'a> {
                 visited_grid.reset();
                 queue.clear();
                 
-                start_coords.into_iter().for_each(|coords| {
+                start_coords.iter().for_each(|coords| {
                     let index = self.energy_supply_grid.index(*coords);
                     buffer_data[index] = EnergySupplyCell::with_supply(true, HighlightLevel::Highlighted);
                     queue.push_back((0, *coords));

@@ -49,7 +49,8 @@ impl SupplierEnergy {
 
         supplier_changed_event_writer.write(SupplierChangedEvent {
             supplier: entity,
-            coords: grid_imprint.covered_coords(*grid_coords),
+            imprint: *grid_imprint,
+            grid_coords: *grid_coords,
             range: *energy_supply_range,
             mode: FloodEnergySupplyMode::Increase,
         });
@@ -66,7 +67,8 @@ impl SupplierEnergy {
 
         supplier_changed_event_writer.write(SupplierChangedEvent {
             supplier: entity,
-            coords: grid_imprint.covered_coords(*grid_coords),
+            imprint: *grid_imprint,
+            grid_coords: *grid_coords,
             range: *energy_supply_range,
             mode: FloodEnergySupplyMode::Decrease,
         });
@@ -81,7 +83,8 @@ pub struct GeneratorEnergy;
 #[derive(Message)]
 pub struct SupplierChangedEvent {
     pub supplier: Entity,
-    pub coords: Vec<GridCoords>,
+    pub imprint: GridImprint,
+    pub grid_coords: GridCoords,
     pub range: EnergySupplyRange,
     pub mode: FloodEnergySupplyMode,
 }
@@ -117,39 +120,13 @@ impl EnergySupplyGrid {
         self[coords].remove_supplier(supplier);
         self.version = self.version.wrapping_add(1);
     }
-    /// At least one of the imprint's cells mut have energy supply.
+    /// At least one of the imprint's cells must have energy supply.
     pub fn is_imprint_suppliable(&self, coords: GridCoords, imprint: GridImprint) -> bool {
-        match imprint {
-            GridImprint::Rectangle { width, height } => {
-                for y in 0..height {
-                    for x in 0..width {
-                        let inner_coords = coords.shifted((x, y));
-                        if inner_coords.is_in_bounds(self.bounds()) && self[inner_coords].has_supply() {
-                            return true;
-                        }
-
-                    }
-                }
-            }
-        }
-        false
+        imprint.iter_in_bounds(coords, self.bounds()).any(|c| self[c].has_supply())
     }
     /// At least one of the imprint's cells must have power.
     pub fn is_imprint_powered(&self, coords: GridCoords, imprint: GridImprint) -> bool {
-        match imprint {
-            GridImprint::Rectangle { width, height } => {
-                for y in 0..height {
-                    for x in 0..width {
-                        let inner_coords = coords.shifted((x, y));
-                        if inner_coords.is_in_bounds(self.bounds()) && self[inner_coords].has_power() {
-                            return true;
-                        }
-
-                    }
-                }
-            }
-        }
-        false
+        imprint.iter_in_bounds(coords, self.bounds()).any(|c| self[c].has_power())
     }
     pub fn reset_all_power_indicators(&mut self) {
         self.grid.iter_mut().for_each(|field| field.set_power(false));
@@ -165,7 +142,7 @@ fn on_supplier_changed_system(
     for event in events.read() {
         flood_energy_supply(
             &mut energy_supply_grid,
-            &event.coords,
+            event.imprint.iter(event.grid_coords),
             event.mode,
             event.range,
             event.supplier,
@@ -182,7 +159,7 @@ fn on_recalculate_power_system(
     if !need_recalculate_power.0 { return; }
     need_recalculate_power.0 = false;
 
-    flood_power_coverage(&mut energy_supply_grid, &generators_energy);
+    flood_power_coverage(&mut energy_supply_grid, generators_energy.iter().copied());
 }
 
 // ============================================================================

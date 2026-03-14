@@ -54,29 +54,11 @@ pub type ObstacleGrid = BaseGrid<Field, GridVersion>;
 
 impl ObstacleGrid {
     pub fn imprint_structure(&mut self, coords: GridCoords, imprint: GridImprint, structure: GridStructureType) {
-        match imprint {
-            GridImprint::Rectangle { width, height } => {
-                for y in 0..height {
-                    for x in 0..width {
-                        let index = self.index(coords.shifted((x, y)));
-                        self.grid[index].structure = structure.clone();
-                    }
-                }
-            }
-        }
+        imprint.iter(coords).for_each(|cell| self[cell].structure = structure.clone());
         self.version = self.version.wrapping_add(1);
     }
     pub fn deprint_structure(&mut self, coords: GridCoords, imprint: GridImprint) {
-        match imprint {
-            GridImprint::Rectangle { width, height } => {
-                for y in 0..height {
-                    for x in 0..width {
-                        let index = self.index(coords.shifted((x, y)));
-                        self.grid[index].structure = GridStructureType::Empty;
-                    }
-                }
-            }
-        }
+        imprint.iter(coords).for_each(|cell| self[cell].structure = GridStructureType::Empty);
         self.version = self.version.wrapping_add(1);
     }
     // Naive reprint that deprints all in old coords and hard imprints in new coords
@@ -84,104 +66,25 @@ impl ObstacleGrid {
         self.deprint_structure(old_coords, imprint);
         self.imprint_structure(new_coords, imprint, new_structure);
     }
+    /// True if `query` returns true for every in-bounds cell of the imprint.
     pub fn query_imprint_all(&self, coords: GridCoords, imprint: GridImprint, query: fn(&Field) -> bool) -> bool {
-        match imprint {
-            GridImprint::Rectangle { width, height } => {
-                for y in 0..height {
-                    for x in 0..width {
-                        let inner_coords = coords.shifted((x, y));
-                        if inner_coords.is_in_bounds(self.bounds()) && !query(&self[inner_coords]) {
-                            return false;
-                        }
-                    }
-                }
-            }
-        }
-        true
+        imprint.iter_in_bounds(coords, self.bounds()).all(|c| query(&self[c]))
     }
+    /// True if `query` returns true for at least one in-bounds cell of the imprint.
     pub fn query_imprint_any(&self, coords: GridCoords, imprint: GridImprint, query: fn(&Field) -> bool) -> bool {
-        match imprint {
-            GridImprint::Rectangle { width, height } => {
-                for y in 0..height {
-                    for x in 0..width {
-                        let inner_coords = coords.shifted((x, y));
-                        if inner_coords.is_in_bounds(self.bounds()) && query(&self[inner_coords]) {
-                            return true;
-                        }
-                    }
-                }
-            }
-        }
-        false
+        imprint.iter_in_bounds(coords, self.bounds()).any(|c| query(&self[c]))
     }
+    /// Number of in-bounds cells for which `query` returns true.
     pub fn query_imprint_count(&self, coords: GridCoords, imprint: GridImprint, query: fn(&Field) -> bool) -> usize {
-        let mut count = 0;
-        match imprint {
-            GridImprint::Rectangle { width, height } => {
-                for y in 0..height {
-                    for x in 0..width {
-                        let inner_coords = coords.shifted((x, y));
-                        if inner_coords.is_in_bounds(self.bounds()) && query(&self[inner_coords]) {
-                            count += 1;
-                        }
-                    }
-                }
-            }
-        }
-        count
+        imprint.iter_in_bounds(coords, self.bounds()).filter(|c| query(&self[*c])).count()
     }
+    /// Collects the non-None results of `query` over every in-bounds cell.
     pub fn query_imprint_element<T>(&self, coords: GridCoords, imprint: GridImprint, query: fn(&Field) -> Option<T>) -> Vec<T> {
-        let mut vec = Vec::new();
-        match imprint {
-            GridImprint::Rectangle { width, height } => {
-                for y in 0..height {
-                    for x in 0..width {
-                        let inner_coords = coords.shifted((x, y));
-                        if inner_coords.is_in_bounds(self.bounds()) {
-                            if let Some(element) = query(&self[inner_coords]) {
-                                vec.push(element);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        vec
-    }
-
-    pub fn query_building_placement(&self, coords: GridCoords, building_type: BuildingType, imprint: GridImprint) -> bool {
-        match building_type {
-            BuildingType::MiningComplex => {
-                //MiningComplex requires at least one DarkOre cell and no other obstacles
-                let GridImprint::Rectangle{ width, height } = imprint;
-                let mut has_dark_ore = false;
-                for y in 0..height {
-                    for x in 0..width {
-                        let inner_coords = coords.shifted((x, y));
-                        if !inner_coords.is_in_bounds(self.bounds()) { return false; }
-                        
-                        let field = &self[inner_coords];
-                        if field.is_within_quantum_field() || field.has_structure() { return false }
-                        if field.has_dark_ore() { has_dark_ore = true; }
-                    }
-                }
-                return has_dark_ore;
-            },
-            _ => self.query_imprint_all(coords, imprint, |field| field.is_empty()),
-        }
+        imprint.iter_in_bounds(coords, self.bounds()).filter_map(|c| query(&self[c])).collect()
     }
 
     pub fn imprint_custom(&mut self, coords: GridCoords, imprint: GridImprint, imprint_fn: impl Fn(&mut Field)) {
-        match imprint {
-            GridImprint::Rectangle { width, height } => {
-                for y in 0..height {
-                    for x in 0..width {
-                        let index = self.index(coords.shifted((x, y)));
-                        imprint_fn(&mut self.grid[index]);
-                    }
-                }
-            }
-        }
+        imprint.iter(coords).for_each(|cell| imprint_fn(&mut self[cell]));
         self.version = self.version.wrapping_add(1);
     }
 }
@@ -241,29 +144,10 @@ pub struct ReservedCoords {
 }
 impl ReservedCoords {
     pub fn reserve(&mut self, coords: GridCoords, imprint: GridImprint) {
-        match imprint {
-            GridImprint::Rectangle { width, height } => {
-                for y in 0..height {
-                    for x in 0..width {
-                        let inner_coords = coords.shifted((x, y));
-                        self.for_structures.insert(inner_coords);
-                    }
-                }
-            }
-        }
+        self.for_structures.extend(imprint.iter(coords));
     }
     pub fn any_reserved(&self, coords: GridCoords, imprint: GridImprint) -> bool {
-        match imprint {
-            GridImprint::Rectangle { width, height } => {
-                for y in 0..height {
-                    for x in 0..width {
-                        let inner_coords = coords.shifted((x, y));
-                        if self.for_structures.contains(&inner_coords) { return true; }
-                    }
-                }
-                false
-            }
-        }
+        imprint.iter(coords).any(|c| self.for_structures.contains(&c))
     }
     fn clear_system(mut reserved_coords: ResMut<ReservedCoords>) {
         reserved_coords.for_structures.clear();

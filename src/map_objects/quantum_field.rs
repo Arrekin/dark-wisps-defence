@@ -21,9 +21,8 @@
 use bevy::color::palettes::css::{AQUA, BLUE, INDIGO};
 
 use lib_core::map_objects::QuantumField;
-use lib_grid::grids::obstacles::{ObstacleGrid, ReservedCoords};
 use lib_inventory::almanach::QuantumFieldInfo;
-use lib_inventory::placement::{GridsCollection, PlacementValidationResult};
+use lib_inventory::placement::{CellHighlight, GridsCollectionParam, PlacementValidity};
 use lib_ui::prelude::*;
 
 use crate::map_objects::common::ExpeditionZone;
@@ -64,6 +63,7 @@ impl Plugin for QuantumFieldPlugin {
             max_size: 6,
             default_size: 3,
             validate: quantum_field_validator,
+            annotate: quantum_field_annotator,
         })
         ;
     }
@@ -263,45 +263,61 @@ pub fn quantum_field_validator(
     _: MapObject,
     coords: GridCoords,
     imprint: GridImprint,
-    grids: &GridsCollection,
-) -> PlacementValidationResult {
+    grids: &GridsCollectionParam,
+) -> PlacementValidity {
     if !coords.is_in_bounds(grids.obstacle_grid.bounds()) {
-        return PlacementValidationResult::invalid();
+        return PlacementValidity::Invalid;
     }
     if grids.reserved_coords.any_reserved(coords, imprint) {
-        return PlacementValidationResult::invalid();
+        return PlacementValidity::Invalid;
     }
     if !grids.obstacle_grid.query_imprint_all(coords, imprint, |f| !f.is_within_quantum_field()) {
-        return PlacementValidationResult::invalid();
+        return PlacementValidity::Invalid;
     }
-    PlacementValidationResult::valid()
+    PlacementValidity::Valid
+}
+
+pub fn quantum_field_annotator(
+    _: MapObject,
+    coords: GridCoords,
+    imprint: GridImprint,
+    validity: PlacementValidity,
+    grids: &GridsCollectionParam,
+) -> Vec<(GridCoords, CellHighlight)> {
+    if validity != PlacementValidity::Invalid {
+        return vec![];
+    }
+    imprint.iter(coords)
+        .filter(|c| {
+            !c.is_in_bounds(grids.obstacle_grid.bounds())
+                || grids.obstacle_grid[*c].is_within_quantum_field()
+        })
+        .map(|c| (c, CellHighlight::Negative))
+        .collect()
 }
 
 fn on_quantum_field_place_request(
     _trigger: On<lib_core::placement::PlaceRequest<QuantumField>>,
     mut commands: Commands,
-    mut reserved_coords: ResMut<ReservedCoords>,
-    obstacles_grid: Res<ObstacleGrid>,
+    almanach: Res<Almanach>,
+    mut grids: GridsCollectionParam,
     placer: Single<(&GridCoords, &GridImprint), With<GridObjectPlacer>>,
 ) {
     let (coords, grid_imprint) = placer.into_inner();
-    if !coords.is_in_bounds(obstacles_grid.bounds()) { return; }
-
-    let is_area_free_from_quantum_fields = obstacles_grid.query_imprint_all(*coords, *grid_imprint, |field| !field.is_within_quantum_field());
-    if is_area_free_from_quantum_fields && !reserved_coords.any_reserved(*coords, *grid_imprint) {
-        commands.spawn(BuilderQuantumField::new(*coords, *grid_imprint));
-        reserved_coords.reserve(*coords, *grid_imprint);
-    }
+    let validity = (almanach.quantum_fields.validate)(MapObject::QuantumField, *coords, *grid_imprint, &grids);
+    if validity == PlacementValidity::Invalid { return; }
+    commands.spawn(BuilderQuantumField::new(*coords, *grid_imprint));
+    grids.reserved_coords.reserve(*coords, *grid_imprint);
 }
 
 fn on_quantum_field_remove_request(
     _trigger: On<lib_core::placement::RemoveRequest<QuantumField>>,
     mut commands: Commands,
-    obstacles_grid: Res<ObstacleGrid>,
+    grids: GridsCollectionParam,
     placer: Single<&GridCoords, With<GridObjectPlacer>>,
 ) {
     let coords = placer.into_inner();
-    if let Some(entity) = obstacles_grid[*coords].quantum_field {
+    if let Some(entity) = grids.obstacle_grid[*coords].quantum_field {
         commands.entity(entity).despawn();
     }
 }

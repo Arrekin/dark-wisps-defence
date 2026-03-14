@@ -1,4 +1,5 @@
-use lib_grid::grids::obstacles::{ObstacleGrid, ReservedCoords};
+use lib_inventory::placement::{GridsCollectionParam, PlacementValidity};
+use lib_grid::grids::obstacles::ObstacleGrid;
 use lib_grid::grids::wisps::WispsGrid;
 use lib_grid::search::targetfinding::target_find_closest_wisp;
 use lib_core::utils::angle_difference;
@@ -15,6 +16,7 @@ use super::{
     tower_emitter::BuilderTowerEmitter,
     tower_cannon::BuilderTowerCannon,
     tower_rocket_launcher::BuilderTowerRocketLauncher,
+    tower_field,
 };
 
 pub struct CommonSystemsPlugin;
@@ -41,8 +43,7 @@ impl Plugin for CommonSystemsPlugin {
 fn on_building_place_request(
     _trigger: On<lib_core::placement::PlaceRequest<Building>>,
     mut commands: Commands,
-    mut reserved_coords: ResMut<ReservedCoords>,
-    obstacle_grid: Res<ObstacleGrid>,
+    mut grids: GridsCollectionParam,
     almanach: Res<Almanach>,
     mut stock: ResMut<Stock>,
     placer: Single<(&GridObjectPlacer, &GridCoords, &GridImprint)>,
@@ -51,18 +52,16 @@ fn on_building_place_request(
     let (grid_object_placer, coords, grid_imprint) = placer.into_inner();
     let Some(active_placement) = &grid_object_placer.active_placement else { return };
     let MapObject::Building(building_type) = active_placement.map_object else { return };
-    
-    // Full validation
-    if !coords.is_imprint_in_bounds(grid_imprint, obstacle_grid.bounds())
-        || !obstacle_grid.query_building_placement(*coords, building_type, *grid_imprint) 
-        || reserved_coords.any_reserved(*coords, *grid_imprint) { return; }
-    
+
+    let validity = (active_placement.placement_info.validate)(active_placement.map_object, *coords, *grid_imprint, &grids);
+    if validity == PlacementValidity::Invalid { return; }
+
     // Payment
     let building_costs = &almanach.get_building_info(building_type).cost;
     if !stock.try_pay_costs(building_costs) { Log::info().player().tag(Tag::Build).message("Not enough resources"); return; }
-    
+
     // Reserve and spawn
-    reserved_coords.reserve(*coords, *grid_imprint);
+    grids.reserved_coords.reserve(*coords, *grid_imprint);
     Log::info().player().tag(Tag::Build).message(format!("'{}' placed at ({}, {})", almanach.get_building_info(building_type).name, coords.x, coords.y));
     match building_type {
         BuildingType::EnergyRelay => {
@@ -82,6 +81,9 @@ fn on_building_place_request(
         },
         BuildingType::Tower(TowerType::Emitter) => {
             commands.spawn(BuilderTowerEmitter::new(*coords));
+        },
+        BuildingType::Tower(TowerType::Field) => {
+            commands.spawn(tower_field::BuilderTowerField::new(*coords));
         },
         BuildingType::MainBase => {
             let Ok(main_base_entity) = main_base.single() else { return; };
@@ -118,7 +120,7 @@ fn targeting_system(
         if let Some((_a, target_wisp)) = target_find_closest_wisp(
             &obstacle_grid,
             &wisps_grid,
-            grid_imprint.covered_coords(*coords),
+            grid_imprint.iter(*coords),
             range.get() as usize,
             true,
         ) {
@@ -190,7 +192,7 @@ fn on_building_destroy_request(
 
     commands.entity(building_to_destroy).despawn();
     Log::info().player().tag(Tag::Build).message(format!("'{}' destroyed at ({}, {})", almanach.get_building_info(*building_type).name, grid_coords.x, grid_coords.y));
-    grid_imprint.covered_coords(*grid_coords).into_iter().for_each(|coords| {
+    grid_imprint.iter(*grid_coords).for_each(|coords| {
         commands.spawn(BuilderExplosion(coords));
     });
 }

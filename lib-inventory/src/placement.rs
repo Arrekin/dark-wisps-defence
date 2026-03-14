@@ -1,3 +1,4 @@
+use bevy::ecs::system::SystemParam;
 use lib_core::placement::PlacementEmitter;
 use lib_grid::grids::energy_supply::EnergySupplyGrid;
 use lib_grid::grids::obstacles::{ObstacleGrid, ReservedCoords};
@@ -5,35 +6,31 @@ use lib_grid::grids::wisps::WispsGrid;
 
 use crate::lib_prelude::*;
 
-/// Result of placement validation. Placer uses this to set sprite color.
-#[derive(Clone, Copy, Debug)]
-pub struct PlacementValidationResult {
-    pub can_place: bool,
-    pub color: Color,
-}
-impl PlacementValidationResult {
-    pub fn valid() -> Self {
-        Self { can_place: true, color: Color::srgba(0.0, 1.0, 0.0, 0.2) }
-    }
-    pub fn valid_unpowered() -> Self {
-        Self { can_place: true, color: Color::srgba(1.0, 1.0, 0.0, 0.2) }
-    }
-    pub fn invalid() -> Self {
-        Self { can_place: false, color: Color::srgba(1.0, 0.0, 0.0, 0.2) }
-    }
+/// Placement validity state returned by validators.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PlacementValidity {
+    Valid,
+    ValidUnpowered,
+    Invalid,
 }
 
-/// Static validator function that receives map information and placable object data to return decisions if placement is valid.
-/// This is used for early placement feedback, in the end the domain handler makes final decision.
-/// First argument is the MapObject being placed, followed by coords, imprint, and grid data.
-pub type PlacementValidatorFn = fn(MapObject, GridCoords, GridImprint, &GridsCollection) -> PlacementValidationResult;
+/// Which kind of highlight a special cell carries.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CellHighlight {
+    /// Blocks placement.
+    Negative,
+    /// Contributes positively (e.g. ore in range).
+    Positive,
+}
 
-/// Grid data available to validators during placement validation.
-pub struct GridsCollection<'a> {
-    pub obstacle_grid: &'a ObstacleGrid,
-    pub energy_supply_grid: &'a EnergySupplyGrid,
-    pub reserved_coords: &'a ReservedCoords,
-    pub wisps_grid: &'a WispsGrid,
+/// Bevy SystemParam that bundles all grid resources needed for placement validation.
+/// `reserved_coords` is `ResMut` so place request handlers can also call `.reserve()` on it.
+#[derive(SystemParam)]
+pub struct GridsCollectionParam<'w> {
+    pub obstacle_grid: Res<'w, ObstacleGrid>,
+    pub energy_supply_grid: Res<'w, EnergySupplyGrid>,
+    pub reserved_coords: ResMut<'w, ReservedCoords>,
+    pub wisps_grid: Res<'w, WispsGrid>,
 }
 
 /// Whether placement triggers on press (burst mode) or release (single click).
@@ -46,36 +43,66 @@ pub enum PlacementMode {
     OnPress,
 }
 
-/// Generic placement info extracted from Almanach. Placer stores this.
+/// Determines whether the current position is a valid placement site.
+/// Returns only validity — cell highlights are the annotator's responsibility.
+pub type PlacementValidatorFn = fn(MapObject, GridCoords, GridImprint, &GridsCollectionParam) -> PlacementValidity;
+
+/// Produces per-cell highlights for the placement ghost.
+/// Receives the validity result so it can decide which highlights are appropriate
+/// (e.g. negative cells only when invalid, positive cells only when valid).
+pub type PlacementAnnotatorFn = fn(MapObject, GridCoords, GridImprint, PlacementValidity, &GridsCollectionParam) -> Vec<(GridCoords, CellHighlight)>;
+
+/// Generic placement info extracted from Almanach. The placer stores this without needing to
+/// know about specific structure types.
 pub struct ObjectPlacementInfo {
     pub imprint: GridImprint,
     pub validate: PlacementValidatorFn,
+    pub annotate: PlacementAnnotatorFn,
     pub place_emitter: Box<dyn PlacementEmitter>,
     pub remove_emitter: Option<Box<dyn PlacementEmitter>>,
     pub begin_placing_emitter: Option<Box<dyn PlacementEmitter>>,
     pub place_mode: PlacementMode,
     pub remove_mode: PlacementMode,
+    /// Handle for the ghost preview image shown while placing. `None` falls back to a solid tinted shape.
+    pub preview_image: Option<Handle<Image>>,
 }
 
 /// Generic validator: checks bounds, reserved coords, and that all cells are empty.
-/// Signature matches `PlacementValidatorFn` so it can be used directly as a validator.
-pub fn validate_empty_placement(
+pub fn validator_all_empty(
     _: MapObject,
     coords: GridCoords,
     imprint: GridImprint,
-    grids: &GridsCollection,
-) -> PlacementValidationResult {
+    grids: &GridsCollectionParam,
+) -> PlacementValidity {
     if !coords.is_imprint_in_bounds(&imprint, grids.obstacle_grid.bounds()) {
-        return PlacementValidationResult::invalid();
+        return PlacementValidity::Invalid;
     }
     if grids.reserved_coords.any_reserved(coords, imprint) {
-        return PlacementValidationResult::invalid();
+        return PlacementValidity::Invalid;
     }
-    if !grids
-        .obstacle_grid
-        .query_imprint_all(coords, imprint, |f| f.is_empty())
-    {
-        return PlacementValidationResult::invalid();
+    if !grids.obstacle_grid.query_imprint_all(coords, imprint, |f| f.is_empty()) {
+        return PlacementValidity::Invalid;
     }
-    PlacementValidationResult::valid()
+    PlacementValidity::Valid
+}
+
+/// Generic annotator: when invalid, highlights cells that are out-of-bounds or non-empty as Negative.
+/// Suitable for any object whose only placement constraint is that all cells must be empty.
+pub fn annotate_non_empty(
+    _: MapObject,
+    coords: GridCoords,
+    imprint: GridImprint,
+    validity: PlacementValidity,
+    map_data: &GridsCollectionParam,
+) -> Vec<(GridCoords, CellHighlight)> {
+    if validity != PlacementValidity::Invalid {
+        return vec![];
+    }
+    imprint.iter(coords)
+        .filter(|c| {
+            !c.is_in_bounds(map_data.obstacle_grid.bounds())
+                || !map_data.obstacle_grid[*c].is_empty()
+        })
+        .map(|c| (c, CellHighlight::Negative))
+        .collect()
 }

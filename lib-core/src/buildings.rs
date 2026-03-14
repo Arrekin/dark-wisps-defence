@@ -34,6 +34,7 @@ impl BuildingType {
             Self::Tower(TowerType::Cannon),
             Self::Tower(TowerType::RocketLauncher),
             Self::Tower(TowerType::Emitter),
+            Self::Tower(TowerType::Field),
         ].into_iter()
     }
 
@@ -52,6 +53,7 @@ pub enum TowerType {
     Cannon,
     RocketLauncher,
     Emitter,
+    Field,
 }
 
 #[derive(Component, Clone, Debug, Default)]
@@ -87,20 +89,24 @@ impl ExplorationCenter {
 pub struct Tower;
 
 #[derive(Component)]
-#[require(Building, BuildingType = BuildingType::Tower(TowerType::Blaster), AttackRange, AttackSpeed, AttackDamage, TowerShootingTimer, TowerWispTarget)]
+#[require(Tower, Building, BuildingType = BuildingType::Tower(TowerType::Blaster), AttackRange, AttackSpeed, AttackDamage, TowerShootingTimer, TowerWispTarget)]
 pub struct TowerBlaster;
 
 #[derive(Component)]
-#[require(Building, BuildingType = BuildingType::Tower(TowerType::Cannon), AttackRange, AttackSpeed, AttackDamage, TowerShootingTimer, TowerWispTarget)]
+#[require(Tower, Building, BuildingType = BuildingType::Tower(TowerType::Cannon), AttackRange, AttackSpeed, AttackDamage, TowerShootingTimer, TowerWispTarget)]
 pub struct TowerCannon;
 
 #[derive(Component)]
-#[require(Building, BuildingType = BuildingType::Tower(TowerType::RocketLauncher), AttackRange, AttackSpeed, AttackDamage, TowerShootingTimer, TowerWispTarget)]
+#[require(Tower, Building, BuildingType = BuildingType::Tower(TowerType::RocketLauncher), AttackRange, AttackSpeed, AttackDamage, TowerShootingTimer, TowerWispTarget)]
 pub struct TowerRocketLauncher;
 
 #[derive(Component)]
-#[require(Building, BuildingType = BuildingType::Tower(TowerType::Emitter), AttackRange, AttackSpeed, AttackDamage, TowerShootingTimer, TowerWispTarget)]
+#[require(Tower, Building, BuildingType = BuildingType::Tower(TowerType::Emitter), AttackRange, AttackSpeed, AttackDamage, TowerShootingTimer, TowerWispTarget)]
 pub struct TowerEmitter;
+
+#[derive(Component)]
+#[require(Tower, Building, BuildingType = BuildingType::Tower(TowerType::Field))]
+pub struct TowerField;
 
 
 #[derive(Component, Default)]

@@ -27,7 +27,7 @@ fn main() {
             map_objects::MapObjectsPlugin,
             objectives::ObjectivesPlugin,
             overlays::OverlaysPlugin,
-            weaponry::ProjectilesPlugin,
+            weaponry::WeaponryPlugin,
             ui::UiPlugin,
             units::UnitsPlugin,
             wisps::WispsPlugin,

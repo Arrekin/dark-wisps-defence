@@ -7,6 +7,7 @@ use crate::wisps::spawning::WISP_GRID_IMPRINT;
 pub struct TowerCannonPlugin;
 impl Plugin for TowerCannonPlugin {
     fn build(&self, app: &mut App) {
+        let almanach_info = BuilderTowerCannon::almanach_info(app.world().resource::<AssetServer>());
         app
             .add_systems(Update, (
                 shooting_system.run_if(in_state(GameState::Running)),
@@ -14,11 +15,10 @@ impl Plugin for TowerCannonPlugin {
             .add_observer(BuilderTowerCannon::on_add)
             .register_db_loader::<BuilderTowerCannon>(MapLoadingStage::SpawnMapElements)
             .register_db_saver(BuilderTowerCannon::on_game_save)
-            .register_building(BuildingType::Tower(TowerType::Cannon), BuilderTowerCannon::almanach_info());
+            .register_building(BuildingType::Tower(TowerType::Cannon), almanach_info)
+            ;
     }
 }
-
-pub const TOWER_CANNON_BASE_IMAGE: &str = "buildings/tower_cannon.png";
 
 #[derive(Clone, Debug)]
 pub struct TowerCannonSaveData {
@@ -73,9 +73,11 @@ impl Loadable for BuilderTowerCannon {
 }
 
 impl BuilderTowerCannon {
-    pub fn almanach_info() -> BuildingInfo {
+    pub fn almanach_info(asset_server: &AssetServer) -> BuildingInfo {
         BuildingInfo {
             name: "Cannon Tower".to_string(),
+            sprite: asset_server.load("buildings/tower_cannon.png"),
+            top_sprite: None,
             grid_imprint: GridImprint::Rectangle { width: 3, height: 3 },
             cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 250 }],
             baseline: HashMap::from([
@@ -85,6 +87,7 @@ impl BuilderTowerCannon {
                 (ModifierType::AttackDamage, 50.),
             ]),
             validate: building_validator,
+            annotate: annotate_non_empty,
         }
     }
 
@@ -115,7 +118,6 @@ impl BuilderTowerCannon {
         trigger: On<Add, BuilderTowerCannon>,
         mut commands: Commands,
         builders: Query<&BuilderTowerCannon>,
-        asset_server: Res<AssetServer>,
         almanach: Res<Almanach>,
     ) {
         let entity = trigger.entity;
@@ -137,11 +139,10 @@ impl BuilderTowerCannon {
             .insert((
                 TowerCannon,
                 Sprite {
-                    image: asset_server.load(TOWER_CANNON_BASE_IMAGE),
+                    image: building_info.sprite.clone(),
                     custom_size: Some(grid_imprint.world_size()),
                     ..Default::default()
                 },
-                Tower,
                 builder.grid_position,
                 grid_imprint,
                 NeedsPower::default(),
@@ -172,7 +173,7 @@ impl BuilderTowerCannon {
     }
 }
 
-pub fn shooting_system(
+fn shooting_system(
     mut commands: Commands,
     mut tower_cannons: Query<(&Transform, &mut TowerShootingTimer, &mut TowerWispTarget, &AttackDamage), (With<TowerCannon>, With<HasPower>, Without<DisabledByPlayer>)>,
     wisps: Query<(&GridPath, &GridCoords), With<Wisp>>,

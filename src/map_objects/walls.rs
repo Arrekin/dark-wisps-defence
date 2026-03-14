@@ -1,7 +1,7 @@
 use lib_core::map_objects::Wall;
-use lib_grid::grids::obstacles::{GridStructureType, ObstacleGrid, ReservedCoords};
+use lib_grid::grids::obstacles::GridStructureType;
 use lib_inventory::almanach::WallInfo;
-use lib_inventory::placement::validate_empty_placement;
+use lib_inventory::placement::{annotate_non_empty, GridsCollectionParam, PlacementValidity, validator_all_empty};
 
 use crate::prelude::*;
 use crate::ui::grid_object_placer::GridObjectPlacer;
@@ -9,6 +9,7 @@ use crate::ui::grid_object_placer::GridObjectPlacer;
 pub struct WallPlugin;
 impl Plugin for WallPlugin {
     fn build(&self, app: &mut App) {
+        let almanach_info = BuilderWall::almanach_info(app.world().resource::<AssetServer>());
         app
             .add_systems(Update, pulsate_brightness)
             .register_db_loader::<BuilderWall>(MapLoadingStage::SpawnMapElements)
@@ -16,17 +17,12 @@ impl Plugin for WallPlugin {
             .add_observer(BuilderWall::on_add)
             .add_observer(on_wall_place_request)
             .add_observer(on_wall_remove_request)
-            .register_walls(WallInfo {
-                name: "Wall".to_string(),
-                grid_imprint: WALL_GRID_IMPRINT,
-                sprite_path: WALL_BASE_IMAGE.to_string(),
-                validate: validate_empty_placement,
-            });
+            .register_walls(almanach_info)
+            ;
     }
 }
 
 pub const WALL_GRID_IMPRINT: GridImprint = GridImprint::Rectangle { width: 1, height: 1 };
-pub const WALL_BASE_IMAGE: &str = "map_objects/wall_4side.png";
 
 #[derive(Component, SSS)]
 pub struct BuilderWall {
@@ -67,6 +63,16 @@ impl Loadable for BuilderWall {
     }
 }
 impl BuilderWall {
+    pub fn almanach_info(asset_server: &AssetServer) -> WallInfo {
+        WallInfo {
+            name: "Wall".to_string(),
+            grid_imprint: WALL_GRID_IMPRINT,
+            sprite: asset_server.load("map_objects/wall_4side.png"),
+            validate: validator_all_empty,
+            annotate: annotate_non_empty,
+        }
+    }
+
     pub fn new(grid_position: GridCoords) -> Self {
         Self { grid_position, entity: None }
     }
@@ -77,8 +83,8 @@ impl BuilderWall {
     fn on_add(
         trigger: On<Add, BuilderWall>,
         mut commands: Commands,
-        asset_server: Res<AssetServer>,
         builders: Query<&BuilderWall>,
+        almanach: Res<Almanach>,
     ) {
         let entity = trigger.entity;
         let Ok(builder) = builders.get(entity) else { return; };
@@ -87,7 +93,7 @@ impl BuilderWall {
             .remove::<BuilderWall>()
             .insert((
             Sprite {
-                image: asset_server.load(WALL_BASE_IMAGE),
+                image: almanach.walls.sprite.clone(),
                 color: Color::hsla(0., 0., 1.5, 0.9), //for hdr brightness pulsation
                 custom_size: Some(WALL_GRID_IMPRINT.world_size()),
                 ..default()
@@ -136,27 +142,25 @@ fn pulsate_brightness(
 fn on_wall_place_request(
     _trigger: On<lib_core::placement::PlaceRequest<Wall>>,
     mut commands: Commands,
-    mut reserved_coords: ResMut<ReservedCoords>,
-    obstacle_grid: Res<ObstacleGrid>,
+    almanach: Res<Almanach>,
+    mut grids: GridsCollectionParam,
     placer: Single<(&GridCoords, &GridImprint), With<GridObjectPlacer>>,
 ) {
     let (coords, grid_imprint) = placer.into_inner();
-
-    if !coords.is_in_bounds(obstacle_grid.bounds()) { return; }
-    if obstacle_grid[*coords].is_empty() && !reserved_coords.any_reserved(*coords, *grid_imprint) {
-        commands.spawn(BuilderWall::new(*coords));
-        reserved_coords.reserve(*coords, *grid_imprint);
-    }
+    let validity = (almanach.walls.validate)(MapObject::Wall, *coords, *grid_imprint, &grids);
+    if validity == PlacementValidity::Invalid { return; }
+    commands.spawn(BuilderWall::new(*coords));
+    grids.reserved_coords.reserve(*coords, *grid_imprint);
 }
 
 fn on_wall_remove_request(
     _trigger: On<lib_core::placement::RemoveRequest<Wall>>,
     mut commands: Commands,
-    obstacle_grid: Res<ObstacleGrid>,
+    grids: GridsCollectionParam,
     placer: Single<&GridCoords, With<GridObjectPlacer>>,
 ) {
     let coords = placer.into_inner();
-    if let GridStructureType::Wall(entity) = obstacle_grid[*coords].structure {
+    if let GridStructureType::Wall(entity) = grids.obstacle_grid[*coords].structure {
         commands.entity(entity).despawn();
     }
 }

@@ -177,13 +177,10 @@ fn refresh_display_system(
             range,
         } => {
             if grid_coords.is_in_bounds(tower_ranges_grid.bounds()) {
-                let covered_coords = grid_imprint
-                    .covered_coords(*grid_coords)
-                    .iter()
-                    .copied()
-                    .filter(|coords| coords.is_in_bounds(tower_ranges_grid.bounds()))
-                    .collect::<Vec<_>>();
-                overlay_creator.flood_preview_to_overlay(covered_coords, *range)
+                overlay_creator.flood_preview_to_overlay(
+                    grid_imprint.iter_in_bounds(*grid_coords, tower_ranges_grid.bounds()),
+                    *range,
+                )
             } else {
                 overlay_creator.generate_buffer_data(&HighlightMode::None)
             }

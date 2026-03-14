@@ -10,17 +10,18 @@ use crate::wisps::components::Wisp;
 pub struct TowerRocketLauncherPlugin;
 impl Plugin for TowerRocketLauncherPlugin {
     fn build(&self, app: &mut App) {
+        let almanach_info = BuilderTowerRocketLauncher::almanach_info(app.world().resource::<AssetServer>());
         app
-            .add_observer(BuilderTowerRocketLauncher::on_add).add_systems(Update, (
+            .add_observer(BuilderTowerRocketLauncher::on_add)
+            .add_systems(Update, (
                 shooting_system.run_if(in_state(GameState::Running)),
             ))
             .register_db_loader::<BuilderTowerRocketLauncher>(MapLoadingStage::SpawnMapElements)
             .register_db_saver(BuilderTowerRocketLauncher::on_game_save)
-            .register_building(BuildingType::Tower(TowerType::RocketLauncher), BuilderTowerRocketLauncher::almanach_info());
+            .register_building(BuildingType::Tower(TowerType::RocketLauncher), almanach_info)
+            ;
     }
 }
-
-pub const TOWER_ROCKET_LAUNCHER_BASE_IMAGE: &str = "buildings/tower_rocket_launcher.png";
 
 #[derive(Clone, Debug)]
 pub struct TowerRocketLauncherSaveData {
@@ -75,9 +76,11 @@ impl Loadable for BuilderTowerRocketLauncher {
 }
 
 impl BuilderTowerRocketLauncher {
-    pub fn almanach_info() -> BuildingInfo {
+    pub fn almanach_info(asset_server: &AssetServer) -> BuildingInfo {
         BuildingInfo {
             name: "Rocket Launcher Tower".to_string(),
+            sprite: asset_server.load("buildings/tower_rocket_launcher.png"),
+            top_sprite: Some(asset_server.load("buildings/tower_rocket_launcher_top.png")),
             grid_imprint: GridImprint::Rectangle { width: 3, height: 3 },
             cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 350 }],
             baseline: HashMap::from([
@@ -87,6 +90,7 @@ impl BuilderTowerRocketLauncher {
                 (ModifierType::AttackDamage, 50.),
             ]),
             validate: building_validator,
+            annotate: annotate_non_empty,
         }
     }
 
@@ -115,7 +119,6 @@ impl BuilderTowerRocketLauncher {
         trigger: On<Add, BuilderTowerRocketLauncher>,
         mut commands: Commands,
         builders: Query<&BuilderTowerRocketLauncher>,
-        asset_server: Res<AssetServer>,
         almanach: Res<Almanach>,
     ) {
         let entity = trigger.entity;
@@ -137,11 +140,10 @@ impl BuilderTowerRocketLauncher {
             .insert((
                 TowerRocketLauncher,
                 Sprite {
-                    image: asset_server.load(TOWER_ROCKET_LAUNCHER_BASE_IMAGE),
+                    image: building_info.sprite.clone(),
                     custom_size: Some(grid_imprint.world_size()),
                     ..Default::default()
                 },
-                Tower,
                 builder.grid_position,
                 grid_imprint,
                 TowerTopRotation { speed: 1.0, current_angle: 0. },
@@ -163,7 +165,7 @@ impl BuilderTowerRocketLauncher {
         let world_size = grid_imprint.world_size();
         let tower_top = commands.spawn((
             Sprite {
-                image: asset_server.load("buildings/tower_rocket_launcher_top.png"),
+                image: building_info.top_sprite.clone().unwrap(),
                 custom_size: Some(Vec2::new(world_size.x * 1.52 * 0.5, world_size.y * 0.5)),
                 ..Default::default()
             },

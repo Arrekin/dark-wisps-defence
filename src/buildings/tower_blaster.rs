@@ -8,6 +8,7 @@ use crate::wisps::components::Wisp;
 pub struct TowerBlasterPlugin;
 impl Plugin for TowerBlasterPlugin {
     fn build(&self, app: &mut App) {
+        let almanach_info = BuilderTowerBlaster::almanach_info(app.world().resource::<AssetServer>());
         app
             .add_observer(BuilderTowerBlaster::on_add)
             .add_systems(Update, (
@@ -15,12 +16,10 @@ impl Plugin for TowerBlasterPlugin {
             ))
             .register_db_loader::<BuilderTowerBlaster>(MapLoadingStage::SpawnMapElements)
             .register_db_saver(BuilderTowerBlaster::on_game_save)
-            .register_building(BuildingType::Tower(TowerType::Blaster), BuilderTowerBlaster::almanach_info());
+            .register_building(BuildingType::Tower(TowerType::Blaster), almanach_info)
+            ;
     }
 }
-
-pub const TOWER_BLASTER_BASE_IMAGE: &str = "buildings/tower_blaster.png";
-pub const TOWER_BLASTER_TOP_IMAGE: &str = "buildings/tower_blaster_top.png";
 
 #[derive(Clone, Debug)]
 pub struct TowerBlasterSaveData {
@@ -74,9 +73,11 @@ impl Loadable for BuilderTowerBlaster {
 }
 
 impl BuilderTowerBlaster {
-    pub fn almanach_info() -> BuildingInfo {
+    pub fn almanach_info(asset_server: &AssetServer) -> BuildingInfo {
         BuildingInfo {
             name: "Blaster Tower".to_string(),
+            sprite: asset_server.load("buildings/tower_blaster.png"),
+            top_sprite: Some(asset_server.load("buildings/tower_blaster_top.png")),
             grid_imprint: GridImprint::Rectangle { width: 2, height: 2 },
             cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 150 }],
             baseline: HashMap::from([
@@ -86,6 +87,7 @@ impl BuilderTowerBlaster {
                 (ModifierType::AttackDamage, 1.),
             ]),
             validate: building_validator,
+            annotate: annotate_non_empty,
         }
     }
 
@@ -116,7 +118,6 @@ impl BuilderTowerBlaster {
         trigger: On<Add, BuilderTowerBlaster>,
         mut commands: Commands,
         builders: Query<&BuilderTowerBlaster>,
-        asset_server: Res<AssetServer>,
         almanach: Res<Almanach>,
     ) {
         let entity = trigger.entity;
@@ -138,11 +139,10 @@ impl BuilderTowerBlaster {
             .insert((
                 TowerBlaster,
                 Sprite {
-                    image: asset_server.load(TOWER_BLASTER_BASE_IMAGE),
+                    image: building_info.sprite.clone(),
                     custom_size: Some(grid_imprint.world_size()),
                     ..Default::default()
                 },
-                Tower,
                 builder.grid_position,
                 grid_imprint,
                 TowerTopRotation { speed: 10.0, current_angle: 0. },
@@ -164,7 +164,7 @@ impl BuilderTowerBlaster {
         let world_size = grid_imprint.world_size();
         let tower_top = commands.spawn((
             Sprite {
-                image: asset_server.load(TOWER_BLASTER_TOP_IMAGE),
+                image: building_info.top_sprite.clone().unwrap(),
                 custom_size: Some(Vec2::new(world_size.x * 1.52 * 0.5, world_size.y * 0.5)),
                 ..Default::default()
             },

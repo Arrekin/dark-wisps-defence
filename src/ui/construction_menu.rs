@@ -1,17 +1,7 @@
 use bevy::color::palettes::css::{TURQUOISE, WHITE};
 use bevy::ui::FocusPolicy;
 
-use crate::buildings::tower_emitter::TOWER_EMITTER_BASE_IMAGE;
-use crate::map_objects::walls::WALL_BASE_IMAGE;
 use crate::prelude::*;
-use crate::buildings::energy_relay::ENERGY_RELAY_BASE_IMAGE;
-use crate::buildings::exploration_center::EXPLORATION_CENTER_BASE_IMAGE;
-use crate::buildings::main_base::MAIN_BASE_BASE_IMAGE;
-use crate::buildings::mining_complex::MINING_COMPLEX_BASE_IMAGE;
-use crate::buildings::tower_blaster::TOWER_BLASTER_BASE_IMAGE;
-use crate::buildings::tower_cannon::TOWER_CANNON_BASE_IMAGE;
-use crate::buildings::tower_rocket_launcher::TOWER_ROCKET_LAUNCHER_BASE_IMAGE;
-use crate::map_objects::dark_ore::DARK_ORE_BASE_IMAGES;
 use crate::ui::grid_object_placer::GridObjectPlacerRequest;
 
 const NOT_HOVERED_ALPHA: f32 = 0.2;
@@ -161,12 +151,15 @@ impl ConstructObjectButton{
     fn on_add(
         trigger: On<Add, ConstructObjectButton>,
         mut commands: Commands,
-        asset_server: Res<AssetServer>,
-        builders: Query<&ConstructObjectButton>,
+        almanach: Res<Almanach>,
+        buttons: Query<&ConstructObjectButton>,
     ) {
         let entity = trigger.entity;
-        let button = builders.get(entity).unwrap();
+        let button = buttons.get(entity).unwrap();
+        let background_color = button.background_color;
+        let object_type = button.object_type;
 
+        let image_handle = almanach.get_placement_info_for(object_type).preview_image;
         commands.entity(entity)
             .insert((
                 Node {
@@ -182,30 +175,10 @@ impl ConstructObjectButton{
                     justify_content: JustifyContent::Center,
                     ..default()
                 },
-                BackgroundColor(button.background_color),
+                BackgroundColor(background_color),
             ))
             .observe(Self::on_click)
             .with_children(|parent| {
-                let object_type = &button.object_type;
-                let image_handle = match object_type {
-                    MapObject::Building(building_type) => match building_type {
-                        BuildingType::Tower(tower_type) => {
-                            match tower_type {
-                                TowerType::Blaster => Some(TOWER_BLASTER_BASE_IMAGE),
-                                TowerType::Cannon => Some(TOWER_CANNON_BASE_IMAGE),
-                                TowerType::RocketLauncher => Some(TOWER_ROCKET_LAUNCHER_BASE_IMAGE),
-                                TowerType::Emitter => Some(TOWER_EMITTER_BASE_IMAGE),
-                            }
-                        },
-                        BuildingType::MainBase => Some(MAIN_BASE_BASE_IMAGE),
-                        BuildingType::EnergyRelay => Some(ENERGY_RELAY_BASE_IMAGE),
-                        BuildingType::ExplorationCenter => Some(EXPLORATION_CENTER_BASE_IMAGE),
-                        BuildingType::MiningComplex => Some(MINING_COMPLEX_BASE_IMAGE),
-                    },
-                    MapObject::DarkOre => Some(DARK_ORE_BASE_IMAGES[0]),
-                    MapObject::Wall => Some(WALL_BASE_IMAGE),
-                    _ => None,
-                };
                 if let Some(image_handle) = image_handle {
                     parent.spawn((
                         Node {
@@ -213,8 +186,7 @@ impl ConstructObjectButton{
                             height: Val::Px(46.0),
                             ..default()
                         },
-                        
-                        ImageNode::new(asset_server.load(image_handle)),
+                        ImageNode::new(image_handle),
                     ));
                 }
             });
@@ -262,6 +234,7 @@ impl SideMenu {
                             ConstructObjectButton::new(MapObject::Building(BuildingType::Tower(TowerType::Cannon))),
                             ConstructObjectButton::new(MapObject::Building(BuildingType::Tower(TowerType::RocketLauncher))),
                             ConstructObjectButton::new(MapObject::Building(BuildingType::Tower(TowerType::Emitter))),
+                            ConstructObjectButton::new(MapObject::Building(BuildingType::Tower(TowerType::Field))),
                         ]
                     )]
                 ),

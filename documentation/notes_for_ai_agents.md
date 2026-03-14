@@ -208,7 +208,7 @@ Generic/reusable UI lives in `lib-ui` or `src/ui/`.
 
 ## Code Style
 - Query variables use plural form (e.g., `tabs`, `segments`), not `_q` suffix(singular when using Single<>)
-- Encapsulate component internals behind methods. Use the API, don't reach into fields.
+- Encapsulate component internals behind methods. Designs APIs. 
 - Don't put newlines between struct and its impl blocks
 - **Use `pub`, not `pub(crate)`.** `pub(crate)` adds noise with no benefit(in this case).
 - **Comments must be timeless.** Never leave comments that reference the current conversation, refactoring session, or rationale like "we moved this here because X was duplicated." Comments should make sense to a reader who has no context of how the code evolved. If the code is self-explanatory, no comment is needed.

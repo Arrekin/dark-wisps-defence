@@ -15,7 +15,7 @@ use crate::lib_prelude::*;
 pub mod effects_prelude {
     pub use super::{
         BaselineEffect, EffectInstances, EffectSource, EffectSourceOf, EffectTarget,
-        ExpiresAt, ModifierContributions,
+        ExpiresAt, ModifierContributions, FieldEffect,
     };
 }
 
@@ -76,6 +76,10 @@ pub struct ModifierContributions(pub HashMap<ModifierType, f32>);
 /// Baseline effects are never saved; they are always reconstructed when the entity spawns.
 #[derive(Component)]
 pub struct BaselineEffect;
+
+/// Marker on every effect entity spawned by a force field.
+#[derive(Component)]
+pub struct FieldEffect;
 
 /////////////////
 // EXPIRY      //

@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use lib_grid::grids::wisps::WispsGrid;
 use lib_core::wisps::{WispFireType, WispWaterType, WispLightType, WispElectricType};
-use lib_inventory::placement::{GridsCollection, PlacementValidationResult};
+use lib_inventory::placement::{GridsCollectionParam, PlacementValidity};
 
 use crate::prelude::*;
 use crate::ui::grid_object_placer::GridObjectPlacer;
@@ -160,18 +160,18 @@ pub fn wisp_validator(
     _: MapObject,
     coords: GridCoords,
     imprint: GridImprint,
-    grids: &GridsCollection,
-) -> PlacementValidationResult {
+    grids: &GridsCollectionParam,
+) -> PlacementValidity {
     if !coords.is_in_bounds(grids.obstacle_grid.bounds()) {
-        return PlacementValidationResult::invalid();
+        return PlacementValidity::Invalid;
     }
     if !grids.obstacle_grid.query_imprint_all(coords, imprint, |f| f.is_empty()) {
-        return PlacementValidationResult::invalid();
+        return PlacementValidity::Invalid;
     }
     if !grids.wisps_grid[coords].is_empty() {
-        return PlacementValidationResult::invalid();
+        return PlacementValidity::Invalid;
     }
-    PlacementValidationResult::valid()
+    PlacementValidity::Valid
 }
 
 pub fn on_wisp_spawn_attach_material<WispT: Component, MaterialT: Asset + WispMaterial>(
@@ -196,19 +196,17 @@ pub fn on_wisp_spawn_attach_material<WispT: Component, MaterialT: Asset + WispMa
 pub fn on_wisp_place_request(
     _trigger: On<lib_core::placement::PlaceRequest<WispType>>,
     mut commands: Commands,
-    obstacle_grid: Res<lib_grid::grids::obstacles::ObstacleGrid>,
-    wisps_grid: Res<WispsGrid>,
+    almanach: Res<Almanach>,
+    grids: GridsCollectionParam,
     placer: Single<(&GridObjectPlacer, &GridCoords, &GridImprint)>,
 ) {
     let (grid_object_placer, coords, grid_imprint) = placer.into_inner();
     let Some(active_placement) = &grid_object_placer.active_placement else { return };
     let MapObject::Wisp(wisp_type) = active_placement.map_object else { return };
-    
-    if !coords.is_in_bounds(obstacle_grid.bounds()) { return; }
-    if obstacle_grid.query_imprint_all(*coords, *grid_imprint, |field| field.is_empty()) && wisps_grid[*coords].is_empty()
-    {
-        commands.spawn(BuilderWisp::new(wisp_type, *coords));
-    }
+
+    let validity = (almanach.wisps.validate)(active_placement.map_object, *coords, *grid_imprint, &grids);
+    if validity == PlacementValidity::Invalid { return; }
+    commands.spawn(BuilderWisp::new(wisp_type, *coords));
 }
 
 pub fn on_wisp_remove_request(

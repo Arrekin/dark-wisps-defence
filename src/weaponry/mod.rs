@@ -4,12 +4,14 @@ pub mod cannonball;
 pub mod rocket;
 pub mod ripple;
 pub mod ripple_post_process;
+pub mod force_field;
+pub mod force_field_post_process;
 
 
 use crate::prelude::*;
 
-pub struct ProjectilesPlugin;
-impl Plugin for ProjectilesPlugin {
+pub struct WeaponryPlugin;
+impl Plugin for WeaponryPlugin {
     fn build(&self, app: &mut App) {
         app
             .add_plugins((
@@ -18,6 +20,8 @@ impl Plugin for ProjectilesPlugin {
                 rocket::RocketPlugin,
                 ripple::RipplePlugin,
                 ripple_post_process::RipplePostProcessPlugin,
+                force_field::ForceFieldPlugin,
+                force_field_post_process::ForceFieldPostProcessPlugin,
             ));
 
     }

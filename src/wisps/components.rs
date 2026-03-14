@@ -1,9 +1,10 @@
-use crate::prelude::*;
+use crate::{prelude::*, weaponry::force_field::FieldAffected};
 
 #[derive(Component, Debug, Default, PartialEq)]
 #[require(
     WispState, WispChargeAttack, GridPath, ModifierBank, MapBound,
-    MovementSpeed, AttackRange, MaxIntegrityPoints, IncomingDamageMultiplier
+    MovementSpeed, AttackRange, MaxIntegrityPoints, IncomingDamageMultiplier,
+    FieldAffected
 )]
 pub struct Wisp;
 #[derive(Component, Default)]

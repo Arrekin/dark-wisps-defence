@@ -12,7 +12,7 @@ use super::common::{VISITED_GRID, CARDINAL_DIRECTIONS, State};
 pub fn target_find_closest_wisp(
     obstacle_grid: &Res<ObstacleGrid>,
     wisps_grid: &Res<WispsGrid>,
-    start_coords: Vec<GridCoords>,
+    start_coords: impl IntoIterator<Item = GridCoords>,
     range: usize,
     ignore_obstacles: bool,
 ) -> Option<(GridCoords, Entity)> {

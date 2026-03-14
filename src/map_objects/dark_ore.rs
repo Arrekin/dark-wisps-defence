@@ -1,9 +1,9 @@
 use std::f32::consts::PI;
 
 use lib_core::map_objects::DarkOre;
-use lib_grid::grids::obstacles::{ObstacleGrid, ReservedCoords};
+use lib_grid::grids::obstacles::ObstacleGrid;
 use lib_inventory::almanach::DarkOreInfo;
-use lib_inventory::placement::validate_empty_placement;
+use lib_inventory::placement::{annotate_non_empty, GridsCollectionParam, PlacementValidity, validator_all_empty};
 
 use crate::prelude::*;
 use crate::ui::grid_object_placer::GridObjectPlacer;
@@ -11,6 +11,7 @@ use crate::ui::grid_object_placer::GridObjectPlacer;
 pub struct DarkOrePlugin;
 impl Plugin for DarkOrePlugin {
     fn build(&self, app: &mut App) {
+        let almanach_info = BuilderDarkOre::almanach_info(app.world().resource::<AssetServer>());
         app
             .add_systems(Update, remove_empty)
             .add_observer(BuilderDarkOre::on_add)
@@ -21,19 +22,12 @@ impl Plugin for DarkOrePlugin {
             .add_observer(on_dark_ore_remove_request)
             .register_db_loader::<BuilderDarkOre>(MapLoadingStage::SpawnMapElements)
             .register_db_saver(BuilderDarkOre::on_game_save)
-            .register_dark_ore(DarkOreInfo {
-                name: "Dark Ore".to_string(),
-                grid_imprint: DARK_ORE_GRID_IMPRINT,
-                sprite_paths: DARK_ORE_BASE_IMAGES.iter().map(|s| s.to_string()).collect(),
-                default_amount: 1000,
-                validate: validate_empty_placement,
-            })
+            .register_dark_ore(almanach_info)
             ;
     }
 }
 
 pub const DARK_ORE_GRID_IMPRINT: GridImprint = GridImprint::Rectangle { width: 1, height: 1 };
-pub const DARK_ORE_BASE_IMAGES: [&str; 2] = ["map_objects/dark_ore_1.png", "map_objects/dark_ore_2.png"];
 
 
 
@@ -89,6 +83,20 @@ impl Loadable for BuilderDarkOre {
     }
 }
 impl BuilderDarkOre {
+    pub fn almanach_info(asset_server: &AssetServer) -> DarkOreInfo {
+        DarkOreInfo {
+            name: "Dark Ore".to_string(),
+            grid_imprint: DARK_ORE_GRID_IMPRINT,
+            sprites: vec![
+                asset_server.load("map_objects/dark_ore_1.png"),
+                asset_server.load("map_objects/dark_ore_2.png"),
+            ],
+            default_amount: 1000,
+            validate: validator_all_empty,
+            annotate: annotate_non_empty,
+        }
+    }
+
     pub fn new(grid_position: GridCoords, amount: u32) -> Self {
         Self { grid_position, amount, save_data: None }
     }
@@ -113,7 +121,7 @@ impl BuilderDarkOre {
         trigger: On<Add, BuilderDarkOre>,
         mut commands: Commands,
         builders: Query<&BuilderDarkOre>,
-        asset_server: Res<AssetServer>,
+        almanach: Res<Almanach>,
     ) {
         let entity = trigger.entity;
         let Ok(builder) = builders.get(entity) else { return; };
@@ -123,7 +131,7 @@ impl BuilderDarkOre {
             .remove::<BuilderDarkOre>()
             .insert((
             Sprite {
-                image: asset_server.load(DARK_ORE_BASE_IMAGES[rng.generate_range(0usize..2usize)]),
+                image: almanach.dark_ore.sprites[rng.generate_range(0usize..2usize)].clone(),
                 custom_size: Some(DARK_ORE_GRID_IMPRINT.world_size()),
                 ..Default::default()
             },
@@ -155,28 +163,27 @@ fn remove_empty(
 fn on_dark_ore_place_request(
     _trigger: On<lib_core::placement::PlaceRequest<DarkOre>>,
     mut commands: Commands,
-    mut reserved_coords: ResMut<ReservedCoords>,
-    obstacle_grid: Res<ObstacleGrid>,
+    almanach: Res<Almanach>,
+    mut grids: GridsCollectionParam,
     placer: Single<(&GridCoords, &GridImprint), With<GridObjectPlacer>>,
 ) {
     let (coords, grid_imprint) = placer.into_inner();
-
-    if !coords.is_in_bounds(obstacle_grid.bounds()) { return; }
-    if obstacle_grid.query_imprint_all(*coords, *grid_imprint, |field| !field.has_dark_ore()) && !reserved_coords.any_reserved(*coords, *grid_imprint)
-    {
-        commands.spawn(BuilderDarkOre::new(*coords, 1000));
-        reserved_coords.reserve(*coords, *grid_imprint);
-    }
+    let validity = {
+        (almanach.dark_ore.validate)(MapObject::DarkOre, *coords, *grid_imprint, &grids)
+    };
+    if validity == PlacementValidity::Invalid { return; }
+    commands.spawn(BuilderDarkOre::new(*coords, almanach.dark_ore.default_amount));
+    grids.reserved_coords.reserve(*coords, *grid_imprint);
 }
 
 fn on_dark_ore_remove_request(
     _trigger: On<lib_core::placement::RemoveRequest<DarkOre>>,
     mut commands: Commands,
-    obstacle_grid: Res<ObstacleGrid>,
+    grids: GridsCollectionParam,
     placer: Single<&GridCoords, With<GridObjectPlacer>>,
 ) {
     let coords = placer.into_inner();
-    if let Some(entity) = obstacle_grid[*coords].dark_ore {
+    if let Some(entity) = grids.obstacle_grid[*coords].dark_ore {
         commands.entity(entity).despawn();
     }
 }

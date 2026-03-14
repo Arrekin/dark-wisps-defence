@@ -55,7 +55,8 @@ impl EmitterEnergy {
         let Ok((grid_coords, grid_imprint, emitter)) = suppliers.get(entity) else { return; };
         events.write(EmitterChangedEvent {
             emitter_entity: entity,
-            coords: grid_imprint.covered_coords(*grid_coords),
+            imprint: *grid_imprint,
+            grid_coords: *grid_coords,
             emissions_details: vec![emitter.0.clone()],
         });
     }
@@ -68,7 +69,8 @@ impl EmitterEnergy {
         let Ok((grid_coords, grid_imprint, emitter)) = suppliers.get(entity) else { return; };
         events.write(EmitterChangedEvent {
             emitter_entity: entity,
-            coords: grid_imprint.covered_coords(*grid_coords),
+            imprint: *grid_imprint,
+            grid_coords: *grid_coords,
             emissions_details: vec![emitter.0.cloned_with_reversed_mode()],
         });
     }
@@ -89,7 +91,8 @@ impl EmitterEnergy {
 #[derive(Message, Debug)]
 pub struct EmitterChangedEvent {
     pub emitter_entity: Entity,
-    pub coords: Vec<GridCoords>,
+    pub imprint: GridImprint,
+    pub grid_coords: GridCoords,
     pub emissions_details: Vec<FloodEmissionsDetails>,
 }
 
@@ -140,7 +143,7 @@ fn emissions_calculations_system(
             flood_emissions(
                 &mut emissions_grid,
                 &obstacle_grid,
-                &grid_imprint.covered_coords(*coords),
+                grid_imprint.iter(*coords),
                 &vec![emitter.0.clone()],
                 |field| !field.has_wall(),
             );
@@ -151,7 +154,7 @@ fn emissions_calculations_system(
             flood_emissions(
                 &mut emissions_grid,
                 &obstacle_grid,
-                &event.coords,
+                event.imprint.iter(event.grid_coords),
                 &event.emissions_details,
                 |field| !field.has_wall(),
             );

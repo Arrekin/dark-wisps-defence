@@ -8,15 +8,15 @@ use crate::prelude::*;
 pub struct MainBasePlugin;
 impl Plugin for MainBasePlugin {
     fn build(&self, app: &mut App) {
+        let almanach_info = BuilderMainBase::almanach_info(app.world().resource::<AssetServer>());
         app
             .add_observer(BuilderMainBase::on_add)
             .register_db_loader::<BuilderMainBase>(MapLoadingStage::SpawnMapElements)
             .register_db_saver(BuilderMainBase::on_game_save)
-            .register_building(BuildingType::MainBase, BuilderMainBase::almanach_info());
+            .register_building(BuildingType::MainBase, almanach_info)
+            ;
     }
 }
-
-pub const MAIN_BASE_BASE_IMAGE: &str = "buildings/main_base.png";
 
 
 
@@ -66,9 +66,11 @@ impl Loadable for BuilderMainBase {
     }
 }
 impl BuilderMainBase {
-    pub fn almanach_info() -> BuildingInfo {
+    pub fn almanach_info(asset_server: &AssetServer) -> BuildingInfo {
         BuildingInfo {
             name: "Main Base".to_string(),
+            sprite: asset_server.load("buildings/main_base.png"),
+            top_sprite: None,
             grid_imprint: GridImprint::Rectangle { width: 6, height: 6 },
             cost: vec![],
             baseline: HashMap::from([
@@ -76,6 +78,7 @@ impl BuilderMainBase {
                 (ModifierType::EnergySupplyRange, 15.),
             ]),
             validate: building_validator,
+            annotate: annotate_non_empty,
         }
     }
 
@@ -100,7 +103,6 @@ impl BuilderMainBase {
         trigger: On<Add, BuilderMainBase>,
         mut commands: Commands,
         builders: Query<&BuilderMainBase>,
-        asset_server: Res<AssetServer>,
         almanach: Res<Almanach>,
     ) {
         let entity = trigger.entity;
@@ -122,7 +124,7 @@ impl BuilderMainBase {
             .remove::<BuilderMainBase>()
             .insert((
                 Sprite {
-                    image: asset_server.load(MAIN_BASE_BASE_IMAGE),
+                    image: building_info.sprite.clone(),
                     custom_size: Some(grid_imprint.world_size()),
                     ..Default::default()
                 },

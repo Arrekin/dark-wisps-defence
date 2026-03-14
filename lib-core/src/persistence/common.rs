@@ -124,8 +124,10 @@ impl GameDbHelpers for rusqlite::Connection {
     fn save_grid_imprint(&self, entity_id: i64, imprint: GridImprint) -> rusqlite::Result<usize> {
         let (shape, width, height) = match imprint {
             GridImprint::Rectangle { width, height } => ("Rectangle", Some(width), Some(height)),
+            // Stored as: shape="Plus", width=extents, height=NULL
+            GridImprint::Plus { extents } => ("Plus", Some(extents), None),
         };
-        
+
         self.execute(
             "INSERT OR REPLACE INTO grid_imprints (id, shape, width, height) VALUES (?1, ?2, ?3, ?4)",
             rusqlite::params![entity_id, shape, width, height],
@@ -214,7 +216,11 @@ impl GameDbHelpers for rusqlite::Connection {
                 let width: i32 = row.get(1)?;
                 let height: i32 = row.get(2)?;
                 Ok(GridImprint::Rectangle { width, height })
-            },
+            }
+            "Plus" => {
+                let extents: i32 = row.get(1)?;
+                Ok(GridImprint::Plus { extents })
+            }
             _ => Err(rusqlite::Error::InvalidColumnType(0, "Unknown shape type".into(), rusqlite::types::Type::Text)),
         }
     }

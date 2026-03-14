@@ -7,6 +7,7 @@ pub mod summoning;
 use bevy::sprite_render::Material2dPlugin;
 use lib_core::wisps::{WispFireType, WispWaterType, WispLightType, WispElectricType};
 use lib_inventory::almanach::WispInfo;
+use lib_inventory::placement::annotate_non_empty;
 
 use crate::prelude::*;
 
@@ -45,6 +46,7 @@ impl Plugin for WispsPlugin {
             .register_wisps(WispInfo {
                 grid_imprint: spawning::WISP_GRID_IMPRINT,
                 validate: spawning::wisp_validator,
+                annotate: annotate_non_empty,
             });
     }
 }

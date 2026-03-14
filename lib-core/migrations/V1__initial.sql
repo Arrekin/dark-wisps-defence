@@ -135,6 +135,11 @@ CREATE TABLE IF NOT EXISTS tower_emitters (
     FOREIGN KEY(id) REFERENCES entities(id)
 );
 
+CREATE TABLE IF NOT EXISTS tower_fields (
+    id INTEGER PRIMARY KEY,
+    FOREIGN KEY(id) REFERENCES entities(id)
+);
+
 -- ========================
 -- Shards
 -- ========================
