@@ -59,3 +59,35 @@ Duplicate stat shards stack naturally through the modifier system (each effect e
 contributes independently). Behavioral components follow Bevy's insert semantics
 (last-write-wins by default). If merging or prevention is needed, the observer or UI can
 handle it per-case.
+
+## Shard Catalog
+
+### `Range` — +AttackRange
+
+| Tower | Effect |
+|-------|--------|
+| Cannon | +2.0 range (15 → 17) |
+| Blaster | +2.0 range (15 → 17) |
+| Rocket Launcher | +2.0 range (30 → 32) |
+| Emitter | +2.0 range (4 → 6) |
+| Field | +2.0 range (7 → 9), force field radius grows |
+
+### `Damage` — +AttackDamage
+
+| Tower | Effect |
+|-------|--------|
+| Cannon | +15.0 damage (50 → 65) |
+| Blaster | +2.0 damage (1 → 3) |
+| Rocket Launcher | +15.0 damage (50 → 65) |
+| Emitter | +2.0 damage (1 → 3) |
+| Field | *(incompatible — no damage stat)* |
+
+### `Speed` — +AttackSpeed
+
+| Tower | Effect |
+|-------|--------|
+| Cannon | +0.15 speed (0.5 → 0.65) |
+| Blaster | +1.0 speed (5 → 6) |
+| Rocket Launcher | +0.1 speed (0.33 → 0.43) |
+| Emitter | +0.05 speed (0.2 → 0.25) |
+| Field | *(incompatible — no attack speed)* |

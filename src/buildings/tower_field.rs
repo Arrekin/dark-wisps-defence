@@ -187,6 +187,7 @@ impl BuilderTowerField {
                     HashMap::from([(ModifierType::AttackRange, 2.0)]),
                 ));
             }
+            ShardType::Damage | ShardType::Speed => {}
         }
     }
 

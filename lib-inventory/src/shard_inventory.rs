@@ -14,9 +14,9 @@ impl Plugin for ShardInventoryPlugin {
     fn build(&self, app: &mut App) {
         app
             .init_resource::<ShardInventory>()
-            .add_systems(Startup, ShardInventory::seed_starting_shards)
             .register_db_saver(ShardInventory::on_game_save)
             .register_db_loader::<ShardInventoryLoader>(MapLoadingStage::LoadResources)
+            .add_systems(OnEnter(MapLoadingStage::Ready), ShardInventory::seed_starting_shards)
             ;
     }
 }
@@ -53,7 +53,9 @@ impl ShardInventory {
     }
 
     fn seed_starting_shards(mut inventory: ResMut<ShardInventory>) {
-        inventory.add(ShardType::Range, 20);
+        inventory.add(ShardType::Range, 10);
+        inventory.add(ShardType::Damage, 10);
+        inventory.add(ShardType::Speed, 10);
     }
 
     fn on_game_save(mut commands: Commands, inventory: Res<ShardInventory>) {

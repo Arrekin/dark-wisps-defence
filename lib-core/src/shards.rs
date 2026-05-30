@@ -35,6 +35,8 @@ impl Plugin for ShardsPlugin {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display, EnumString, EnumIter)]
 pub enum ShardType {
     Range,
+    Damage,
+    Speed,
 }
 
 ////////////////////

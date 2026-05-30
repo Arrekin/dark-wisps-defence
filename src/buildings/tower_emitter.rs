@@ -166,6 +166,12 @@ impl BuilderTowerEmitter {
             ShardType::Range => {
                 commands.spawn(ShardEffect::from_modifiers(trigger.shard_target, HashMap::from([(ModifierType::AttackRange, 2.0)])));
             }
+            ShardType::Damage => {
+                commands.spawn(ShardEffect::from_modifiers(trigger.shard_target, HashMap::from([(ModifierType::AttackDamage, 2.0)])));
+            }
+            ShardType::Speed => {
+                commands.spawn(ShardEffect::from_modifiers(trigger.shard_target, HashMap::from([(ModifierType::AttackSpeed, 0.05)])));
+            }
         }
     }
 }
