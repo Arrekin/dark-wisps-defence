@@ -18,7 +18,7 @@
 //! The `process_expeditions_system` consumes accumulated scan progress and applies it to
 //! the current layer. This decouples drone mechanics from field-specific progression.
 
-use bevy::color::palettes::css::{AQUA, BLUE, INDIGO};
+use bevy::color::palettes::css::{AQUA, BLUE};
 
 use lib_core::map_objects::QuantumField;
 use lib_inventory::almanach::QuantumFieldInfo;
@@ -245,11 +245,10 @@ impl BuilderQuantumField {
             .remove::<BuilderQuantumField>()
             .insert((
                 Name::new("Quantum Field"),
-                Sprite {
-                    custom_size: Some(builder.grid_imprint.world_size()),
-                    color: INDIGO.into(),
-                    ..Default::default()
-                },
+                // No sprite/mesh: the quantum field is drawn entirely by the
+                // `quantum_field_post_process` screen-space pass, which locates the field
+                // via its Transform + GridImprint. Transform is still required for the
+                // effect and for the info-panel preview camera to follow.
                 Transform::from_translation(builder.grid_position.to_world_position_centered(builder.grid_imprint).extend(Z_OBSTACLE)),
                 builder.grid_position,
                 builder.grid_imprint,

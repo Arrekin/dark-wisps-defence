@@ -36,18 +36,20 @@ uploaded to a GPU storage buffer once per frame.
 
 ## Render Graph
 
-The node is registered in the `Core2d` graph between `Node2d::Tonemapping` and
-`Node2d::EndMainPassPostProcessing`:
+Each effect plugin registers **only its own node** in the `Core2d` graph — it does *not* add its
+own ordering edges:
 
 ```rust
-render_app
-    .add_render_graph_node::<ViewNodeRunner<MyEffectNode>>(Core2d, MyEffectLabel)
-    .add_render_graph_edges(Core2d, (
-        Node2d::Tonemapping,
-        MyEffectLabel,
-        Node2d::EndMainPassPostProcessing,
-    ));
+render_app.add_render_graph_node::<ViewNodeRunner<MyEffectNode>>(Core2d, MyEffectLabel);
 ```
+
+The `RenderLabel` types and the order of *all* post-process passes live in one place,
+`lib-core/src/post_processing.rs`: the shared labels plus `PostProcessOrderingPlugin`, which adds
+the whole chain (`Tonemapping → Ripple → QuantumField → ForceField → EndMainPassPostProcessing`).
+That plugin is added **last** in `main.rs`, after every effect plugin, so all nodes exist before
+the edges reference them (edge creation panics on a missing node). To add a new pass: define its
+label in `lib_core::post_processing`, register the node in your plugin, and splice the label into
+`PostProcessOrderingPlugin`'s chain at the position you want.
 
 `ViewTarget::post_process_write()` provides a `(source, destination)` texture pair.
 The node's `ViewQuery` must include `DynamicUniformIndex<MyEffect>` so the node only
@@ -150,3 +152,26 @@ Avoid `vec3<f32>` in GPU structs (implicit padding to 16 bytes).
 | Effect | Component | Shader |
 |--------|-----------|--------|
 | Ripple displacement | `RipplePostProcess` in `weaponry/ripple_post_process.rs` | `shaders/ripple_post_process.wgsl` |
+| Force field dome | `ForceFieldPostProcess` in `weaponry/force_field_post_process.rs` | `shaders/force_field_post_process.wgsl` |
+| Quantum field anomaly | `QuantumFieldPostProcess` in `map_objects/quantum_field_post_process.rs` | `shaders/quantum_field_post_process.wgsl` |
+
+Render-graph order: `Tonemapping → Ripple → QuantumField → ForceField → EndMainPassPostProcessing`.
+
+## Patterns Beyond the Reference
+
+The quantum field effect introduces two patterns not present in the ripple/force-field passes:
+
+- **Rectangular location via box SDF.** Quantum fields are axis-aligned rectangles
+  (`GridImprint::Rectangle`), uploaded as `center` + `half_extent`. The shader uses a signed
+  distance to the box (negative inside) for the interior mask and rim, instead of a radial
+  distance. Fields never overlap (placement validator), so the loop just takes the deepest box.
+- **Multi-tap frame sampling.** Superposition ghosting and chromatic decoherence sample
+  `screen_texture` at several offset positions per fragment (only inside fields) and blend them,
+  so objects on top of the field smear into probability echoes. Tap counts/offsets are shader
+  consts; cost is bounded because fields are small on screen.
+
+The effect's visual modules are individually gated by hardcoded `const … : bool` switches at the
+top of the WGSL (edit + restart to apply; shaders are runtime assets, no Rust recompile). Overall
+intensity is driven by a `solve_progress` 0→1 scalar derived from `QuantumFieldLayers`. A
+`scan_activity` field and `ENABLE_SCAN_COLLAPSE` switch are reserved (inert) for a future
+drone-scan "wavefunction collapse" interaction.

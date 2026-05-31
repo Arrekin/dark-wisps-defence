@@ -1,8 +1,16 @@
-//! Post-process ripple displacement effect.
+//! Post-process quantum field anomaly visualization.
 //!
-//! Each camera with [`RipplePostProcess`] gets a fullscreen distortion pass after tonemapping.
-//! Ripple entries live in a shared GPU storage buffer (unbounded count), while each camera
-//! keeps a slim uniform with its projection parameters and the current ripple count.
+//! Each camera with [`QuantumFieldPostProcess`] gets a fullscreen pass that renders the
+//! quantum field effect over the already-rendered frame (so it can distort / ghost the
+//! walls, wisps and towers on top of a field). Field entries live in a shared GPU storage
+//! buffer; each camera keeps a slim uniform with projection parameters, global time, and
+//! the current field count.
+//!
+//! Mirrors `weaponry/force_field_post_process.rs`. Differences: fields are axis-aligned
+//! rectangles (located in-shader via a box SDF), they never overlap, and intensity is driven
+//! by `solve_progress` derived from `QuantumFieldLayers`. The pass runs after the ripple pass
+//! and before the force field pass so a dome composites on top of a ground anomaly — the
+//! ordering is defined centrally in `lib_core::post_processing::PostProcessOrderingPlugin`.
 
 use bevy::{
     core_pipeline::{
@@ -28,143 +36,160 @@ use bevy::{
         Render, RenderApp, RenderSystems, RenderStartup,
     },
 };
-use lib_core::post_processing::RipplePostProcessLabel;
-use super::ripple::Ripple;
+
+use lib_core::post_processing::QuantumFieldPostProcessLabel;
+use crate::map_objects::quantum_field::QuantumFieldLayers;
 use crate::prelude::*;
 
-pub struct RipplePostProcessPlugin;
-impl Plugin for RipplePostProcessPlugin {
+pub struct QuantumFieldPostProcessPlugin;
+impl Plugin for QuantumFieldPostProcessPlugin {
     fn build(&self, app: &mut App) {
         app
             .add_plugins((
-                ExtractComponentPlugin::<RipplePostProcess>::default(),
-                UniformComponentPlugin::<RipplePostProcess>::default(),
-                ExtractResourcePlugin::<RippleEntries>::default(),
+                ExtractComponentPlugin::<QuantumFieldPostProcess>::default(),
+                UniformComponentPlugin::<QuantumFieldPostProcess>::default(),
+                ExtractResourcePlugin::<QuantumFieldEntries>::default(),
             ))
-            .init_resource::<RippleEntries>()
-            .add_observer(RipplePostProcess::on_add_post_process_camera)
-            .add_systems(Update, RipplePostProcess::update)
+            .init_resource::<QuantumFieldEntries>()
+            .add_observer(QuantumFieldPostProcess::on_add_post_process_camera)
+            .add_systems(Update, QuantumFieldPostProcess::update)
             ;
 
         let Some(render_app) = app.get_sub_app_mut(RenderApp) else { return; };
         render_app
-            .init_resource::<GpuRippleStorage>()
-            .add_systems(RenderStartup, init_ripple_pipeline)
-            .add_systems(Render, GpuRippleStorage::prepare.in_set(RenderSystems::PrepareResources))
+            .init_resource::<GpuQuantumFieldStorage>()
+            .add_systems(RenderStartup, init_quantum_field_pipeline)
+            .add_systems(Render, GpuQuantumFieldStorage::prepare.in_set(RenderSystems::PrepareResources))
             // Ordering against the other post-process passes lives in lib-core's
             // PostProcessOrderingPlugin (added after all effect plugins).
-            .add_render_graph_node::<ViewNodeRunner<RipplePostProcessNode>>(
+            .add_render_graph_node::<ViewNodeRunner<QuantumFieldPostProcessNode>>(
                 Core2d,
-                RipplePostProcessLabel,
+                QuantumFieldPostProcessLabel,
             );
     }
 }
 
 // ── GPU data ──────────────────────────────────────────────────────────────────────────
 
-/// 16-byte per-ripple entry uploaded to the shared storage buffer.
+/// Per-field entry uploaded to the shared storage buffer. 32 bytes, 8-aligned, no `vec3`.
 #[derive(Clone, Copy, ShaderType, Default)]
-struct GpuRippleEntry {
+struct GpuQuantumFieldEntry {
     center: Vec2,
-    normalized_radius: f32,
-    max_radius: f32,
+    half_extent: Vec2,
+    /// 0 = fresh anomaly, 1 = solved. Diminishes weirdness in the shader.
+    solve_progress: f32,
+    /// Per-field noise offset (derived from entity index).
+    seed: f32,
+    /// RESERVED for future sweep-collapse; always 0.0 for now (see tasks.md §6).
+    scan_activity: f32,
+    _pad: f32,
 }
 
-/// Wrapper for the storage buffer. The `#[shader(size(runtime))]` attribute tells encase
-/// that `entries` is a runtime-sized array — the GPU buffer grows to fit however many
-/// ripples are active this frame.
 #[derive(ShaderType, Default)]
-struct GpuRippleBuffer {
+struct GpuQuantumFieldBuffer {
     #[shader(size(runtime))]
-    entries: Vec<GpuRippleEntry>,
+    entries: Vec<GpuQuantumFieldEntry>,
 }
 
-/// Main-world resource holding this frame's ripple entries.
-/// `ExtractResourcePlugin` clones this into the render world each frame (the trait
-/// receives `&Source`, so the clone at the extraction boundary is unavoidable).
+/// Main-world resource holding this frame's field entries (cloned into render world each frame).
 #[derive(Resource, Default, Clone)]
-struct RippleEntries(Vec<GpuRippleEntry>);
-impl ExtractResource for RippleEntries {
-    type Source = RippleEntries;
+struct QuantumFieldEntries(Vec<GpuQuantumFieldEntry>);
+impl ExtractResource for QuantumFieldEntries {
+    type Source = QuantumFieldEntries;
     fn extract_resource(source: &Self::Source) -> Self { source.clone() }
 }
 
-/// GPU-side storage buffer holding all active ripple entries (unbounded).
+/// GPU-side storage buffer holding all active quantum field entries.
 #[derive(Resource, Default)]
-struct GpuRippleStorage {
-    buffer: StorageBuffer<GpuRippleBuffer>,
+struct GpuQuantumFieldStorage {
+    buffer: StorageBuffer<GpuQuantumFieldBuffer>,
 }
-impl GpuRippleStorage {
-    /// Takes the extracted entries and writes them to the GPU storage buffer.
+impl GpuQuantumFieldStorage {
     fn prepare(
-        mut extracted: ResMut<RippleEntries>,
+        mut extracted: ResMut<QuantumFieldEntries>,
         render_device: Res<RenderDevice>,
         render_queue: Res<RenderQueue>,
-        mut storage: ResMut<GpuRippleStorage>,
+        mut storage: ResMut<GpuQuantumFieldStorage>,
     ) {
-        // Take instead of clone — the extracted resource is recreated each frame anyway.
         let mut entries = std::mem::take(&mut extracted.0);
-        // Some GPU backends reject 0-byte storage buffers, so always keep at least one
-        // (dummy) entry. The shader early-returns when ripple_count == 0.
+        // Some GPU backends reject 0-byte storage buffers; keep at least one dummy entry.
+        // The shader early-returns when field_count == 0.
         if entries.is_empty() {
-            entries.push(GpuRippleEntry::default());
+            entries.push(GpuQuantumFieldEntry::default());
         }
-        storage.buffer.set(GpuRippleBuffer { entries });
+        storage.buffer.set(GpuQuantumFieldBuffer { entries });
         storage.buffer.write_buffer(&render_device, &render_queue);
     }
 }
 
-/// Per-camera uniform. Only carries projection parameters and the shared ripple count.
+/// Per-camera uniform: projection parameters, global time, and field count.
 #[derive(Component, ExtractComponent, Clone, Copy, ShaderType, Default)]
-pub struct RipplePostProcess {
+pub struct QuantumFieldPostProcess {
     camera_world_pos: Vec2,
     viewport_world_size: Vec2,
-    ripple_count: u32,
+    global_time: f32,
+    field_count: u32,
 }
-impl RipplePostProcess {
+impl QuantumFieldPostProcess {
     fn on_add_post_process_camera(
         trigger: On<Add, lib_core::camera::PostProcessCamera>,
         mut commands: Commands,
     ) {
-        commands.entity(trigger.entity).insert(RipplePostProcess::default());
+        commands.entity(trigger.entity).insert(QuantumFieldPostProcess::default());
     }
 
     fn update(
-        mut entries: ResMut<RippleEntries>,
-        ripples: Query<(&Ripple, &Transform)>,
-        mut cameras: Query<(&mut RipplePostProcess, &Transform, &Projection)>,
+        time: Res<Time>,
+        mut entries: ResMut<QuantumFieldEntries>,
+        fields: Query<(Entity, &QuantumFieldLayers, &Transform, &GridImprint)>,
+        mut cameras: Query<(&mut QuantumFieldPostProcess, &Transform, &Projection)>,
     ) {
         entries.0.clear();
-        for (ripple, transform) in ripples.iter() {
-            entries.0.push(GpuRippleEntry {
+        for (entity, layers, transform, imprint) in fields.iter() {
+            entries.0.push(GpuQuantumFieldEntry {
                 center: transform.translation.xy(),
-                normalized_radius: ripple.normalized_radius(),
-                max_radius: ripple.max_radius(),
+                half_extent: imprint.world_size() * 0.5,
+                solve_progress: solve_progress(layers),
+                // Stable per-field offset; decorrelates noise between fields.
+                seed: entity.index_u32() as f32 * 0.37,
+                scan_activity: 0.0,
+                _pad: 0.0,
             });
         }
 
         let count = entries.0.len() as u32;
+        let global_time = time.elapsed_secs();
         for (mut post_process, transform, projection) in cameras.iter_mut() {
             let Projection::Orthographic(ortho) = &*projection else { continue; };
             post_process.camera_world_pos = transform.translation.xy();
-            post_process.viewport_world_size = Vec2::new(
-                ortho.area.width(),
-                ortho.area.height(),
-            );
-            post_process.ripple_count = count;
+            post_process.viewport_world_size = Vec2::new(ortho.area.width(), ortho.area.height());
+            post_process.global_time = global_time;
+            post_process.field_count = count;
         }
     }
+}
+
+/// Single 0→1 "tamed" scalar across all layers. 1.0 once the field is solved.
+fn solve_progress(layers: &QuantumFieldLayers) -> f32 {
+    let total = layers.layers.len().max(1) as f32;
+    let partial = if layers.is_solved() {
+        0.0
+    } else {
+        let target = layers.layers[layers.current_layer].value;
+        if target > 0.0 { layers.current_layer_progress / target } else { 0.0 }
+    };
+    ((layers.current_layer as f32 + partial) / total).clamp(0.0, 1.0)
 }
 
 // ── Render graph ──────────────────────────────────────────────────────────────────────
 
 #[derive(Default)]
-struct RipplePostProcessNode;
-impl ViewNode for RipplePostProcessNode {
+struct QuantumFieldPostProcessNode;
+impl ViewNode for QuantumFieldPostProcessNode {
     type ViewQuery = (
         &'static ViewTarget,
-        &'static DynamicUniformIndex<RipplePostProcess>,
-        &'static RipplePostProcess,
+        &'static DynamicUniformIndex<QuantumFieldPostProcess>,
+        &'static QuantumFieldPostProcess,
     );
 
     fn run<'w>(
@@ -174,40 +199,35 @@ impl ViewNode for RipplePostProcessNode {
         (view_target, settings_index, settings): QueryItem<'w, 'w, Self::ViewQuery>,
         world: &'w World,
     ) -> Result<(), NodeRunError> {
-        // Skip the entire GPU dispatch when no ripples are active.
-        if settings.ripple_count == 0 {
+        if settings.field_count == 0 {
             return Ok(());
         }
-        let pipeline_res = world.resource::<RipplePostProcessPipeline>();
+        let pipeline_res = world.resource::<QuantumFieldPostProcessPipeline>();
         let pipeline_cache = world.resource::<PipelineCache>();
 
-        // Pick the pipeline variant matching the camera's texture format.
         let pipeline_id = if view_target.main_texture_format() == ViewTarget::TEXTURE_FORMAT_HDR {
             pipeline_res.pipeline_id_hdr
         } else {
             pipeline_res.pipeline_id_ldr
         };
-        // Shaders compile asynchronously; skip gracefully while still compiling.
         let Some(pipeline) = pipeline_cache.get_render_pipeline(pipeline_id) else {
             return Ok(());
         };
 
-        let settings_uniforms = world.resource::<ComponentUniforms<RipplePostProcess>>();
+        let settings_uniforms = world.resource::<ComponentUniforms<QuantumFieldPostProcess>>();
         let Some(settings_binding) = settings_uniforms.uniforms().binding() else {
             return Ok(());
         };
 
-        let ripple_storage = world.resource::<GpuRippleStorage>();
-        let Some(storage_binding) = ripple_storage.buffer.binding() else {
+        let field_storage = world.resource::<GpuQuantumFieldStorage>();
+        let Some(storage_binding) = field_storage.buffer.binding() else {
             return Ok(());
         };
 
-        // Ping-pong: reads from `source`, writes to `destination`, then swaps for the
-        // next post-process pass in the chain.
         let post_process = view_target.post_process_write();
 
         let bind_group = render_context.render_device().create_bind_group(
-            "ripple_post_process_bind_group",
+            "quantum_field_post_process_bind_group",
             &pipeline_cache.get_bind_group_layout(&pipeline_res.layout),
             &BindGroupEntries::sequential((
                 post_process.source,
@@ -218,7 +238,7 @@ impl ViewNode for RipplePostProcessNode {
         );
 
         let mut render_pass = render_context.begin_tracked_render_pass(RenderPassDescriptor {
-            label: Some("ripple_post_process_pass"),
+            label: Some("quantum_field_post_process_pass"),
             color_attachments: &[Some(RenderPassColorAttachment {
                 view: post_process.destination,
                 depth_slice: None,
@@ -231,9 +251,7 @@ impl ViewNode for RipplePostProcessNode {
         });
 
         render_pass.set_render_pipeline(pipeline);
-        // Dynamic offset selects this camera's uniform slice from the shared buffer.
         render_pass.set_bind_group(0, &bind_group, &[settings_index.index()]);
-        // 3 vertices = Bevy's built-in fullscreen triangle (no vertex buffer needed).
         render_pass.draw(0..3, 0..1);
 
         Ok(())
@@ -243,14 +261,14 @@ impl ViewNode for RipplePostProcessNode {
 // ── Pipeline ──────────────────────────────────────────────────────────────────────────
 
 #[derive(Resource)]
-struct RipplePostProcessPipeline {
+struct QuantumFieldPostProcessPipeline {
     layout: BindGroupLayoutDescriptor,
     sampler: Sampler,
     pipeline_id_ldr: CachedRenderPipelineId,
     pipeline_id_hdr: CachedRenderPipelineId,
 }
 
-fn init_ripple_pipeline(
+fn init_quantum_field_pipeline(
     mut commands: Commands,
     render_device: Res<RenderDevice>,
     asset_server: Res<AssetServer>,
@@ -258,25 +276,23 @@ fn init_ripple_pipeline(
     pipeline_cache: Res<PipelineCache>,
 ) {
     let layout = BindGroupLayoutDescriptor::new(
-        "ripple_post_process_bind_group_layout",
+        "quantum_field_post_process_bind_group_layout",
         &BindGroupLayoutEntries::sequential(
             ShaderStages::FRAGMENT,
             (
                 texture_2d(TextureSampleType::Float { filterable: true }),
                 sampler(SamplerBindingType::Filtering),
-                // `true` = dynamic offset (per-camera slice in the shared uniform buffer).
-                uniform_buffer::<RipplePostProcess>(true),
-                // `false` = no dynamic offset (single shared buffer, all cameras read the same data).
-                storage_buffer_read_only::<GpuRippleEntry>(false),
+                uniform_buffer::<QuantumFieldPostProcess>(true),
+                storage_buffer_read_only::<GpuQuantumFieldEntry>(false),
             ),
         ),
     );
 
     let sampler = render_device.create_sampler(&SamplerDescriptor::default());
-    let shader = asset_server.load("shaders/ripple_post_process.wgsl");
+    let shader = asset_server.load("shaders/quantum_field_post_process.wgsl");
 
     let make_pipeline = |format| RenderPipelineDescriptor {
-        label: Some("ripple_post_process_pipeline".into()),
+        label: Some("quantum_field_post_process_pipeline".into()),
         layout: vec![layout.clone()],
         vertex: fullscreen_shader.to_vertex_state(),
         fragment: Some(FragmentState {
@@ -294,7 +310,7 @@ fn init_ripple_pipeline(
     let pipeline_id_ldr = pipeline_cache.queue_render_pipeline(make_pipeline(TextureFormat::bevy_default()));
     let pipeline_id_hdr = pipeline_cache.queue_render_pipeline(make_pipeline(ViewTarget::TEXTURE_FORMAT_HDR));
 
-    commands.insert_resource(RipplePostProcessPipeline {
+    commands.insert_resource(QuantumFieldPostProcessPipeline {
         layout,
         sampler,
         pipeline_id_ldr,

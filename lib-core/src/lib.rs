@@ -17,6 +17,7 @@ pub mod modifiers;
 pub mod effects;
 pub mod damage;
 pub mod shards;
+pub mod post_processing;
 
 pub struct LibCorePlugin;
 impl Plugin for LibCorePlugin {

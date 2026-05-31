@@ -8,7 +8,7 @@
 use std::{collections::BinaryHeap, cmp::Ordering};
 use bevy::{
     core_pipeline::{
-        core_2d::graph::{Core2d, Node2d},
+        core_2d::graph::Core2d,
         FullscreenShader,
     },
     ecs::query::QueryItem,
@@ -19,7 +19,7 @@ use bevy::{
         },
         extract_resource::{ExtractResource, ExtractResourcePlugin},
         render_graph::{
-            NodeRunError, RenderGraphContext, RenderGraphExt, RenderLabel, ViewNode, ViewNodeRunner,
+            NodeRunError, RenderGraphContext, RenderGraphExt, ViewNode, ViewNodeRunner,
         },
         render_resource::{
             binding_types::{sampler, storage_buffer_read_only, texture_2d, uniform_buffer},
@@ -31,8 +31,8 @@ use bevy::{
     },
 };
 use super::force_field::{ForceField, ForceFieldEntered};
-use super::ripple_post_process::RipplePostProcessLabel;
 use lib_core::camera::MainCamera;
+use lib_core::post_processing::ForceFieldPostProcessLabel;
 use crate::prelude::*;
 
 pub struct ForceFieldPostProcessPlugin;
@@ -61,17 +61,11 @@ impl Plugin for ForceFieldPostProcessPlugin {
                 GpuForceFieldStorage::prepare.in_set(RenderSystems::PrepareResources),
                 GpuFieldRippleStorage::prepare.in_set(RenderSystems::PrepareResources),
             ))
+            // Ordering against the other post-process passes lives in lib-core's
+            // PostProcessOrderingPlugin (added after all effect plugins).
             .add_render_graph_node::<ViewNodeRunner<ForceFieldPostProcessNode>>(
                 Core2d,
                 ForceFieldPostProcessLabel,
-            )
-            .add_render_graph_edges(
-                Core2d,
-                (
-                    RipplePostProcessLabel,
-                    ForceFieldPostProcessLabel,
-                    Node2d::EndMainPassPostProcessing,
-                ),
             );
     }
 }
@@ -289,9 +283,6 @@ impl ForceFieldPostProcess {
 }
 
 // ── Render graph ──────────────────────────────────────────────────────────────────────
-
-#[derive(Debug, Hash, PartialEq, Eq, Clone, RenderLabel)]
-pub struct ForceFieldPostProcessLabel;
 
 #[derive(Default)]
 struct ForceFieldPostProcessNode;
