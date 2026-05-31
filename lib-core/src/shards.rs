@@ -123,7 +123,7 @@ impl ShardSlots {
         save_executor: Res<GameSaveExecutor>,
         entity_map: Res<DbEntityMap>,
     ) {
-        let result = GameDbConnection::with_db_connection(&save_executor.save_name, |conn| {
+        let result = with_db_connection(&save_executor.save_name, |conn| {
             let mut stmt = conn.prepare(
                 "SELECT shard_target_id, shard_index, shard_type FROM entity_shards ORDER BY shard_target_id, shard_index"
             )?;

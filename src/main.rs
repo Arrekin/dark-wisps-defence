@@ -88,7 +88,7 @@ impl LaunchAction {
             } else {
                 Log::info().dev().tag(Tag::GameLoad).message(format!("Applying migrations to '{path}'"));
             }
-            if let Err(e) = GameDbConnection::with_db_connection(path, |conn| {
+            if let Err(e) = with_db_connection(path, |conn| {
                 if rebuild {
                     conn.execute("DELETE FROM refinery_schema_history;", [])?;
                 }

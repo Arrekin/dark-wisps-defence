@@ -1,5 +1,4 @@
 use crate::lib_prelude::*;
-use super::common::increment_db_generation;
 use bevy::input::common_conditions::input_just_released;
 
 pub struct MapSavePlugin;
@@ -96,7 +95,7 @@ impl GameSaveExecutor {
                     std::fs::remove_file(save_name)?;
                 }
                 
-                GameDbConnection::with_db_connection(save_name, |conn| {
+                with_db_connection(save_name, |conn| {
                     // Run migrations
                     db_migrations::migrations::runner().run(conn)?;
 
@@ -120,7 +119,6 @@ impl GameSaveExecutor {
                 Log::error().dev().tag(Tag::GameSave).message(format!("Save failed: {e}"));
             } else {
                 Log::info().player().tag(Tag::GameSave).message(format!("Game saved to '{save_name}'"));
-                increment_db_generation();
             }
         });
     }

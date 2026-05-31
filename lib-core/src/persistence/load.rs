@@ -93,7 +93,7 @@ impl LoadGameSignal {
         Log::info().dev().tag(Tag::GameLoad).message(format!("Loading '{}'", config.map_path));
 
         // Run migrations synchronously on main thread before parallel loading starts
-        GameDbConnection::with_db_connection(&config.map_path, |conn| {
+        with_db_connection(&config.map_path, |conn| {
             //conn.execute("DELETE FROM refinery_schema_history;", [])?; // Used to clear refinery migrations history, uncomment when in need.
             db_migrations::migrations::runner().run(conn)?;
             Ok(())
@@ -214,7 +214,7 @@ pub fn process_loading_tasks_system(
 
     tasks.par_iter_mut().for_each(|(entity, mut task)| {
         par_commands.command_scope(|mut cmd| {
-             let _ = GameDbConnection::with_db_connection(&save_executor.save_name, |conn| {
+             let _ = with_db_connection(&save_executor.save_name, |conn| {
                  loop {
                      // Check global system budget
                      if start_time.elapsed() > time_budget {
