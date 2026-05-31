@@ -114,7 +114,7 @@ const BEAM_START_WIDTH: f32 = 2.0;
 const DEFAULT_MAX_FUEL: f32 = 60.0;
 pub const FUEL_CONSUMPTION_RATE: f32 = 3.0;
 pub const REFUEL_RATE: f32 = 15.0;              // ~4 seconds to full refuel
-const SCAN_PROGRESS_RATE: f32 = 10.;
+const SCAN_PROGRESS_RATE: f32 = 100.;
 
 /// Drone cost in dark ore - kept as constant for easy balancing
 pub const DRONE_COST_ORE: u32 = 100;

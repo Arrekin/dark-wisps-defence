@@ -147,6 +147,14 @@ exit the function early.
 For unbounded instance data, prefer a `var<storage, read>` buffer over uniform arrays.
 Avoid `vec3<f32>` in GPU structs (implicit padding to 16 bytes).
 
+**Storage buffers grow but never shrink — don't trust `arrayLength`** — Bevy's `StorageBuffer<T>`
+keeps the largest capacity it has ever held, and the binding covers the whole buffer. So
+`arrayLength(&buf)` returns that high-water capacity, *not* the current element count: after the
+count drops, the shader reads stale trailing entries from a previous (larger) frame. Loop on an
+explicit count passed in the uniform instead — as the force field's `field_count` and the quantum
+field's `collapse_count` do. (Symptom we hit: a scan-collapse disc frozen at a former spot once
+the active count dropped from a peak.)
+
 ## Existing Effects
 
 | Effect | Component | Shader |
@@ -156,22 +164,3 @@ Avoid `vec3<f32>` in GPU structs (implicit padding to 16 bytes).
 | Quantum field anomaly | `QuantumFieldPostProcess` in `map_objects/quantum_field_post_process.rs` | `shaders/quantum_field_post_process.wgsl` |
 
 Render-graph order: `Tonemapping → Ripple → QuantumField → ForceField → EndMainPassPostProcessing`.
-
-## Patterns Beyond the Reference
-
-The quantum field effect introduces two patterns not present in the ripple/force-field passes:
-
-- **Rectangular location via box SDF.** Quantum fields are axis-aligned rectangles
-  (`GridImprint::Rectangle`), uploaded as `center` + `half_extent`. The shader uses a signed
-  distance to the box (negative inside) for the interior mask and rim, instead of a radial
-  distance. Fields never overlap (placement validator), so the loop just takes the deepest box.
-- **Multi-tap frame sampling.** Superposition ghosting and chromatic decoherence sample
-  `screen_texture` at several offset positions per fragment (only inside fields) and blend them,
-  so objects on top of the field smear into probability echoes. Tap counts/offsets are shader
-  consts; cost is bounded because fields are small on screen.
-
-The effect's visual modules are individually gated by hardcoded `const … : bool` switches at the
-top of the WGSL (edit + restart to apply; shaders are runtime assets, no Rust recompile). Overall
-intensity is driven by a `solve_progress` 0→1 scalar derived from `QuantumFieldLayers`. A
-`scan_activity` field and `ENABLE_SCAN_COLLAPSE` switch are reserved (inert) for a future
-drone-scan "wavefunction collapse" interaction.

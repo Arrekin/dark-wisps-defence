@@ -2,19 +2,21 @@
 
 // Quantum field anomaly. Screen-space pass over the already-rendered frame, so it can
 // distort / ghost the walls, wisps and towers sitting on top of a field's rectangle.
-// See tasks.md for the design + the GPU data contract.
+// See documentation/post_process_effects.md for the architecture + GPU data contract.
 
 @group(0) @binding(0) var screen_texture: texture_2d<f32>;
 @group(0) @binding(1) var screen_sampler: sampler;
 @group(0) @binding(2) var<uniform> camera: CameraData;
 @group(0) @binding(3) var<storage, read> fields: array<QuantumFieldEntry>;
-// @binding(4) RESERVED for a future scan-sweep buffer (see tasks.md §6).
+@group(0) @binding(4) var<storage, read> collapse_points: array<CollapsePoint>;
 
 struct CameraData {
-    world_pos:     vec2<f32>,
-    viewport_size: vec2<f32>,
-    global_time:   f32,
-    field_count:   u32,
+    world_pos:      vec2<f32>,
+    viewport_size:  vec2<f32>,
+    global_time:    f32,
+    field_count:    u32,
+    collapse_count: u32, // active scan-collapse points (the storage buffer never shrinks, so we
+                         // can't trust arrayLength — loop on this explicit count instead)
 }
 
 struct QuantumFieldEntry {
@@ -22,8 +24,10 @@ struct QuantumFieldEntry {
     half_extent:    vec2<f32>,
     solve_progress: f32, // 0 = fresh anomaly, 1 = solved
     seed:           f32, // per-field noise offset
-    scan_activity:  f32, // RESERVED — always 0 for now (future sweep-collapse)
-    _pad:           f32,
+}
+
+struct CollapsePoint {
+    pos: vec2<f32>, // scan-beam ground spot (world space)
 }
 
 // ── Effect switches (compile-time; edit + restart the app to apply) ───────────
@@ -36,7 +40,7 @@ const ENABLE_SUPERPOSITION:        bool = true;
 const ENABLE_DECOHERENCE:          bool = true;
 const ENABLE_PHASE_FLICKER:        bool = true;
 const ENABLE_LAYER_DIMINISH:       bool = true;
-const ENABLE_SCAN_COLLAPSE:        bool = false; // RESERVED — see tasks.md §6
+const ENABLE_SCAN_COLLAPSE:        bool = true;  // drone beams locally calm the field around their scan spot
 
 // ── Palette ───────────────────────────────────────────────────────────────────
 const COLOR_BASE:     vec3<f32> = vec3<f32>(0.45, 0.20, 0.85); // violet interior
@@ -44,9 +48,9 @@ const COLOR_ACCENT:   vec3<f32> = vec3<f32>(0.25, 1.00, 0.70); // cyan-green spa
 const COLOR_BOUNDARY: vec3<f32> = vec3<f32>(0.60, 0.45, 1.00); // brighter violet rim — matches the interior
 
 // ── Boundary tunables (world units unless noted) ──────────────────────────────
-const BOUNDARY_THICKNESS:   f32 = 2.5;   // visible rim line half-width (thinner than before)
-const INTERIOR_FADE:        f32 = 6.0;   // how far inside the interior ramps to full strength;
-                                         // also governs object-effect edge falloff (unchanged behavior)
+const BOUNDARY_THICKNESS:   f32 = 2.5;   // visible rim line half-width
+const INTERIOR_FADE:        f32 = 6.0;   // distance the interior ramps to full strength over;
+                                         // also the object-effect edge falloff distance
 const BOUNDARY_OUTER_BAND:  f32 = 8.0;   // distance past the edge still processed
 const BOUNDARY_UNCERT_AMP:  f32 = 5.0;   // edge jitter amplitude
 const BOUNDARY_UNCERT_FREQ: f32 = 0.05;  // edge jitter spatial frequency
@@ -75,6 +79,10 @@ const SUPERPOSITION_SPIN:   f32 = 0.7;   // rad/s rotation of the ghost cluster
 const DECOHERENCE_SPLIT:    f32 = 4.0;   // channel separation
 const PHASE_FLICKER_SPEED:  f32 = 9.0;
 const PHASE_FLICKER_DEPTH:  f32 = 0.6;   // how strongly the rim dims (0..1)
+
+// ── Scan-collapse — drone beams locally calm the field around their ground spot ──────────
+const SCAN_COLLAPSE_RADIUS: f32 = 40.0;  // world-unit radius of the calmed region per scan spot
+const SCAN_GLOW:           f32 = 0.5;    // brightness of the soft "observed" rim
 
 const TAU: f32 = 6.28318530718;
 
@@ -170,13 +178,25 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     }
 
     let weirdness = select(1.0, 1.0 - field.solve_progress, ENABLE_LAYER_DIMINISH);
-    // interior: object-effect region (uses INTERIOR_FADE → behavior unchanged from before).
-    let interior  = 1.0 - smoothstep(-INTERIOR_FADE, 0.0, edge_sdf); // 1 inside → 0 at edge
-    // rim_zone: same ~6u band the phase-flicker used previously (kept independent of the line).
+    // interior: 1 deep inside → 0 at the edge. Masks the interior pattern and the object effects.
+    let interior  = 1.0 - smoothstep(-INTERIOR_FADE, 0.0, edge_sdf);
+    // rim_zone: a band straddling the edge (INTERIOR_FADE wide) — drives the phase-flicker.
     let rim_zone  = 1.0 - smoothstep(0.0, INTERIOR_FADE, abs(edge_sdf));
-    // on_edge: the *visible* boundary line — now thin (BOUNDARY_THICKNESS).
+    // on_edge: the thin visible boundary line (BOUNDARY_THICKNESS wide).
     let on_edge   = 1.0 - smoothstep(0.0, BOUNDARY_THICKNESS, abs(edge_sdf));
     let to_center = world_pos - field.center;
+
+    // ── Scan-collapse: where a drone beam observes the field, the anomaly calms locally ──
+    // For each active scan spot, calm a disc around it: superposition + decoherence snap toward
+    // the real object and the chaotic lattice eases (observation collapses the wavefunction).
+    var collapse = 0.0;
+    if ENABLE_SCAN_COLLAPSE {
+        for (var i = 0u; i < camera.collapse_count; i++) {
+            let d = distance(world_pos, collapse_points[i].pos);
+            collapse = max(collapse, smoothstep(SCAN_COLLAPSE_RADIUS, SCAN_COLLAPSE_RADIUS * 0.35, d));
+        }
+        collapse *= interior;
+    }
 
     // ── Build the world-space coordinate we sample the frame from ──────────────
     var sample_world = world_pos;
@@ -186,11 +206,14 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
         let ny = fbm(world_pos * SCHLIEREN_SCALE + vec2<f32>(0.0, t * 0.17 + field.seed));
         sample_world += (vec2<f32>(nx, ny) - 0.5) * 2.0 * SCHLIEREN_STRENGTH * weirdness * interior;
     }
+    // Inside a collapse disc, pin sampling back to the true position — schlieren and any other
+    // displacement vanish, so the observed area shows crystal-clear reality (rim still distorts).
+    sample_world = mix(sample_world, world_pos, collapse);
 
     // ── Sample the frame: superposition ghosting + chromatic decoherence ───────
     var rgb: vec3<f32>;
     if ENABLE_SUPERPOSITION {
-        let spread = SUPERPOSITION_OFFSET * weirdness * interior;
+        let spread = SUPERPOSITION_OFFSET * weirdness * interior * (1.0 - collapse);
         var acc  = sample_rgb(world_to_uv(sample_world)) * 2.0; // real position weighted higher
         var wsum = 2.0;
         for (var k = 0; k < SUPERPOSITION_TAPS; k++) {
@@ -204,7 +227,7 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
         rgb = sample_rgb(world_to_uv(sample_world));
     }
     if ENABLE_DECOHERENCE {
-        let split = DECOHERENCE_SPLIT * weirdness * interior;
+        let split = DECOHERENCE_SPLIT * weirdness * interior * (1.0 - collapse);
         let len   = length(to_center);
         let dir   = select(vec2<f32>(1.0, 0.0), to_center / max(len, 0.001), len > 0.001);
         let cr = sample_rgb(world_to_uv(sample_world + dir * split)).r;
@@ -215,7 +238,7 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     // ── Phase flicker near the rim (screen-space approximation of tunneling) ───
     if ENABLE_PHASE_FLICKER {
         let f = fbm(world_pos * 0.2 + vec2<f32>(t * PHASE_FLICKER_SPEED, field.seed));
-        rgb *= 1.0 - PHASE_FLICKER_DEPTH * rim_zone * weirdness * step(0.5, f);
+        rgb *= 1.0 - PHASE_FLICKER_DEPTH * rim_zone * weirdness * step(0.5, f) * (1.0 - collapse);
     }
 
     // ── Interior: a warped, drifting moiré lattice with interference bands ─────
@@ -244,7 +267,8 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let lit = lattice * bright;
     var overlay = COLOR_BASE   * lit * MOIRE_INTENSITY
                 + COLOR_ACCENT * pow(clamp(lit, 0.0, 1.0), 4.0) * ACCENT_AMOUNT;
-    overlay *= interior * weirdness;
+    // Scan-collapse eases the chaotic lattice toward calm where the field is being observed.
+    overlay *= interior * weirdness * (1.0 - collapse);
 
     // ── Boundary ───────────────────────────────────────────────────────────────
     // Violet rim matching the interior style — just bright enough to delineate the area.
@@ -253,18 +277,14 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
         boundary_col += COLOR_BOUNDARY * on_edge * (0.6 + 0.4 * weirdness);
     }
 
-    // Faint interior tint so the area still reads when calm/solved.
-    let base_tint = COLOR_BASE * interior * (0.05 + 0.10 * weirdness);
+    // Faint interior tint so the area still reads when calm/solved (also eased by collapse).
+    let base_tint = COLOR_BASE * interior * (0.05 + 0.10 * weirdness) * (1.0 - collapse);
 
     var result = rgb + overlay + boundary_col + base_tint;
 
-    // ── RESERVED: scan-collapse (see tasks.md §6) ──────────────────────────────
-    if ENABLE_SCAN_COLLAPSE {
-        // TODO(scan-collapse): drive from ExpeditionZone / drone state via field.scan_activity.
-        // Would crisp the lattice and snap superposition ghosts where the sweep passes.
-        // Inert until a future system writes scan_activity (> 0); referenced so the binding stays live.
-        result += COLOR_ACCENT * 0.0 * field.scan_activity;
-    }
+    // Scan-collapse: soft violet rim marking each observed/calmed disc (0 when nothing scanning).
+    let collapse_rim = collapse * (1.0 - collapse) * 4.0; // peaks at the disc edge
+    result += COLOR_BOUNDARY * collapse_rim * SCAN_GLOW;
 
     return vec4<f32>(result, 1.0);
 }
