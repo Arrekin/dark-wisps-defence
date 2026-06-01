@@ -19,6 +19,59 @@ var<uniform> uniforms: UniformData;
 const circle_radius: f32 = 0.64;
 const edge_softness: f32 = 0.35;
 
+// ── Procedural brittle cracks (milestone 1) ─────────────────────────────────
+// A cellular/Worley crack web, sampled in the wisp's distorted surface space so
+// the fractures ride the same bounce as the water body. Tunables up top.
+const CRACK_SCALE: f32 = 5.5;     // cells across the wisp; higher = finer web
+const CRACK_WIDTH: f32 = 0.07;    // fracture line thickness
+const CRACK_STRENGTH: f32 = 0.95; // overall opacity of the effect
+
+fn crack_hash2(p: vec2<f32>) -> vec2<f32> {
+    let k = vec2<f32>(
+        dot(p, vec2<f32>(127.1, 311.7)),
+        dot(p, vec2<f32>(269.5, 183.3)),
+    );
+    return fract(sin(k) * 43758.5453123);
+}
+
+// Returns (F1, F2): distance to the nearest and second-nearest cell points.
+fn crack_worley(uv: vec2<f32>) -> vec2<f32> {
+    let g = floor(uv);
+    let f = fract(uv);
+    var f1: f32 = 8.0;
+    var f2: f32 = 8.0;
+    for (var j: i32 = -1; j <= 1; j = j + 1) {
+        for (var i: i32 = -1; i <= 1; i = i + 1) {
+            let cell = vec2<f32>(f32(i), f32(j));
+            let point = cell + crack_hash2(g + cell);
+            let d = length(point - f);
+            if (d < f1) {
+                f2 = f1;
+                f1 = d;
+            } else if (d < f2) {
+                f2 = d;
+            }
+        }
+    }
+    return vec2<f32>(f1, f2);
+}
+
+// Brittle look for the WATER wisp. `surface_uv` is the distorted UV (rides the
+// bounce); `body` is the wisp's coverage so cracks stay inside it.
+fn brittle(color: vec4<f32>, surface_uv: vec2<f32>, body: f32) -> vec4<f32> {
+    let glow = vec3<f32>(0.80, 0.95, 1.00); // icy highlight along the fracture
+    let core = vec3<f32>(0.00, 0.08, 0.22); // dark hairline at its centre
+
+    let cells = crack_worley(surface_uv * CRACK_SCALE);
+    let edge = cells.y - cells.x;                  // ~0 along cell borders
+    let line = 1.0 - smoothstep(0.0, CRACK_WIDTH, edge);
+    let amount = line * CRACK_STRENGTH * body;
+
+    var rgb = mix(color.rgb, glow, amount);
+    rgb = mix(rgb, core, pow(line, 4.0) * CRACK_STRENGTH * body);
+    return vec4<f32>(rgb, color.a);
+}
+
 @fragment
 fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
     let center = vec2<f32>(0.5, 0.5);
@@ -53,5 +106,8 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
         color.a = 0.0;
     }
     
+    // Hardcoded brittle for visual testing (milestone 1) — every water wisp cracks.
+    color = brittle(color, distorted_uv, color.a);
+
     return color;
 }
