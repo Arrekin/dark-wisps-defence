@@ -15,6 +15,11 @@ impl Plugin for EditorPlugin {
         app
             .add_plugins(bevy_egui::EguiPlugin::default())
             .insert_resource(bevy_egui::EguiGlobalSettings {
+                // Don't let bevy_egui grab the first camera it finds as the primary context.
+                // With multiple cameras (main + off-screen preview cameras) the pick is
+                // non-deterministic, which made egui randomly render into a preview viewport.
+                // We attach `PrimaryEguiContext` to `MainCamera` ourselves instead.
+                auto_create_primary_context: false,
                 enable_absorb_bevy_input_system: true,
                 ..default()
             })

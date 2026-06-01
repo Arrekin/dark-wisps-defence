@@ -10,6 +10,7 @@ use bevy::asset::RenderAssetUsages;
 use bevy::camera::RenderTarget;
 use bevy::render::render_resource::{TextureDimension, TextureFormat, TextureUsages};
 use bevy::render::view::Hdr;
+use bevy_egui::PrimaryEguiContext;
 use crate::lib_prelude::*;
 
 const ZOOM_MIN: f32 = 1.;
@@ -21,7 +22,7 @@ pub struct CameraPlugin;
 impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_systems(PreStartup, startup)
+            .add_systems(Startup, startup)
             .add_systems(Update, (
                 camera_zoom,
                 camera_movement,
@@ -46,6 +47,11 @@ fn startup(mut commands: Commands) {
         Bloom { high_pass_frequency: 0.5, ..default() },
         MainCamera,
         PostProcessCamera,
+        // Pin egui's primary context to the main window camera. Requires
+        // `EguiGlobalSettings::auto_create_primary_context = false` (set in EditorPlugin).
+        // `PrimaryEguiContext` requires `EguiContext` and, via its on_insert hook, wires up
+        // the `EguiPrimaryContextPass` multipass schedule for this entity automatically.
+        PrimaryEguiContext,
     ));
 }
 

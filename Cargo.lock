@@ -3332,6 +3332,7 @@ name = "lib-core"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "bevy_egui",
  "crossbeam-channel",
  "lib-derive",
  "nanorand",

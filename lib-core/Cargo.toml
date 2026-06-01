@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 bevy = { version = "0.18.*", default-features = false, features = ["dynamic_linking", "2d"] }
+bevy_egui = "0.39.*"
 crossbeam-channel = "0.5.*"
 nanorand = { version = "0.7.*", features = ["tls"] }
 refinery = { version = "0.9.*", features = ["rusqlite"]}
@@ -14,4 +15,3 @@ strum = { version = "0.28.*", features = ["derive"] }
 
 [dependencies.lib-derive]
 path = "../lib-derive"
-
