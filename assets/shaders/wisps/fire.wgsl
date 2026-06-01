@@ -16,8 +16,44 @@ var<uniform> uniforms: UniformData;
 @group(2) @binding(1) var wisp_tex1_sampler: sampler;
 @group(2) @binding(2) var wisp_tex2: texture_2d<f32>;
 
+const WISP_EFFECT_SLOTS: u32 = 8u;
+struct WispEffects {
+    mask: u32,
+    params: array<vec4<f32>, WISP_EFFECT_SLOTS>,
+};
+@group(2) @binding(5)
+var<uniform> effects: WispEffects;
+
+const BRITTLE: u32 = 1u;
+
 const circle_radius: f32 = 0.64;
 const edge_softness: f32 = 0.35;
+
+// ── Procedural brittle crack ────────────────────────────────────────────────
+// A bold three-armed fracture splitting the core from its centre. The core is a small disc,
+// so a single deterministic split reads far better than a fine web that vanishes at this
+// size. Fire fractures into a charred crust with hot ember light escaping the seam.
+const TAU: f32 = 6.28318530718;
+const CRACK_ARMS: f32 = 3.0;
+const CRACK_ARM_WIDTH: f32 = 0.04; // arm half-thickness, in UV
+const CRACK_ARM_OFFSET: f32 = 0.7; // rotation of the star, in radians
+
+fn brittle(color: vec4<f32>, uv: vec2<f32>, body: f32) -> vec4<f32> {
+    let char_crust = vec3<f32>(0.03, 0.01, 0.00); // cooled crust along the fracture
+    let ember = vec3<f32>(1.00, 0.50, 0.10);       // hot light escaping the seam
+
+    let p = uv - vec2<f32>(0.5);
+    let r = length(p);
+    let a = atan2(p.y, p.x);
+    let t = (a - CRACK_ARM_OFFSET) * CRACK_ARMS / TAU;
+    let frac = t - floor(t + 0.5);                  // 0 on an arm, +/-0.5 between arms
+    let perp = r * abs(frac) * TAU / CRACK_ARMS;    // distance to the nearest arm
+    let line = 1.0 - smoothstep(CRACK_ARM_WIDTH * 0.5, CRACK_ARM_WIDTH, perp);
+
+    var rgb = mix(color.rgb, char_crust, line * body);
+    rgb = mix(rgb, ember, pow(line, 2.0) * body);
+    return vec4<f32>(rgb, color.a);
+}
 
 @fragment
 fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
@@ -55,5 +91,11 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
         color.a = 0.;
     }
     
+    if (effects.mask & BRITTLE) != 0u {
+        // Split only the solid core, leaving the surrounding flame intact.
+        let core_mask = color.a * (1.0 - smoothstep(0.16, 0.22, dist));
+        color = brittle(color, mesh.uv, core_mask);
+    }
+
     return color;
 }

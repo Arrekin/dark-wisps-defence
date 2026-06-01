@@ -4,7 +4,7 @@ use crate::{prelude::*, weaponry::force_field::FieldAffected};
 #[require(
     WispState, WispChargeAttack, GridPath, ModifierBank, MapBound,
     MovementSpeed, AttackRange, MaxIntegrityPoints, IncomingDamageMultiplier,
-    FieldAffected
+    FieldAffected, EffectVisualState
 )]
 pub struct Wisp;
 #[derive(Component, Default)]

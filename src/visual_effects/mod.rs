@@ -1,6 +1,7 @@
 pub mod explosions;
 pub mod common;
 pub mod wisp_attack;
+pub mod effect_material;
 
 use crate::prelude::*;
 

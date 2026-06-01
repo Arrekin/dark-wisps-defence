@@ -3,6 +3,7 @@ use crate::lib_prelude::*;
 /// Marker for the Brittle debuff. Applied to wisps hit by an emitter tower ripple.
 /// Causes them to take increased incoming damage for a duration set by the source.
 #[derive(Component)]
+#[require(EffectVisualContribution = EffectVisualContribution::new(BRITTLE_BIT, BRITTLE_SLOT, Vec4::ZERO))]
 pub struct BrittleEffect;
 
 pub struct BrittleEffectPlugin;

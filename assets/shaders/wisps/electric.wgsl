@@ -8,6 +8,16 @@ struct UniformData {
 @group(2) @binding(4)
 var<uniform> uniforms: UniformData;
 
+const WISP_EFFECT_SLOTS: u32 = 8u;
+struct WispEffects {
+    mask: u32,
+    params: array<vec4<f32>, WISP_EFFECT_SLOTS>,
+};
+@group(2) @binding(5)
+var<uniform> effects: WispEffects;
+
+const BRITTLE: u32 = 1u;
+
 // Hash function to generate pseudo-random values
 fn hash(p: vec2<f32>) -> f32 {
     let h: f32 = dot(p, vec2<f32>(127.1, 311.7));
@@ -38,6 +48,33 @@ fn fbm(p: vec2<f32>) -> f32 {
         amplitude *= 0.5;
     }
     return value;
+}
+
+// ── Procedural brittle crack ────────────────────────────────────────────────
+// A bold three-armed fracture splitting the orb core from its centre — a dark crackle with a
+// bright charged seam that flickers with the current. The core is small, so a single
+// deterministic split reads far better than a fine web.
+const TAU: f32 = 6.28318530718;
+const CRACK_ARMS: f32 = 3.0;
+const CRACK_ARM_WIDTH: f32 = 0.04; // arm half-thickness, in UV
+const CRACK_ARM_OFFSET: f32 = 1.9; // rotation of the star, in radians
+
+fn brittle(color: vec4<f32>, uv: vec2<f32>, body: f32) -> vec4<f32> {
+    let spark = vec3<f32>(1.00, 1.00, 0.60); // bright charged seam
+    let dead = vec3<f32>(0.00, 0.00, 0.00);  // dark crackle
+
+    let p = uv - vec2<f32>(0.5);
+    let r = length(p);
+    let a = atan2(p.y, p.x);
+    let t = (a - CRACK_ARM_OFFSET) * CRACK_ARMS / TAU;
+    let frac = t - floor(t + 0.5);
+    let perp = r * abs(frac) * TAU / CRACK_ARMS;
+    let line = 1.0 - smoothstep(CRACK_ARM_WIDTH * 0.5, CRACK_ARM_WIDTH, perp);
+    let flicker = 0.6 + 0.4 * sin(globals.time * 30.0 + a * 3.0);
+
+    var rgb = mix(color.rgb, dead, line * body);
+    rgb = mix(rgb, spark, pow(line, 2.0) * body * flicker);
+    return vec4<f32>(rgb, color.a);
 }
 
 @fragment
@@ -93,5 +130,10 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     // Output the final color with full opacity
-    return vec4(color, alpha);
+    var final_color = vec4(color, alpha);
+    if (effects.mask & BRITTLE) != 0u {
+        // Split only the orb core, leaving the bolts intact.
+        final_color = brittle(final_color, mesh.uv, core_intensity);
+    }
+    return final_color;
 }

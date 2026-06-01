@@ -15,6 +15,7 @@ pub mod wisps;
 pub mod map_objects;
 pub mod modifiers;
 pub mod effects;
+pub mod effect_visuals;
 pub mod damage;
 pub mod shards;
 pub mod post_processing;
@@ -34,6 +35,7 @@ impl Plugin for LibCorePlugin {
             game_clock::GameClockPlugin,
             modifiers::ModifiersPlugin,
             effects::EffectsPlugin,
+            effect_visuals::EffectVisualsPlugin,
             damage::DamagePlugin,
             shards::ShardsPlugin,
         ));
@@ -54,6 +56,7 @@ pub mod prelude {
     pub use crate::wisps::wisps_prelude::*;
     pub use crate::modifiers::modifiers_prelude::*;
     pub use crate::effects::effects_prelude::*;
+    pub use crate::effect_visuals::effect_visuals_prelude::*;
     pub use crate::damage::damage_prelude::*;
     pub use crate::shards::shards_prelude::*;
     // Re-export the derive macros

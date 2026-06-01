@@ -5,6 +5,7 @@ use bevy::{
 };
 
 use crate::prelude::*;
+use crate::visual_effects::effect_material::{EffectVisualMaterial, EffectVisualUniform};
 
 pub trait WispMaterial: Material2d {
     fn make(asset_server: &AssetServer) -> Self;
@@ -28,6 +29,9 @@ pub struct WispFireMaterial {
     pub sinus_direction: f32,
     #[uniform(4)]
     pub cosinus_direction: f32,
+
+    #[uniform(5)]
+    pub effects: EffectVisualUniform,
 }
 impl Material2d for WispFireMaterial {
     fn fragment_shader() -> ShaderRef {
@@ -48,7 +52,13 @@ impl WispMaterial for WispFireMaterial {
             cosinus_direction: [-1., 1.][rng.generate::<usize>() % 2],
             wisp_tex1: asset_server.load("wisps/big_wisp.png"),
             wisp_tex2: asset_server.load("wisps/big_wisp.png"),
+            effects: EffectVisualUniform::default(),
         }
+    }
+}
+impl EffectVisualMaterial for WispFireMaterial {
+    fn effects_mut(&mut self) -> &mut EffectVisualUniform {
+        &mut self.effects
     }
 }
 
@@ -70,6 +80,9 @@ pub struct WispWaterMaterial {
     pub sinus_direction: f32,
     #[uniform(4)]
     pub cosinus_direction: f32,
+
+    #[uniform(5)]
+    pub effects: EffectVisualUniform,
 }
 impl Material2d for WispWaterMaterial {
     fn fragment_shader() -> ShaderRef {
@@ -90,7 +103,13 @@ impl WispMaterial for WispWaterMaterial {
             cosinus_direction: [-1., 1.][rng.generate::<usize>() % 2],
             wisp_tex1: asset_server.load("wisps/big_wisp.png"),
             wisp_tex2: asset_server.load("wisps/big_wisp.png"),
+            effects: EffectVisualUniform::default(),
         }
+    }
+}
+impl EffectVisualMaterial for WispWaterMaterial {
+    fn effects_mut(&mut self) -> &mut EffectVisualUniform {
+        &mut self.effects
     }
 }
 
@@ -101,6 +120,9 @@ pub struct WispLightMaterial {
     pub radiance_angle: f32,
     #[uniform(4)]
     pub radiance_radius: f32,
+
+    #[uniform(5)]
+    pub effects: EffectVisualUniform,
 }
 impl Material2d for WispLightMaterial {
     fn fragment_shader() -> ShaderRef {
@@ -116,7 +138,13 @@ impl WispMaterial for WispLightMaterial {
         Self {
             radiance_angle: rng.generate::<f32>() * 20. + 10., // 10.0 - 30.0
             radiance_radius: rng.generate::<f32>() * 10. + 5., // 5.0 - 15.0
+            effects: EffectVisualUniform::default(),
         }
+    }
+}
+impl EffectVisualMaterial for WispLightMaterial {
+    fn effects_mut(&mut self) -> &mut EffectVisualUniform {
+        &mut self.effects
     }
 }
 
@@ -126,6 +154,9 @@ pub struct WispElectricMaterial {
     pub angle_direction: f32,
     #[uniform(4)]
     pub radius_direction: f32,
+
+    #[uniform(5)]
+    pub effects: EffectVisualUniform,
 }
 impl Material2d for WispElectricMaterial {
     fn fragment_shader() -> ShaderRef {
@@ -141,6 +172,12 @@ impl WispMaterial for WispElectricMaterial {
         Self {
             angle_direction: [-1., 1.][rng.generate::<usize>() % 2],
             radius_direction: [-1., 1.][rng.generate::<usize>() % 2],
+            effects: EffectVisualUniform::default(),
         }
+    }
+}
+impl EffectVisualMaterial for WispElectricMaterial {
+    fn effects_mut(&mut self) -> &mut EffectVisualUniform {
+        &mut self.effects
     }
 }

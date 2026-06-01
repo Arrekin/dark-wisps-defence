@@ -10,6 +10,7 @@ use lib_inventory::almanach::WispInfo;
 use lib_inventory::placement::annotate_non_empty;
 
 use crate::prelude::*;
+use crate::visual_effects::effect_material::sync_effect_visuals;
 
 pub struct WispsPlugin;
 impl Plugin for WispsPlugin {
@@ -33,6 +34,12 @@ impl Plugin for WispsPlugin {
                     systems::wisp_charge_attack,
                     systems::collide_wisps,
                 ).run_if(in_state(GameState::Running)),
+            ))
+            .add_systems(Update, (
+                sync_effect_visuals::<materials::WispFireMaterial>,
+                sync_effect_visuals::<materials::WispWaterMaterial>,
+                sync_effect_visuals::<materials::WispLightMaterial>,
+                sync_effect_visuals::<materials::WispElectricMaterial>,
             ))
             .add_observer(spawning::BuilderWisp::on_add)
             .add_observer(spawning::on_wisp_place_request)

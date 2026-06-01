@@ -9,6 +9,16 @@ struct UniformData {
 @group(2) @binding(4)
 var<uniform> uniforms: UniformData;
 
+const WISP_EFFECT_SLOTS: u32 = 8u;
+struct WispEffects {
+    mask: u32,
+    params: array<vec4<f32>, WISP_EFFECT_SLOTS>,
+};
+@group(2) @binding(5)
+var<uniform> effects: WispEffects;
+
+const BRITTLE: u32 = 1u;
+
 // Hash function to generate pseudo-random values
 fn hash(p: vec2<f32>) -> f32 {
     let h: f32 = dot(p, vec2<f32>(127.1, 311.7));
@@ -25,6 +35,55 @@ fn noise(p: vec2<f32>) -> f32 {
     let d: f32 = hash(i + vec2<f32>(1.0, 1.0));
     let u: vec2<f32> = f * f * (3.0 - 2.0 * f);
     return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+// ── Procedural brittle cracks ───────────────────────────────────────────────
+// A cellular/Worley crack web that fractures the radiance like cracked glass — thin dark
+// fissures where the light can no longer hold together.
+const CRACK_SCALE: f32 = 4.0;
+const CRACK_WIDTH: f32 = 0.20;
+const CRACK_STRENGTH: f32 = 1.0;
+
+fn crack_hash2(p: vec2<f32>) -> vec2<f32> {
+    let k = vec2<f32>(
+        dot(p, vec2<f32>(127.1, 311.7)),
+        dot(p, vec2<f32>(269.5, 183.3)),
+    );
+    return fract(sin(k) * 43758.5453123);
+}
+
+fn crack_worley(uv: vec2<f32>) -> vec2<f32> {
+    let g = floor(uv);
+    let f = fract(uv);
+    var f1: f32 = 8.0;
+    var f2: f32 = 8.0;
+    for (var j: i32 = -1; j <= 1; j = j + 1) {
+        for (var i: i32 = -1; i <= 1; i = i + 1) {
+            let cell = vec2<f32>(f32(i), f32(j));
+            let point = cell + crack_hash2(g + cell);
+            let d = length(point - f);
+            if (d < f1) {
+                f2 = f1;
+                f1 = d;
+            } else if (d < f2) {
+                f2 = d;
+            }
+        }
+    }
+    return vec2<f32>(f1, f2);
+}
+
+fn brittle(color: vec4<f32>, surface_uv: vec2<f32>, body: f32) -> vec4<f32> {
+    let fracture = vec3<f32>(0.00, 0.01, 0.05); // dark gap where the glow breaks apart
+    let sheen = vec3<f32>(0.55, 0.75, 1.00);     // cold rim light along the fracture
+
+    let cells = crack_worley(surface_uv * CRACK_SCALE);
+    let edge = cells.y - cells.x;
+    let line = 1.0 - smoothstep(0.0, CRACK_WIDTH, edge);
+
+    var rgb = mix(color.rgb, sheen, line * 0.5 * body);
+    rgb = mix(rgb, fracture, pow(line, 1.2) * CRACK_STRENGTH * body);
+    return vec4<f32>(rgb, color.a);
 }
 
 @fragment
@@ -69,5 +128,9 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     // Output the final color with full opacity
-    return vec4<f32>(color, alpha);
+    var final_color = vec4<f32>(color, alpha);
+    if (effects.mask & BRITTLE) != 0u {
+        final_color = brittle(final_color, mesh.uv, alpha);
+    }
+    return final_color;
 }

@@ -16,12 +16,22 @@ var<uniform> uniforms: UniformData;
 @group(2) @binding(1) var wisp_tex1_sampler: sampler;
 @group(2) @binding(2) var wisp_tex2: texture_2d<f32>;
 
+const WISP_EFFECT_SLOTS: u32 = 8u;
+struct WispEffects {
+    mask: u32,
+    params: array<vec4<f32>, WISP_EFFECT_SLOTS>,
+};
+@group(2) @binding(5)
+var<uniform> effects: WispEffects;
+
+const BRITTLE: u32 = 1u;
+
 const circle_radius: f32 = 0.64;
 const edge_softness: f32 = 0.35;
 
-// ── Procedural brittle cracks (milestone 1) ─────────────────────────────────
+// ── Procedural brittle cracks ───────────────────────────────────────────────
 // A cellular/Worley crack web, sampled in the wisp's distorted surface space so
-// the fractures ride the same bounce as the water body. Tunables up top.
+// the fractures ride the same bounce as the water body.
 const CRACK_SCALE: f32 = 5.5;     // cells across the wisp; higher = finer web
 const CRACK_WIDTH: f32 = 0.07;    // fracture line thickness
 const CRACK_STRENGTH: f32 = 0.95; // overall opacity of the effect
@@ -106,8 +116,9 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
         color.a = 0.0;
     }
     
-    // Hardcoded brittle for visual testing (milestone 1) — every water wisp cracks.
-    color = brittle(color, distorted_uv, color.a);
+    if (effects.mask & BRITTLE) != 0u {
+        color = brittle(color, distorted_uv, color.a);
+    }
 
     return color;
 }
