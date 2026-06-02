@@ -144,9 +144,15 @@ impl EffectVisualMaterial for WispWaterMaterial {
 #[derive(Asset, TypePath, Debug, Clone, AsBindGroup)]
 pub struct WispLightMaterial {
     #[uniform(4)]
-    pub radiance_angle: f32,
+    pub seed: f32,
+    // Locomotion, written by `drive_light_material` only when it changes:
+    // `vigor` brightens and flares the star and sheds motes, `heading` aims the mote wake.
     #[uniform(4)]
-    pub radiance_radius: f32,
+    pub vigor: f32,
+    #[uniform(4)]
+    pub heading_x: f32,
+    #[uniform(4)]
+    pub heading_y: f32,
 
     #[uniform(5)]
     pub effects: EffectVisualUniform,
@@ -163,8 +169,10 @@ impl WispMaterial for WispLightMaterial {
     fn make(_asset_server: &AssetServer) -> Self {
         let mut rng = nanorand::tls_rng();
         Self {
-            radiance_angle: rng.generate::<f32>() * 20. + 10., // 10.0 - 30.0
-            radiance_radius: rng.generate::<f32>() * 10. + 5., // 5.0 - 15.0
+            seed: rng.generate::<f32>() * 100., // decorrelates a cluster of wisps
+            vigor: 0.,
+            heading_x: 0.,
+            heading_y: 0.,
             effects: EffectVisualUniform::default(),
         }
     }
