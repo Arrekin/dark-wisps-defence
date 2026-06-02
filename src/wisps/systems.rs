@@ -8,7 +8,7 @@ use crate::visual_effects::wisp_attack::BuilderWispAttackEffect;
 use crate::prelude::*;
 
 use super::components::{Wisp, WispChargeAttack, WispState};
-use super::materials::WispWaterMaterial;
+use super::materials::{WispElectricMaterial, WispWaterMaterial};
 
 /// Drives each water wisp's material from its [`Locomotion`], turning measured
 /// speed into `vigor` (the shader turns that into deform + cadence) and feeding
@@ -82,6 +82,44 @@ pub fn drive_water_material(
         material.surf_anchor_phase += elapsed * (SURF_RATE_REST + SURF_RATE_SWING * material.vigor);
         material.anchor_time = now;
         material.vigor = vigor; // the shader derives deform + cadence from this
+        material.heading_x = heading_x;
+        material.heading_y = heading_y;
+    }
+}
+
+/// Feeds each electric wisp's measured motion into its material: `vigor` scales
+/// the crackle, `heading` aims the spark wake. Gated like the water driver, so a
+/// cruising or idle wisp uploads nothing — the arcs animate off the GPU clock.
+///
+/// Much simpler than water: the strike rhythm runs at a constant rate, so vigor
+/// only turns an amplitude knob and there is no phase anchor to maintain.
+pub fn drive_electric_material(
+    wisps: Query<(&Locomotion, &MeshMaterial2d<WispElectricMaterial>)>,
+    mut materials: ResMut<Assets<WispElectricMaterial>>,
+) {
+    const DRIVE_EPSILON: f32 = 0.01;
+    const VIGOR_SWEET_SPOT: f32 = 60.0; // world units/sec that maps to vigor 1.0
+
+    for (locomotion, material_handle) in wisps.iter() {
+        let handle = &material_handle.0;
+        let Some(material) = materials.get(handle) else { continue; };
+
+        let velocity = locomotion.velocity();
+        let vigor = velocity.length() / VIGOR_SWEET_SPOT;
+        // World heading → quad-local sample space (Rectangle UV V axis points down).
+        let heading = velocity.normalize_or_zero();
+        let heading_x = heading.x;
+        let heading_y = -heading.y;
+
+        if (vigor - material.vigor).abs() <= DRIVE_EPSILON
+            && (heading_x - material.heading_x).abs() <= DRIVE_EPSILON
+            && (heading_y - material.heading_y).abs() <= DRIVE_EPSILON
+        {
+            continue;
+        }
+
+        let Some(material) = materials.get_mut(handle) else { continue; };
+        material.vigor = vigor;
         material.heading_x = heading_x;
         material.heading_y = heading_y;
     }

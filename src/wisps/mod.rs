@@ -41,9 +41,13 @@ impl Plugin for WispsPlugin {
                 sync_effect_visuals::<materials::WispLightMaterial>,
                 sync_effect_visuals::<materials::WispElectricMaterial>,
             ))
-            // Feeds the freshly-tracked Locomotion into the water material before render
-            // extract; ordered after MotionSystems::Track so it reads this frame's motion.
-            .add_systems(PostUpdate, systems::drive_water_material.after(MotionSystems::Track))
+            // Feeds the freshly-tracked Locomotion into the motion-reactive wisp materials
+            // before render extract; ordered after MotionSystems::Track so each reads this
+            // frame's motion.
+            .add_systems(PostUpdate, (
+                systems::drive_water_material,
+                systems::drive_electric_material,
+            ).after(MotionSystems::Track))
             .add_observer(spawning::BuilderWisp::on_add)
             .add_observer(spawning::on_wisp_place_request)
             .add_observer(spawning::on_wisp_remove_request)

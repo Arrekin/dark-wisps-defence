@@ -1,8 +1,18 @@
 #import bevy_sprite::mesh2d_vertex_output::VertexOutput
 #import bevy_sprite::mesh2d_view_bindings::globals
 
+// Pure-procedural electric wisp: a contained plasma globe.
+//
+// A white-hot nucleus throws jagged violet arcs out toward its silhouette,
+// striking in flickering bursts — fire, fade, restrike at fresh angles — while
+// sparks twinkle off the rim. Faster travel makes it crackle harder and sheds
+// its sparks into the wake. Nothing is sampled from a texture.
+
 struct UniformData {
-    angle_direction: f32,  // -1 or 1
+    seed: f32,      // per-instance phase offset, decorrelates a cluster of wisps
+    vigor: f32,     // measured speed / sweet-spot; scales the crackle (0 at rest)
+    heading_x: f32, // unit travel direction (quad-local), x
+    heading_y: f32, // unit travel direction (quad-local), y
 };
 
 @group(2) @binding(4)
@@ -17,50 +27,61 @@ struct WispEffects {
 var<uniform> effects: WispEffects;
 
 const BRITTLE: u32 = 1u;
+const TAU: f32 = 6.28318530718;
+const PI: f32 = 3.14159265359;
 
-// Hash function to generate pseudo-random values
-fn hash(p: vec2<f32>) -> f32 {
-    let h: f32 = dot(p, vec2<f32>(127.1, 311.7));
-    return fract(sin(h) * 43758.5453123);
+// ── Striking & arcs ──────────────────────────────────────────────────────────
+const STRIKE_RATE: f32 = 8.0; // strikes per second per arc
+const STRIKE_DECAY: f32 = 4.0; // how fast a strike fades within its interval
+const NUM_ARCS: i32 = 8;
+const ARC_WANDER: f32 = 0.6;  // how far an arc's centreline swings, radians
+const ARC_CORE: f32 = 0.05;   // hot core half-width (arc-length units)
+const ARC_GLOW: f32 = 0.42;   // soft halo half-width
+
+// ── Hashes / value noise ─────────────────────────────────────────────────────
+fn hash11(x: f32) -> f32 {
+    return fract(sin(x * 127.1) * 43758.5453123);
 }
-
-// Noise function using the hash function
-fn noise(p: vec2<f32>) -> f32 {
-    let i: vec2<f32> = floor(p);
-    let f: vec2<f32> = fract(p);
-    let a: f32 = hash(i);
-    let b: f32 = hash(i + vec2<f32>(1.0, 0.0));
-    let c: f32 = hash(i + vec2<f32>(0.0, 1.0));
-    let d: f32 = hash(i + vec2<f32>(1.0, 1.0));
-    let u: vec2<f32> = f * f * (3.0 - 2.0 * f);
+fn hash21(p: vec2<f32>) -> f32 {
+    return fract(sin(dot(p, vec2<f32>(127.1, 311.7))) * 43758.5453123);
+}
+fn vnoise(p: vec2<f32>) -> f32 {
+    let i = floor(p);
+    let f = fract(p);
+    let a = hash21(i);
+    let b = hash21(i + vec2<f32>(1.0, 0.0));
+    let c = hash21(i + vec2<f32>(0.0, 1.0));
+    let d = hash21(i + vec2<f32>(1.0, 1.0));
+    let u = f * f * (3.0 - 2.0 * f);
     return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
 }
 
-// Fractal Brownian Motion function to create complex patterns
-fn fbm(p: vec2<f32>) -> f32 {
-    var pp = p;
-    var value: f32 = 0.0;
-    var amplitude: f32 = 0.5;
-    var frequency: f32 = 0.0;
-    for (var i: i32 = 0; i < 5; i = i + 1) {
-        value += amplitude * noise(pp);
-        pp = pp * 2.0;
-        amplitude *= 0.5;
-    }
-    return value;
+// Smallest signed angle a - b, wrapped to (-PI, PI].
+fn angle_diff(a: f32, b: f32) -> f32 {
+    let d = a - b;
+    return d - TAU * floor((d + PI) / TAU);
 }
 
-// ── Procedural brittle crack ────────────────────────────────────────────────
-// A bold three-armed fracture splitting the orb core from its centre — a dark crackle with a
-// bright charged seam that flickers with the current. The core is small, so a single
-// deterministic split reads far better than a fine web.
-const TAU: f32 = 6.28318530718;
+// One jagged arc from the core toward the rim. `base` is its striking angle;
+// the centreline wanders in angle as it climbs outward, giving the kinked path.
+fn arc(r: f32, ang: f32, base: f32, seed: f32, t: f32) -> f32 {
+    let wander = (vnoise(vec2<f32>(r * 5.0 + seed, t)) - 0.5) * (ARC_WANDER * 2.0)
+               + (vnoise(vec2<f32>(r * 13.0 + seed * 2.0, t * 1.7)) - 0.5) * ARC_WANDER;
+    let centre = base + wander;
+    let d = abs(angle_diff(ang, centre)) * r; // angular gap → screen-space thinness
+    let core = 1.0 - smoothstep(0.0, ARC_CORE, d);
+    let glow = 1.0 - smoothstep(0.0, ARC_GLOW, d);
+    return core + glow * 0.35;
+}
+
+// ── Brittle: the energy crystallises and a three-armed fracture splits the core,
+// a dark crackle with a bright charged seam that flickers with the current. ─────
 const CRACK_ARMS: f32 = 3.0;
-const CRACK_ARM_WIDTH: f32 = 0.04; // arm half-thickness, in UV
-const CRACK_ARM_OFFSET: f32 = 1.9; // rotation of the star, in radians
+const CRACK_ARM_WIDTH: f32 = 0.04;
+const CRACK_ARM_OFFSET: f32 = 1.9;
 
 fn brittle(color: vec4<f32>, uv: vec2<f32>, body: f32) -> vec4<f32> {
-    let spark = vec3<f32>(1.00, 1.00, 0.60); // bright charged seam
+    let spark = vec3<f32>(0.90, 0.90, 1.00); // bright charged seam
     let dead = vec3<f32>(0.00, 0.00, 0.00);  // dark crackle
 
     let p = uv - vec2<f32>(0.5);
@@ -79,61 +100,56 @@ fn brittle(color: vec4<f32>, uv: vec2<f32>, body: f32) -> vec4<f32> {
 
 @fragment
 fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
-    let center = vec2(0.5, 0.5);
-    let dist = distance(mesh.uv, center);
+    let hot = vec3<f32>(1.00, 0.95, 1.00);  // white-hot cores
+    let volt = vec3<f32>(0.55, 0.25, 1.00); // violet high-voltage glow
 
-    // Center the UV coordinates around (0.0, 0.0)
-    let centered_uv = mesh.uv * 2.0 - vec2(1.0, 1.0);
+    let p = mesh.uv - vec2<f32>(0.5);
+    let r = length(p) * 2.0; // 0 at centre, ~1 at the inscribed edge
+    let ang = atan2(p.y, p.x);
+    let crackle = 0.5 + 1.5 * uniforms.vigor; // agitation: harder when travelling
 
-    // Define the small core of the orb
-    let core_radius = 0.2;
-    let core_intensity = smoothstep(core_radius, 0.0, dist);
-
-    // Generate lightning-like bolts using Fractal Brownian Motion
-    let angle = atan2(centered_uv.y, centered_uv.x);
-    let radius = dist;
-
-    // Adjust time to control the speed
-    let time_factor = globals.time * 5.5;
-
-    // Create a complex pattern for the bolts with reduced frequency
-    let bolt_pattern = fbm(vec2(
-        angle * 5.0 + time_factor * 2.0 * uniforms.angle_direction,
-        radius * 3.0 - time_factor * 2.0
-    ));
-
-    // Create bolts by thresholding the pattern
-    let bolt_intensity = smoothstep(0.45, 0.75, bolt_pattern);
-
-    // Enhance the bolt appearance
-    let bolt_shape = pow(bolt_intensity, 2.0);
-
-    // Combine core intensity and bolt intensity
-    let core_color = vec3(1.0, 1.0, 0.0) * core_intensity;
-    let bolt_color = vec3(1.0, 1.0, 0.2) * bolt_shape;
-
-    // Combine the colors
-    let color = core_color + bolt_color;
-
-    // Define the maximum radius of the orb
-    let max_radius = 1.;
-
-    // Calculate exponential fade for alpha based on distance
-    let edge_fade = exp(-pow((dist / max_radius), 2.0) * 10.0);
-
-    var alpha = 1.0;
-    // Apply the exponential fade to the alpha channel
-    if color.r < 0.1 && color.g < 0.1 && color.b < 0.1 {
-        alpha = 0.0;
-    } else {
-        alpha = clamp(edge_fade, 0.0, 1.0);
+    // Arcs reach to the rim, each striking on its own staggered schedule so the
+    // globe crackles continuously rather than strobing all at once.
+    var bolts = 0.0;
+    for (var k = 0; k < NUM_ARCS; k = k + 1) {
+        let fk = f32(k);
+        let phase = globals.time * STRIKE_RATE + uniforms.seed + fk * 0.37;
+        let strike = floor(phase);
+        let env = exp(-fract(phase) * STRIKE_DECAY);            // fire then fade
+        let base = hash11(strike + fk * 17.0 + uniforms.seed) * TAU; // re-aim each strike
+        let live = step(0.35, hash11(strike * 1.7 + fk * 5.0 + uniforms.seed)); // some skip
+        bolts += arc(r, ang, base, fk * 9.0 + uniforms.seed, globals.time * 1.3) * env * live;
     }
+    bolts *= crackle;
 
-    // Output the final color with full opacity
-    var final_color = vec4(color, alpha);
-    if (effects.mask & BRITTLE) != 0u {
-        // Split only the orb core, leaving the bolts intact.
-        final_color = brittle(final_color, mesh.uv, core_intensity);
+    // White-hot nucleus, surging with a shared strike pulse.
+    let surge = exp(-fract(globals.time * STRIKE_RATE + uniforms.seed) * STRIKE_DECAY);
+    let core_intensity = smoothstep(0.22, 0.0, r);
+    let core = core_intensity * (0.75 + 0.25 * sin(globals.time * 25.0 + uniforms.seed) + surge * 0.6);
+
+    // Sparks: sparse twinkling points in the outer body; while travelling, extra
+    // sparks light up behind the heading, shedding into the wake.
+    let heading = vec2<f32>(uniforms.heading_x, uniforms.heading_y);
+    let dir = p / max(length(p), 1e-4);
+    let back = max(0.0, -dot(dir, heading)); // 1 directly behind travel, 0 ahead
+    let sp = p * 9.0;
+    let twinkle = step(0.92, fract(hash21(floor(sp)) + globals.time * 3.0));
+    let spark_shape = (1.0 - smoothstep(0.0, 0.25, length(fract(sp) - 0.5))) * smoothstep(0.3, 0.95, r);
+    let spark = twinkle * spark_shape * (0.5 + 1.2 * back * uniforms.vigor);
+
+    // Compose: hot where bright, violet in the falloff, plus a breathing corona.
+    var energy = core + bolts + spark * 0.6;
+    var rgb = mix(volt, hot, clamp(energy, 0.0, 1.0)) * energy;
+    let corona = exp(-r * 3.0) * (0.15 + 0.1 * surge) * crackle;
+    rgb += volt * corona;
+
+    let edge = 1.0 - smoothstep(0.85, 1.0, r); // trim before the quad edge
+    let alpha = clamp(max(energy, corona) * edge, 0.0, 1.0);
+
+    var color = vec4<f32>(rgb, alpha);
+    if ((effects.mask & BRITTLE) != 0u) {
+        // Split only the nucleus, leaving the arcs intact.
+        color = brittle(color, mesh.uv, core_intensity);
     }
-    return final_color;
+    return color;
 }

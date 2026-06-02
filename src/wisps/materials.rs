@@ -178,9 +178,15 @@ impl EffectVisualMaterial for WispLightMaterial {
 #[derive(Asset, TypePath, Debug, Clone, AsBindGroup)]
 pub struct WispElectricMaterial {
     #[uniform(4)]
-    pub angle_direction: f32,
+    pub seed: f32,
+    // Locomotion, written by `drive_electric_material` only when it changes:
+    // `vigor` scales the crackle, `heading` aims the spark wake.
     #[uniform(4)]
-    pub radius_direction: f32,
+    pub vigor: f32,
+    #[uniform(4)]
+    pub heading_x: f32,
+    #[uniform(4)]
+    pub heading_y: f32,
 
     #[uniform(5)]
     pub effects: EffectVisualUniform,
@@ -197,8 +203,10 @@ impl WispMaterial for WispElectricMaterial {
     fn make(_asset_server: &AssetServer) -> Self {
         let mut rng = nanorand::tls_rng();
         Self {
-            angle_direction: [-1., 1.][rng.generate::<usize>() % 2],
-            radius_direction: [-1., 1.][rng.generate::<usize>() % 2],
+            seed: rng.generate::<f32>() * 100., // decorrelates a cluster of wisps
+            vigor: 0.,
+            heading_x: 0.,
+            heading_y: 0.,
             effects: EffectVisualUniform::default(),
         }
     }
