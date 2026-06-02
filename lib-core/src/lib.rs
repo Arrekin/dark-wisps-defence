@@ -14,6 +14,7 @@ pub mod persistence;
 pub mod wisps;
 pub mod map_objects;
 pub mod modifiers;
+pub mod motion;
 pub mod effects;
 pub mod effect_visuals;
 pub mod damage;
@@ -34,6 +35,7 @@ impl Plugin for LibCorePlugin {
             persistence::LoadSavePlugin,
             game_clock::GameClockPlugin,
             modifiers::ModifiersPlugin,
+            motion::MotionPlugin,
             effects::EffectsPlugin,
             effect_visuals::EffectVisualsPlugin,
             damage::DamagePlugin,
@@ -55,6 +57,7 @@ pub mod prelude {
     pub use crate::persistence::load_save_prelude::*;
     pub use crate::wisps::wisps_prelude::*;
     pub use crate::modifiers::modifiers_prelude::*;
+    pub use crate::motion::motion_prelude::*;
     pub use crate::effects::effects_prelude::*;
     pub use crate::effect_visuals::effect_visuals_prelude::*;
     pub use crate::damage::damage_prelude::*;

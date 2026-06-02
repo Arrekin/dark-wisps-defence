@@ -113,8 +113,7 @@ impl BuilderWisp {
     ) {
         let entity = trigger.entity;
         let Ok(builder) = builders.get(entity) else { return; };
-        
-        let mut rng = nanorand::tls_rng();
+
         let mut entity_commands = commands.entity(entity);
         
         if let Some(save_data) = &builder.save_data {
@@ -137,11 +136,7 @@ impl BuilderWisp {
             .remove::<BuilderWisp>()
             .insert((
                 builder.grid_coords,
-                Transform {
-                    translation,
-                    rotation: Quat::from_rotation_z(rng.generate::<f32>() * 2. * std::f32::consts::PI),
-                    ..default()
-                },
+                Transform::from_translation(translation),
                 Wisp,
                 builder.wisp_type,
                 related![EffectInstances[
@@ -184,7 +179,7 @@ pub fn on_wisp_spawn_attach_material<WispT: Component, MaterialT: Asset + WispMa
 ) {
     let entity = trigger.entity;
     if !wisps.contains(entity) { return; }
-    let wisp_world_size = WISP_GRID_IMPRINT.world_size();
+    let wisp_world_size = WISP_GRID_IMPRINT.world_size() * MaterialT::mesh_scale();
     let mesh = meshes.add(Rectangle::new(wisp_world_size.x, wisp_world_size.y));
     let material = materials.add(MaterialT::make(&asset_server));
     commands.entity(entity).insert((

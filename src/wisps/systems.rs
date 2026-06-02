@@ -8,6 +8,84 @@ use crate::visual_effects::wisp_attack::BuilderWispAttackEffect;
 use crate::prelude::*;
 
 use super::components::{Wisp, WispChargeAttack, WispState};
+use super::materials::WispWaterMaterial;
+
+/// Drives each water wisp's material from its [`Locomotion`], turning measured
+/// speed into `vigor` (the shader turns that into deform + cadence) and feeding
+/// its travel direction.
+///
+/// To stay cheap for a swarm, it touches the material — and thus triggers a GPU
+/// upload — only when vigor or heading actually changes. A wisp cruising in a
+/// straight line or sitting idle animates entirely from the shader clock with no
+/// upload at all; writes happen only on turns and speed changes.
+///
+/// Phases use the anchor scheme on `WispWaterMaterial`: on a change we advance each
+/// phase by the time it ran under the OLD vigor's rate, then restart the clock at
+/// `now`, keeping the shader's extrapolated phase continuous. Rates are `f(vigor)`,
+/// so rather than shuttle them through the material we recompute them both here (for
+/// the re-anchor) and in the shader (for the extrapolation) — see the rate constants.
+pub fn drive_water_material(
+    time: Res<Time>,
+    wisps: Query<(&Locomotion, &MeshMaterial2d<WispWaterMaterial>)>,
+    mut materials: ResMut<Assets<WispWaterMaterial>>,
+) {
+    // An input must drift past this (per component) before we re-upload the material.
+    const DRIVE_EPSILON: f32 = 0.01;
+    // Measured speed (world units/sec) that maps to vigor 1.0; vigor is unbounded above.
+    const VIGOR_SWEET_SPOT: f32 = 60.0;
+    // Oscillator cadences, radians/sec: rate = rest + swing * vigor. These MUST match
+    // the same-named constants in assets/shaders/wisps/water.wgsl, which recomputes the
+    // rates from vigor for its phase extrapolation; here they give the OLD rate for the
+    // re-anchor. (A divergence between the two shows up as a phase snap on speed changes.)
+    const STROKE_RATE_REST: f32 = 3.5;
+    const STROKE_RATE_SWING: f32 = 3.5;
+    const SURF_RATE_REST: f32 = 1.5;
+    const SURF_RATE_SWING: f32 = 6.0;
+
+    // The wrapped clock the shader reads as `globals.time`, so anchors line up.
+    let now = time.elapsed_wrapped().as_secs_f32();
+    let wrap_period = time.wrap_period().as_secs_f32();
+
+    for (locomotion, material_handle) in wisps.iter() {
+        let handle = &material_handle.0;
+        let Some(material) = materials.get(handle) else { continue; };
+
+        let velocity = locomotion.velocity();
+        let vigor = velocity.length() / VIGOR_SWEET_SPOT; // unbounded; 1.0 at the sweet spot
+        // World heading → quad-local sample space (Rectangle UV V axis points down).
+        let heading = velocity.normalize_or_zero();
+        let heading_x = heading.x;
+        let heading_y = -heading.y;
+
+        // Copy what the material already holds so the immutable borrow ends before
+        // we ask for a mutable one.
+        let applied_vigor = material.vigor;
+        let applied_heading_x = material.heading_x;
+        let applied_heading_y = material.heading_y;
+        let applied_anchor = material.anchor_time;
+
+        let vigor_changed = (vigor - applied_vigor).abs() > DRIVE_EPSILON;
+        let heading_changed = (heading_x - applied_heading_x).abs() > DRIVE_EPSILON
+            || (heading_y - applied_heading_y).abs() > DRIVE_EPSILON;
+        let clock_wrapped = now < applied_anchor;
+        if !(vigor_changed || heading_changed || clock_wrapped) { continue; }
+
+        let Some(material) = materials.get_mut(handle) else { continue; };
+        // Advance each phase by the time it ran under the OLD vigor's rate, then
+        // restart the clock at `now` so the shader's extrapolation stays continuous.
+        let elapsed = if now >= material.anchor_time {
+            now - material.anchor_time
+        } else {
+            now + wrap_period - material.anchor_time
+        };
+        material.stroke_anchor_phase += elapsed * (STROKE_RATE_REST + STROKE_RATE_SWING * material.vigor);
+        material.surf_anchor_phase += elapsed * (SURF_RATE_REST + SURF_RATE_SWING * material.vigor);
+        material.anchor_time = now;
+        material.vigor = vigor; // the shader derives deform + cadence from this
+        material.heading_x = heading_x;
+        material.heading_y = heading_y;
+    }
+}
 
 pub fn move_wisps(
     time: Res<Time>,
