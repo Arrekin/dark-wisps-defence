@@ -48,6 +48,7 @@ impl Plugin for WispsPlugin {
                 systems::drive_water_material,
                 systems::drive_electric_material,
                 systems::drive_light_material,
+                systems::drive_fire_material,
             ).after(MotionSystems::Track))
             .add_observer(spawning::BuilderWisp::on_add)
             .add_observer(spawning::on_wisp_place_request)

@@ -8,7 +8,7 @@ use crate::visual_effects::wisp_attack::BuilderWispAttackEffect;
 use crate::prelude::*;
 
 use super::components::{Wisp, WispChargeAttack, WispState};
-use super::materials::{WispElectricMaterial, WispLightMaterial, WispWaterMaterial};
+use super::materials::{WispElectricMaterial, WispFireMaterial, WispLightMaterial, WispWaterMaterial};
 
 /// Drives each water wisp's material from its [`Locomotion`], turning measured
 /// speed into `vigor` (the shader turns that into deform + cadence) and feeding
@@ -131,6 +131,41 @@ pub fn drive_electric_material(
 pub fn drive_light_material(
     wisps: Query<(&Locomotion, &MeshMaterial2d<WispLightMaterial>)>,
     mut materials: ResMut<Assets<WispLightMaterial>>,
+) {
+    const DRIVE_EPSILON: f32 = 0.01;
+    const VIGOR_SWEET_SPOT: f32 = 60.0; // world units/sec that maps to vigor 1.0
+
+    for (locomotion, material_handle) in wisps.iter() {
+        let handle = &material_handle.0;
+        let Some(material) = materials.get(handle) else { continue; };
+
+        let velocity = locomotion.velocity();
+        let vigor = velocity.length() / VIGOR_SWEET_SPOT;
+        // World heading → quad-local sample space (Rectangle UV V axis points down).
+        let heading = velocity.normalize_or_zero();
+        let heading_x = heading.x;
+        let heading_y = -heading.y;
+
+        if (vigor - material.vigor).abs() <= DRIVE_EPSILON
+            && (heading_x - material.heading_x).abs() <= DRIVE_EPSILON
+            && (heading_y - material.heading_y).abs() <= DRIVE_EPSILON
+        {
+            continue;
+        }
+
+        let Some(material) = materials.get_mut(handle) else { continue; };
+        material.vigor = vigor;
+        material.heading_x = heading_x;
+        material.heading_y = heading_y;
+    }
+}
+
+/// Feeds each fire wisp's measured motion into its material: `vigor` flares the
+/// flame, `heading` directs the flame trail. Gated and anchor-free, same as the
+/// electric and light drivers.
+pub fn drive_fire_material(
+    wisps: Query<(&Locomotion, &MeshMaterial2d<WispFireMaterial>)>,
+    mut materials: ResMut<Assets<WispFireMaterial>>,
 ) {
     const DRIVE_EPSILON: f32 = 0.01;
     const VIGOR_SWEET_SPOT: f32 = 60.0; // world units/sec that maps to vigor 1.0

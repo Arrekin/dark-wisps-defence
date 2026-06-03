@@ -16,25 +16,26 @@ pub trait WispMaterial: Material2d {
 
 #[derive(Asset, TypePath, Debug, Clone, AsBindGroup)]
 pub struct WispFireMaterial {
-    #[texture(0)]
-    #[sampler(1)]
-    pub wisp_tex1: Handle<Image>,
-    #[texture(2)]
-    pub wisp_tex2: Handle<Image>,
-
     #[uniform(4)]
-    pub amplitude: f32,
+    pub seed: f32,
+    // Locomotion, written by `drive_fire_material` only when it changes: together
+    // `vigor` and `heading` form the wake "wind" that stretches the flame licks and
+    // combs them backward into a trailing fireball (vigor = strength, heading = aim).
     #[uniform(4)]
-    pub frequency: f32,
+    pub vigor: f32,
     #[uniform(4)]
-    pub speed: f32,
+    pub heading_x: f32,
     #[uniform(4)]
-    pub sinus_direction: f32,
-    #[uniform(4)]
-    pub cosinus_direction: f32,
+    pub heading_y: f32,
 
     #[uniform(5)]
     pub effects: EffectVisualUniform,
+}
+impl WispFireMaterial {
+    /// Transparent padding around the orb so its flame licks have room to reach
+    /// beyond the cell; the orb keeps its on-screen size while only the margin grows.
+    /// Mirrored by `QUAD_SCALE` in `assets/shaders/wisps/fire.wgsl` — keep the two equal.
+    pub const QUAD_SCALE: f32 = 2.5;
 }
 impl Material2d for WispFireMaterial {
     fn fragment_shader() -> ShaderRef {
@@ -45,19 +46,17 @@ impl Material2d for WispFireMaterial {
     }
 }
 impl WispMaterial for WispFireMaterial {
-    fn make(asset_server: &AssetServer) -> Self {
+    fn make(_asset_server: &AssetServer) -> Self {
         let mut rng = nanorand::tls_rng();
         Self {
-            amplitude: rng.generate::<f32>() * 0.2 + 0.25, // 0.25 - 0.45
-            frequency: rng.generate::<f32>() * 5. + 15., // 15 - 20
-            speed: rng.generate::<f32>() * 3. + 4., // 4 - 7
-            sinus_direction: [-1., 1.][rng.generate::<usize>() % 2],
-            cosinus_direction: [-1., 1.][rng.generate::<usize>() % 2],
-            wisp_tex1: asset_server.load("wisps/big_wisp.png"),
-            wisp_tex2: asset_server.load("wisps/big_wisp.png"),
+            seed: rng.generate::<f32>() * 100., // decorrelates a cluster of wisps
+            vigor: 0.,
+            heading_x: 0.,
+            heading_y: 0.,
             effects: EffectVisualUniform::default(),
         }
     }
+    fn mesh_scale() -> f32 { Self::QUAD_SCALE }
 }
 impl EffectVisualMaterial for WispFireMaterial {
     fn effects_mut(&mut self) -> &mut EffectVisualUniform {
