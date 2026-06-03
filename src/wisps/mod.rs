@@ -21,7 +21,6 @@ impl Plugin for WispsPlugin {
                 Material2dPlugin::<materials::WispWaterMaterial>::default(),
                 Material2dPlugin::<materials::WispLightMaterial>::default(),
                 Material2dPlugin::<materials::WispElectricMaterial>::default(),
-                
             ))
             .add_plugins(summoning::SummoningPlugin)
             .add_systems(PreUpdate,
@@ -46,9 +45,9 @@ impl Plugin for WispsPlugin {
             // frame's motion.
             .add_systems(PostUpdate, (
                 systems::drive_water_material,
-                systems::drive_electric_material,
-                systems::drive_light_material,
-                systems::drive_fire_material,
+                systems::drive_wisp_locomotion::<materials::WispElectricMaterial>,
+                systems::drive_wisp_locomotion::<materials::WispLightMaterial>,
+                systems::drive_wisp_locomotion::<materials::WispFireMaterial>,
             ).after(MotionSystems::Track))
             .add_observer(spawning::BuilderWisp::on_add)
             .add_observer(spawning::on_wisp_place_request)

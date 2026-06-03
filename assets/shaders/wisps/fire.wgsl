@@ -13,8 +13,6 @@
 // translucent over the orb. While the wisp travels, the licks stretch and lean
 // into its wake — a light suggestion of a fireball trail. Nothing is sampled from
 // a texture.
-//
-// The flame shaping is adapted from the structure of a public ShaderToy study.
 
 struct UniformData {
     seed: f32,      // per-instance phase offset, decorrelates a cluster of wisps

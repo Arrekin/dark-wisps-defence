@@ -8,7 +8,7 @@ use crate::visual_effects::wisp_attack::BuilderWispAttackEffect;
 use crate::prelude::*;
 
 use super::components::{Wisp, WispChargeAttack, WispState};
-use super::materials::{WispElectricMaterial, WispFireMaterial, WispLightMaterial, WispWaterMaterial};
+use super::materials::{WispLocomotiveMaterial, WispWaterMaterial};
 
 /// Drives each water wisp's material from its [`Locomotion`], turning measured
 /// speed into `vigor` (the shader turns that into deform + cadence) and feeding
@@ -87,111 +87,28 @@ pub fn drive_water_material(
     }
 }
 
-/// Feeds each electric wisp's measured motion into its material: `vigor` scales
-/// the crackle, `heading` aims the spark wake. Gated like the water driver, so a
-/// cruising or idle wisp uploads nothing — the arcs animate off the GPU clock.
-///
-/// Much simpler than water: the strike rhythm runs at a constant rate, so vigor
-/// only turns an amplitude knob and there is no phase anchor to maintain.
-pub fn drive_electric_material(
-    wisps: Query<(&Locomotion, &MeshMaterial2d<WispElectricMaterial>)>,
-    mut materials: ResMut<Assets<WispElectricMaterial>>,
+/// Feeds the anchor-free wisp materials (electric, light, fire) from each wisp's
+/// [`Locomotion`]: `vigor` and `heading` drive whatever motion-reactive look the
+/// shader defines. Gated to stay cheap for a swarm — a material re-uploads only
+/// when measured velocity drifts past a threshold, so a wisp cruising in a straight
+/// line or sitting idle uploads nothing and animates off the GPU clock.
+pub fn drive_wisp_locomotion<M: WispLocomotiveMaterial>(
+    wisps: Query<(&Locomotion, &MeshMaterial2d<M>)>,
+    mut materials: ResMut<Assets<M>>,
 ) {
-    const DRIVE_EPSILON: f32 = 0.01;
-    const VIGOR_SWEET_SPOT: f32 = 60.0; // world units/sec that maps to vigor 1.0
+    // Measured velocity must drift this many world units/sec before we re-upload.
+    const DRIVE_EPSILON: f32 = 0.5;
 
     for (locomotion, material_handle) in wisps.iter() {
         let handle = &material_handle.0;
         let Some(material) = materials.get(handle) else { continue; };
 
-        let velocity = locomotion.velocity();
-        let vigor = velocity.length() / VIGOR_SWEET_SPOT;
-        // World heading → quad-local sample space (Rectangle UV V axis points down).
-        let heading = velocity.normalize_or_zero();
-        let heading_x = heading.x;
-        let heading_y = -heading.y;
-
-        if (vigor - material.vigor).abs() <= DRIVE_EPSILON
-            && (heading_x - material.heading_x).abs() <= DRIVE_EPSILON
-            && (heading_y - material.heading_y).abs() <= DRIVE_EPSILON
-        {
+        if material.locomotion().velocity().abs_diff_eq(locomotion.velocity(), DRIVE_EPSILON) {
             continue;
         }
 
         let Some(material) = materials.get_mut(handle) else { continue; };
-        material.vigor = vigor;
-        material.heading_x = heading_x;
-        material.heading_y = heading_y;
-    }
-}
-
-/// Feeds each light wisp's measured motion into its material: `vigor` brightens
-/// and flares the star and sheds motes, `heading` aims the mote wake. Gated and
-/// anchor-free, same as the electric driver.
-pub fn drive_light_material(
-    wisps: Query<(&Locomotion, &MeshMaterial2d<WispLightMaterial>)>,
-    mut materials: ResMut<Assets<WispLightMaterial>>,
-) {
-    const DRIVE_EPSILON: f32 = 0.01;
-    const VIGOR_SWEET_SPOT: f32 = 60.0; // world units/sec that maps to vigor 1.0
-
-    for (locomotion, material_handle) in wisps.iter() {
-        let handle = &material_handle.0;
-        let Some(material) = materials.get(handle) else { continue; };
-
-        let velocity = locomotion.velocity();
-        let vigor = velocity.length() / VIGOR_SWEET_SPOT;
-        // World heading → quad-local sample space (Rectangle UV V axis points down).
-        let heading = velocity.normalize_or_zero();
-        let heading_x = heading.x;
-        let heading_y = -heading.y;
-
-        if (vigor - material.vigor).abs() <= DRIVE_EPSILON
-            && (heading_x - material.heading_x).abs() <= DRIVE_EPSILON
-            && (heading_y - material.heading_y).abs() <= DRIVE_EPSILON
-        {
-            continue;
-        }
-
-        let Some(material) = materials.get_mut(handle) else { continue; };
-        material.vigor = vigor;
-        material.heading_x = heading_x;
-        material.heading_y = heading_y;
-    }
-}
-
-/// Feeds each fire wisp's measured motion into its material: `vigor` flares the
-/// flame, `heading` directs the flame trail. Gated and anchor-free, same as the
-/// electric and light drivers.
-pub fn drive_fire_material(
-    wisps: Query<(&Locomotion, &MeshMaterial2d<WispFireMaterial>)>,
-    mut materials: ResMut<Assets<WispFireMaterial>>,
-) {
-    const DRIVE_EPSILON: f32 = 0.01;
-    const VIGOR_SWEET_SPOT: f32 = 60.0; // world units/sec that maps to vigor 1.0
-
-    for (locomotion, material_handle) in wisps.iter() {
-        let handle = &material_handle.0;
-        let Some(material) = materials.get(handle) else { continue; };
-
-        let velocity = locomotion.velocity();
-        let vigor = velocity.length() / VIGOR_SWEET_SPOT;
-        // World heading → quad-local sample space (Rectangle UV V axis points down).
-        let heading = velocity.normalize_or_zero();
-        let heading_x = heading.x;
-        let heading_y = -heading.y;
-
-        if (vigor - material.vigor).abs() <= DRIVE_EPSILON
-            && (heading_x - material.heading_x).abs() <= DRIVE_EPSILON
-            && (heading_y - material.heading_y).abs() <= DRIVE_EPSILON
-        {
-            continue;
-        }
-
-        let Some(material) = materials.get_mut(handle) else { continue; };
-        material.vigor = vigor;
-        material.heading_x = heading_x;
-        material.heading_y = heading_y;
+        material.set_locomotion(locomotion.clone());
     }
 }
 
@@ -379,7 +296,7 @@ pub fn collide_wisps(
             target: building_entity,
             amount: 1.,
         });
-        wisps_grid.wisp_remove(*coords, wisp_entity.into());
+        wisps_grid.wisp_remove(*coords, wisp_entity);
         commands.entity(wisp_entity).despawn();
         commands.spawn(BuilderWispAttackEffect(transform.translation.xy()));
     }

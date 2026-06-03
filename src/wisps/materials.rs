@@ -14,13 +14,35 @@ pub trait WispMaterial: Material2d {
     fn mesh_scale() -> f32 { 1.0 }
 }
 
+/// Wisp materials whose look reacts to measured motion through plain `vigor` and
+/// `heading` uniforms, with no oscillator phase to keep anchored. One generic
+/// system, `drive_wisp_locomotion`, feeds them all from each wisp's [`Locomotion`].
+pub trait WispLocomotiveMaterial: Material2d {
+    /// The locomotion currently reflected in the material, for change-gating.
+    fn locomotion(&self) -> &Locomotion;
+    /// Reflect freshly-measured locomotion: derive `vigor` and `heading` into the
+    /// uniforms and keep the source for the next gate.
+    fn set_locomotion(&mut self, locomotion: Locomotion);
+}
+
+/// Measured locomotion → motion uniforms `(vigor, heading_x, heading_y)`. `vigor`
+/// is speed over a sweet-spot (unbounded; 1.0 at the sweet spot, where the look is
+/// liveliest); `heading` is mapped into the quad's sample space, whose V axis points
+/// down on a `Rectangle` mesh, so its Y is flipped.
+fn wisp_motion(locomotion: &Locomotion) -> (f32, f32, f32) {
+    /// Measured speed (world units/sec) that maps to vigor 1.0.
+    const VIGOR_SWEET_SPOT: f32 = 60.0;
+    let heading = locomotion.heading();
+    (locomotion.speed() / VIGOR_SWEET_SPOT, heading.x, -heading.y)
+}
+
 #[derive(Asset, TypePath, Debug, Clone, AsBindGroup)]
 pub struct WispFireMaterial {
     #[uniform(4)]
     pub seed: f32,
-    // Locomotion, written by `drive_fire_material` only when it changes: together
-    // `vigor` and `heading` form the wake "wind" that stretches the flame licks and
-    // combs them backward into a trailing fireball (vigor = strength, heading = aim).
+    // Motion uniforms, refreshed by `drive_wisp_locomotion` only when motion changes:
+    // together `vigor` and `heading` stretch the flame licks and comb them backward
+    // into a trailing fireball (vigor = strength, heading = aim).
     #[uniform(4)]
     pub vigor: f32,
     #[uniform(4)]
@@ -30,6 +52,10 @@ pub struct WispFireMaterial {
 
     #[uniform(5)]
     pub effects: EffectVisualUniform,
+
+    /// Source motion behind the uniforms above; CPU-only (never uploaded), read to
+    /// gate re-uploads in `drive_wisp_locomotion`.
+    locomotion: Locomotion,
 }
 impl WispFireMaterial {
     /// Transparent padding around the orb so its flame licks have room to reach
@@ -54,9 +80,17 @@ impl WispMaterial for WispFireMaterial {
             heading_x: 0.,
             heading_y: 0.,
             effects: EffectVisualUniform::default(),
+            locomotion: Locomotion::default(),
         }
     }
     fn mesh_scale() -> f32 { Self::QUAD_SCALE }
+}
+impl WispLocomotiveMaterial for WispFireMaterial {
+    fn locomotion(&self) -> &Locomotion { &self.locomotion }
+    fn set_locomotion(&mut self, locomotion: Locomotion) {
+        (self.vigor, self.heading_x, self.heading_y) = wisp_motion(&locomotion);
+        self.locomotion = locomotion;
+    }
 }
 impl EffectVisualMaterial for WispFireMaterial {
     fn effects_mut(&mut self) -> &mut EffectVisualUniform {
@@ -144,7 +178,7 @@ impl EffectVisualMaterial for WispWaterMaterial {
 pub struct WispLightMaterial {
     #[uniform(4)]
     pub seed: f32,
-    // Locomotion, written by `drive_light_material` only when it changes:
+    // Motion uniforms, refreshed by `drive_wisp_locomotion` only when motion changes:
     // `vigor` brightens and flares the star and sheds motes, `heading` aims the mote wake.
     #[uniform(4)]
     pub vigor: f32,
@@ -155,6 +189,10 @@ pub struct WispLightMaterial {
 
     #[uniform(5)]
     pub effects: EffectVisualUniform,
+
+    /// Source motion behind the uniforms above; CPU-only (never uploaded), read to
+    /// gate re-uploads in `drive_wisp_locomotion`.
+    locomotion: Locomotion,
 }
 impl Material2d for WispLightMaterial {
     fn fragment_shader() -> ShaderRef {
@@ -173,7 +211,15 @@ impl WispMaterial for WispLightMaterial {
             heading_x: 0.,
             heading_y: 0.,
             effects: EffectVisualUniform::default(),
+            locomotion: Locomotion::default(),
         }
+    }
+}
+impl WispLocomotiveMaterial for WispLightMaterial {
+    fn locomotion(&self) -> &Locomotion { &self.locomotion }
+    fn set_locomotion(&mut self, locomotion: Locomotion) {
+        (self.vigor, self.heading_x, self.heading_y) = wisp_motion(&locomotion);
+        self.locomotion = locomotion;
     }
 }
 impl EffectVisualMaterial for WispLightMaterial {
@@ -186,7 +232,7 @@ impl EffectVisualMaterial for WispLightMaterial {
 pub struct WispElectricMaterial {
     #[uniform(4)]
     pub seed: f32,
-    // Locomotion, written by `drive_electric_material` only when it changes:
+    // Motion uniforms, refreshed by `drive_wisp_locomotion` only when motion changes:
     // `vigor` scales the crackle, `heading` aims the spark wake.
     #[uniform(4)]
     pub vigor: f32,
@@ -197,6 +243,10 @@ pub struct WispElectricMaterial {
 
     #[uniform(5)]
     pub effects: EffectVisualUniform,
+
+    /// Source motion behind the uniforms above; CPU-only (never uploaded), read to
+    /// gate re-uploads in `drive_wisp_locomotion`.
+    locomotion: Locomotion,
 }
 impl Material2d for WispElectricMaterial {
     fn fragment_shader() -> ShaderRef {
@@ -215,7 +265,15 @@ impl WispMaterial for WispElectricMaterial {
             heading_x: 0.,
             heading_y: 0.,
             effects: EffectVisualUniform::default(),
+            locomotion: Locomotion::default(),
         }
+    }
+}
+impl WispLocomotiveMaterial for WispElectricMaterial {
+    fn locomotion(&self) -> &Locomotion { &self.locomotion }
+    fn set_locomotion(&mut self, locomotion: Locomotion) {
+        (self.vigor, self.heading_x, self.heading_y) = wisp_motion(&locomotion);
+        self.locomotion = locomotion;
     }
 }
 impl EffectVisualMaterial for WispElectricMaterial {

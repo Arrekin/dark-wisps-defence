@@ -49,7 +49,7 @@ const VELOCITY_RESPONSE: f32 = 7.0;
 /// `last_position` is internal bookkeeping for the per-frame delta; read the
 /// motion through [`velocity`](Self::velocity) / [`heading`](Self::heading) /
 /// [`speed`](Self::speed).
-#[derive(Component, Default)]
+#[derive(Component, Default, Clone, Debug)]
 pub struct Locomotion {
     last_position: Option<Vec2>,
     velocity: Vec2,
