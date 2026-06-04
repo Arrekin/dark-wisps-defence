@@ -43,7 +43,7 @@ const BRITTLE: u32 = 1u;
 // the droplet's real size while leaving margin for it to wobble/lunge. Keep equal.
 const QUAD_SCALE: f32 = 2.4;
 
-// ── Worley noise (the brittle crack web) ─────────────────────────────────────
+// Hash for the brittle crack network: cell → jittered feature point in [0,1]^2.
 fn hash2(p: vec2<f32>) -> vec2<f32> {
     let k = vec2<f32>(
         dot(p, vec2<f32>(127.1, 311.7)),
@@ -52,45 +52,49 @@ fn hash2(p: vec2<f32>) -> vec2<f32> {
     return fract(sin(k) * 43758.5453123);
 }
 
-// Returns (F1, F2): distance to the nearest and second-nearest cell points.
-fn worley(uv: vec2<f32>) -> vec2<f32> {
-    let g = floor(uv);
+// Distance to the nearest Voronoi cell border (Quilez): ~0 on a crack, larger inside a cell.
+fn crack_net(uv: vec2<f32>) -> f32 {
+    let n = floor(uv);
     let f = fract(uv);
-    var f1: f32 = 8.0;
-    var f2: f32 = 8.0;
-    for (var j: i32 = -1; j <= 1; j = j + 1) {
-        for (var i: i32 = -1; i <= 1; i = i + 1) {
-            let cell = vec2<f32>(f32(i), f32(j));
-            let point = hash2(g + cell);
-            let d = length(cell + point - f);
-            if (d < f1) {
-                f2 = f1;
-                f1 = d;
-            } else if (d < f2) {
-                f2 = d;
+    var mr = vec2<f32>(0.0);
+    var md = 8.0;
+    for (var j = -1; j <= 1; j = j + 1) {
+        for (var i = -1; i <= 1; i = i + 1) {
+            let g = vec2<f32>(f32(i), f32(j));
+            let r = g + hash2(n + g) - f;
+            let d = dot(r, r);
+            if (d < md) { md = d; mr = r; }
+        }
+    }
+    md = 8.0;
+    for (var j = -1; j <= 1; j = j + 1) {
+        for (var i = -1; i <= 1; i = i + 1) {
+            let g = vec2<f32>(f32(i), f32(j));
+            let r = g + hash2(n + g) - f;
+            let diff = r - mr;
+            if (dot(diff, diff) > 1e-5) {
+                md = min(md, dot(0.5 * (mr + r), normalize(diff)));
             }
         }
     }
-    return vec2<f32>(f1, f2);
+    return md;
 }
 
-// Brittle look for the WATER wisp: the liquid freezes and a glassy crack web
-// splits the body — an icy highlight along each fracture over a dark hairline.
-const CRACK_SCALE: f32 = 5.5;
-const CRACK_WIDTH: f32 = 0.07;
-const CRACK_STRENGTH: f32 = 0.95;
+// ── Brittle: the droplet is big enough to carry detail, so it crazes over — a fine
+// grid of golden cracks (a Voronoi network) across the whole body, like a frozen,
+// fracturing shell. Gold is the complement of the blue, so the network pops; opaque so
+// it doesn't wash out through the translucent body. Static, seeded per instance. ─────
+const CRACK_DENSITY: f32 = 8.5;   // crackle cell count across the body (higher = finer)
+const CRACK_W: f32 = 0.28;        // crack line half-width, in cell units
 
-fn brittle(color: vec4<f32>, surface_uv: vec2<f32>, body: f32) -> vec4<f32> {
-    let glow = vec3<f32>(0.80, 0.95, 1.00); // icy highlight along the fracture
-    let core = vec3<f32>(0.00, 0.08, 0.22); // dark hairline at its centre
+fn brittle(color: vec4<f32>, q: vec2<f32>, body: f32) -> vec4<f32> {
+    let gold = vec3<f32>(1.00, 0.78, 0.25); // golden crack — complement of the blue body
 
-    let cells = worley(surface_uv * CRACK_SCALE);
-    let edge = cells.y - cells.x;
-    let line = 1.0 - smoothstep(0.0, CRACK_WIDTH, edge);
+    let md = crack_net(q * CRACK_DENSITY + vec2<f32>(uniforms.seed));
+    let crack = (1.0 - smoothstep(0.0, CRACK_W, md)) * body;
 
-    var rgb = mix(color.rgb, glow, line * CRACK_STRENGTH * body);
-    rgb = mix(rgb, core, pow(line, 4.0) * CRACK_STRENGTH * body);
-    return vec4<f32>(rgb, color.a);
+    let rgb = mix(color.rgb, gold, crack);
+    return vec4<f32>(rgb, max(color.a, crack)); // opaque so the cracks always read
 }
 
 // Locomotion: how the droplet deforms while travelling.
@@ -195,7 +199,7 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
 
     var color = vec4<f32>(col, alpha);
     if ((effects.mask & BRITTLE) != 0u) {
-        color = brittle(color, q + vec2<f32>(0.5), body);
+        color = brittle(color, q, body);
     }
     return color;
 }

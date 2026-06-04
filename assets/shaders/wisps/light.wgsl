@@ -52,10 +52,13 @@ fn spectrum(t: f32) -> vec3<f32> {
     return vec3<f32>(0.5) + vec3<f32>(0.5) * cos(TAU * (t + vec3<f32>(0.00, 0.33, 0.67)));
 }
 
-// ── Brittle: a cracked-glass web fractures the radiance — cold rim light along
-// each fissure, dark gaps where the light can no longer hold together. ─────────
-const CRACK_SCALE: f32 = 4.0;
-const CRACK_WIDTH: f32 = 0.20;
+// ── Brittle: a cage of fine golden cracks over the core — a dense crackle (a Voronoi
+// network) filling a disc, like a 3D cage wrapping the star's core, held in near it
+// (not out in the bloom). The wisps are too small for bold seams, so the crackle
+// texture is the tell. Black, to read against the white glare. Static, seeded. ───────
+const CRACK_DENSITY: f32 = 12.0;  // crackle cell count (higher = finer cracks)
+const CRACK_W: f32 = 0.50;        // crack line half-width, in cell units
+const CAGE_R: f32 = 0.28;         // cage disc radius (r = length(p)*2 space, covers the core)
 
 fn crack_hash2(p: vec2<f32>) -> vec2<f32> {
     let k = vec2<f32>(
@@ -64,37 +67,44 @@ fn crack_hash2(p: vec2<f32>) -> vec2<f32> {
     );
     return fract(sin(k) * 43758.5453123);
 }
-fn crack_worley(uv: vec2<f32>) -> vec2<f32> {
-    let g = floor(uv);
+// Distance to the nearest Voronoi cell border (Quilez): ~0 on a crack, larger inside a cell.
+fn crack_net(uv: vec2<f32>) -> f32 {
+    let n = floor(uv);
     let f = fract(uv);
-    var f1: f32 = 8.0;
-    var f2: f32 = 8.0;
-    for (var j: i32 = -1; j <= 1; j = j + 1) {
-        for (var i: i32 = -1; i <= 1; i = i + 1) {
-            let cell = vec2<f32>(f32(i), f32(j));
-            let point = cell + crack_hash2(g + cell);
-            let d = length(point - f);
-            if (d < f1) {
-                f2 = f1;
-                f1 = d;
-            } else if (d < f2) {
-                f2 = d;
+    var mr = vec2<f32>(0.0);
+    var md = 8.0;
+    for (var j = -1; j <= 1; j = j + 1) {
+        for (var i = -1; i <= 1; i = i + 1) {
+            let g = vec2<f32>(f32(i), f32(j));
+            let r = g + crack_hash2(n + g) - f;
+            let d = dot(r, r);
+            if (d < md) { md = d; mr = r; }
+        }
+    }
+    md = 8.0;
+    for (var j = -1; j <= 1; j = j + 1) {
+        for (var i = -1; i <= 1; i = i + 1) {
+            let g = vec2<f32>(f32(i), f32(j));
+            let r = g + crack_hash2(n + g) - f;
+            let diff = r - mr;
+            if (dot(diff, diff) > 1e-5) {
+                md = min(md, dot(0.5 * (mr + r), normalize(diff)));
             }
         }
     }
-    return vec2<f32>(f1, f2);
+    return md;
 }
-fn brittle(color: vec4<f32>, surface_uv: vec2<f32>, body: f32) -> vec4<f32> {
-    let fracture = vec3<f32>(0.00, 0.01, 0.05); // dark gap where the glow breaks apart
-    let sheen = vec3<f32>(0.55, 0.75, 1.00);     // cold rim light along the fracture
 
-    let cells = crack_worley(surface_uv * CRACK_SCALE);
-    let edge = cells.y - cells.x;
-    let line = 1.0 - smoothstep(0.0, CRACK_WIDTH, edge);
+fn brittle(color: vec4<f32>, p: vec2<f32>) -> vec4<f32> {
+    let cage_col = vec3<f32>(0.0, 0.0, 0.0); // black cage — reads against the white glare
 
-    var rgb = mix(color.rgb, sheen, line * 0.5 * body);
-    rgb = mix(rgb, fracture, pow(line, 1.2) * body);
-    return vec4<f32>(rgb, color.a);
+    let r = length(p) * 2.0;
+    let band = 1.0 - smoothstep(CAGE_R * 0.8, CAGE_R, r); // filled disc over the core
+    let md = crack_net(p * CRACK_DENSITY + vec2<f32>(uniforms.seed));
+    let crack = (1.0 - smoothstep(0.0, CRACK_W, md)) * band;
+
+    let rgb = mix(color.rgb, cage_col, crack);
+    return vec4<f32>(rgb, max(color.a, crack)); // opaque so the cage always reads
 }
 
 @fragment
@@ -162,7 +172,7 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
 
     var color = vec4<f32>(rgb, alpha);
     if ((effects.mask & BRITTLE) != 0u) {
-        color = brittle(color, mesh.uv, alpha);
+        color = brittle(color, p);
     }
     return color;
 }

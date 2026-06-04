@@ -74,28 +74,56 @@ fn arc(r: f32, ang: f32, base: f32, seed: f32, t: f32) -> f32 {
     return core + glow * 0.35;
 }
 
-// ── Brittle: the energy crystallises and a three-armed fracture splits the core,
-// a dark crackle with a bright charged seam that flickers with the current. ─────
-const CRACK_ARMS: f32 = 3.0;
-const CRACK_ARM_WIDTH: f32 = 0.04;
-const CRACK_ARM_OFFSET: f32 = 1.9;
+// ── Brittle: a cage of fine golden cracks over the core — a dense crackle (a Voronoi
+// network) filling a disc, like a 3D cage wrapping the globe. A few bold seams are
+// invisible at this size, so the crackle texture is the tell, and a disc of cracks
+// reads nothing like the radial arcs. Gold for now; colour tuned later. Static, seeded.
+const CRACK_DENSITY: f32 = 12.0;  // crackle cell count (higher = finer cracks)
+const CRACK_W: f32 = 0.30;        // crack line half-width, in cell units
+const CAGE_R: f32 = 0.34;         // cage disc radius (r = length(p)*2 space, covers the core)
 
-fn brittle(color: vec4<f32>, uv: vec2<f32>, body: f32) -> vec4<f32> {
-    let spark = vec3<f32>(0.90, 0.90, 1.00); // bright charged seam
-    let dead = vec3<f32>(0.00, 0.00, 0.00);  // dark crackle
+fn vcell(p: vec2<f32>) -> vec2<f32> {
+    return fract(sin(vec2<f32>(dot(p, vec2<f32>(127.1, 311.7)), dot(p, vec2<f32>(269.5, 183.3)))) * 43758.5453);
+}
 
-    let p = uv - vec2<f32>(0.5);
-    let r = length(p);
-    let a = atan2(p.y, p.x);
-    let t = (a - CRACK_ARM_OFFSET) * CRACK_ARMS / TAU;
-    let frac = t - floor(t + 0.5);
-    let perp = r * abs(frac) * TAU / CRACK_ARMS;
-    let line = 1.0 - smoothstep(CRACK_ARM_WIDTH * 0.5, CRACK_ARM_WIDTH, perp);
-    let flicker = 0.6 + 0.4 * sin(globals.time * 30.0 + a * 3.0);
+// Distance to the nearest Voronoi cell border (Quilez): ~0 on a crack, larger inside a cell.
+fn crack_net(uv: vec2<f32>) -> f32 {
+    let n = floor(uv);
+    let f = fract(uv);
+    var mr = vec2<f32>(0.0);
+    var md = 8.0;
+    for (var j = -1; j <= 1; j = j + 1) {
+        for (var i = -1; i <= 1; i = i + 1) {
+            let g = vec2<f32>(f32(i), f32(j));
+            let r = g + vcell(n + g) - f;
+            let d = dot(r, r);
+            if (d < md) { md = d; mr = r; }
+        }
+    }
+    md = 8.0;
+    for (var j = -1; j <= 1; j = j + 1) {
+        for (var i = -1; i <= 1; i = i + 1) {
+            let g = vec2<f32>(f32(i), f32(j));
+            let r = g + vcell(n + g) - f;
+            let diff = r - mr;
+            if (dot(diff, diff) > 1e-5) {
+                md = min(md, dot(0.5 * (mr + r), normalize(diff)));
+            }
+        }
+    }
+    return md;
+}
 
-    var rgb = mix(color.rgb, dead, line * body);
-    rgb = mix(rgb, spark, pow(line, 2.0) * body * flicker);
-    return vec4<f32>(rgb, color.a);
+fn brittle(color: vec4<f32>, p: vec2<f32>) -> vec4<f32> {
+    let gold = vec3<f32>(1.00, 0.78, 0.25);
+
+    let r = length(p) * 2.0;
+    let band = 1.0 - smoothstep(CAGE_R * 0.8, CAGE_R, r); // filled disc over the core
+    let md = crack_net(p * CRACK_DENSITY + vec2<f32>(uniforms.seed));
+    let crack = (1.0 - smoothstep(0.0, CRACK_W, md)) * band;
+
+    let rgb = mix(color.rgb, gold, crack);
+    return vec4<f32>(rgb, max(color.a, crack)); // opaque so the cage always reads
 }
 
 @fragment
@@ -148,8 +176,7 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
 
     var color = vec4<f32>(rgb, alpha);
     if ((effects.mask & BRITTLE) != 0u) {
-        // Split only the nucleus, leaving the arcs intact.
-        color = brittle(color, mesh.uv, core_intensity);
+        color = brittle(color, p);
     }
     return color;
 }
