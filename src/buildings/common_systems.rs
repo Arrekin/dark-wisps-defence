@@ -11,6 +11,7 @@ use crate::wisps::components::Wisp;
 use super::{
     energy_relay::BuilderEnergyRelay,
     exploration_center::BuilderExplorationCenter,
+    forge::BuilderForge,
     mining_complex::BuilderMiningComplex,
     tower_blaster::BuilderTowerBlaster,
     tower_emitter::BuilderTowerEmitter,
@@ -92,6 +93,9 @@ fn on_building_place_request(
         },
         BuildingType::MiningComplex => {
             commands.spawn(BuilderMiningComplex::new(*coords));
+        },
+        BuildingType::Forge => {
+            commands.spawn(BuilderForge::new(*coords));
         },
     };
 }

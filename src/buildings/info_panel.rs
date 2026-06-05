@@ -169,6 +169,7 @@ pub fn initialize_building_panel_content_system(
                 // Specialized panels depending on the building type
                 tower_subpanel_content_bundle(),
                 super::exploration_center::ExplorationCenterInfoPanel::subpanel_content_bundle(),
+                super::forge::ForgeInfoPanel::subpanel_content_bundle(),
             ],
         ));
     });

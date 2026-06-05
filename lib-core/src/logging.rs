@@ -98,6 +98,7 @@ pub enum Tag {
     Editor,
     Objectives,
     Resources,
+    Forge,
 }
 
 // ── LogEntryData ──────────────────────────────────────────────────────────────

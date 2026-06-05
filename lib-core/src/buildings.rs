@@ -21,6 +21,7 @@ pub enum BuildingType {
     Tower(TowerType),
     MiningComplex,
     ExplorationCenter,
+    Forge,
 }
 impl BuildingType {
     /// Returns all BuildingType variants including all tower types.
@@ -30,6 +31,7 @@ impl BuildingType {
             Self::EnergyRelay,
             Self::MiningComplex,
             Self::ExplorationCenter,
+            Self::Forge,
             Self::Tower(TowerType::Blaster),
             Self::Tower(TowerType::Cannon),
             Self::Tower(TowerType::RocketLauncher),
@@ -71,6 +73,10 @@ pub struct EnergyRelay;
 #[derive(Component)]
 #[require(Building, BuildingType = BuildingType::MiningComplex)]
 pub struct MiningComplex;
+
+#[derive(Component)]
+#[require(Building, BuildingType = BuildingType::Forge)]
+pub struct Forge;
 
 /// Building that owns and manages expedition drones.
 /// Drones link back via HomeBase relationship; this component tracks capacity.

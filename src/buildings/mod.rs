@@ -9,6 +9,7 @@ pub mod energy_relay;
 pub mod tower_rocket_launcher;
 pub mod mining_complex;
 pub mod exploration_center;
+pub mod forge;
 pub mod info_panel;
 
 use crate::prelude::*;
@@ -28,6 +29,7 @@ impl Plugin for BuildingsPlugin {
                 exploration_center::ExplorationCenterPlugin,
                 main_base::MainBasePlugin,
                 mining_complex::MiningComplexPlugin,
+                forge::ForgePlugin,
                 tower_blaster::TowerBlasterPlugin,
                 tower_cannon::TowerCannonPlugin,
                 tower_rocket_launcher::TowerRocketLauncherPlugin,

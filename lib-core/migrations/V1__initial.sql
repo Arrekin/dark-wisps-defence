@@ -104,6 +104,15 @@ CREATE TABLE IF NOT EXISTS exploration_centers (
     FOREIGN KEY(id) REFERENCES entities(id)
 );
 
+-- The nullable forging_* columns hold an in-progress craft so a forge resumes mid-job
+-- across save/load; both are NULL when the forge is idle.
+CREATE TABLE IF NOT EXISTS forges (
+    id INTEGER PRIMARY KEY,
+    forging_shard_type TEXT,
+    forging_remaining_secs REAL,
+    FOREIGN KEY(id) REFERENCES entities(id)
+);
+
 CREATE TABLE IF NOT EXISTS quantum_fields (
     id INTEGER PRIMARY KEY,
     current_layer INTEGER NOT NULL,
@@ -154,6 +163,11 @@ CREATE TABLE IF NOT EXISTS entity_shards (
 CREATE TABLE IF NOT EXISTS shard_inventory (
     shard_type TEXT PRIMARY KEY,
     count INTEGER NOT NULL
+);
+
+-- Shard types the player has unlocked for forging (membership only).
+CREATE TABLE IF NOT EXISTS shard_blueprints (
+    shard_type TEXT PRIMARY KEY
 );
 
 -- ========================

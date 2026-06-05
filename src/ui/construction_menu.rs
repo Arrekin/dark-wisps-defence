@@ -249,6 +249,7 @@ impl SideMenu {
                             ConstructObjectButton::new(MapObject::Building(BuildingType::EnergyRelay)),
                             ConstructObjectButton::new(MapObject::Building(BuildingType::MiningComplex)),
                             ConstructObjectButton::new(MapObject::Building(BuildingType::ExplorationCenter)),
+                            ConstructObjectButton::new(MapObject::Building(BuildingType::Forge)),
                         ]
                     )]
                 ),
