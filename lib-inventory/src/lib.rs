@@ -3,6 +3,10 @@ use bevy::app::{App, Plugin};
 pub mod almanach;
 pub mod effects;
 pub mod placement;
+pub mod research;
+pub mod research_outcomes;
+pub mod research_persistence;
+pub mod research_process;
 pub mod resources;
 pub mod shard_blueprints;
 pub mod shard_catalog;
@@ -21,12 +25,14 @@ impl Plugin for LibInventoryPlugin {
                 shard_blueprints::ShardBlueprintsPlugin,
                 shard_catalog::ShardCatalogPlugin,
                 shard_inventory::ShardInventoryPlugin,
+                research::ResearchPlugin,
             ));
     }
 }
 
 pub mod prelude {
     pub use crate::almanach::almanach_prelude::*;
+    pub use crate::research::research_prelude::*;
     pub use crate::resources::resources_prelude::*;
     pub use crate::shard_blueprints::shard_blueprints_prelude::*;
     pub use crate::shard_inventory::shard_inventory_prelude::*;

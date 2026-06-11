@@ -4,6 +4,7 @@ mod map_objects;
 mod objectives;
 mod overlays;
 mod prelude;
+mod research;
 mod ui;
 mod units;
 mod visual_effects;
@@ -26,6 +27,7 @@ fn main() {
             visual_effects::VisualEffectsPlugin,
             map_objects::MapObjectsPlugin,
             objectives::ObjectivesPlugin,
+            research::ResearchUiPlugin,
             overlays::OverlaysPlugin,
             weaponry::WeaponryPlugin,
             ui::UiPlugin,

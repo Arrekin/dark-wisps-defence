@@ -17,6 +17,7 @@ impl Plugin for ShardCatalogPlugin {
         let range_shard_image: Handle<Image> = asset_server.load("ui/shards/shard_range.png");
         let damage_shard_image: Handle<Image> = asset_server.load("ui/shards/shard_damage.png");
         let speed_shard_image: Handle<Image> = asset_server.load("ui/shards/shard_speed.png");
+        let fire_shard_image: Handle<Image> = asset_server.load("ui/shards/shard_fire.png");
         app
             .register_shard(ShardType::Range, ShardInfo {
                 name: "Range".to_string(),
@@ -40,6 +41,15 @@ impl Plugin for ShardCatalogPlugin {
                 name: "Speed".to_string(),
                 description: "Go fast. Go faster.".to_string(),
                 icon: speed_shard_image,
+                recipe: Some(ShardRecipe {
+                    cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 100 }],
+                    duration: Duration::from_secs(8),
+                }),
+            })
+            .register_shard(ShardType::Fire, ShardInfo {
+                name: "Fire".to_string(),
+                description: "Burn it all down.".to_string(),
+                icon: fire_shard_image,
                 recipe: Some(ShardRecipe {
                     cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 100 }],
                     duration: Duration::from_secs(8),

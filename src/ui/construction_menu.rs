@@ -20,7 +20,8 @@ impl Plugin for ConstructionMenuPlugin {
             ))
             .add_observer(ConstructObjectButton::on_add)
             .add_observer(ButtonConstructMenu::on_add)
-            .add_observer(ConstructMenuListPicker::on_add);
+            .add_observer(ConstructMenuListPicker::on_add)
+            .add_observer(ResearchMenuButton::on_add);
     }
 }
 
@@ -95,6 +96,23 @@ impl AdminOnly {
         for mut visibility in menu_buttons.iter_mut() {
             *visibility = new_visibility;
         }
+    }
+}
+
+/// Added to the side-menu research icon. Opens the research panel on click (the research icon is a
+/// panel toggle, not a placement-list button).
+#[derive(Component)]
+struct ResearchMenuButton;
+impl ResearchMenuButton {
+    fn on_add(trigger: On<Add, ResearchMenuButton>, mut commands: Commands) {
+        commands.entity(trigger.entity).observe(Self::on_click);
+    }
+
+    fn on_click(
+        _trigger: On<Pointer<Click>>,
+        mut next_ui_state: ResMut<NextState<UiInteraction>>,
+    ) {
+        next_ui_state.set(UiInteraction::ResearchPanel);
     }
 }
 
@@ -253,10 +271,10 @@ impl SideMenu {
                         ]
                     )]
                 ),
-                // Construct research button
+                // Research button — opens the research panel on click
                 (
                     ButtonConstructMenu::new("ui/side_menu_research.png"),
-                    // Construct research list picker
+                    ResearchMenuButton,
                     children![(
                         ConstructMenuListPicker,
                     )],

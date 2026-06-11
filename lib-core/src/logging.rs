@@ -99,6 +99,7 @@ pub enum Tag {
     Objectives,
     Resources,
     Forge,
+    Research,
 }
 
 // ── LogEntryData ──────────────────────────────────────────────────────────────

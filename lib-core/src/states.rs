@@ -79,6 +79,7 @@ pub enum UiInteraction {
     MainMenu,
     PlaceGridObject,
     DisplayInfoPanel,
+    ResearchPanel,
 }
 impl UiInteraction {
     // On ESC: if UI is free, open Main Menu; otherwise, return to Free

@@ -37,6 +37,7 @@ pub enum ShardType {
     Range,
     Damage,
     Speed,
+    Fire,
 }
 
 ////////////////////

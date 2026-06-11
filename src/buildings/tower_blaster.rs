@@ -188,6 +188,7 @@ impl BuilderTowerBlaster {
             ShardType::Speed => {
                 commands.spawn(ShardEffect::from_modifiers(trigger.shard_target, HashMap::from([(ModifierType::AttackSpeed, 1.0)])));
             }
+            ShardType::Fire => {}
         }
     }
 }

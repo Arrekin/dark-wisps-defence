@@ -267,3 +267,37 @@ CREATE TABLE IF NOT EXISTS summonings (
     is_active INTEGER NOT NULL,
     FOREIGN KEY(id) REFERENCES entities(id)
 );
+
+-- ========================
+-- Research
+-- ========================
+
+-- One row per research instance present on the map.
+CREATE TABLE IF NOT EXISTS researches (
+    id INTEGER PRIMARY KEY,
+    research_type TEXT NOT NULL,
+    duration_secs REAL NOT NULL,
+    -- NULL when not in flight (not started or completed); a fraction in [0,1] while in progress.
+    progress REAL,
+    is_active INTEGER NOT NULL DEFAULT 0,
+    is_completed INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY(id) REFERENCES entities(id)
+);
+
+-- A research's (editable) cost, one row per resource. `essence_type` is set only for essence costs.
+CREATE TABLE IF NOT EXISTS research_costs (
+    research_id INTEGER NOT NULL,
+    resource_kind TEXT NOT NULL,
+    essence_type TEXT,
+    amount INTEGER NOT NULL,
+    FOREIGN KEY(research_id) REFERENCES researches(id)
+);
+
+-- Outcome kind: grant a shard blueprint. One table per outcome kind; `research_id` links to its
+-- research via the entity map.
+CREATE TABLE IF NOT EXISTS research_outcome_shard_blueprints (
+    id INTEGER PRIMARY KEY,
+    research_id INTEGER NOT NULL,
+    shard_type TEXT NOT NULL,
+    FOREIGN KEY(id) REFERENCES entities(id)
+);
