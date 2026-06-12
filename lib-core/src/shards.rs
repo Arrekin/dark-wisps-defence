@@ -38,6 +38,9 @@ pub enum ShardType {
     Damage,
     Speed,
     Fire,
+    Water,
+    Light,
+    Electric,
 }
 
 ////////////////////

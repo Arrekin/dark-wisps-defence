@@ -61,6 +61,9 @@ impl Plugin for ResearchPlugin {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display, EnumString, EnumIter)]
 pub enum ResearchType {
     FireShardRecipe,
+    WaterShardRecipe,
+    LightShardRecipe,
+    ElectricShardRecipe,
 }
 
 // ============================================================================
@@ -169,6 +172,30 @@ impl ResearchCatalog {
             cost: vec![Cost { resource_type: ResourceType::Essence(EssenceType::Fire), amount: 100 }],
             duration: Duration::from_secs(30),
             default_outcomes: vec![OutcomeSeed::ShardBlueprint(ShardType::Fire)],
+        });
+        definitions.insert(ResearchType::WaterShardRecipe, ResearchDefinition {
+            name: "Water Shard Recipe".to_string(),
+            description: "Unlocks the blueprint to forge Water shards.".to_string(),
+            icon: asset_server.load("ui/shards/shard_water.png"),
+            cost: vec![Cost { resource_type: ResourceType::Essence(EssenceType::Water), amount: 100 }],
+            duration: Duration::from_secs(30),
+            default_outcomes: vec![OutcomeSeed::ShardBlueprint(ShardType::Water)],
+        });
+        definitions.insert(ResearchType::LightShardRecipe, ResearchDefinition {
+            name: "Light Shard Recipe".to_string(),
+            description: "Unlocks the blueprint to forge Light shards.".to_string(),
+            icon: asset_server.load("ui/shards/shard_light.png"),
+            cost: vec![Cost { resource_type: ResourceType::Essence(EssenceType::Light), amount: 100 }],
+            duration: Duration::from_secs(30),
+            default_outcomes: vec![OutcomeSeed::ShardBlueprint(ShardType::Light)],
+        });
+        definitions.insert(ResearchType::ElectricShardRecipe, ResearchDefinition {
+            name: "Electric Shard Recipe".to_string(),
+            description: "Unlocks the blueprint to forge Electric shards.".to_string(),
+            icon: asset_server.load("ui/shards/shard_electric.png"),
+            cost: vec![Cost { resource_type: ResourceType::Essence(EssenceType::Electric), amount: 100 }],
+            duration: Duration::from_secs(30),
+            default_outcomes: vec![OutcomeSeed::ShardBlueprint(ShardType::Electric)],
         });
         Self { definitions }
     }

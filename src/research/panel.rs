@@ -173,7 +173,10 @@ fn rebuild_panel(
     let content_entity = *content;
     commands.entity(content_entity).despawn_related::<Children>();
 
-    for (research_entity, display, outcomes, is_active, progress) in researches.iter() {
+    let mut entries: Vec<_> = researches.iter().collect();
+    entries.sort_by(|a, b| a.1.title.cmp(&b.1.title));
+
+    for (research_entity, display, outcomes, is_active, progress) in entries {
         let grants: Vec<(Handle<Image>, String)> = outcomes.iter()
             .filter_map(|outcome| outcome_displays.get(outcome).ok())
             .map(|outcome_display| (outcome_display.icon.clone(), outcome_display.title.clone()))
