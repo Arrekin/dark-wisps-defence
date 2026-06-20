@@ -227,7 +227,7 @@ fn spawn_card(
     let title = commands.spawn((
         Text::new(display.title.clone()),
         TextFont::from_font_size(14.),
-        TextLayout::new_with_linebreak(LineBreak::NoWrap),
+        TextLayout::no_wrap(),
     )).id();
     commands.entity(column).add_child(title);
 
@@ -243,7 +243,7 @@ fn spawn_card(
         Text::new("Grants:"),
         TextFont::from_font_size(10.),
         TextColor::from(Color::linear_rgba(0.7, 0.7, 0.7, 1.)),
-        TextLayout::new_with_linebreak(LineBreak::NoWrap),
+        TextLayout::no_wrap(),
     )).id();
     commands.entity(grants_row).add_child(grants_label);
     for (grant_icon, grant_title) in grants {
@@ -256,7 +256,7 @@ fn spawn_card(
             Text::new(grant_title.clone()),
             TextFont::from_font_size(10.),
             TextColor::from(Color::linear_rgba(0.85, 0.85, 0.85, 1.)),
-            TextLayout::new_with_linebreak(LineBreak::NoWrap),
+            TextLayout::no_wrap(),
         )).id();
         commands.entity(grants_row).add_child(grant_title_node);
     }

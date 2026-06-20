@@ -64,6 +64,7 @@ impl<T: Saveable> SaveableBatch for SaveableBatchCommand<T> {
     }
 }
 impl<T: Saveable> Command for SaveableBatchCommand<T> {
+    type Out = ();
     fn apply(self, world: &mut World) {
         let mut buffer = world.resource_mut::<GameSaveExecutor>();
         Log::debug().dev().tag(Tag::GameSave).message(format!("Queued {} objects for saving", self.data.len()));

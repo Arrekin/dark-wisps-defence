@@ -34,7 +34,7 @@ pub fn sync_effect_visuals<MaterialT: Asset + EffectVisualMaterial>(
     mut materials: ResMut<Assets<MaterialT>>,
 ) {
     for (state, material_handle) in targets.iter() {
-        let Some(material) = materials.get_mut(&material_handle.0) else { continue; };
+        let Some(mut material) = materials.get_mut(&material_handle.0) else { continue; };
         let uniform = material.effects_mut();
         uniform.mask = state.mask();
         uniform.params = state.params();

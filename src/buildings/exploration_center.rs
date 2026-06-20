@@ -294,7 +294,7 @@ impl ExplorationCenterInfoPanel {
                 (
                     Text::new("Drones: ?/?"),
                     TextColor::from(BLUE),
-                    TextLayout::new_with_linebreak(LineBreak::NoWrap),
+                    TextLayout::no_wrap(),
                     Node {
                         margin: UiRect::top(Val::Px(4.)),
                         ..default()

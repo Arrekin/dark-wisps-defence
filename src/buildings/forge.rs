@@ -357,7 +357,7 @@ impl ForgeInfoPanel {
             children![
                 (
                     Text::new("Forge Shards"),
-                    TextLayout::new_with_linebreak(LineBreak::NoWrap),
+                    TextLayout::no_wrap(),
                     Node {
                         margin: UiRect::top(Val::Px(4.)),
                         ..default()
@@ -442,7 +442,7 @@ impl ForgeInfoPanel {
                         (
                             Text::new(name),
                             TextFont::from_font_size(12.),
-                            TextLayout::new_with_linebreak(LineBreak::NoWrap),
+                            TextLayout::no_wrap(),
                         ),
                         // Progress bar background
                         (
@@ -469,7 +469,7 @@ impl ForgeInfoPanel {
                         (
                             Text::new(format!("{:.1}s", remaining)),
                             TextFont::from_font_size(11.),
-                            TextLayout::new_with_linebreak(LineBreak::NoWrap),
+                            TextLayout::no_wrap(),
                             ForgeCountdownText,
                         ),
                     ],
@@ -640,7 +640,7 @@ impl ForgeShardButton {
                 Text::new(info.name.clone()),
                 TextFont::from_font_size(12.),
                 TextColor::from(Color::WHITE),
-                TextLayout::new_with_linebreak(LineBreak::NoWrap),
+                TextLayout::no_wrap(),
             ));
             tooltip.spawn((
                 Text::new(info.description.clone()),
@@ -651,7 +651,7 @@ impl ForgeShardButton {
                 Text::new(format!("Forge time: {:.0}s", recipe.duration.as_secs_f32())),
                 TextFont::from_font_size(10.),
                 TextColor::from(Color::linear_rgba(0.7, 0.8, 0.7, 1.)),
-                TextLayout::new_with_linebreak(LineBreak::NoWrap),
+                TextLayout::no_wrap(),
             ));
             // One CostIndicator per resource in the recipe.
             tooltip.spawn(Node {

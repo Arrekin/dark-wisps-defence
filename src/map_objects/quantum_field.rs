@@ -691,7 +691,7 @@ fn initialize_quantum_field_panel_content_system(
                         children![(
                             Text::new("Quantum Field"),
                             TextColor::from(BLUE),
-                            TextLayout::new_with_linebreak(LineBreak::NoWrap),
+                            TextLayout::no_wrap(),
                             Node {
                             margin: UiRect{ left: Val::Px(4.), right: Val::Px(4.), ..default() },
                                 ..default()

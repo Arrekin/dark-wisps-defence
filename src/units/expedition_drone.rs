@@ -483,7 +483,7 @@ impl ScanningBeam {
             let spot_diameter = SPOT_RADIUS * 2.0;
             beam_transform.scale = Vec3::new(beam_length, spot_diameter, 1.0);
             
-            if let Some(material) = beam_materials.get_mut(material_handle) {
+            if let Some(mut material) = beam_materials.get_mut(material_handle) {
                 material.start_width = BEAM_START_WIDTH / spot_diameter;
                 material.end_width = 1.0;
                 material.pulse = (material.pulse + time.delta_secs() * 0.8) % 1.0;
@@ -565,7 +565,7 @@ impl ScanSpot {
             let elongation = 1.0 + distance * SPOT_ELONGATION_FACTOR;
             spot_transform.scale = Vec3::new(SPOT_RADIUS * elongation, SPOT_RADIUS, 1.0);
             
-            if let Some(material) = spot_materials.get_mut(material_handle) {
+            if let Some(mut material) = spot_materials.get_mut(material_handle) {
                 material.pulse = (material.pulse + time.delta_secs() * 1.2) % 1.0;
             }
         }

@@ -93,7 +93,7 @@ impl CostIndicator {
                     Text::default(),
                     TextFont::default().with_font_size(cost_indicator.font_size),
                     TextColor::from(cost_indicator.font_color),
-                    TextLayout::new_with_linebreak(LineBreak::NoWrap),
+                    TextLayout::no_wrap(),
                     CostIndicatorValueText,
                 )).id();
             });

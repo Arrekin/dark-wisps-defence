@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bevy = { version = "0.18.*", default-features = false, features = ["dynamic_linking", "2d"] }
-bevy_egui = "0.39.*"
+bevy = { version = "0.19.*", default-features = false, features = ["dynamic_linking", "2d", "ui"] }
+bevy_egui = "0.40.*"
 crossbeam-channel = "0.5.*"
 nanorand = { version = "0.7.*", features = ["tls"] }
 refinery = { version = "0.9.*", features = ["rusqlite"]}

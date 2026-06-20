@@ -1,8 +1,8 @@
 # Post-Process Effects
 
-Screen-space visual effects applied after tonemapping via a custom ViewNode render graph
-pass. Each effect runs once per camera frame regardless of how many instances are active,
-and works on any camera without special pairing.
+Screen-space visual effects applied after tonemapping, each as a system in the `Core2d`
+schedule. Each effect runs once per camera frame regardless of how many instances are active,
+and works on any camera carrying the effect component without special pairing.
 
 ## Architecture
 
@@ -10,7 +10,7 @@ Each effect consists of:
 
 1. A **pure-data component** (no mesh, no material) holding effect state and per-camera
    projection parameters, which gets extracted to the render world each frame.
-2. A **ViewNode** that runs in the render graph and dispatches the fullscreen pass.
+2. A **render-pass system** that runs in the `Core2d` schedule and dispatches the fullscreen pass.
 3. A **WGSL shader** for the pixel manipulation.
 
 ## Data Flow
@@ -34,27 +34,30 @@ and orthographic size. Per-camera data is kept slim; shared effect data (e.g. al
 ripple entries) lives in a separate `Resource` extracted via `ExtractResourcePlugin` and
 uploaded to a GPU storage buffer once per frame.
 
-## Render Graph
+## Pass Registration & Ordering
 
-Each effect plugin registers **only its own node** in the `Core2d` graph — it does *not* add its
-own ordering edges:
+Each effect plugin registers **only its own pass system** in the `Core2d` schedule, bound to a
+shared `SystemSet` — it does *not* declare its own ordering:
 
 ```rust
-render_app.add_render_graph_node::<ViewNodeRunner<MyEffectNode>>(Core2d, MyEffectLabel);
+render_app.add_systems(Core2d, my_effect_pass.in_set(MyEffectPostProcessSet));
 ```
 
-The `RenderLabel` types and the order of *all* post-process passes live in one place,
-`lib-core/src/post_processing.rs`: the shared labels plus `PostProcessOrderingPlugin`, which adds
-the whole chain (`Tonemapping → Ripple → QuantumField → ForceField → EndMainPassPostProcessing`).
-That plugin is added **last** in `main.rs`, after every effect plugin, so all nodes exist before
-the edges reference them (edge creation panics on a missing node). To add a new pass: define its
-label in `lib_core::post_processing`, register the node in your plugin, and splice the label into
-`PostProcessOrderingPlugin`'s chain at the position you want.
+The `SystemSet` types and the order of *all* post-process passes live in one place,
+`lib-core/src/post_processing.rs`: the shared sets plus `PostProcessOrderingPlugin`, which pins the
+whole chain with `configure_sets(Core2d, …)`. Every set is placed `.in_set(Core2dSystems::PostProcess)`
+and `.after(...)` the previous one, yielding
+`Tonemapping → Ripple → ForceField → QuantumField → Upscaling`. That plugin is added **last** in
+`main.rs`, after every effect plugin, so each set is already populated when the ordering is applied.
+To add a new pass: define its set in `lib_core::post_processing`, add your system to it in your
+plugin, and splice the set into `PostProcessOrderingPlugin`'s chain at the position you want.
 
-`ViewTarget::post_process_write()` provides a `(source, destination)` texture pair.
-The node's `ViewQuery` must include `DynamicUniformIndex<MyEffect>` so the node only
-fires for cameras that carry the component. The index is the per-camera byte offset into
-the shared `DynamicUniformBuffer`.
+`ViewTarget::post_process_write()` provides a `(source, destination)` texture pair. The pass
+system's `ViewQuery` includes `DynamicUniformIndex<MyEffect>` so it only fires for cameras carrying
+the component (the index is the per-camera byte offset into the shared `DynamicUniformBuffer`), and
+`ExtractedCamera` so the pass can assert the camera is HDR — the pipelines are built only for the
+`Rgba16Float` (HDR) framebuffer, so a non-HDR `PostProcessCamera` would panic with an actionable
+message rather than a cryptic format mismatch.
 
 ## World ↔ UV Projection
 
@@ -98,21 +101,29 @@ fn world_to_uv(world: vec2<f32>) -> vec2<f32> {
 
 3. Add an `Update` system that fills each camera's component from `(&Transform, &Projection)`.
 
-4. Insert the component on the relevant cameras via `On<Add, CameraMarker>` observers.
+4. Insert the component on `PostProcessCamera` entities via an `On<Add, PostProcessCamera>` observer.
 
-5. Implement `ViewNode`:
+5. Add the render-pass **system** (runs in `Core2d`, bound to your set):
    ```rust
-   impl ViewNode for MyEffectNode {
-       type ViewQuery = (
-           &'static ViewTarget,
-           &'static DynamicUniformIndex<MyEffect>,
-       );
-       fn run<'w>(..., (view_target, settings_index): QueryItem<'w, 'w, Self::ViewQuery>, ...) {
-           // bind group + render pass …
-           render_pass.set_bind_group(0, &bind_group, &[settings_index.index()]);
-       }
+   fn my_effect_pass(
+       view: ViewQuery<(
+           &ViewTarget,
+           &DynamicUniformIndex<MyEffect>,
+           &MyEffect,
+           &ExtractedCamera,
+       )>,
+       pipeline_res: Res<MyEffectPipeline>,
+       pipeline_cache: Res<PipelineCache>,
+       mut ctx: RenderContext,
+   ) {
+       let (view_target, settings_index, settings, camera) = view.into_inner();
+       assert!(camera.hdr, "my effect post-process requires an HDR camera");
+       // fetch pipeline, build bind group, run the fullscreen pass …
+       render_pass.set_bind_group(0, &bind_group, &[settings_index.index()]);
    }
    ```
+   Register it with `render_app.add_systems(Core2d, my_effect_pass.in_set(MyEffectPostProcessSet))`
+   and build the pipeline in a `RenderStartup` system.
 
 6. Write the WGSL shader (see gotchas below).
 
@@ -163,4 +174,4 @@ the active count dropped from a peak.)
 | Force field dome | `ForceFieldPostProcess` in `weaponry/force_field_post_process.rs` | `shaders/force_field_post_process.wgsl` |
 | Quantum field anomaly | `QuantumFieldPostProcess` in `map_objects/quantum_field_post_process.rs` | `shaders/quantum_field_post_process.wgsl` |
 
-Render-graph order: `Tonemapping → Ripple → QuantumField → ForceField → EndMainPassPostProcessing`.
+Pass order (in the `Core2d` schedule): `Tonemapping → Ripple → ForceField → QuantumField → Upscaling`.

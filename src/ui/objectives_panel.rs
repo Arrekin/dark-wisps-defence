@@ -1,4 +1,4 @@
-use bevy::ui::widget::NodeImageMode;
+use bevy::ui::{widget::NodeImageMode, VisualBox};
 
 use crate::{objectives::Objective, prelude::*};
 
@@ -91,6 +91,7 @@ impl ObjectivesPanel {
                     sides_scale_mode: SliceScaleMode::Stretch,
                     max_corner_scale: 1.0,
                 }),
+                visual_box: VisualBox::BorderBox,
                 ..default()
             },
             children![ObjectivesShowHideButton,],

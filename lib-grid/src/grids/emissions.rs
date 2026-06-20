@@ -61,7 +61,7 @@ impl EmitterEnergy {
         });
     }
     fn on_disable_or_replace(
-        trigger: On<Replace, (GridCoords, GridImprint, EmitterEnergyEnabled)>,
+        trigger: On<Discard, (GridCoords, GridImprint, EmitterEnergyEnabled)>,
         mut events: MessageWriter<EmitterChangedEvent>,
         suppliers: Query<(&GridCoords, &GridImprint, &EmitterEnergy), With<EmitterEnergyEnabled>>,
     ) {

@@ -3,7 +3,7 @@ use bevy::{
     reflect::TypePath,
     render::{
         render_resource::{AsBindGroup, ShaderType},
-        storage::ShaderStorageBuffer,
+        storage::ShaderBuffer,
     },
     shader::ShaderRef,
     sprite_render::{AlphaMode2d, Material2d, Material2dPlugin, MeshMaterial2d}
@@ -111,7 +111,7 @@ impl TowersRangeOverlaySecondaryMode {
 #[derive(Asset, AsBindGroup, TypePath, Debug, Clone, Default)]
 struct TowersRangeMaterial {
     #[storage(0, read_only)]
-    pub cells: Handle<ShaderStorageBuffer>,
+    pub cells: Handle<ShaderBuffer>,
     #[uniform(1)]
     pub grid_data: super::UniformGridData,
 }
@@ -148,7 +148,7 @@ impl TowersRangeOverlay {
 }
 
 fn refresh_display_system(
-    mut buffers: ResMut<Assets<ShaderStorageBuffer>>,
+    mut buffers: ResMut<Assets<ShaderBuffer>>,
     mut materials: ResMut<Assets<TowersRangeMaterial>>,
     tower_ranges_grid: Res<TowerRangesGrid>,
     mut overlay_config: ResMut<TowersRangeOverlayConfig>,
@@ -162,7 +162,7 @@ fn refresh_display_system(
 
     *last_secondary_mode = overlay_config.secondary_mode.clone();
     overlay_config.grid_version = tower_ranges_grid.version;
-    let overlay_material = materials.get_mut(towers_range_overlay.into_inner()).unwrap();
+    let mut overlay_material = materials.get_mut(towers_range_overlay.into_inner()).unwrap();
 
     // Generate buffer data
     let mut overlay_creator = OverlayBufferCreator::new(&tower_ranges_grid, &mut local_buffer_data);
@@ -188,11 +188,11 @@ fn refresh_display_system(
     };
 
     let buffer_handle = &overlay_material.cells;
-    if let Some(buffer) = buffers.get_mut(buffer_handle) {
+    if let Some(mut buffer) = buffers.get_mut(buffer_handle) {
         buffer.set_data(&*local_buffer_data);
     } else {
-        // Create ShaderStorageBuffer
-        let storage_buffer = ShaderStorageBuffer::from(local_buffer_data.as_slice());
+        // Create ShaderBuffer
+        let storage_buffer = ShaderBuffer::from(local_buffer_data.as_slice());
         let buffer_handle = buffers.add(storage_buffer);
         overlay_material.cells = buffer_handle;
     }

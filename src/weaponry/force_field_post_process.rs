@@ -5,35 +5,29 @@
 //! buffer; each camera keeps a slim uniform with projection parameters, global time,
 //! and the current field count.
 
-use std::{collections::BinaryHeap, cmp::Ordering};
+use super::force_field::{ForceField, ForceFieldEntered};
+use crate::prelude::*;
 use bevy::{
-    core_pipeline::{
-        core_2d::graph::Core2d,
-        FullscreenShader,
-    },
-    ecs::query::QueryItem,
+    core_pipeline::{FullscreenShader, schedule::Core2d},
     render::{
+        Render, RenderApp, RenderStartup, RenderSystems,
+        camera::ExtractedCamera,
         extract_component::{
             ComponentUniforms, DynamicUniformIndex, ExtractComponent, ExtractComponentPlugin,
             UniformComponentPlugin,
         },
         extract_resource::{ExtractResource, ExtractResourcePlugin},
-        render_graph::{
-            NodeRunError, RenderGraphContext, RenderGraphExt, ViewNode, ViewNodeRunner,
-        },
         render_resource::{
             binding_types::{sampler, storage_buffer_read_only, texture_2d, uniform_buffer},
             *,
         },
-        renderer::{RenderContext, RenderDevice, RenderQueue},
+        renderer::{RenderContext, RenderDevice, RenderQueue, ViewQuery},
         view::ViewTarget,
-        Render, RenderApp, RenderSystems, RenderStartup,
     },
 };
-use super::force_field::{ForceField, ForceFieldEntered};
 use lib_core::camera::MainCamera;
-use lib_core::post_processing::ForceFieldPostProcessLabel;
-use crate::prelude::*;
+use lib_core::post_processing::ForceFieldPostProcessSet;
+use std::{cmp::Ordering, collections::BinaryHeap};
 
 pub struct ForceFieldPostProcessPlugin;
 impl Plugin for ForceFieldPostProcessPlugin {
@@ -63,10 +57,7 @@ impl Plugin for ForceFieldPostProcessPlugin {
             ))
             // Ordering against the other post-process passes lives in lib-core's
             // PostProcessOrderingPlugin (added after all effect plugins).
-            .add_render_graph_node::<ViewNodeRunner<ForceFieldPostProcessNode>>(
-                Core2d,
-                ForceFieldPostProcessLabel,
-            );
+            .add_systems(Core2d, force_field_post_process_pass.in_set(ForceFieldPostProcessSet));
     }
 }
 
@@ -282,69 +273,57 @@ impl ForceFieldPostProcess {
     }
 }
 
-// ── Render graph ──────────────────────────────────────────────────────────────────────
+// ── Render pass system ───────────────────────────────────────────────────────────────
 
-#[derive(Default)]
-struct ForceFieldPostProcessNode;
-impl ViewNode for ForceFieldPostProcessNode {
-    type ViewQuery = (
-        &'static ViewTarget,
-        &'static DynamicUniformIndex<ForceFieldPostProcess>,
-        &'static ForceFieldPostProcess,
+fn force_field_post_process_pass(
+    view: ViewQuery<(
+        &ViewTarget,
+        &DynamicUniformIndex<ForceFieldPostProcess>,
+        &ForceFieldPostProcess,
+        &ExtractedCamera,
+    )>,
+    pipeline_res: Res<ForceFieldPostProcessPipeline>,
+    pipeline_cache: Res<PipelineCache>,
+    settings_uniforms: Res<ComponentUniforms<ForceFieldPostProcess>>,
+    field_storage: Res<GpuForceFieldStorage>,
+    ripple_storage: Res<GpuFieldRippleStorage>,
+    mut ctx: RenderContext,
+) {
+    let (view_target, settings_index, settings, camera) = view.into_inner();
+
+    if settings.field_count == 0 {
+        return;
+    }
+
+    // The post-process passes only run on HDR cameras (Rgba16Float framebuffer).
+    assert!(
+        camera.hdr,
+        "force field post-process requires an HDR camera; this PostProcessCamera lacks `Hdr`. \
+         Add the `Hdr` component, or add a pipeline variant for its target format."
+    );
+    let pipeline_id = pipeline_res.pipeline_id;
+    let Some(pipeline) = pipeline_cache.get_render_pipeline(pipeline_id) else { return; };
+    let Some(settings_binding) = settings_uniforms.uniforms().binding() else { return; };
+    let Some(storage_binding) = field_storage.buffer.binding() else { return; };
+    let Some(ripple_binding) = ripple_storage.buffer.binding() else { return; };
+
+    let post_process = view_target.post_process_write();
+
+    let bind_group = ctx.render_device().create_bind_group(
+        "force_field_post_process_bind_group",
+        &pipeline_cache.get_bind_group_layout(&pipeline_res.layout),
+        &BindGroupEntries::sequential((
+            post_process.source,
+            &pipeline_res.sampler,
+            settings_binding.clone(),
+            storage_binding.clone(),
+            ripple_binding.clone(),
+        )),
     );
 
-    fn run<'w>(
-        &self,
-        _graph: &mut RenderGraphContext,
-        render_context: &mut RenderContext<'w>,
-        (view_target, settings_index, settings): QueryItem<'w, 'w, Self::ViewQuery>,
-        world: &'w World,
-    ) -> Result<(), NodeRunError> {
-        if settings.field_count == 0 {
-            return Ok(());
-        }
-        let pipeline_res = world.resource::<ForceFieldPostProcessPipeline>();
-        let pipeline_cache = world.resource::<PipelineCache>();
-
-        let pipeline_id = if view_target.main_texture_format() == ViewTarget::TEXTURE_FORMAT_HDR {
-            pipeline_res.pipeline_id_hdr
-        } else {
-            pipeline_res.pipeline_id_ldr
-        };
-        let Some(pipeline) = pipeline_cache.get_render_pipeline(pipeline_id) else {
-            return Ok(());
-        };
-
-        let settings_uniforms = world.resource::<ComponentUniforms<ForceFieldPostProcess>>();
-        let Some(settings_binding) = settings_uniforms.uniforms().binding() else {
-            return Ok(());
-        };
-
-        let field_storage = world.resource::<GpuForceFieldStorage>();
-        let Some(storage_binding) = field_storage.buffer.binding() else {
-            return Ok(());
-        };
-
-        let ripple_storage = world.resource::<GpuFieldRippleStorage>();
-        let Some(ripple_binding) = ripple_storage.buffer.binding() else {
-            return Ok(());
-        };
-
-        let post_process = view_target.post_process_write();
-
-        let bind_group = render_context.render_device().create_bind_group(
-            "force_field_post_process_bind_group",
-            &pipeline_cache.get_bind_group_layout(&pipeline_res.layout),
-            &BindGroupEntries::sequential((
-                post_process.source,
-                &pipeline_res.sampler,
-                settings_binding.clone(),
-                storage_binding.clone(),
-                ripple_binding.clone(),
-            )),
-        );
-
-        let mut render_pass = render_context.begin_tracked_render_pass(RenderPassDescriptor {
+    let mut render_pass = ctx
+        .command_encoder()
+        .begin_render_pass(&RenderPassDescriptor {
             label: Some("force_field_post_process_pass"),
             color_attachments: &[Some(RenderPassColorAttachment {
                 view: post_process.destination,
@@ -355,14 +334,12 @@ impl ViewNode for ForceFieldPostProcessNode {
             depth_stencil_attachment: None,
             timestamp_writes: None,
             occlusion_query_set: None,
+            multiview_mask: None,
         });
 
-        render_pass.set_render_pipeline(pipeline);
-        render_pass.set_bind_group(0, &bind_group, &[settings_index.index()]);
-        render_pass.draw(0..3, 0..1);
-
-        Ok(())
-    }
+    render_pass.set_pipeline(pipeline);
+    render_pass.set_bind_group(0, &bind_group, &[settings_index.index()]);
+    render_pass.draw(0..3, 0..1);
 }
 
 // ── Pipeline ──────────────────────────────────────────────────────────────────────────
@@ -371,8 +348,7 @@ impl ViewNode for ForceFieldPostProcessNode {
 struct ForceFieldPostProcessPipeline {
     layout: BindGroupLayoutDescriptor,
     sampler: Sampler,
-    pipeline_id_ldr: CachedRenderPipelineId,
-    pipeline_id_hdr: CachedRenderPipelineId,
+    pipeline_id: CachedRenderPipelineId,
 }
 
 fn init_force_field_pipeline(
@@ -415,13 +391,12 @@ fn init_force_field_pipeline(
         ..default()
     };
 
-    let pipeline_id_ldr = pipeline_cache.queue_render_pipeline(make_pipeline(TextureFormat::bevy_default()));
-    let pipeline_id_hdr = pipeline_cache.queue_render_pipeline(make_pipeline(ViewTarget::TEXTURE_FORMAT_HDR));
+    let pipeline_id =
+        pipeline_cache.queue_render_pipeline(make_pipeline(TextureFormat::Rgba16Float));
 
     commands.insert_resource(ForceFieldPostProcessPipeline {
         layout,
         sampler,
-        pipeline_id_ldr,
-        pipeline_id_hdr,
+        pipeline_id,
     });
 }

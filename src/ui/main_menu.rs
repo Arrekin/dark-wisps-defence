@@ -72,7 +72,7 @@ impl LoadMapButton {
             .with_children(|parent| {
                 parent.spawn((
                     Text::new("Load Map"),
-                    TextLayout::new_with_linebreak(LineBreak::NoWrap),
+                    TextLayout::no_wrap(),
                 ));
             })
             .observe(Self::on_click);
@@ -143,7 +143,7 @@ impl MapEntryButton {
             .with_children(|parent| {
                 parent.spawn((
                     Text::new(name.clone()),
-                    TextLayout::new_with_linebreak(LineBreak::NoWrap),
+                    TextLayout::no_wrap(),
                 ));
             })
             .observe(Self::on_click);

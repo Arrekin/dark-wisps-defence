@@ -15,7 +15,7 @@ impl Plugin for DisplayInfoPanelPlugin {
             ))
             .add_systems(Update, (
                 hide_system.run_if(in_state(UiInteraction::DisplayInfoPanel)),
-                show_on_click_system.run_if(in_state(UiInteraction::Free).or(in_state(UiInteraction::DisplayInfoPanel))),
+                show_on_click_system.run_if(in_state(UiInteraction::Free).or_else(in_state(UiInteraction::DisplayInfoPanel))),
             ))
             .add_systems(OnEnter(UiInteraction::DisplayInfoPanel), on_display_enter_system)
             .add_systems(OnExit(UiInteraction::DisplayInfoPanel), on_display_exit_system)

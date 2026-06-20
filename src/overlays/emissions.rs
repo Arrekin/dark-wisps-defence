@@ -3,7 +3,7 @@ use bevy::{
     reflect::TypePath,
     render::{
         render_resource::{AsBindGroup, ShaderType},
-        storage::ShaderStorageBuffer,
+        storage::ShaderBuffer,
     },
     shader::ShaderRef,
     sprite_render::{AlphaMode2d, Material2d, Material2dPlugin, MeshMaterial2d},
@@ -79,7 +79,7 @@ struct EmissionsUniformData {
 #[derive(Asset, AsBindGroup, TypePath, Debug, Clone, Default)]
 struct EmissionsOverlayMaterial {
     #[storage(0, read_only)]
-    pub cells: Handle<ShaderStorageBuffer>,
+    pub cells: Handle<ShaderBuffer>,
     #[uniform(1)]
     pub uniforms: EmissionsUniformData,
 }
@@ -121,7 +121,7 @@ impl EmissionsOverlay {
 }
 
 fn refresh_display_system(
-    mut buffers: ResMut<Assets<ShaderStorageBuffer>>,
+    mut buffers: ResMut<Assets<ShaderBuffer>>,
     mut materials: ResMut<Assets<EmissionsOverlayMaterial>>,
     emissions_grid: Res<EmissionsGrid>,
     mut overlay_config: ResMut<EmissionsOverlayConfig>,
@@ -134,7 +134,7 @@ fn refresh_display_system(
     if overlay_config.grid_version == current_version { return; }
     overlay_config.grid_version = current_version;
 
-    let overlay_material = materials.get_mut(overlay.into_inner()).unwrap();
+    let mut overlay_material = materials.get_mut(overlay.into_inner()).unwrap();
 
     // Find min/max for GPU-side normalization
     let (mut min_val, mut max_val) = (f32::MAX, f32::MIN);
@@ -158,10 +158,10 @@ fn refresh_display_system(
 
     // Update SSBO
     let buffer_handle = &overlay_material.cells;
-    if let Some(buffer) = buffers.get_mut(buffer_handle) {
+    if let Some(mut buffer) = buffers.get_mut(buffer_handle) {
         buffer.set_data(&*local_buffer_data);
     } else {
-        let storage_buffer = ShaderStorageBuffer::from(local_buffer_data.as_slice());
+        let storage_buffer = ShaderBuffer::from(local_buffer_data.as_slice());
         overlay_material.cells = buffers.add(storage_buffer);
     }
 

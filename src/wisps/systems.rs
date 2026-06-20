@@ -70,7 +70,7 @@ pub fn drive_water_material(
         let clock_wrapped = now < applied_anchor;
         if !(vigor_changed || heading_changed || clock_wrapped) { continue; }
 
-        let Some(material) = materials.get_mut(handle) else { continue; };
+        let Some(mut material) = materials.get_mut(handle) else { continue; };
         // Advance each phase by the time it ran under the OLD vigor's rate, then
         // restart the clock at `now` so the shader's extrapolation stays continuous.
         let elapsed = if now >= material.anchor_time {
@@ -107,7 +107,7 @@ pub fn drive_wisp_locomotion<M: WispLocomotiveMaterial>(
             continue;
         }
 
-        let Some(material) = materials.get_mut(handle) else { continue; };
+        let Some(mut material) = materials.get_mut(handle) else { continue; };
         material.set_locomotion(locomotion.clone());
     }
 }

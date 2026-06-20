@@ -139,7 +139,7 @@ pub fn initialize_building_panel_content_system(
                         (
                             Text::new("### Building Name ###"),
                             TextColor::from(BLUE),
-                            TextLayout::new_with_linebreak(LineBreak::NoWrap),
+                            TextLayout::no_wrap(),
                             Node {
                                 margin: UiRect{ left: Val::Px(4.), right: Val::Px(4.), ..default() },
                                 ..default()
@@ -232,7 +232,7 @@ fn tower_subpanel_content_bundle() -> impl Bundle {
             (
                 Text::new("--- Shards ---"),
                 TextColor::from(BLUE),
-                TextLayout::new_with_linebreak(LineBreak::NoWrap),
+                TextLayout::no_wrap(),
                 Node {
                     margin: UiRect{ left: Val::Px(4.), right: Val::Px(4.), ..default() },
                     ..default()
@@ -282,7 +282,7 @@ impl ShardSlotOccupied {
             .with_children(|parent| {
                 parent.spawn((
                     Text::new(shard_name),
-                    TextLayout::new_with_linebreak(LineBreak::NoWrap),
+                    TextLayout::no_wrap(),
                     TextFont::default().with_font_size(10.0),
                     TextColor::from(Color::WHITE),
                 ));

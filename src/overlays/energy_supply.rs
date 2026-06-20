@@ -3,7 +3,7 @@ use bevy::{
     reflect::TypePath, 
     render::{
         render_resource::{AsBindGroup, ShaderType},
-        storage::ShaderStorageBuffer,
+        storage::ShaderBuffer,
     },
     shader::ShaderRef,
     sprite_render::{AlphaMode2d, Material2d, Material2dPlugin, MeshMaterial2d}
@@ -103,7 +103,7 @@ impl EnergySupplyOverlaySecondaryMode {
 #[derive(Asset, AsBindGroup, TypePath, Debug, Clone, Default)]
 struct EnergySupplyHeatmapMaterial {
     #[storage(0, read_only)]
-    pub energy_cells: Handle<ShaderStorageBuffer>,
+    pub energy_cells: Handle<ShaderBuffer>,
     #[uniform(1)]
     pub grid_data: super::UniformGridData,
 }
@@ -140,7 +140,7 @@ impl EnergySupplyOverlay {
 }
 
 fn refresh_display_system(
-    mut buffers: ResMut<Assets<ShaderStorageBuffer>>,
+    mut buffers: ResMut<Assets<ShaderBuffer>>,
     mut materials: ResMut<Assets<EnergySupplyHeatmapMaterial>>,
     energy_supply_grid: Res<EnergySupplyGrid>,
     mut overlay_config: ResMut<EnergySupplyOverlayConfig>,
@@ -153,7 +153,7 @@ fn refresh_display_system(
     *last_secondary_mode = overlay_config.secondary_mode.clone();
     overlay_config.grid_version = energy_supply_grid.version;
 
-    let overlay_material = materials.get_mut(energy_supply_overlay.into_inner()).unwrap();
+    let mut overlay_material = materials.get_mut(energy_supply_overlay.into_inner()).unwrap();
     
     // Generate buffer data
     let mut overlay_creator = OverlayBufferCreator::new(&energy_supply_grid, &mut local_buffer_data);
@@ -185,11 +185,11 @@ fn refresh_display_system(
         }
     };
     let buffer_handle = &overlay_material.energy_cells;
-    if let Some(buffer) = buffers.get_mut(buffer_handle) {
+    if let Some(mut buffer) = buffers.get_mut(buffer_handle) {
         buffer.set_data(&*local_buffer_data);
     } else {
-        // Create ShaderStorageBuffer
-        let storage_buffer = ShaderStorageBuffer::from(local_buffer_data.as_slice());
+        // Create ShaderBuffer
+        let storage_buffer = ShaderBuffer::from(local_buffer_data.as_slice());
         let buffer_handle = buffers.add(storage_buffer);
         overlay_material.energy_cells = buffer_handle;
     }

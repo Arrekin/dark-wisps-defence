@@ -7,9 +7,8 @@
 
 use bevy::{post_process::bloom::Bloom, input::mouse::MouseWheel};
 use bevy::asset::RenderAssetUsages;
-use bevy::camera::RenderTarget;
+use bevy::camera::{Hdr, RenderTarget};
 use bevy::render::render_resource::{TextureDimension, TextureFormat, TextureUsages};
-use bevy::render::view::Hdr;
 use bevy_egui::PrimaryEguiContext;
 use crate::lib_prelude::*;
 
@@ -44,6 +43,10 @@ fn startup(mut commands: Commands) {
     commands.spawn((
         Camera2d::default(),
         Transform::from_xyz(500., 500., 0.),
+        // HDR framebuffer for bloom and the screen-space post-process passes.
+        // Bloom also requires it, but it is set explicitly so the camera's HDR mode
+        // is visible at the spawn site rather than implied.
+        Hdr,
         Bloom { high_pass_frequency: 0.5, ..default() },
         MainCamera,
         PostProcessCamera,

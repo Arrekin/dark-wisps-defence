@@ -57,7 +57,7 @@ impl SupplierEnergy {
     }
     // Detect change in coords or range and trigger supply grid update
     fn refresh_on_replace(
-        trigger: On<Replace, (GridCoords, EnergySupplyRange, SupplierEnergy)>,
+        trigger: On<Discard, (GridCoords, EnergySupplyRange, SupplierEnergy)>,
         mut supplier_changed_event_writer: MessageWriter<SupplierChangedEvent>,
         suppliers: Query<(&EnergySupplyRange, &GridCoords, &GridImprint), With<SupplierEnergy>>,
 

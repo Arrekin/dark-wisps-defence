@@ -42,7 +42,7 @@ fn main() {
         ))
         .add_plugins(editor::EditorPlugin)
         // Pins the screen-space post-process pass order. Must come after every effect plugin
-        // (ripple / quantum field / force field) so all their render-graph nodes already exist.
+        // (ripple / quantum field / force field) so their post-process system sets are configured first.
         .add_plugins(lib_core::post_processing::PostProcessOrderingPlugin)
         .add_systems(PostStartup, |mut commands: Commands| { commands.queue(LaunchAction::default()); })
         .run();
@@ -64,6 +64,7 @@ impl Default for LaunchAction {
     }
 }
 impl Command for LaunchAction {
+    type Out = ();
     fn apply(self, world: &mut World) {
         match self {
             LaunchAction::ApplySQLMigrations => {

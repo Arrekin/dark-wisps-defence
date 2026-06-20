@@ -198,7 +198,7 @@ UI components that belong to a specific feature live in that feature's file, not
 Generic/reusable UI lives in `lib-ui` or `src/ui/`.
 
 ## Bevy Notes
-- Be wary that we are using the newest Bevy 0.18! You may have outdated info so if any code feels wierd always check the local code and/or online docs!
+- Be wary that we are using the newest Bevy 0.19! You may have outdated info so if any code feels wierd always check the local code and/or online docs!
 - `Single<>` query type — system/observer is skipped entirely when not exactly one match. Good if it should only run when a specific entity exists. For 0 or 1, use `Option<Single<>>`.
 - `EventReader`/`EventWriter` renamed to `MessageReader`/`MessageWriter`. The `Event` trait + `commands.trigger()` is now for immediate observer-based dispatch.
 

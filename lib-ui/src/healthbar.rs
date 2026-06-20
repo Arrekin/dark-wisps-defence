@@ -83,7 +83,7 @@ impl Healthbar {
                             Text::default(),
                             TextFont::default().with_font_size(healthbar.font_size),
                             TextColor::BLACK,
-                            TextLayout::new_with_linebreak(LineBreak::NoWrap),
+                            TextLayout::no_wrap(),
                             HealthbarValueText,
                         )).id();
                     });

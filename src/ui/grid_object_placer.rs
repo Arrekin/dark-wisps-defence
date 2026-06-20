@@ -173,12 +173,12 @@ impl GridObjectPlacer {
     ) {
         let (placer_entity, grid_object_placer, grid_imprint, grid_coords, material_handle) = placer.into_inner();
         let Some(active_placement) = &grid_object_placer.active_placement else { return; };
-        let Some(material) = materials.get_mut(material_handle) else { return; };
+        let Some(mut material) = materials.get_mut(material_handle) else { return; };
 
         let (w, h) = grid_imprint.bounds();
         if material.uniform.cell_columns != w as u32 || material.uniform.cell_rows != h as u32 {
             commands.entity(placer_entity).insert(Mesh2d(meshes.add(Rectangle::from_size(grid_imprint.world_size()))));
-            update_material_imprint(material, *grid_imprint);
+            update_material_imprint(&mut material, *grid_imprint);
         }
 
         let new_preview = active_placement.placement_info.preview_image.clone();

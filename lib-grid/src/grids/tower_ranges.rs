@@ -34,7 +34,7 @@ impl TowerRangesGrid {
         flood_tower_range(&mut tower_ranges_grid, grid_imprint.iter(*grid_coords), FloodTowerRangeMode::Add, attack_range.get() as usize, entity);
     }
     fn on_tower_removed(
-        trigger: On<Replace, AttackRange>,
+        trigger: On<Discard, AttackRange>,
         mut tower_ranges_grid: ResMut<TowerRangesGrid>,
         towers: Query<(&GridCoords, &GridImprint, &AttackRange), With<Tower>>,
     ) {
