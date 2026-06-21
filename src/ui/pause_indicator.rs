@@ -10,30 +10,28 @@ impl Plugin for PauseIndicatorPlugin {
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Default, Clone)]
 struct PauseIndicator;
 
 impl PauseIndicator {
     fn setup(mut commands: Commands) {
-        commands
-            .spawn((
-                PauseIndicator,
-                Node {
-                    position_type: PositionType::Absolute,
-                    top: Val::Px(0.0),
-                    left: Val::Px(0.0),
-                    width: Val::Percent(100.0),
-                    height: Val::Percent(100.0),
-                    border: UiRect::all(Val::Px(4.0)),
-                    ..default()
-                },
-                BackgroundColor(Color::NONE),
-                BorderColor::all(Color::srgb(1.0, 0.8, 0.0)), // Yellow color
-                FocusPolicy::Pass,
-                Pickable::IGNORE, // Don't block mouse clicks/events
-                Visibility::Hidden, // Initially hidden
-                ZIndex(-1), // Render behind other UI elements
-            ));
+        commands.spawn_scene(bsn! {
+            PauseIndicator
+            Node {
+                position_type: PositionType::Absolute,
+                top: Val::Px(0.0),
+                left: Val::Px(0.0),
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                border: UiRect::all(Val::Px(4.0)),
+            }
+            BackgroundColor(Color::NONE)
+            template_value(BorderColor::all(Color::srgb(1.0, 0.8, 0.0))) // Yellow border
+            template_value(FocusPolicy::Pass)
+            template_value(Pickable::IGNORE) // Don't block mouse clicks/events
+            Visibility::Hidden // Initially hidden
+            ZIndex(-1) // Render behind other UI elements
+        });
     }
 
     fn update_visibility(

@@ -21,26 +21,25 @@ impl Plugin for ObjectivesPanelPlugin {
 const SLIDING_SPEED: f32 = 800.;
 const VISIBLE_TOP_POSITION: f32 = 5.;
 
-#[derive(Component)]
+#[derive(Component, Default, Clone)]
 #[require(Button, Pickable)]
 pub struct ObjectivesShowHideButton;
 impl ObjectivesShowHideButton {
     fn on_add(
         trigger: On<Add, ObjectivesShowHideButton>,
         mut commands: Commands, 
-        asset_server: Res<AssetServer>,
     ) {
-        commands.entity(trigger.entity).insert((
+        commands.entity(trigger.entity).apply_scene(bsn! {
             Node {
                 width: Val::Px(32.0),
                 height: Val::Px(32.0),
                 position_type: PositionType::Absolute,
                 bottom: Val::Px(-34.0),
                 right: Val::Px(5.0),
-                ..default()
-            },
-            ImageNode::new(asset_server.load("ui/objectives_panel.png")),
-        )).observe(Self::on_click);
+            }
+            ImageNode { image: "ui/objectives_panel.png" }
+            on(Self::on_click)
+        });
     }
     fn on_click(
         _trigger: On<Pointer<Click>>,
@@ -69,10 +68,8 @@ impl ObjectivesPanel {
     fn on_add(
         trigger: On<Add, ObjectivesPanel>,
         mut commands: Commands,
-        asset_server: Res<AssetServer>,
     ) {
-        let entity = trigger.entity;
-        commands.entity(entity).insert((
+        commands.entity(trigger.entity).apply_scene(bsn! {
             Node {
                 width: Val::Px(300.0),
                 position_type: PositionType::Absolute,
@@ -81,10 +78,9 @@ impl ObjectivesPanel {
                 right: Val::Px(5.0),
                 padding: UiRect::all(Val::Px(8.0)),
                 row_gap: Val::Px(2.0),
-                ..default()
-            },
+            }
             ImageNode {
-                image: asset_server.load("ui/objectives_panel.png"),
+                image: "ui/objectives_panel.png",
                 image_mode: NodeImageMode::Sliced(TextureSlicer {
                     border: BorderRect::all(20.0),
                     center_scale_mode: SliceScaleMode::Stretch,
@@ -92,10 +88,11 @@ impl ObjectivesPanel {
                     max_corner_scale: 1.0,
                 }),
                 visual_box: VisualBox::BorderBox,
-                ..default()
-            },
-            children![ObjectivesShowHideButton,],
-        ));
+            }
+            Children [
+                ObjectivesShowHideButton,
+            ]
+        });
     }
     fn on_objective_added(
         trigger: On<Add, Objective>,

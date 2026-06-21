@@ -18,7 +18,7 @@ pub struct ResearchPanelRoot;
 impl ResearchPanelRoot {
     fn on_add(trigger: On<Add, ResearchPanelRoot>, mut commands: Commands) {
         commands.entity(trigger.entity)
-            .insert((
+            .apply_scene(bsn! {
                 Node {
                     position_type: PositionType::Absolute,
                     top: Val::Px(0.),
@@ -27,55 +27,52 @@ impl ResearchPanelRoot {
                     height: Val::Percent(100.),
                     justify_content: JustifyContent::Center,
                     align_items: AlignItems::Center,
-                    ..default()
-                },
-                BackgroundColor::from(Color::linear_rgba(0., 0., 0., 0.6)),
-                Visibility::Hidden,
-            ))
-            .with_children(|parent| {
-                parent.spawn((
-                    Node {
-                        flex_direction: FlexDirection::Column,
-                        align_items: AlignItems::Center,
-                        row_gap: Val::Px(10.),
-                        padding: UiRect::all(Val::Px(16.)),
-                        min_width: Val::Px(380.),
-                        border_radius: BorderRadius::all(Val::Px(6.)),
-                        ..default()
-                    },
-                    BackgroundColor::from(Color::linear_rgba(0.1, 0.1, 0.15, 0.98)),
-                    children![
-                        (
-                            Text::new("Research"),
-                            TextFont::from_font_size(18.),
-                        ),
-                        (
-                            Node {
-                                flex_direction: FlexDirection::Column,
-                                align_items: AlignItems::Stretch,
-                                row_gap: Val::Px(8.),
-                                ..default()
-                            },
-                            ResearchPanelContent,
-                        ),
-                    ],
-                ));
+                }
+                BackgroundColor(Color::linear_rgba(0., 0., 0., 0.6))
+                Visibility::Hidden
+                Children [
+                    (
+                        Node {
+                            flex_direction: FlexDirection::Column,
+                            align_items: AlignItems::Center,
+                            row_gap: Val::Px(10.),
+                            padding: UiRect::all(Val::Px(16.)),
+                            min_width: Val::Px(380.),
+                            border_radius: BorderRadius::all(Val::Px(6.)),
+                        }
+                        BackgroundColor(Color::linear_rgba(0.1, 0.1, 0.15, 0.98))
+                        Children [
+                            (
+                                Text("Research")
+                                TextFont { font_size: {18.0} }
+                            ),
+                            (
+                                Node {
+                                    flex_direction: FlexDirection::Column,
+                                    align_items: AlignItems::Stretch,
+                                    row_gap: Val::Px(8.),
+                                }
+                                ResearchPanelContent
+                            ),
+                        ]
+                    )
+                ]
             });
     }
 }
 
 /// Container the cards are (re)built into.
-#[derive(Component)]
+#[derive(Component, Default, Clone)]
 pub struct ResearchPanelContent;
 
 /// Marks the progress-bar fill of a card so it can be animated live for `research`.
-#[derive(Component)]
+#[derive(Component, FromTemplate, Clone)]
 struct ResearchCardProgressFill {
     research: Entity,
 }
 
 /// Start/Stop button on a card, bound to `research`.
-#[derive(Component)]
+#[derive(Component, FromTemplate, Clone)]
 #[require(Button)]
 struct ResearchStartStopButton {
     research: Entity,
@@ -182,124 +179,119 @@ fn rebuild_panel(
             .map(|outcome_display| (outcome_display.icon.clone(), outcome_display.title.clone()))
             .collect();
         let fraction = progress.map(|p| p.fraction).unwrap_or(0.0);
-        let card = spawn_card(&mut commands, research_entity, display, is_active, fraction, &grants);
+        let card = commands.spawn_scene(research_card(research_entity, display, is_active, fraction, grants)).id();
         commands.entity(content_entity).add_child(card);
     }
 }
 
-fn spawn_card(
-    commands: &mut Commands,
+fn research_card(
     research: Entity,
     display: &ResearchCardDisplay,
     is_active: bool,
     fraction: f32,
-    grants: &[(Handle<Image>, String)],
-) -> Entity {
+    grants: Vec<(Handle<Image>, String)>,
+) -> impl Scene {
     let button_label = if is_active { "Stop" } else { "Start" };
+    let grant_scenes: Vec<_> = grants.into_iter()
+        .map(|(icon, title)| bsn! {
+            Node {
+                flex_direction: FlexDirection::Row,
+                align_items: AlignItems::Center,
+                column_gap: Val::Px(2.),
+            }
+            Children [
+                (
+                    Node { width: Val::Px(20.), height: Val::Px(20.) }
+                    ImageNode { image: {icon} }
+                ),
+                (
+                    Text({title})
+                    TextFont { font_size: {10.0} }
+                    TextColor(Color::linear_rgba(0.85, 0.85, 0.85, 1.))
+                    template_value(TextLayout::no_wrap())
+                )
+            ]
+        })
+        .collect();
 
-    let card = commands.spawn((
+    bsn! {
         Node {
             flex_direction: FlexDirection::Row,
             align_items: AlignItems::Center,
             column_gap: Val::Px(10.),
             padding: UiRect::all(Val::Px(8.)),
             border_radius: BorderRadius::all(Val::Px(4.)),
-            ..default()
-        },
-        BackgroundColor::from(Color::linear_rgba(0.15, 0.15, 0.2, 0.9)),
-    )).id();
-
-    let icon = commands.spawn((
-        Node { width: Val::Px(48.), height: Val::Px(48.), ..default() },
-        ImageNode::new(display.icon.clone()),
-    )).id();
-    commands.entity(card).add_child(icon);
-
-    let column = commands.spawn(Node {
-        flex_direction: FlexDirection::Column,
-        align_items: AlignItems::Start,
-        row_gap: Val::Px(4.),
-        min_width: Val::Px(220.),
-        ..default()
-    }).id();
-    commands.entity(card).add_child(column);
-
-    let title = commands.spawn((
-        Text::new(display.title.clone()),
-        TextFont::from_font_size(14.),
-        TextLayout::no_wrap(),
-    )).id();
-    commands.entity(column).add_child(title);
-
-    let grants_row = commands.spawn(Node {
-        flex_direction: FlexDirection::Row,
-        align_items: AlignItems::Center,
-        column_gap: Val::Px(4.),
-        ..default()
-    }).id();
-    commands.entity(column).add_child(grants_row);
-
-    let grants_label = commands.spawn((
-        Text::new("Grants:"),
-        TextFont::from_font_size(10.),
-        TextColor::from(Color::linear_rgba(0.7, 0.7, 0.7, 1.)),
-        TextLayout::no_wrap(),
-    )).id();
-    commands.entity(grants_row).add_child(grants_label);
-    for (grant_icon, grant_title) in grants {
-        let grant_icon_node = commands.spawn((
-            Node { width: Val::Px(20.), height: Val::Px(20.), ..default() },
-            ImageNode::new(grant_icon.clone()),
-        )).id();
-        commands.entity(grants_row).add_child(grant_icon_node);
-        let grant_title_node = commands.spawn((
-            Text::new(grant_title.clone()),
-            TextFont::from_font_size(10.),
-            TextColor::from(Color::linear_rgba(0.85, 0.85, 0.85, 1.)),
-            TextLayout::no_wrap(),
-        )).id();
-        commands.entity(grants_row).add_child(grant_title_node);
+        }
+        BackgroundColor(Color::linear_rgba(0.15, 0.15, 0.2, 0.9))
+        Children [
+            (
+                Node { width: Val::Px(48.), height: Val::Px(48.) }
+                ImageNode { image: {display.icon.clone()} }
+            ),
+            (
+                Node {
+                    flex_direction: FlexDirection::Column,
+                    align_items: AlignItems::Start,
+                    row_gap: Val::Px(4.),
+                    min_width: Val::Px(220.),
+                }
+                Children [
+                    (
+                        Text({display.title.clone()})
+                        TextFont { font_size: {14.0} }
+                        template_value(TextLayout::no_wrap())
+                    ),
+                    (
+                        Node {
+                            flex_direction: FlexDirection::Row,
+                            align_items: AlignItems::Center,
+                            column_gap: Val::Px(4.),
+                        }
+                        Children [
+                            (
+                                Text("Grants:")
+                                TextFont { font_size: {10.0} }
+                                TextColor(Color::linear_rgba(0.7, 0.7, 0.7, 1.))
+                                template_value(TextLayout::no_wrap())
+                            ),
+                            {grant_scenes}
+                        ]
+                    ),
+                    (
+                        Node {
+                            width: Val::Px(220.),
+                            height: Val::Px(10.),
+                            border: UiRect::all(Val::Px(1.)),
+                            border_radius: BorderRadius::all(Val::Px(2.)),
+                        }
+                        BackgroundColor(Color::linear_rgba(0.1, 0.1, 0.1, 0.8))
+                        template_value(BorderColor::from(Color::linear_rgba(0.4, 0.4, 0.3, 1.)))
+                        Children [
+                            (
+                                Node {
+                                    width: Val::Percent({fraction * 100.}),
+                                    height: Val::Percent(100.),
+                                }
+                                BackgroundColor(Color::linear_rgba(0.3, 0.6, 0.9, 1.))
+                                ResearchCardProgressFill { research: {research} }
+                            )
+                        ]
+                    ),
+                ]
+            ),
+            (
+                ResearchStartStopButton { research: {research} }
+                Node {
+                    padding: UiRect::axes(Val::Px(10.), Val::Px(5.)),
+                    border_radius: BorderRadius::all(Val::Px(3.)),
+                    align_self: AlignSelf::Center,
+                }
+                BackgroundColor(Color::linear_rgba(0.2, 0.3, 0.5, 0.9))
+                on(ResearchStartStopButton::on_click)
+                Children [
+                    ( Text({button_label}) TextFont { font_size: {12.0} } )
+                ]
+            )
+        ]
     }
-
-    let bar_bg = commands.spawn((
-        Node {
-            width: Val::Px(220.),
-            height: Val::Px(10.),
-            border: UiRect::all(Val::Px(1.)),
-            border_radius: BorderRadius::all(Val::Px(2.)),
-            ..default()
-        },
-        BackgroundColor::from(Color::linear_rgba(0.1, 0.1, 0.1, 0.8)),
-        BorderColor::from(Color::linear_rgba(0.4, 0.4, 0.3, 1.)),
-    )).id();
-    commands.entity(column).add_child(bar_bg);
-
-    let fill = commands.spawn((
-        Node {
-            width: Val::Percent(fraction * 100.),
-            height: Val::Percent(100.),
-            ..default()
-        },
-        BackgroundColor::from(Color::linear_rgba(0.3, 0.6, 0.9, 1.)),
-        ResearchCardProgressFill { research },
-    )).id();
-    commands.entity(bar_bg).add_child(fill);
-
-    let button = commands.spawn((
-        ResearchStartStopButton { research },
-        Node {
-            padding: UiRect::axes(Val::Px(10.), Val::Px(5.)),
-            border_radius: BorderRadius::all(Val::Px(3.)),
-            align_self: AlignSelf::Center,
-            ..default()
-        },
-        BackgroundColor::from(Color::linear_rgba(0.2, 0.3, 0.5, 0.9)),
-        children![(
-            Text::new(button_label),
-            TextFont::from_font_size(12.),
-        )],
-    )).observe(ResearchStartStopButton::on_click).id();
-    commands.entity(card).add_child(button);
-
-    card
 }

@@ -1,4 +1,11 @@
-use bevy::color::palettes::css::{TURQUOISE, WHITE};
+//! # Construction Menu
+//!
+//! Side-menu UI for placing buildings, towers, wisps, and map objects.
+//! Buttons are built as BSN scene functions (`construct_menu_button`,
+//! `construct_object_button`) and spawned in `SideMenu::setup`.
+
+use bevy::color::palettes::css::WHITE;
+use bevy::ecs::template::TemplateContext;
 use bevy::ui::FocusPolicy;
 
 use crate::prelude::*;
@@ -7,6 +14,8 @@ use crate::ui::grid_object_placer::GridObjectPlacerRequest;
 const NOT_HOVERED_ALPHA: f32 = 0.2;
 const CONSTRUCT_MENU_BUTTON_WIDTH: f32 = 65.;
 const CONSTRUCT_MENU_BUTTON_HEIGHT: f32 = 64.;
+const COLOR_PLAYER_ZONE: Color = Color::srgb(0.188, 0.82, 0.82); // Turquoise
+const COLOR_ADMIN_ZONE: Color = Color::srgb(0.8, 0.3, 0.1);
 
 pub struct ConstructionMenuPlugin;
 impl Plugin for ConstructionMenuPlugin {
@@ -17,45 +26,69 @@ impl Plugin for ConstructionMenuPlugin {
             ))
             .add_systems(Update, (
                 AdminOnly::on_admin_mode_change.run_if(state_changed::<AdminMode>),
-            ))
-            .add_observer(ConstructObjectButton::on_add)
-            .add_observer(ButtonConstructMenu::on_add)
-            .add_observer(ConstructMenuListPicker::on_add)
-            .add_observer(ResearchMenuButton::on_add);
+            ));
     }
 }
 
-#[derive(Component)]
+/// Resolves an `ImageNode` from `Almanach` placement info at spawn time. `template()` is used rather
+/// than a bare `ImageNode { image }` because the image handle isn't known statically — it must be
+/// read from the `Almanach` resource when the scene is spawned.
+fn placement_image(object_type: MapObject) -> impl Scene {
+    template(move |context: &mut TemplateContext| {
+        let almanach = context.resource::<Almanach>();
+        let handle = almanach.get_placement_info_for(object_type).preview_image;
+        Ok(ImageNode::new(handle.unwrap_or_default()))
+    })
+}
+
+#[derive(Component, Default, Clone)]
 #[require(Button)]
-pub struct ButtonConstructMenu {
-    icon_path: &'static str,
+pub struct ButtonConstructMenu;
+
+/// Builds one top-level side-menu button: an icon plus a fly-out `ConstructMenuListPicker` holding
+/// `picker`, with any `extra` scene patch layered on (e.g. `AdminOnly`, or an `on(..)` handler).
+///
+/// A free function rather than a `ButtonConstructMenu` method so it can be called directly as a
+/// scene function inside `bsn!`. Inside the macro a `Type::method` path is parsed as a component
+/// constructor, not a scene call; a plain lowercase function name is parsed as a scene function.
+fn construct_menu_button(icon_path: &'static str, picker: impl SceneList, extra: impl Scene) -> impl Scene {
+    bsn! {
+        ButtonConstructMenu
+        Node {
+            width: Val::Px(CONSTRUCT_MENU_BUTTON_WIDTH),
+            height: Val::Px(CONSTRUCT_MENU_BUTTON_HEIGHT),
+        }
+        ImageNode {
+            image: {icon_path},
+            color: {WHITE.with_alpha(NOT_HOVERED_ALPHA)},
+        }
+        on(ButtonConstructMenu::on_mouse_over)
+        on(ButtonConstructMenu::on_mouse_out)
+        {extra}
+        Children [
+            (
+                ConstructMenuListPicker
+                Node {
+                    flex_direction: FlexDirection::Row,
+                    align_items: AlignItems::Center,
+                    left: Val::Px(64.),
+                    padding: UiRect {
+                        left: Val::Px(2.5),
+                        right: Val::Px(2.5),
+                        top: Val::ZERO,
+                        bottom: Val::ZERO,
+                    },
+                }
+                Visibility::Hidden
+                BackgroundColor(Color::BLACK)
+                GlobalZIndex(-1)
+                Children [ {picker} ]
+            )
+        ]
+    }
 }
+
 impl ButtonConstructMenu {
-    pub fn new(icon_path: &'static str) -> Self {
-        Self { icon_path }
-    }
-
-    fn on_add(
-        trigger: On<Add, ButtonConstructMenu>,
-        mut commands: Commands,
-        asset_server: Res<AssetServer>,
-        buttons: Query<&ButtonConstructMenu>,
-    ) {
-        let entity = trigger.entity;
-        let icon_path = buttons.get(entity).unwrap().icon_path;
-
-        commands.entity(entity).insert((
-            Node {
-                width: Val::Px(CONSTRUCT_MENU_BUTTON_WIDTH),
-                height: Val::Px(CONSTRUCT_MENU_BUTTON_HEIGHT),
-                ..default()
-            },
-            ImageNode::new(asset_server.load(icon_path)).with_color(WHITE.with_alpha(NOT_HOVERED_ALPHA).into()),
-        ))
-        .observe(Self::on_mouse_over)
-        .observe(Self::on_mouse_out);
-    }
-
     fn on_mouse_over(
         trigger: On<Pointer<Over>>,
         mut menu_buttons: Query<(&mut ImageNode, &Children), With<ButtonConstructMenu>>,
@@ -69,7 +102,7 @@ impl ButtonConstructMenu {
         *list_picker_visibility = Visibility::Inherited;
         Ok(())
     }
-    
+
     fn on_mouse_out(
         trigger: On<Pointer<Out>>,
         mut menu_buttons: Query<(&mut ImageNode, &Children), With<ButtonConstructMenu>>,
@@ -85,7 +118,7 @@ impl ButtonConstructMenu {
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Default, Clone)]
 struct AdminOnly;
 impl AdminOnly {
     fn on_admin_mode_change(
@@ -99,15 +132,9 @@ impl AdminOnly {
     }
 }
 
-/// Added to the side-menu research icon. Opens the research panel on click (the research icon is a
-/// panel toggle, not a placement-list button).
-#[derive(Component)]
+/// Opens the research panel on click (the research icon is a panel toggle, not a placement-list button).
 struct ResearchMenuButton;
 impl ResearchMenuButton {
-    fn on_add(trigger: On<Add, ResearchMenuButton>, mut commands: Commands) {
-        commands.entity(trigger.entity).observe(Self::on_click);
-    }
-
     fn on_click(
         _trigger: On<Pointer<Click>>,
         mut next_ui_state: ResMut<NextState<UiInteraction>>,
@@ -116,218 +143,94 @@ impl ResearchMenuButton {
     }
 }
 
-#[derive(Component, Default)]
+#[derive(Component, Default, Clone)]
 #[require(Button)]
 pub struct ConstructMenuListPicker;
-impl ConstructMenuListPicker {
-    fn on_add(
-        trigger: On<Add, ConstructMenuListPicker>,
-        mut commands: Commands,
-    ) {
-        let entity = trigger.entity;
-        commands.entity(entity).insert((
-            Node {
-                flex_direction: FlexDirection::Row,
-                align_items: AlignItems::Center,
-                left: Val::Px(64.),
-                padding: UiRect {
-                    left: Val::Px(2.5),
-                    right: Val::Px(2.5),
-                    top: Val::ZERO,
-                    bottom: Val::ZERO,
-                },
-                ..default()
-            },
-            Visibility::Hidden,
-            BackgroundColor(Color::BLACK.into()),
-            GlobalZIndex(-1),
-        ));
-    }
-}
 
-#[derive(Component)]
+/// Marker for a placement button. Carries no data of its own — the placement type is captured by
+/// the click observer in `construct_object_button` — so it stays a plain unit marker and picks up a
+/// `FromTemplate` from the blanket `Clone + Default` impl, needing no hand-written template.
+#[derive(Component, Default, Clone)]
 #[require(Button, FocusPolicy)]
-pub struct ConstructObjectButton {
-    pub object_type: MapObject,
-    pub background_color: Color,
-}
-impl ConstructObjectButton{
-    pub fn new(object_type: MapObject) -> Self {
-        Self { 
-            object_type,
-            background_color: TURQUOISE.into(),
+struct ConstructObjectButton;
+
+/// Builds one placement button for `object_type`: a coloured 48×48 cell whose preview image is
+/// resolved from the `Almanach` at spawn time (see `placement_image`). Free function for the same
+/// reason as `construct_menu_button` — so it reads as a scene function inside `bsn!`.
+fn construct_object_button(object_type: MapObject, background_color: Color) -> impl Scene {
+    bsn! {
+        ConstructObjectButton
+        Node {
+            width: Val::Px(48.),
+            height: Val::Px(48.),
+            margin: UiRect {
+                left: Val::Px(2.5),
+                right: Val::Px(2.5),
+                top: Val::ZERO,
+                bottom: Val::ZERO,
+            },
+            align_items: AlignItems::Center,
+            justify_content: JustifyContent::Center,
         }
-    }
-
-    pub fn new_admin(object_type: MapObject) -> Self {
-        Self { 
-            object_type,
-            background_color: Color::srgb(0.8, 0.3, 0.1), // Custom reddish-orange
-        }
-    }
-
-    fn on_add(
-        trigger: On<Add, ConstructObjectButton>,
-        mut commands: Commands,
-        almanach: Res<Almanach>,
-        buttons: Query<&ConstructObjectButton>,
-    ) {
-        let entity = trigger.entity;
-        let button = buttons.get(entity).unwrap();
-        let background_color = button.background_color;
-        let object_type = button.object_type;
-
-        let image_handle = almanach.get_placement_info_for(object_type).preview_image;
-        commands.entity(entity)
-            .insert((
-                Node {
-                    width: Val::Px(48.),
-                    height: Val::Px(48.),
-                    margin: UiRect {
-                        left: Val::Px(2.5),
-                        right: Val::Px(2.5),
-                        top: Val::ZERO,
-                        bottom: Val::ZERO,
-                    },
-                    align_items: AlignItems::Center,
-                    justify_content: JustifyContent::Center,
-                    ..default()
-                },
-                BackgroundColor(background_color),
-            ))
-            .observe(Self::on_click)
-            .with_children(|parent| {
-                if let Some(image_handle) = image_handle {
-                    parent.spawn((
-                        Node {
-                            width: Val::Px(46.0),
-                            height: Val::Px(46.0),
-                            ..default()
-                        },
-                        ImageNode::new(image_handle),
-                    ));
-                }
-            });
-    }
-
-    fn on_click(
-        trigger: On<Pointer<Click>>, 
-        mut grid_object_placer_request: ResMut<GridObjectPlacerRequest>,
-        menu_buttons: Query<&ConstructObjectButton>,
-        mut list_pickers: Query<(&mut Interaction, &mut Visibility), With<ConstructMenuListPicker>>,
-    ) {
-        let entity = trigger.entity;
-        let Ok(button) = menu_buttons.get(entity) else { return; };
-        grid_object_placer_request.set(button.object_type);
-        list_pickers.iter_mut().for_each(|(mut interaction, mut visibility)| { *visibility = Visibility::Hidden; *interaction = Interaction::None; });
+        BackgroundColor({background_color})
+        on(move |_: On<Pointer<Click>>,
+              mut grid_object_placer_request: ResMut<GridObjectPlacerRequest>,
+              mut list_pickers: Query<(&mut Interaction, &mut Visibility), With<ConstructMenuListPicker>>| {
+            grid_object_placer_request.set(object_type);
+            list_pickers.iter_mut().for_each(|(mut interaction, mut visibility)| { *visibility = Visibility::Hidden; *interaction = Interaction::None; });
+        })
+        Children [
+            (
+                Node { width: Val::Px(46.0), height: Val::Px(46.0) }
+                {placement_image(object_type)}
+            )
+        ]
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Default, Clone)]
 struct SideMenu;
 impl SideMenu {
-    pub fn setup(
-        mut commands: Commands,
-    ) {
-        commands.spawn((
-            SideMenu,
-            Node { // Root node
+    pub fn setup(mut commands: Commands) {
+        commands.spawn_scene(bsn! {
+            SideMenu
+            Node {
                 position_type: PositionType::Absolute,
                 top: Val::Percent(30.),
                 left: Val::Px(5.0),
                 flex_direction: FlexDirection::Column,
                 align_items: AlignItems::Center,
-                ..default()
-            },
-            children![
-                // Construct towers button
-                (
-                    ButtonConstructMenu::new("ui/side_menu_towers.png"),
-                    // Construct towers list picker
-                    children![(
-                        ConstructMenuListPicker,
-                        children![
-                            // Specific tower to construct
-                            ConstructObjectButton::new(MapObject::Building(BuildingType::Tower(TowerType::Blaster))),
-                            ConstructObjectButton::new(MapObject::Building(BuildingType::Tower(TowerType::Cannon))),
-                            ConstructObjectButton::new(MapObject::Building(BuildingType::Tower(TowerType::RocketLauncher))),
-                            ConstructObjectButton::new(MapObject::Building(BuildingType::Tower(TowerType::Emitter))),
-                            ConstructObjectButton::new(MapObject::Building(BuildingType::Tower(TowerType::Field))),
-                        ]
-                    )]
-                ),
-                // Construct buildings button
-                (
-                    ButtonConstructMenu::new("ui/side_menu_buildings.png"),
-                    // Construct buildings list picker
-                    children![(
-                        ConstructMenuListPicker,
-                        children![
-                            // Specific building to construct
-                            ConstructObjectButton::new(MapObject::Building(BuildingType::EnergyRelay)),
-                            ConstructObjectButton::new(MapObject::Building(BuildingType::MiningComplex)),
-                            ConstructObjectButton::new(MapObject::Building(BuildingType::ExplorationCenter)),
-                            ConstructObjectButton::new(MapObject::Building(BuildingType::Forge)),
-                        ]
-                    )]
-                ),
-                // Research button — opens the research panel on click
-                (
-                    ButtonConstructMenu::new("ui/side_menu_research.png"),
-                    ResearchMenuButton,
-                    children![(
-                        ConstructMenuListPicker,
-                    )],
-                ),
-                // Construct upgrades button
-                (
-                    ButtonConstructMenu::new("ui/side_menu_upgrades.png"),
-                    // Construct upgrades list picker
-                    children![(
-                        ConstructMenuListPicker,
-                    )],
-                ),
-                // Construct consumables button
-                (
-                    ButtonConstructMenu::new("ui/side_menu_consumables.png"),
-                    // Construct consumables list picker
-                    children![(
-                        ConstructMenuListPicker,
-                    )],
-                ),
-                // Construct objects(editor) button
-                (
-                    ButtonConstructMenu::new("ui/side_menu_admin_objects.png"),
-                    AdminOnly,
-                    // Construct objects(editor) list picker
-                    children![(
-                        ConstructMenuListPicker,
-                        children![
-                            // Specific editor building to construct
-                            ConstructObjectButton::new_admin(MapObject::Building(BuildingType::MainBase)),
-                            ConstructObjectButton::new_admin(MapObject::DarkOre),
-                            ConstructObjectButton::new_admin(MapObject::Wall),
-                            ConstructObjectButton::new_admin(MapObject::QuantumField),
-                        ]
-                    )]
-                ),
-                // Construct wisps button
-                (
-                    ButtonConstructMenu::new("ui/side_menu_admin_wisps.png"),
-                    AdminOnly,
-                    // Construct wisps list picker
-                    children![(
-                        ConstructMenuListPicker,
-                        children![
-                            // Specific wisp to construct
-                            ConstructObjectButton::new_admin(MapObject::Wisp(WispType::Fire)),
-                            ConstructObjectButton::new_admin(MapObject::Wisp(WispType::Water)),
-                            ConstructObjectButton::new_admin(MapObject::Wisp(WispType::Light)),
-                            ConstructObjectButton::new_admin(MapObject::Wisp(WispType::Electric)),
-                        ]
-                    )],
-                ),
+            }
+            Children [
+                construct_menu_button("ui/side_menu_towers.png", bsn_list![
+                    construct_object_button(MapObject::Building(BuildingType::Tower(TowerType::Blaster)), COLOR_PLAYER_ZONE),
+                    construct_object_button(MapObject::Building(BuildingType::Tower(TowerType::Cannon)), COLOR_PLAYER_ZONE),
+                    construct_object_button(MapObject::Building(BuildingType::Tower(TowerType::RocketLauncher)), COLOR_PLAYER_ZONE),
+                    construct_object_button(MapObject::Building(BuildingType::Tower(TowerType::Emitter)), COLOR_PLAYER_ZONE),
+                    construct_object_button(MapObject::Building(BuildingType::Tower(TowerType::Field)), COLOR_PLAYER_ZONE),
+                ], bsn!{}),
+                construct_menu_button("ui/side_menu_buildings.png", bsn_list![
+                    construct_object_button(MapObject::Building(BuildingType::EnergyRelay), COLOR_PLAYER_ZONE),
+                    construct_object_button(MapObject::Building(BuildingType::MiningComplex), COLOR_PLAYER_ZONE),
+                    construct_object_button(MapObject::Building(BuildingType::ExplorationCenter), COLOR_PLAYER_ZONE),
+                    construct_object_button(MapObject::Building(BuildingType::Forge), COLOR_PLAYER_ZONE),
+                ], bsn!{}),
+                construct_menu_button("ui/side_menu_research.png", bsn_list![], bsn!{ on(ResearchMenuButton::on_click) }),
+                construct_menu_button("ui/side_menu_upgrades.png", bsn_list![], bsn!{}),
+                construct_menu_button("ui/side_menu_consumables.png", bsn_list![], bsn!{}),
+                construct_menu_button("ui/side_menu_admin_objects.png", bsn_list![
+                    construct_object_button(MapObject::Building(BuildingType::MainBase), COLOR_ADMIN_ZONE),
+                    construct_object_button(MapObject::DarkOre, COLOR_ADMIN_ZONE),
+                    construct_object_button(MapObject::Wall, COLOR_ADMIN_ZONE),
+                    construct_object_button(MapObject::QuantumField, COLOR_ADMIN_ZONE),
+                ], bsn!{ AdminOnly }),
+                construct_menu_button("ui/side_menu_admin_wisps.png", bsn_list![
+                    construct_object_button(MapObject::Wisp(WispType::Fire), COLOR_ADMIN_ZONE),
+                    construct_object_button(MapObject::Wisp(WispType::Water), COLOR_ADMIN_ZONE),
+                    construct_object_button(MapObject::Wisp(WispType::Light), COLOR_ADMIN_ZONE),
+                    construct_object_button(MapObject::Wisp(WispType::Electric), COLOR_ADMIN_ZONE),
+                ], bsn!{ AdminOnly }),
             ]
-        ));
+        });
     }
 }

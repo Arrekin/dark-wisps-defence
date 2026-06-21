@@ -19,63 +19,54 @@ impl Plugin for MainMenuPlugin {
 struct MainMenuRoot;
 impl MainMenuRoot {
     fn on_add(trigger: On<Add, MainMenuRoot>, mut commands: Commands) {
-        let entity = trigger.entity;
-        commands.entity(entity)
-            .insert((
-                Node {
-                    position_type: PositionType::Absolute,
-                    top: Val::Px(0.0),
-                    left: Val::Px(0.0),
-                    width: Val::Percent(100.0),
-                    height: Val::Percent(100.0),
-                    justify_content: JustifyContent::Center,
-                    align_items: AlignItems::Center,
-                    ..default()
-                },
-                BackgroundColor::from(Color::linear_rgba(0.0, 0.0, 0.0, 0.7)),
-                Visibility::Hidden,
-            ))
-            .with_children(|parent| {
-                parent.spawn((
+        commands.entity(trigger.entity).apply_scene(bsn! {
+            Node {
+                position_type: PositionType::Absolute,
+                top: Val::Px(0.0),
+                left: Val::Px(0.0),
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+            }
+            BackgroundColor(Color::linear_rgba(0.0, 0.0, 0.0, 0.7))
+            Visibility::Hidden
+            Children [
+                (
                     Node {
                         flex_direction: FlexDirection::Column,
                         row_gap: Val::Px(10.0),
                         align_items: AlignItems::Center,
-                        ..default()
-                    },
-                    children![
+                    }
+                    Children [
                         LoadMapButton,
-                        MapListContainer::default(),
+                        MapListContainer,
                     ]
-                ));
-            });
+                )
+            ]
+        });
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Default, Clone)]
 #[require(Button)]
 struct LoadMapButton;
 impl LoadMapButton {
     fn on_add(trigger: On<Add, LoadMapButton>, mut commands: Commands) {
-        let entity = trigger.entity;
-        commands.entity(entity)
-            .insert((
+        commands.entity(trigger.entity)
+            .apply_scene(bsn! {
                 Node {
                     width: Val::Px(220.0),
                     height: Val::Px(40.0),
                     justify_content: JustifyContent::Center,
                     align_items: AlignItems::Center,
-                    ..default()
-                },
-                BackgroundColor::from(Color::linear_rgba(0.2, 0.2, 0.8, 1.0)),
-            ))
-            .with_children(|parent| {
-                parent.spawn((
-                    Text::new("Load Map"),
-                    TextLayout::no_wrap(),
-                ));
-            })
-            .observe(Self::on_click);
+                }
+                BackgroundColor(Color::linear_rgba(0.2, 0.2, 0.8, 1.0))
+                Children [
+                    ( Text("Load Map") template_value(TextLayout::no_wrap()) )
+                ]
+                on(Self::on_click)
+            });
     }
 
     fn on_click(
@@ -102,22 +93,20 @@ impl LoadMapButton {
     }
 }
 
-#[derive(Component, Default)]
+#[derive(Component, Default, Clone)]
 #[require(Node)]
 struct MapListContainer;
 impl MapListContainer {
     fn on_add(trigger: On<Add, MapListContainer>, mut commands: Commands) {
-        let entity = trigger.entity;
-        commands.entity(entity).insert((
+        commands.entity(trigger.entity).apply_scene(bsn! {
             Node {
                 display: Display::None,
                 flex_direction: FlexDirection::Column,
                 align_items: AlignItems::Stretch,
                 row_gap: Val::Px(6.0),
-                margin: UiRect { top: Val::Px(12.0), ..default() },
-                ..default()
-            },
-        ));
+                margin: { UiRect { top: Val::Px(12.0), ..default() } },
+            }
+        });
     }
 }
 
@@ -127,26 +116,22 @@ struct MapEntryButton { name: String }
 impl MapEntryButton {
     fn on_add(trigger: On<Add, MapEntryButton>, mut commands: Commands, entries: Query<&MapEntryButton>) {
         let entity = trigger.entity;
-        let name = &entries.get(entity).unwrap().name;
+        let name = entries.get(entity).unwrap().name.clone();
 
         commands.entity(entity)
-            .insert((
+            .apply_scene(bsn! {
                 Node {
                     width: Val::Px(260.0),
                     height: Val::Px(34.0),
                     justify_content: JustifyContent::Center,
                     align_items: AlignItems::Center,
-                    ..default()
-                },
-                BackgroundColor::from(Color::linear_rgba(0.3, 0.3, 0.3, 1.0)),
-            ))
-            .with_children(|parent| {
-                parent.spawn((
-                    Text::new(name.clone()),
-                    TextLayout::no_wrap(),
-                ));
-            })
-            .observe(Self::on_click);
+                }
+                BackgroundColor(Color::linear_rgba(0.3, 0.3, 0.3, 1.0))
+                Children [
+                    ( Text(name) template_value(TextLayout::no_wrap()) )
+                ]
+                on(Self::on_click)
+            });
     }
 
     fn on_click(trigger: On<Pointer<Click>>, mut commands: Commands, entries: Query<&MapEntryButton>) {
