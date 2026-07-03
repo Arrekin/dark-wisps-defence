@@ -1,0 +1,10 @@
+[package]
+name = "alteration"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy = { workspace = true }
+game_core = { workspace = true }
+persistence = { workspace = true }
+logging = { workspace = true }

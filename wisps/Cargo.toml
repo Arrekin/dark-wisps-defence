@@ -1,0 +1,16 @@
+[package]
+name = "wisps"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy = { workspace = true }
+nanorand = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+strum = { workspace = true }
+game_core = { workspace = true }
+grids = { workspace = true }
+alteration = { workspace = true }
+persistence = { workspace = true }
+logging = { workspace = true }

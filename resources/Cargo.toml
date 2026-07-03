@@ -1,0 +1,10 @@
+[package]
+name = "resources"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy = { workspace = true }
+strum = { workspace = true }
+game_core = { workspace = true }
+persistence = { workspace = true }

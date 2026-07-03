@@ -1,0 +1,17 @@
+[package]
+name = "weaponry_internal"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy = { workspace = true }
+weaponry = { workspace = true }
+grids = { workspace = true }
+wisps = { workspace = true }
+visuals = { workspace = true }
+alteration = { workspace = true }
+session = { workspace = true }
+viewport = { workspace = true }
+game_core = { workspace = true }
+states = { workspace = true }
+persistence = { workspace = true }

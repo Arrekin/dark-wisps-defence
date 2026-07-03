@@ -1,18 +1,7 @@
-mod buildings;
-mod editor;
-mod map_objects;
-mod objectives;
-mod overlays;
-mod prelude;
-mod research;
-mod ui;
-mod units;
-mod visual_effects;
-mod weaponry;
-mod wisps;
+use bevy::{ecs::message::Messages, prelude::*};
 
-use bevy::ecs::message::Messages;
-use crate::prelude::*;
+use persistence::{GameMapList, LoadGameSignal, LoadMapConfig, run_migrations_on_paths};
+use states::{AdminMode, prelude::*};
 
 fn main() {
     App::new()
@@ -23,27 +12,34 @@ fn main() {
                 // Warning: VSync is causing a lot of issues with mouse events processing
                 .set(WindowPlugin{ primary_window: Some(Window { present_mode: bevy::window::PresentMode::AutoNoVsync, ..default()}), ..default() }),
             MeshPickingPlugin,
-            buildings::BuildingsPlugin,
-            visual_effects::VisualEffectsPlugin,
-            map_objects::MapObjectsPlugin,
-            objectives::ObjectivesPlugin,
-            research::ResearchUiPlugin,
+            buildings_internal::BuildingsPlugin,
+            map_objects_internal::MapObjectsPlugin,
+            narrative_internal::NarrativePlugin,
             overlays::OverlaysPlugin,
-            weaponry::WeaponryPlugin,
-            ui::UiPlugin,
-            units::UnitsPlugin,
-            wisps::WispsPlugin,
+            weaponry_internal::WeaponryPlugin,
+            hud_internal::HudPlugin,
+            units_internal::UnitsPlugin,
+            wisps_internal::WispsPlugin,
         ))
         .add_plugins((
-            lib_grid::grids::GridsPlugin,
-            lib_core::LibCorePlugin,
-            lib_inventory::LibInventoryPlugin,
-            lib_ui::LibUiPlugin,
+            game_core_internal::GameCorePlugin,
+            logging::LoggingPlugin,
+            states::StatesPlugin,
+            persistence::PersistencePlugin,
+            viewport::ViewportPlugin,
+            session::SessionPlugin,
+            alteration_internal::AlterationPlugin,
+            resources_internal::ResourcesPlugin,
+            shards_internal::ShardsPlugin,
+            research_internal::ResearchPlugin,
+        ))
+        .add_plugins((
+            grids_internal::GridsPlugin,
+            almanach::AlmanachPlugin,
+            widgets_internal::WidgetsPlugin,
         ))
         .add_plugins(editor::EditorPlugin)
-        // Pins the screen-space post-process pass order. Must come after every effect plugin
-        // (ripple / quantum field / force field) so their post-process system sets are configured first.
-        .add_plugins(lib_core::post_processing::PostProcessOrderingPlugin)
+        .add_plugins(visuals_internal::VisualsPlugin)
         .add_systems(PostStartup, |mut commands: Commands| { commands.queue(LaunchAction::default()); })
         .run();
 }
@@ -69,12 +65,12 @@ impl Command for LaunchAction {
         match self {
             LaunchAction::ApplySQLMigrations => {
                 let paths = Self::all_dwd_paths(world);
-                Self::run_migrations_on_paths(&paths, false);
+                run_migrations_on_paths(&paths, false);
                 world.resource_mut::<Messages<bevy::app::AppExit>>().write(bevy::app::AppExit::Success);
             }
             LaunchAction::RebuildSQLMigrationsMetadata => {
                 let paths = Self::all_dwd_paths(world);
-                Self::run_migrations_on_paths(&paths, true);
+                run_migrations_on_paths(&paths, true);
                 world.resource_mut::<Messages<bevy::app::AppExit>>().write(bevy::app::AppExit::Success);
             }
             LaunchAction::StartMap(config) => {
@@ -84,27 +80,6 @@ impl Command for LaunchAction {
     }
 }
 impl LaunchAction {
-    fn run_migrations_on_paths(paths: &[String], rebuild: bool) {
-        for path in paths {
-            if rebuild {
-                Log::info().dev().tag(Tag::GameLoad).message(format!("Rebuilding migration metadata for '{path}'"));
-            } else {
-                Log::info().dev().tag(Tag::GameLoad).message(format!("Applying migrations to '{path}'"));
-            }
-            if let Err(e) = with_db_connection(path, |conn| {
-                if rebuild {
-                    conn.execute("DELETE FROM refinery_schema_history;", [])?;
-                }
-                db_migrations::migrations::runner().run(conn)?;
-                Ok(())
-            }) {
-                let action = if rebuild { "Rebuild" } else { "Migration" };
-                Log::error().dev().tag(Tag::GameLoad).message(format!("{action} failed for '{path}': {e}"));
-            }
-        }
-        let done_msg = if rebuild { "Migration metadata rebuild complete" } else { "Migrations complete" };
-        Log::info().dev().tag(Tag::GameLoad).message(done_msg);
-    }
     fn all_dwd_paths(world: &World) -> Vec<String> {
         let mut paths = world.resource::<GameMapList>().paths();
         paths.push("test_save.dwd".to_string());

@@ -1,0 +1,8 @@
+[package]
+name = "hud"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy = { workspace = true }
+game_core = { workspace = true }

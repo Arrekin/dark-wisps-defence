@@ -123,6 +123,40 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
+name = "almanach"
+version = "0.1.0"
+dependencies = [
+ "alteration",
+ "bevy",
+ "game_core",
+ "grids",
+ "resources",
+ "states",
+]
+
+[[package]]
+name = "alteration"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "game_core",
+ "logging",
+ "persistence",
+]
+
+[[package]]
+name = "alteration_internal"
+version = "0.1.0"
+dependencies = [
+ "alteration",
+ "bevy",
+ "game_core",
+ "persistence",
+ "session",
+ "states",
+]
+
+[[package]]
 name = "android-activity"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1872,6 +1906,42 @@ dependencies = [
 ]
 
 [[package]]
+name = "buildings"
+version = "0.1.0"
+dependencies = [
+ "alteration",
+ "bevy",
+ "game_core",
+ "grids",
+]
+
+[[package]]
+name = "buildings_internal"
+version = "0.1.0"
+dependencies = [
+ "almanach",
+ "alteration",
+ "bevy",
+ "buildings",
+ "game_core",
+ "grids",
+ "hud",
+ "logging",
+ "map_objects",
+ "nanorand",
+ "persistence",
+ "resources",
+ "shards",
+ "states",
+ "units",
+ "viewport",
+ "visuals",
+ "weaponry",
+ "widgets",
+ "wisps",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2239,17 +2309,30 @@ checksum = "f27ae1dd37df86211c42e150270f82743308803d90a6f6e6651cd730d5e1732f"
 name = "dark-wisps-defence"
 version = "0.1.0"
 dependencies = [
+ "almanach",
+ "alteration_internal",
  "bevy",
- "bevy_egui",
- "bytemuck",
- "lib-core",
- "lib-grid",
- "lib-inventory",
- "lib-ui",
- "nanorand",
- "serde",
- "serde_json",
- "strum",
+ "buildings_internal",
+ "editor",
+ "game_core_internal",
+ "grids_internal",
+ "hud_internal",
+ "logging",
+ "map_objects_internal",
+ "narrative_internal",
+ "overlays",
+ "persistence",
+ "research_internal",
+ "resources_internal",
+ "session",
+ "shards_internal",
+ "states",
+ "units_internal",
+ "viewport",
+ "visuals_internal",
+ "weaponry_internal",
+ "widgets_internal",
+ "wisps_internal",
 ]
 
 [[package]]
@@ -2369,6 +2452,21 @@ checksum = "a05fbfa222ffb51989d5ccf33e5f7aebfcf96c5023413856b0c3618a7f79896e"
 dependencies = [
  "bytemuck",
  "emath",
+]
+
+[[package]]
+name = "editor"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "bevy_egui",
+ "game_core",
+ "logging",
+ "narrative",
+ "shards",
+ "states",
+ "strum",
+ "wisps",
 ]
 
 [[package]]
@@ -2732,6 +2830,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "game_core"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "lib-derive",
+ "nanorand",
+ "serde",
+ "strum",
+]
+
+[[package]]
+name = "game_core_internal"
+version = "0.1.0"
+dependencies = [
+ "alteration",
+ "bevy",
+ "game_core",
+]
+
+[[package]]
 name = "gethostname"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2886,6 +3004,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b40ca9252762c466af32d0b1002e91e4e1bc5398f77455e55474deb466355ff5"
 
 [[package]]
+name = "grids"
+version = "0.1.0"
+dependencies = [
+ "alteration",
+ "bevy",
+ "game_core",
+ "persistence",
+]
+
+[[package]]
+name = "grids_internal"
+version = "0.1.0"
+dependencies = [
+ "almanach",
+ "alteration",
+ "bevy",
+ "buildings",
+ "game_core",
+ "grids",
+ "persistence",
+ "states",
+ "viewport",
+]
+
+[[package]]
 name = "guillotiere"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3009,6 +3152,34 @@ name = "hexf-parse"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dfa686283ad6dd069f105e5ab091b04c62850d3e4cf5d67debad1933f55023df"
+
+[[package]]
+name = "hud"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "game_core",
+]
+
+[[package]]
+name = "hud_internal"
+version = "0.1.0"
+dependencies = [
+ "almanach",
+ "bevy",
+ "buildings",
+ "game_core",
+ "grids",
+ "hud",
+ "logging",
+ "map_objects",
+ "persistence",
+ "resources",
+ "states",
+ "strum",
+ "viewport",
+ "widgets",
+]
 
 [[package]]
 name = "icu_collections"
@@ -3343,56 +3514,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
-name = "lib-core"
-version = "0.1.0"
-dependencies = [
- "bevy",
- "bevy_egui",
- "crossbeam-channel",
- "lib-derive",
- "nanorand",
- "refinery",
- "rusqlite",
- "serde",
- "strum",
-]
-
-[[package]]
 name = "lib-derive"
 version = "0.1.0"
 dependencies = [
  "proc-macro2",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "lib-grid"
-version = "0.1.0"
-dependencies = [
- "bevy",
- "lib-core",
-]
-
-[[package]]
-name = "lib-inventory"
-version = "0.1.0"
-dependencies = [
- "bevy",
- "lib-core",
- "lib-derive",
- "lib-grid",
- "serde",
- "strum",
-]
-
-[[package]]
-name = "lib-ui"
-version = "0.1.0"
-dependencies = [
- "bevy",
- "lib-core",
- "lib-inventory",
 ]
 
 [[package]]
@@ -3496,6 +3623,45 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "953f07c43838f8e6f9758cab68bf5bed85465e7587ebe0b823f1bcd81978ad3a"
 
 [[package]]
+name = "logging"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "crossbeam-channel",
+ "strum",
+]
+
+[[package]]
+name = "map_objects"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "game_core",
+ "grids",
+]
+
+[[package]]
+name = "map_objects_internal"
+version = "0.1.0"
+dependencies = [
+ "almanach",
+ "bevy",
+ "game_core",
+ "grids",
+ "hud",
+ "logging",
+ "map_objects",
+ "nanorand",
+ "persistence",
+ "resources",
+ "states",
+ "units",
+ "viewport",
+ "visuals",
+ "widgets",
+]
+
+[[package]]
 name = "matchers"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3588,6 +3754,31 @@ name = "nanorand"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6a51313c5820b0b02bd422f4b44776fbf47961755c74ce64afc73bfad10226c3"
+
+[[package]]
+name = "narrative"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "game_core",
+ "logging",
+ "persistence",
+ "strum",
+]
+
+[[package]]
+name = "narrative_internal"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "game_core",
+ "logging",
+ "map_objects",
+ "narrative",
+ "persistence",
+ "session",
+ "states",
+]
 
 [[package]]
 name = "ndk"
@@ -4041,6 +4232,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "overlays"
+version = "0.1.0"
+dependencies = [
+ "almanach",
+ "alteration",
+ "bevy",
+ "buildings",
+ "bytemuck",
+ "game_core",
+ "grids",
+ "hud",
+ "states",
+]
+
+[[package]]
 name = "owned_ttf_parser"
 version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4129,6 +4335,18 @@ name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
+
+[[package]]
+name = "persistence"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "game_core",
+ "logging",
+ "refinery",
+ "rusqlite",
+ "states",
+]
 
 [[package]]
 name = "petgraph"
@@ -4529,6 +4747,55 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 
 [[package]]
+name = "research"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "game_core",
+ "logging",
+ "persistence",
+ "resources",
+ "strum",
+]
+
+[[package]]
+name = "research_internal"
+version = "0.1.0"
+dependencies = [
+ "almanach",
+ "bevy",
+ "game_core",
+ "logging",
+ "persistence",
+ "research",
+ "resources",
+ "shards",
+ "states",
+ "strum",
+]
+
+[[package]]
+name = "resources"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "game_core",
+ "persistence",
+ "strum",
+]
+
+[[package]]
+name = "resources_internal"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "persistence",
+ "resources",
+ "states",
+ "strum",
+]
+
+[[package]]
 name = "ron"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4717,12 +4984,45 @@ dependencies = [
 ]
 
 [[package]]
+name = "session"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "game_core",
+ "persistence",
+ "states",
+]
+
+[[package]]
 name = "sharded-slab"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f40ca3c46823713e0d4209592e8d6e826aa57e928f09752619fc696c499637f6"
 dependencies = [
  "lazy_static",
+]
+
+[[package]]
+name = "shards"
+version = "0.1.0"
+dependencies = [
+ "alteration",
+ "bevy",
+ "game_core",
+]
+
+[[package]]
+name = "shards_internal"
+version = "0.1.0"
+dependencies = [
+ "almanach",
+ "bevy",
+ "game_core",
+ "logging",
+ "persistence",
+ "resources",
+ "shards",
+ "states",
 ]
 
 [[package]]
@@ -4903,6 +5203,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "115beb9c69db2393ff10b75a1b8587a51716e5551d015001e55320ed279d32f9"
 dependencies = [
  "const_panic",
+]
+
+[[package]]
+name = "states"
+version = "0.1.0"
+dependencies = [
+ "bevy",
 ]
 
 [[package]]
@@ -5350,6 +5657,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
 
 [[package]]
+name = "units"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "game_core",
+ "nanorand",
+ "persistence",
+ "strum",
+]
+
+[[package]]
+name = "units_internal"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "buildings",
+ "game_core",
+ "grids",
+ "map_objects",
+ "nanorand",
+ "persistence",
+ "states",
+ "units",
+]
+
+[[package]]
 name = "url"
 version = "2.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5439,6 +5772,35 @@ name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
+
+[[package]]
+name = "viewport"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "bevy_egui",
+ "game_core",
+]
+
+[[package]]
+name = "visuals"
+version = "0.1.0"
+dependencies = [
+ "alteration",
+ "bevy",
+ "game_core",
+]
+
+[[package]]
+name = "visuals_internal"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "game_core",
+ "states",
+ "viewport",
+ "visuals",
+]
 
 [[package]]
 name = "walkdir"
@@ -5654,6 +6016,34 @@ name = "weak-table"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "323f4da9523e9a669e1eaf9c6e763892769b1d38c623913647bfdc1532fe4549"
+
+[[package]]
+name = "weaponry"
+version = "0.1.0"
+dependencies = [
+ "alteration",
+ "bevy",
+ "game_core",
+ "nanorand",
+ "persistence",
+]
+
+[[package]]
+name = "weaponry_internal"
+version = "0.1.0"
+dependencies = [
+ "alteration",
+ "bevy",
+ "game_core",
+ "grids",
+ "persistence",
+ "session",
+ "states",
+ "viewport",
+ "visuals",
+ "weaponry",
+ "wisps",
+]
 
 [[package]]
 name = "web-sys"
@@ -5874,6 +6264,23 @@ dependencies = [
  "raw-window-handle",
  "serde",
  "web-sys",
+]
+
+[[package]]
+name = "widgets"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "resources",
+]
+
+[[package]]
+name = "widgets_internal"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "resources",
+ "widgets",
 ]
 
 [[package]]
@@ -6241,6 +6648,42 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0592e1c9d151f854e6fd382574c3a0855250e1d9b2f99d9281c6e6391af352f1"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "wisps"
+version = "0.1.0"
+dependencies = [
+ "alteration",
+ "bevy",
+ "game_core",
+ "grids",
+ "logging",
+ "nanorand",
+ "persistence",
+ "serde",
+ "serde_json",
+ "strum",
+]
+
+[[package]]
+name = "wisps_internal"
+version = "0.1.0"
+dependencies = [
+ "almanach",
+ "alteration",
+ "bevy",
+ "buildings",
+ "game_core",
+ "grids",
+ "logging",
+ "nanorand",
+ "persistence",
+ "resources",
+ "session",
+ "states",
+ "visuals",
+ "wisps",
 ]
 
 [[package]]

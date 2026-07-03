@@ -1,0 +1,12 @@
+[package]
+name = "persistence"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy = { workspace = true }
+rusqlite = { workspace = true }
+refinery = { workspace = true }
+game_core = { workspace = true }
+states = { workspace = true }
+logging = { workspace = true }

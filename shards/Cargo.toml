@@ -1,0 +1,9 @@
+[package]
+name = "shards"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy = { workspace = true }
+alteration = { workspace = true }
+game_core = { workspace = true }

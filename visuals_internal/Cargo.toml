@@ -1,0 +1,11 @@
+[package]
+name = "visuals_internal"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy = { workspace = true }
+visuals = { workspace = true }
+game_core = { workspace = true }
+states = { workspace = true }
+viewport = { workspace = true }

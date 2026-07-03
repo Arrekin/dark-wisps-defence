@@ -1,0 +1,9 @@
+[package]
+name = "widgets_internal"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy = { workspace = true, features = ["ui"] }
+widgets = { workspace = true }
+resources = { workspace = true }

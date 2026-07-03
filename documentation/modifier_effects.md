@@ -142,7 +142,6 @@ target despawned
 
 ## Save / Load
 
-- **GameClock**: saved and restored as a global resource. Must load before effect instances.
 - **Timed effects** (those with `ExpiresAt`): saved via their own `Builder*` component,
   loaded in `MapLoadingStage::SpawnEffectInstances` (after map elements).
 - **Baseline effects**: never saved — reconstructed at entity spawn.
@@ -161,12 +160,3 @@ target despawned
    standard persistence pattern, with a DB migration for the effect table.
 
 Nothing in `ModifierBank`, `ModifierType`, or existing effect types changes.
-
-## Key Files
-
-| File | Contents |
-|------|----------|
-| `lib-core/src/effects.rs` | Effect relationships, `ExpiresAt`, expiry queue |
-| `lib-core/src/modifiers.rs` | `ModifierType`, `ModifierBank`, derived stat components |
-| `lib-core/src/game_clock.rs` | `GameClock` resource, save/load |
-| `lib-inventory/src/effects/brittle.rs` | Brittle debuff (first concrete effect type) |

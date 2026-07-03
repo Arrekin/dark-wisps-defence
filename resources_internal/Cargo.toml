@@ -1,0 +1,11 @@
+[package]
+name = "resources_internal"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy = { workspace = true }
+strum = { workspace = true }
+states = { workspace = true }
+persistence = { workspace = true }
+resources = { workspace = true }

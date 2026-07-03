@@ -1,36 +1,135 @@
 [package]
 name = "dark-wisps-defence"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
 
 [dependencies]
-bevy = { version = "0.19.*", default-features = false, features = ["dynamic_linking", "2d"] }
-bevy_egui = "0.40.*"
-bytemuck = { version = "1.25.*", features = ["derive"] }
-nanorand = "0.7.0"
-serde = "1.0.*"
-serde_json = "1.0.*"
-strum = { version = "0.28.*", features = ["derive"] }
-
-[dependencies.lib-core]
-path = "lib-core"
-
-[dependencies.lib-grid]
-path = "lib-grid"
-
-[dependencies.lib-inventory]
-path = "lib-inventory"
-
-[dependencies.lib-ui]
-path = "lib-ui"
+bevy = { workspace = true }
+logging = { workspace = true }
+states = { workspace = true }
+game_core_internal = { workspace = true }
+persistence = { workspace = true }
+session = { workspace = true }
+grids_internal = { workspace = true }
+viewport = { workspace = true }
+alteration_internal = { workspace = true }
+resources_internal = { workspace = true }
+shards_internal = { workspace = true }
+overlays = { workspace = true }
+units_internal = { workspace = true }
+weaponry_internal = { workspace = true }
+map_objects_internal = { workspace = true }
+narrative_internal = { workspace = true }
+hud_internal = { workspace = true }
+buildings_internal = { workspace = true }
+wisps_internal = { workspace = true }
+editor = { workspace = true }
+almanach = { workspace = true }
+research_internal = { workspace = true }
+widgets_internal = { workspace = true }
+visuals_internal = { workspace = true }
 
 [workspace]
 members = [
-  "lib-core",
-  "lib-grid",
-  "lib-inventory",
-  "lib-ui",
+  "logging",
+  "states",
+  "game_core",
+  "game_core_internal",
+  "grids",
+  "grids_internal",
+  "buildings",
+  "wisps",
+  "map_objects",
+  "units",
+  "weaponry",
+  "hud",
+  "narrative",
+  "overlays",
+  "units_internal",
+  "weaponry_internal",
+  "map_objects_internal",
+  "narrative_internal",
+  "hud_internal",
+  "buildings_internal",
+  "wisps_internal",
+  "editor",
+  "almanach",
+  "research",
+  "research_internal",
+  "persistence",
+  "session",
+  "viewport",
+  "alteration",
+  "alteration_internal",
+  "resources",
+  "resources_internal",
+  "shards",
+  "shards_internal",
+  "widgets",
+  "widgets_internal",
+  "visuals",
+  "visuals_internal",
+  "lib-derive",
 ]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+
+[workspace.dependencies]
+bevy = { version = "0.19.*", default-features = false, features = ["dynamic_linking", "2d"] }
+bevy_egui = "0.40.*"
+serde = { version = "1.*", features = ["derive"] }
+serde_json = "1.*"
+strum = { version = "0.28.*", features = ["derive"] }
+nanorand = "0.7.*"
+rusqlite = { version = "0.37.*", features = ["bundled"] }
+refinery = { version = "0.9.*", features = ["rusqlite"] }
+crossbeam-channel = "0.5.*"
+bytemuck = "1.*"
+syn = { version = "2.0", features = ["full"] }
+quote = "1.0"
+proc-macro2 = "1.0"
+
+logging = { path = "logging" }
+states = { path = "states" }
+game_core = { path = "game_core" }
+game_core_internal = { path = "game_core_internal" }
+grids = { path = "grids" }
+grids_internal = { path = "grids_internal" }
+buildings = { path = "buildings" }
+wisps = { path = "wisps" }
+map_objects = { path = "map_objects" }
+units = { path = "units" }
+weaponry = { path = "weaponry" }
+hud = { path = "hud" }
+narrative = { path = "narrative" }
+overlays = { path = "overlays" }
+units_internal = { path = "units_internal" }
+weaponry_internal = { path = "weaponry_internal" }
+map_objects_internal = { path = "map_objects_internal" }
+narrative_internal = { path = "narrative_internal" }
+hud_internal = { path = "hud_internal" }
+buildings_internal = { path = "buildings_internal" }
+wisps_internal = { path = "wisps_internal" }
+editor = { path = "editor" }
+almanach = { path = "almanach" }
+research = { path = "research" }
+research_internal = { path = "research_internal" }
+persistence = { path = "persistence" }
+session = { path = "session" }
+viewport = { path = "viewport" }
+alteration = { path = "alteration" }
+alteration_internal = { path = "alteration_internal" }
+resources = { path = "resources" }
+resources_internal = { path = "resources_internal" }
+shards = { path = "shards" }
+shards_internal = { path = "shards_internal" }
+widgets = { path = "widgets" }
+widgets_internal = { path = "widgets_internal" }
+visuals = { path = "visuals" }
+visuals_internal = { path = "visuals_internal" }
+lib-derive = { path = "lib-derive" }
 
 [profile.release]
 codegen-units = 1
@@ -39,6 +138,9 @@ codegen-units = 1
 [profile.dev]
 opt-level = 1
 
-# Enable high optimizations for dependencies (incl. Bevy), but not for our code:
+# Enable high optimizations for dependencies (incl. Bevy), but not for our code.
+# debug: line-tables-only keeps function names + file:line for backtraces/profiling,
+# drops variable/type debuginfo (only matters when stepping into dep source in a debugger).
 [profile.dev.package."*"]
 opt-level = 3
+debug = "line-tables-only"

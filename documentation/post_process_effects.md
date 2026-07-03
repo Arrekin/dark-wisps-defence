@@ -44,12 +44,12 @@ render_app.add_systems(Core2d, my_effect_pass.in_set(MyEffectPostProcessSet));
 ```
 
 The `SystemSet` types and the order of *all* post-process passes live in one place,
-`lib-core/src/post_processing.rs`: the shared sets plus `PostProcessOrderingPlugin`, which pins the
-whole chain with `configure_sets(Core2d, …)`. Every set is placed `.in_set(Core2dSystems::PostProcess)`
-and `.after(...)` the previous one, yielding
+`visuals/src/post_process.rs`: the shared sets. `PostProcessOrderingPlugin` (in
+`visuals_internal/src/post_process.rs`) pins the whole chain with `configure_sets(Core2d, …)`. Every
+set is placed `.in_set(Core2dSystems::PostProcess)` and `.after(...)` the previous one, yielding
 `Tonemapping → Ripple → ForceField → QuantumField → Upscaling`. That plugin is added **last** in
-`main.rs`, after every effect plugin, so each set is already populated when the ordering is applied.
-To add a new pass: define its set in `lib_core::post_processing`, add your system to it in your
+`VisualsPlugin`, after every effect plugin, so each set is already populated when the ordering is
+applied. To add a new pass: define its set in `visuals::post_process`, add your system to it in your
 plugin, and splice the set into `PostProcessOrderingPlugin`'s chain at the position you want.
 
 `ViewTarget::post_process_write()` provides a `(source, destination)` texture pair. The pass
@@ -170,8 +170,8 @@ the active count dropped from a peak.)
 
 | Effect | Component | Shader |
 |--------|-----------|--------|
-| Ripple displacement | `RipplePostProcess` in `weaponry/ripple_post_process.rs` | `shaders/ripple_post_process.wgsl` |
-| Force field dome | `ForceFieldPostProcess` in `weaponry/force_field_post_process.rs` | `shaders/force_field_post_process.wgsl` |
-| Quantum field anomaly | `QuantumFieldPostProcess` in `map_objects/quantum_field_post_process.rs` | `shaders/quantum_field_post_process.wgsl` |
+| Ripple displacement | `RipplePostProcess` in `weaponry_internal/src/ripple_post_process.rs` | `assets/shaders/ripple_post_process.wgsl` |
+| Force field dome | `ForceFieldPostProcess` in `weaponry_internal/src/force_field_post_process.rs` | `assets/shaders/force_field_post_process.wgsl` |
+| Quantum field anomaly | `QuantumFieldPostProcess` in `map_objects_internal/src/quantum_field_post_process.rs` | `assets/shaders/quantum_field_post_process.wgsl` |
 
 Pass order (in the `Core2d` schedule): `Tonemapping → Ripple → ForceField → QuantumField → Upscaling`.

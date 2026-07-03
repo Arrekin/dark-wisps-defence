@@ -1,0 +1,14 @@
+[package]
+name = "narrative_internal"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy = { workspace = true }
+logging = { workspace = true }
+narrative = { workspace = true }
+map_objects = { workspace = true }
+session = { workspace = true }
+game_core = { workspace = true }
+persistence = { workspace = true }
+states = { workspace = true }

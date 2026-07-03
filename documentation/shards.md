@@ -43,7 +43,7 @@ pipeline or aggregation — shards plug into the existing modifier system.
 
 ### Adding a shard type
 
-Add a variant to `ShardType`, then add match arms in each entity's `on_shard_apply` that
+Add a variant to `ShardType`, then add match arms in each entity's `on_shard_apply_do_so` that
 should accept it. Entities without a match arm are automatically incompatible — no extra
 code.
 

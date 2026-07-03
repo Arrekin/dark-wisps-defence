@@ -87,9 +87,9 @@ commands.trigger(SetActiveResearch(ResearchType::WaterShardRecipe));
 ### Adding a New Outcome Kind
 
 Create a marker component for the new grant type and attach it to outcome child entities.
-Implement an `on_add` observer that derives an `OutcomeDisplay` projection and wires a
-fulfillment observer. On fulfillment, grant into the appropriate possession lane and announce
-the acquisition so matching outcomes can mark themselves satisfied.
+Implement an `on_<trigger>_init_outcome` observer that derives an `OutcomeDisplay` projection and
+wires a fulfillment observer. On fulfillment, grant into the appropriate possession lane and
+announce the acquisition so matching outcomes can mark themselves satisfied.
 
 Register a saver and loader for the new outcome table. No changes to the research tick or
 completion code are needed.

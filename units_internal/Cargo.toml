@@ -1,0 +1,15 @@
+[package]
+name = "units_internal"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy = { workspace = true }
+nanorand = { workspace = true }
+units = { workspace = true }
+game_core = { workspace = true }
+grids = { workspace = true }
+buildings = { workspace = true }
+map_objects = { workspace = true }
+states = { workspace = true }
+persistence = { workspace = true }

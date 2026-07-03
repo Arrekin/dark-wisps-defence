@@ -1,0 +1,26 @@
+[package]
+name = "buildings_internal"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy = { workspace = true }
+nanorand = { workspace = true }
+logging = { workspace = true }
+buildings = { workspace = true }
+game_core = { workspace = true }
+grids = { workspace = true }
+alteration = { workspace = true }
+hud = { workspace = true }
+map_objects = { workspace = true }
+viewport = { workspace = true }
+widgets = { workspace = true }
+wisps = { workspace = true }
+weaponry = { workspace = true }
+units = { workspace = true }
+visuals = { workspace = true }
+resources = { workspace = true }
+almanach = { workspace = true }
+states = { workspace = true }
+persistence = { workspace = true }
+shards = { workspace = true }

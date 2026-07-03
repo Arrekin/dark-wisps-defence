@@ -1,0 +1,15 @@
+[package]
+name = "overlays"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy = { workspace = true }
+bytemuck = { workspace = true }
+game_core = { workspace = true }
+grids = { workspace = true }
+states = { workspace = true }
+hud = { workspace = true }
+buildings = { workspace = true }
+alteration = { workspace = true }
+almanach = { workspace = true }

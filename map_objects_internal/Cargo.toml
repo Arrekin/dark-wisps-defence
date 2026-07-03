@@ -1,0 +1,21 @@
+[package]
+name = "map_objects_internal"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy = { workspace = true }
+nanorand = { workspace = true }
+logging = { workspace = true }
+map_objects = { workspace = true }
+game_core = { workspace = true }
+grids = { workspace = true }
+almanach = { workspace = true }
+widgets = { workspace = true }
+visuals = { workspace = true }
+hud = { workspace = true }
+units = { workspace = true }
+resources = { workspace = true }
+states = { workspace = true }
+persistence = { workspace = true }
+viewport = { workspace = true }

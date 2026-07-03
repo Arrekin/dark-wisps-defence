@@ -1,0 +1,9 @@
+[package]
+name = "game_core_internal"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy = { workspace = true }
+game_core = { workspace = true }
+alteration = { workspace = true }

@@ -1,0 +1,15 @@
+[package]
+name = "editor"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy = { workspace = true }
+bevy_egui = { workspace = true }
+strum = { workspace = true }
+logging = { workspace = true }
+states = { workspace = true }
+narrative = { workspace = true }
+wisps = { workspace = true }
+shards = { workspace = true }
+game_core = { workspace = true }

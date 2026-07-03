@@ -1,0 +1,12 @@
+[package]
+name = "almanach"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy = { workspace = true }
+game_core = { workspace = true }
+grids = { workspace = true }
+resources = { workspace = true }
+alteration = { workspace = true }
+states = { workspace = true }

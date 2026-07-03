@@ -1,0 +1,20 @@
+[package]
+name = "wisps_internal"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy = { workspace = true }
+nanorand = { workspace = true }
+logging = { workspace = true }
+wisps = { workspace = true }
+game_core = { workspace = true }
+grids = { workspace = true }
+alteration = { workspace = true }
+visuals = { workspace = true }
+almanach = { workspace = true }
+session = { workspace = true }
+states = { workspace = true }
+persistence = { workspace = true }
+resources = { workspace = true }
+buildings = { workspace = true }

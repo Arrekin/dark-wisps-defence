@@ -20,7 +20,7 @@ The persistence system is built around three ideas:
 SaveGameSignal
     │
     ▼
-on_game_save systems (one per entity type)
+on_game_save_collect_* systems (one per entity type)
     │
     ▼
 Builder components collected into SaveableBatchCommand
@@ -47,7 +47,7 @@ MapLoadingStage state machine
 Loadable::load() inserts Builder components
     │
     ▼
-on_add observers spawn full entities
+on_builder_add_spawn_* observers spawn full entities
 ```
 
 **Why pre-allocate entities?** Cross-references (e.g., rocket → target wisp) require knowing new entity IDs before data is loaded. Pre-allocation creates empty entities upfront, allowing loaders to resolve references.
@@ -58,7 +58,7 @@ on_add observers spawn full entities
 
 - **Decoupling** - Separates persistence concerns from runtime components
 - **Consistency** - Same code path for fresh spawns and loaded entities  
-- **Observer-based** - Bevy's `on_add` observer triggers entity construction
+- **Observer-based** - `on_builder_add_spawn_*` observer triggers entity construction
 - **Transient** - Builders are removed after spawning, leaving only runtime components
 
 ### Structure
@@ -77,11 +77,11 @@ The `save_data` field distinguishes:
 - `None` → Fresh spawn (from editor or gameplay)
 - `Some(...)` → Loaded from save (contains persisted state)
 
-The `on_add` observer checks this to apply saved state (integrity points, upgrades, etc.) before spawning the full entity.
+The `on_builder_add_spawn_*` observer checks this to apply saved state (integrity points, upgrades, etc.) before spawning the full entity.
 
 ## Database Design
 
-Schema lives in `lib-core/migrations/` and uses refinery for migrations.
+Schema lives in `persistence/migrations/` and uses refinery for migrations.
 
 ### Shared Tables
 
@@ -122,7 +122,7 @@ Reads from database and inserts builder components on pre-allocated entities. Re
 
 ### `GameDbHelpers`
 
-Extension trait on `rusqlite::Connection` providing reusable save/load operations for common data types. Check `lib-core/src/persistence/common.rs` for available helpers.
+Extension trait on `rusqlite::Connection` providing reusable save/load operations for common data types. Check `persistence/src/common.rs` for available helpers.
 
 ## Adding a New Persistable Entity
 
@@ -149,21 +149,21 @@ Query the marker table, use helpers to fetch common data, resolve entity referen
 The saver needs a system that queries live entities and produces builders when `SaveGameSignal` is received:
 
 ```rust
-fn on_game_save(
+fn on_game_save_collect_my_entities(
     mut commands: Commands,
     entities: Query<(Entity, &MyData, &IntegrityPoints), With<MyEntity>>,
 ) {
     if entities.is_empty() { return; }
-    
+
     let batch = entities.iter().map(|(entity, data, integrity_points)| {
-        let save_data = MyEntitySaveData { 
-            entity, 
+        let save_data = MyEntitySaveData {
+            entity,
             integrity_points: integrity_points.get_current(),
             // ... other persisted state
         };
         BuilderMyEntity::new_for_saving(data.clone(), save_data)
     }).collect::<SaveableBatchCommand<_>>();
-    
+
     commands.queue(batch);
 }
 ```
@@ -175,15 +175,15 @@ This system converts live ECS state into builder components that know how to ser
 ```rust
 app
     // Observer spawns entities when builder is inserted (used by both fresh spawns and loads)
-    .add_observer(BuilderMyEntity::on_add)
-    
+    .add_observer(BuilderMyEntity::on_builder_add_spawn_my_entity)
+
     // Loader: just register the builder type with appropriate stage
     // The Loadable::load() implementation handles the rest
     .register_db_loader::<BuilderMyEntity>(MapLoadingStage::SpawnMapElements)
-    
+
     // Saver: register the snapshot system that produces builders
     // This system runs when SaveGameSignal is received
-    .register_db_saver(BuilderMyEntity::on_game_save);
+    .register_db_saver(BuilderMyEntity::on_game_save_collect_my_entities);
 ```
 
 **Key distinction:**
@@ -192,7 +192,7 @@ app
 
 ### 6. Add Schema
 
-Create/update migration in `lib-core/migrations/`. Add marker table, reuse shared tables for common data.
+Create/update migration in `persistence/migrations/`. Add marker table, reuse shared tables for common data.
 
 ## Handling Entity References
 
@@ -252,6 +252,6 @@ Since all saves are already at the final schema state, re-running V1 with `IF NO
 
 ## File Locations
 
-- `lib-core/src/persistence/` - Core infrastructure (traits, executor, registry)
-- `lib-core/migrations/` - SQLite schema migrations
-- `lib-core/src/states.rs` - `MapLoadingStage` definitions
+- `persistence/src/` - Core infrastructure (traits, executor, registry)
+- `persistence/migrations/` - SQLite schema migrations
+- `states/src/map_loading_stage.rs` - `MapLoadingStage` definitions

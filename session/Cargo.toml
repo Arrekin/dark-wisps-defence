@@ -1,0 +1,10 @@
+[package]
+name = "session"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy = { workspace = true }
+game_core = { workspace = true }
+states = { workspace = true }
+persistence = { workspace = true }
