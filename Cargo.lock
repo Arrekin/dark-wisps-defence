@@ -140,8 +140,6 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "game_core",
- "logging",
- "persistence",
 ]
 
 [[package]]
@@ -151,6 +149,7 @@ dependencies = [
  "alteration",
  "bevy",
  "game_core",
+ "logging",
  "persistence",
  "session",
  "states",
@@ -3010,7 +3009,6 @@ dependencies = [
  "alteration",
  "bevy",
  "game_core",
- "persistence",
 ]
 
 [[package]]
@@ -3761,8 +3759,6 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "game_core",
- "logging",
- "persistence",
  "strum",
 ]
 
@@ -4341,6 +4337,7 @@ name = "persistence"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "crossbeam-channel",
  "game_core",
  "logging",
  "refinery",
@@ -4752,8 +4749,6 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "game_core",
- "logging",
- "persistence",
  "resources",
  "strum",
 ]
@@ -4780,7 +4775,6 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "game_core",
- "persistence",
  "strum",
 ]
 
@@ -5663,7 +5657,6 @@ dependencies = [
  "bevy",
  "game_core",
  "nanorand",
- "persistence",
  "strum",
 ]
 
@@ -5675,6 +5668,7 @@ dependencies = [
  "buildings",
  "game_core",
  "grids",
+ "logging",
  "map_objects",
  "nanorand",
  "persistence",
@@ -6025,7 +6019,6 @@ dependencies = [
  "bevy",
  "game_core",
  "nanorand",
- "persistence",
 ]
 
 [[package]]
@@ -6036,6 +6029,7 @@ dependencies = [
  "bevy",
  "game_core",
  "grids",
+ "logging",
  "persistence",
  "session",
  "states",
@@ -6660,7 +6654,6 @@ dependencies = [
  "grids",
  "logging",
  "nanorand",
- "persistence",
  "serde",
  "serde_json",
  "strum",
@@ -6680,6 +6673,7 @@ dependencies = [
  "nanorand",
  "persistence",
  "resources",
+ "serde_json",
  "session",
  "states",
  "visuals",

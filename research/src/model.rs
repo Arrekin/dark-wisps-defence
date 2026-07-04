@@ -6,7 +6,7 @@ use bevy::{
 };
 use strum::{Display, EnumIter, EnumString};
 
-use game_core::prelude::ShardType;
+use game_core::prelude::{ShardType, SSS};
 use resources::prelude::{Cost, EssenceType, ResourceType};
 
 // ============================================================================
@@ -181,4 +181,60 @@ pub struct ResearchInstantiated {
 pub struct CheckForObsoletion {
     #[event_target]
     pub research: Entity,
+}
+
+// ============================================================================
+// BUILDER
+// ============================================================================
+
+/// Builds a research instance for both fresh spawns and loads. Fresh spawns
+/// clone the definition, spawn default outcomes, and fire `ResearchInstantiated`; loads restore the
+/// saved scalars and never re-fire (the saved composition, including modifier-added outcomes, is
+/// authoritative).
+#[derive(Component, SSS)]
+pub struct BuilderResearch {
+    pub research_type: ResearchType,
+    /// Saved duration in seconds. `None` ⇒ fresh spawn (use catalog definition);
+    /// `Some` ⇒ override with saved value (restore).
+    pub duration_secs: Option<f32>,
+    /// Saved cost. `None` ⇒ fresh spawn (use catalog definition); `Some` ⇒ override with saved value.
+    pub cost: Option<Vec<Cost>>,
+    /// `Some(fraction)` while in flight; `None` when not started or completed.
+    pub progress: Option<f32>,
+    /// Whether the player set this research active. False on fresh spawn.
+    pub is_active: bool,
+    /// Whether the research was completed. False on fresh spawn.
+    pub is_completed: bool,
+}
+impl BuilderResearch {
+    pub fn new(research_type: ResearchType) -> Self {
+        Self {
+            research_type,
+            duration_secs: None,
+            cost: None,
+            progress: None,
+            is_active: false,
+            is_completed: false,
+        }
+    }
+    pub fn with_duration_secs(mut self, duration_secs: f32) -> Self {
+        self.duration_secs = Some(duration_secs);
+        self
+    }
+    pub fn with_cost(mut self, cost: Vec<Cost>) -> Self {
+        self.cost = Some(cost);
+        self
+    }
+    pub fn with_progress(mut self, progress: f32) -> Self {
+        self.progress = Some(progress);
+        self
+    }
+    pub fn with_active(mut self) -> Self {
+        self.is_active = true;
+        self
+    }
+    pub fn with_completed(mut self) -> Self {
+        self.is_completed = true;
+        self
+    }
 }

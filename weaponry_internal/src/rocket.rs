@@ -9,13 +9,14 @@ use grids::{
     prelude::WispsGrid,
     search::common::ALL_DIRECTIONS,
 };
-use persistence::prelude::{AppGameLoadSaveExtension, SaveableBatchCommand};
+use logging::prelude::*;
+use persistence::{
+    prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveWriter},
+    rusqlite,
+};
 use states::prelude::{GameState, MapLoadingStage};
 use visuals::prelude::BuilderExplosion;
-use weaponry::{
-    prelude::*,
-    rocket::RocketSaveData,
-};
+use weaponry::prelude::*;
 use wisps::prelude::Wisp;
 
 /// Plugin for the Rocket projectile
@@ -31,30 +32,77 @@ impl Plugin for RocketPlugin {
                 ).run_if(in_state(GameState::Running)),
             ))
             .add_observer(on_builder_add_spawn_rocket)
-            .register_db_loader::<BuilderRocket>(MapLoadingStage::SpawnMapElements)
-            .register_db_saver(on_game_save_collect_rockets);
+            .add_systems(CollectSave, collect_rockets)
+            .register_loader(MapLoadingStage::SpawnMapElements, "rockets", load_rockets)
+            ;
     }
 }
 
 pub(crate) const ROCKET_BASE_IMAGE: &str = "projectiles/rocket.png";
 pub(crate) const ROCKET_EXHAUST_IMAGE: &str = "projectiles/rocket_exhaust.png";
 
-fn on_game_save_collect_rockets(
-    mut commands: Commands,
+fn collect_rockets(
     rockets: Query<(Entity, &Transform, &RocketTarget, &AttackDamage), With<Rocket>>,
+    mut save: SaveWriter,
 ) {
     if rockets.is_empty() { return; }
-    let batch = rockets.iter().map(|(entity, transform, target, damage)| {
-         let save_data = RocketSaveData { entity };
-         BuilderRocket::new_for_saving(
-             transform.translation.xy(),
-             transform.rotation,
-             target.0,
-             damage.clone(),
-             save_data
-         )
-    }).collect::<SaveableBatchCommand<_>>();
-    commands.queue(batch);
+    let rows: Vec<(i64, f32, f32, Option<i64>, f32, f32)> = rockets
+        .iter()
+        .map(|(entity, transform, target, damage)| {
+            let (axis, angle) = transform.rotation.to_axis_angle();
+            let rotation_z = if axis.z > 0.0 { angle } else { -angle };
+            (
+                entity.index_u32() as i64,
+                transform.translation.x,
+                transform.translation.y,
+                Some(target.0.index_u32() as i64),
+                rotation_z,
+                damage.get(),
+            )
+        })
+        .collect();
+    save.submit(move |tx| {
+        for (id, pos_x, pos_y, target_wisp_id, rotation_z, damage) in rows {
+            tx.register_entity(id)?;
+            tx.save_world_position(id, Vec2::new(pos_x, pos_y))?;
+            tx.execute(
+                "INSERT OR REPLACE INTO rockets (id, target_wisp_id, rotation_z, damage) VALUES (?1, ?2, ?3, ?4)",
+                rusqlite::params![id, target_wisp_id, rotation_z, damage],
+            )?;
+        }
+        Ok(())
+    });
+}
+
+fn load_rockets(ctx: &mut LoadContext) -> rusqlite::Result<()> {
+    let mut stmt = ctx.conn.prepare("SELECT id, target_wisp_id, rotation_z, damage FROM rockets")?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let old_id: i64 = row.get(0)?;
+        let target_wisp_old_id: Option<i64> = row.get(1)?;
+        let rotation_z: f32 = row.get(2)?;
+        let damage_val: f32 = row.get(3)?;
+        let world_position = ctx.conn.get_world_position(old_id)?;
+
+        let Some(entity) = ctx.entity(old_id) else {
+            Log::warn().dev().tag(Tag::GameLoad).message(format!(
+                "rockets: unmapped id for row {old_id}"
+            ));
+            continue;
+        };
+        let new_target_wisp = target_wisp_old_id
+            .and_then(|id| ctx.entity(id))
+            .unwrap_or(Entity::PLACEHOLDER);
+
+        let builder = BuilderRocket::new(
+            world_position,
+            Quat::from_rotation_z(rotation_z),
+            new_target_wisp,
+            AttackDamage::new(damage_val),
+        );
+        ctx.insert(entity, builder);
+    }
+    Ok(())
 }
 
 fn on_builder_add_spawn_rocket(

@@ -1,12 +1,12 @@
 use bevy::app::{App, Plugin};
 use bevy::prelude::*;
 
-use persistence::prelude::AppGameLoadSaveExtension;
+use persistence::prelude::{AppGameLoadSaveExtension, CollectSave};
 use resources::stock::{Stock, StockChangedEvent};
 use states::prelude::MapLoadingStage;
 
 pub(crate) mod systems;
-use systems::{emit_delta_events_system, save_stock_on_game_save, StockLoader};
+use systems::{collect_stock, emit_delta_events_system, load_stock};
 
 pub struct ResourcesPlugin;
 impl Plugin for ResourcesPlugin {
@@ -16,7 +16,8 @@ impl Plugin for ResourcesPlugin {
             .add_message::<StockChangedEvent>()
             .add_systems(PostUpdate, emit_delta_events_system.run_if(resource_changed::<Stock>))
             .add_systems(OnEnter(MapLoadingStage::Init), |mut commands: Commands| { commands.insert_resource(Stock::default()); })
-            .register_db_loader::<StockLoader>(MapLoadingStage::LoadResources)
-            .register_db_saver(save_stock_on_game_save);
+            .add_systems(CollectSave, collect_stock)
+            .register_loader(MapLoadingStage::LoadResources, "stock", load_stock)
+            ;
     }
 }

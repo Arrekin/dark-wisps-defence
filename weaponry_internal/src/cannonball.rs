@@ -8,13 +8,14 @@ use grids::{
     prelude::WispsGrid,
     search::common::ALL_DIRECTIONS,
 };
-use persistence::prelude::{AppGameLoadSaveExtension, SaveableBatchCommand};
+use logging::prelude::*;
+use persistence::{
+    prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveWriter},
+    rusqlite,
+};
 use states::prelude::{GameState, MapLoadingStage};
 use visuals::prelude::BuilderExplosion;
-use weaponry::{
-    cannonball::CannonballSaveData,
-    prelude::*,
-};
+use weaponry::prelude::*;
 use wisps::prelude::Wisp;
 
 pub struct CannonballPlugin;
@@ -28,31 +29,75 @@ impl Plugin for CannonballPlugin {
                 ).run_if(in_state(GameState::Running)),
             ))
             .add_observer(on_builder_add_spawn_cannonball)
-            .register_db_loader::<BuilderCannonball>(MapLoadingStage::SpawnMapElements)
-            .register_db_saver(on_game_save_collect_cannonballs);
+            .add_systems(CollectSave, collect_cannonballs)
+            .register_loader(MapLoadingStage::SpawnMapElements, "cannonballs", load_cannonballs)
+            ;
     }
 }
 
 pub(crate) const CANNONBALL_BASE_IMAGE: &str = "projectiles/cannonball.png";
 
-fn on_game_save_collect_cannonballs(
-    mut commands: Commands,
+fn collect_cannonballs(
     cannonballs: Query<(Entity, &Transform, &CannonballTarget, &AttackDamage), With<Cannonball>>,
+    mut save: SaveWriter,
 ) {
     if cannonballs.is_empty() { return; }
-    let batch = cannonballs.iter().map(|(entity, transform, target, damage)| {
-         let save_data = CannonballSaveData {
-             entity,
-             initial_distance: target.initial_distance,
-         };
-         BuilderCannonball::new_for_saving(
-             transform.translation.xy(),
-             target.target_position,
-             damage.clone(),
-             save_data
-         )
-    }).collect::<SaveableBatchCommand<_>>();
-    commands.queue(batch);
+    // Copy into owned row tuples — the closure must not borrow the World.
+    let rows: Vec<(i64, f32, f32, f32, f32, f32, f32)> = cannonballs
+        .iter()
+        .map(|(entity, transform, target, damage)| {
+            (
+                entity.index_u32() as i64,
+                transform.translation.x,
+                transform.translation.y,
+                target.target_position.x,
+                target.target_position.y,
+                damage.get(),
+                target.initial_distance,
+            )
+        })
+        .collect();
+    save.submit(move |tx| {
+        for (id, pos_x, pos_y, tgt_x, tgt_y, damage, initial_distance) in rows {
+            tx.register_entity(id)?;
+            tx.save_world_position(id, Vec2::new(pos_x, pos_y))?;
+            tx.execute(
+                "INSERT OR REPLACE INTO cannonballs (id, target_x, target_y, damage, initial_distance) VALUES (?1, ?2, ?3, ?4, ?5)",
+                rusqlite::params![id, tgt_x, tgt_y, damage, initial_distance],
+            )?;
+        }
+        Ok(())
+    });
+}
+
+fn load_cannonballs(ctx: &mut LoadContext) -> rusqlite::Result<()> {
+    let mut stmt = ctx.conn.prepare(
+        "SELECT id, target_x, target_y, damage, initial_distance FROM cannonballs",
+    )?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let old_id: i64 = row.get(0)?;
+        let target_x: f32 = row.get(1)?;
+        let target_y: f32 = row.get(2)?;
+        let damage_val: f32 = row.get(3)?;
+        let initial_distance: f32 = row.get(4)?;
+        let world_position = ctx.conn.get_world_position(old_id)?;
+
+        let Some(entity) = ctx.entity(old_id) else {
+            Log::warn().dev().tag(Tag::GameLoad).message(format!(
+                "cannonballs: unmapped id for row {old_id}"
+            ));
+            continue;
+        };
+        let builder = BuilderCannonball::new(
+            world_position,
+            Vec2::new(target_x, target_y),
+            AttackDamage::new(damage_val),
+        )
+        .with_initial_distance(initial_distance);
+        ctx.insert(entity, builder);
+    }
+    Ok(())
 }
 
 fn on_builder_add_spawn_cannonball(
@@ -63,12 +108,6 @@ fn on_builder_add_spawn_cannonball(
 ) {
     let entity = trigger.entity;
     let Ok(builder) = builders.get(entity) else { return; };
-
-    let initial_distance = if let Some(save_data) = &builder.save_data {
-        save_data.initial_distance
-    } else {
-        builder.world_position.distance(builder.target_position)
-    };
 
     commands.entity(entity)
         .remove::<BuilderCannonball>()
@@ -81,7 +120,7 @@ fn on_builder_add_spawn_cannonball(
             Transform::from_translation(builder.world_position.extend(Z_PROJECTILE)),
             Cannonball,
             CannonballTarget {
-                initial_distance,
+                initial_distance: builder.initial_distance,
                 target_position: builder.target_position,
             },
             builder.damage.clone(),

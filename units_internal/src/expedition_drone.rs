@@ -68,8 +68,12 @@ use game_core::{
     prelude::{GridCoords, GridImprint, Z_AERIAL_UNIT, Z_GROUND_EFFECT},
 };
 use grids::prelude::HasPower;
+use logging::prelude::*;
 use map_objects::prelude::ExpeditionZone;
-use persistence::prelude::{AppGameLoadSaveExtension, SaveableBatchCommand};
+use persistence::{
+    prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveWriter},
+    rusqlite,
+};
 use states::prelude::{GameState, MapLoadingStage};
 use units::{
     expedition_drone::{
@@ -108,8 +112,9 @@ impl Plugin for ExpeditionDronePlugin {
             .add_observer(on_deployment_request_drone_do_so)
             .add_observer(on_recall_drone_do_so)
             .add_observer(on_state_changed_handle_drone_state_change)
-            .register_db_loader::<BuilderExpeditionDrone>(MapLoadingStage::SpawnMapElements)
-            .register_db_saver(on_game_save_collect_expedition_drones);
+            .add_systems(CollectSave, collect_expedition_drones)
+            .register_loader(MapLoadingStage::SpawnMapElements, "expedition_drones", load_expedition_drones)
+            ;
     }
 }
 
@@ -546,15 +551,96 @@ impl Material2d for ScanSpotMaterial {
     }
 }
 
-fn on_game_save_collect_expedition_drones(
-    mut commands: Commands,
+fn collect_expedition_drones(
     drones: Query<(Entity, &ExpeditionDrone, &DroneState, &HomeBase, &DroneFuel, &Transform)>,
+    mut save: SaveWriter,
 ) {
     if drones.is_empty() { return; }
-    let batch = drones.iter().map(|(entity, drone, drone_state, home_base, fuel, transform)| {
-        BuilderExpeditionDrone::new_for_saving(drone, drone_state, home_base.0, fuel, transform, entity)
-    }).collect::<SaveableBatchCommand<_>>();
-    commands.queue(batch);
+    let rows: Vec<(i64, i64, u8, Option<i64>, f32, f32, f32, f32, f32, f32, f32)> = drones
+        .iter()
+        .map(|(entity, drone, drone_state, home_base, fuel, transform)| {
+            let state_u8: u8 = match drone_state {
+                DroneState::Stationed => 0,
+                DroneState::Refueling => 1,
+                DroneState::Deploying => 2,
+                DroneState::Scanning => 3,
+                DroneState::Returning => 4,
+            };
+            (
+                entity.index_u32() as i64,
+                home_base.0.index_u32() as i64,
+                state_u8,
+                drone.mission_target.map(|e| e.index_u32() as i64),
+                drone.heading,
+                drone.waypoint.x,
+                drone.waypoint.y,
+                fuel.current,
+                fuel.max,
+                transform.translation.x,
+                transform.translation.y,
+            )
+        })
+        .collect();
+    Log::debug().dev().tag(Tag::GameSave).message(format!("Saving {} expedition drones", rows.len()));
+    save.submit(move |tx| {
+        for (id, home_base_id, state_u8, mission_target_id, heading, waypoint_x, waypoint_y, fuel_current, fuel_max, pos_x, pos_y) in rows {
+            tx.register_entity(id)?;
+            tx.save_world_position(id, Vec2::new(pos_x, pos_y))?;
+            tx.execute(
+                "INSERT OR REPLACE INTO expedition_drones (id, home_base_id, state, mission_target_id, heading, waypoint_x, waypoint_y, fuel_current, fuel_max) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                rusqlite::params![id, home_base_id, state_u8, mission_target_id, heading, waypoint_x, waypoint_y, fuel_current, fuel_max],
+            )?;
+        }
+        Ok(())
+    });
+}
+
+fn load_expedition_drones(ctx: &mut LoadContext) -> rusqlite::Result<()> {
+    let mut stmt = ctx.conn.prepare("SELECT id, home_base_id, state, mission_target_id, heading, waypoint_x, waypoint_y, fuel_current, fuel_max FROM expedition_drones")?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let old_id: i64 = row.get(0)?;
+        let home_base_old_id: i64 = row.get(1)?;
+        let state_u8: u8 = row.get(2)?;
+        let mission_target_old_id: Option<i64> = row.get(3)?;
+        let heading: f32 = row.get(4)?;
+        let waypoint_x: f32 = row.get(5)?;
+        let waypoint_y: f32 = row.get(6)?;
+        let fuel_current: f32 = row.get(7)?;
+        let fuel_max: f32 = row.get(8)?;
+        let world_position = ctx.conn.get_world_position(old_id)?;
+
+        let Some(entity) = ctx.entity(old_id) else {
+            Log::warn().dev().tag(Tag::GameLoad).message(format!("ExpeditionDrone with old ID {old_id} has no corresponding new entity"));
+            continue;
+        };
+        let Some(home_base) = ctx.entity(home_base_old_id) else {
+            Log::warn().dev().tag(Tag::GameLoad).message(format!("ExpeditionDrone home base with old ID {home_base_old_id} has no corresponding new entity"));
+            continue;
+        };
+        let mission_target = mission_target_old_id.and_then(|id| ctx.entity(id));
+
+        let state = match state_u8 {
+            0 => DroneState::Stationed,
+            1 => DroneState::Refueling,
+            2 => DroneState::Deploying,
+            3 => DroneState::Scanning,
+            4 => DroneState::Returning,
+            _ => DroneState::Stationed,
+        };
+
+        let mut builder = BuilderExpeditionDrone::new(home_base)
+            .with_state(state)
+            .with_heading(heading)
+            .with_waypoint(Vec2::new(waypoint_x, waypoint_y))
+            .with_fuel(fuel_current, fuel_max)
+            .with_world_position(world_position);
+        if let Some(target) = mission_target {
+            builder = builder.with_mission_target(target);
+        }
+        ctx.insert(entity, builder);
+    }
+    Ok(())
 }
 
 /// Spawns drone with linked visual components (ScanSpot + ScanningBeam as separate entities).
@@ -573,16 +659,19 @@ fn on_builder_add_spawn_expedition_drone(
     let Ok(builder) = builders.get(entity) else { return; };
     
     // Extract data - use defaults for new drones, saved data for loaded ones
-    let (state, mission_target, world_position, heading, waypoint, fuel_current, fuel_max) = 
-        if let Some(data) = &builder.save_data {
-            (data.state, data.mission_target, data.world_position, data.heading, data.waypoint, data.fuel_current, data.fuel_max)
-        } else {
-            // New drone - get home position
-            let home_pos = home_bases.get(builder.home_base)
-                .map(|t| t.translation.xy())
-                .unwrap_or(Vec2::ZERO);
-            (DroneState::Stationed, None, home_pos, 0.0, Vec2::ZERO, 60.0, 60.0)
-        };
+    let state = builder.state;
+    let mission_target = builder.mission_target;
+    let heading = builder.heading;
+    let waypoint = builder.waypoint;
+    let fuel_current = builder.fuel_current;
+    let fuel_max = builder.fuel_max;
+    
+    // Determine world position: use saved position if available, otherwise compute from home base
+    let world_position = builder.world_position.unwrap_or_else(|| {
+        home_bases.get(builder.home_base)
+            .map(|t| t.translation.xy())
+            .unwrap_or(Vec2::ZERO)
+    });
     
     // For stationed drones, position at home base (hidden)
     let (final_position, visibility) = if state == DroneState::Stationed {

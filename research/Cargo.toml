@@ -8,5 +8,3 @@ bevy = { workspace = true }
 strum = { workspace = true }
 game_core = { workspace = true }
 resources = { workspace = true }
-persistence = { workspace = true }
-logging = { workspace = true }

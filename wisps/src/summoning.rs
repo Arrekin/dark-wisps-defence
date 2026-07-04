@@ -5,9 +5,6 @@ use strum::{AsRefStr, EnumIter};
 
 use game_core::prelude::{GridCoords, MapBound, SSS, WispType};
 use grids::prelude::ObstacleGrid;
-use logging::prelude::{Log, Tag};
-use persistence::prelude::{GameDbHelpers, Loadable, LoadContext, LoadResult, Saveable};
-use persistence::rusqlite;
 
 #[derive(Component, Clone, Debug, Serialize, Deserialize)]
 #[require(MapBound, SummoningRuntime)]
@@ -125,76 +122,34 @@ pub struct SummoningRuntime {
     pub next_spawn_time: f32,
 }
 
-// --------------- BUILDER PATTERN FOR SAVE/LOAD ---------------
+// --------------- BUILDER PATTERN ---------------
 
+#[derive(Component, SSS)]
+pub struct BuilderSummoning {
+    pub summoning: Summoning,
+    /// Runtime state to restore. `None` on fresh spawn (runtime defaults apply);
+    /// `Some` on load (restores mid-wave progress).
+    pub runtime: Option<SummoningRuntimeState>,
+}
+
+/// Snapshot of `SummoningRuntime` + active marker, used to restore a summoning
+/// mid-wave. Promoted from the old `SummoningSaveData` (minus the `entity` field,
+/// which was persistence plumbing).
 #[derive(Clone, Copy, Debug)]
-pub struct SummoningSaveData {
-    pub entity: Entity,
+pub struct SummoningRuntimeState {
     pub produced: i32,
     pub next_spawn_time: f32,
     pub is_active: bool,
 }
 
-#[derive(Component, SSS)]
-pub struct BuilderSummoning {
-    pub summoning: Summoning,
-    pub save_data: Option<SummoningSaveData>,
-}
-impl Saveable for BuilderSummoning {
-    fn save(self, tx: &rusqlite::Transaction) -> rusqlite::Result<()> {
-        let save_data = self.save_data.expect("BuilderSummoning for saving must have save_data");
-        let entity_index = save_data.entity.index_u32() as i64;
-
-        tx.register_entity(entity_index)?;
-
-        let summoning_json = serde_json::to_string(&self.summoning)
-            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
-
-        tx.execute(
-            "INSERT OR REPLACE INTO summonings (id, summoning_json, produced, next_spawn_time, is_active) VALUES (?1, ?2, ?3, ?4, ?5)",
-            (entity_index, summoning_json, save_data.produced, save_data.next_spawn_time, if save_data.is_active { 1 } else { 0 }),
-        )?;
-        Ok(())
-    }
-}
-impl Loadable for BuilderSummoning {
-    fn load(ctx: &mut LoadContext) -> rusqlite::Result<LoadResult> {
-        let mut stmt = ctx.conn.prepare("SELECT id, summoning_json, produced, next_spawn_time, is_active FROM summonings LIMIT ?1 OFFSET ?2")?;
-        let mut rows = stmt.query(ctx.pagination.as_params())?;
-
-        let mut count = 0;
-        while let Some(row) = rows.next()? {
-            let old_id: i64 = row.get(0)?;
-            let summoning_json: String = row.get(1)?;
-            let produced: i32 = row.get(2)?;
-            let next_spawn_time: f32 = row.get(3)?;
-            let is_active: i32 = row.get(4)?;
-
-            let summoning: Summoning = serde_json::from_str(&summoning_json)
-                .map_err(|e| rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, Box::new(e)))?;
-
-            if let Some(new_entity) = ctx.get_new_entity_for_old(old_id) {
-                let save_data = SummoningSaveData {
-                    entity: new_entity,
-                    produced,
-                    next_spawn_time,
-                    is_active: is_active != 0,
-                };
-                ctx.commands.entity(new_entity).insert(BuilderSummoning::new_for_saving(summoning, save_data));
-            } else {
-                Log::warn().dev().tag(Tag::GameLoad).message(format!("Summoning with old ID {old_id} has no corresponding new entity"));
-            }
-            count += 1;
-        }
-        Ok(count.into())
-    }
-}
 impl BuilderSummoning {
     pub fn new(summoning: Summoning) -> Self {
-        Self { summoning, save_data: None }
+        Self { summoning, runtime: None }
     }
 
-    pub fn new_for_saving(summoning: Summoning, save_data: SummoningSaveData) -> Self {
-        Self { summoning, save_data: Some(save_data) }
+    /// Set runtime state to restore (used by the loader).
+    pub fn with_runtime(mut self, runtime: SummoningRuntimeState) -> Self {
+        self.runtime = Some(runtime);
+        self
     }
 }

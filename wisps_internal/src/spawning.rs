@@ -7,103 +7,38 @@ use almanach::prelude::*;
 use game_core::prelude::*;
 use grids::{placement::{GridsCollectionParam, PlacementValidity}, prelude::*};
 use logging::prelude::*;
-use persistence::{prelude::*, rusqlite};
+use persistence::{
+    prelude::{GameDbHelpers, LoadContext, SaveWriter},
+    rusqlite,
+};
 use resources::prelude::*;
 use wisps::{WispElectricType, WispFireType, WispLightType, WispWaterType, prelude::*};
 
 use super::materials::WispMaterial;
 
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct WispSaveData {
-    pub entity: Entity,
-    pub integrity_points: f32,
-    pub world_position: Vec2,
-}
-
 #[derive(Component, SSS)]
 pub(crate) struct BuilderWisp {
     pub wisp_type: WispType,
     pub grid_coords: GridCoords,
-    pub save_data: Option<WispSaveData>,
-}
-
-impl Saveable for BuilderWisp {
-    fn save(self, tx: &rusqlite::Transaction) -> rusqlite::Result<()> {
-        let save_data = self.save_data.expect("BuilderWisp for saving must have save_data");
-        let entity_index = save_data.entity.index_u32() as i64;
-
-        tx.register_entity(entity_index)?;
-        tx.save_world_position(entity_index, save_data.world_position)?;
-        tx.save_grid_coords(entity_index, self.grid_coords)?;
-        tx.save_integrity_points(entity_index, save_data.integrity_points)?;
-
-        let type_str = self.wisp_type.as_ref();
-        tx.execute(
-            "INSERT OR REPLACE INTO wisps (id, wisp_type) VALUES (?1, ?2)",
-            rusqlite::params![entity_index, type_str],
-        )?;
-        Ok(())
-    }
-}
-
-impl Loadable for BuilderWisp {
-    fn load(ctx: &mut LoadContext) -> rusqlite::Result<LoadResult> {
-        let mut stmt = ctx.conn.prepare("SELECT id, wisp_type FROM wisps LIMIT ?1 OFFSET ?2")?;
-        let mut rows = stmt.query(ctx.pagination.as_params())?;
-        
-        let mut count = 0;
-        while let Some(row) = rows.next()? {
-            let old_id: i64 = row.get(0)?;
-            let type_str: String = row.get(1)?;
-            
-            let Ok(wisp_type) = WispType::from_str(&type_str) else {
-                Log::warn().dev().tag(Tag::GameLoad).message(format!("Unknown WispType '{type_str}'"));
-                continue;
-            };
-
-            let grid_coords = ctx.conn.get_grid_coords(old_id)?;
-            let integrity_points = ctx.conn.get_integrity_points(old_id)?;
-            let world_position = ctx.conn.get_world_position(old_id)?;
-
-            if let Some(new_entity) = ctx.get_new_entity_for_old(old_id) {
-                let save_data = WispSaveData { entity: new_entity, integrity_points, world_position };
-                ctx.commands.entity(new_entity).insert(BuilderWisp::new_for_saving(wisp_type, grid_coords, save_data));
-            }
-            count += 1;
-        }
-        Ok(count.into())
-    }
+    /// Saved integrity points. `None` ⇒ defer to baseline (fresh spawn);
+    /// `Some` ⇒ override (restore).
+    pub integrity_points: Option<f32>,
+    /// Saved world position. `None` ⇒ compute from grid_coords (fresh spawn);
+    /// `Some` ⇒ use as-is (restore mid-flight wisp).
+    pub world_position: Option<Vec2>,
 }
 
 impl BuilderWisp {
     pub fn new(wisp_type: WispType, grid_coords: GridCoords) -> Self {
-        Self { wisp_type, grid_coords, save_data: None }
+        Self { wisp_type, grid_coords, integrity_points: None, world_position: None }
     }
-    pub fn new_for_saving(wisp_type: WispType, grid_coords: GridCoords, save_data: WispSaveData) -> Self {
-        Self { wisp_type, grid_coords, save_data: Some(save_data) }
+    pub fn with_integrity_points(mut self, integrity_points: f32) -> Self {
+        self.integrity_points = Some(integrity_points);
+        self
     }
-
-    pub fn on_game_save_collect_wisps(
-        mut commands: Commands,
-        wisps: Query<(Entity, &WispType, &GridCoords, &IntegrityPoints, &Transform, &WispState), With<Wisp>>,
-    ) {
-        if wisps.is_empty() { return; }
-        let batch = wisps.iter().map(|(entity, wisp_type, coords, integrity_points, transform, wisp_state)| {
-            // TODO: Once the wisps logic is mature, save the full wisp state properly. Right now we are ignoring some states(for exmple, attacking) and simply allow wisp to retarget on spawn, and continue from there.
-            let world_position = if matches!(wisp_state, WispState::Attacking) {
-                coords.to_world_position_centered(WISP_GRID_IMPRINT)
-            } else {
-                transform.translation.xy()
-            };
-            
-            let save_data = WispSaveData {
-                entity,
-                integrity_points: integrity_points.get_current(),
-                world_position,
-            };
-            BuilderWisp::new_for_saving(*wisp_type, *coords, save_data)
-        }).collect::<SaveableBatchCommand<_>>();
-        commands.queue(batch);
+    pub fn with_world_position(mut self, world_position: Vec2) -> Self {
+        self.world_position = Some(world_position);
+        self
     }
 
     pub fn on_builder_add_spawn_wisp(
@@ -116,15 +51,15 @@ impl BuilderWisp {
         let Ok(builder) = builders.get(entity) else { return; };
 
         let mut entity_commands = commands.entity(entity);
-        
-        if let Some(save_data) = &builder.save_data {
-             entity_commands.insert(IntegrityPoints::new(save_data.integrity_points));
+
+        if let Some(ip) = builder.integrity_points {
+            entity_commands.insert(IntegrityPoints::new(ip));
         }
 
-        let translation = if let Some(save_data) = &builder.save_data {
-             save_data.world_position.extend(Z_WISP)
+        let translation = if let Some(pos) = builder.world_position {
+            pos.extend(Z_WISP)
         } else {
-             builder.grid_coords.to_world_position_centered(WISP_GRID_IMPRINT).extend(Z_WISP)
+            builder.grid_coords.to_world_position_centered(WISP_GRID_IMPRINT).extend(Z_WISP)
         };
 
         let wisp_type_bundle = match builder.wisp_type {
@@ -150,6 +85,71 @@ impl BuilderWisp {
             ));
         wisps_grid.wisp_add(builder.grid_coords, entity);
     }
+}
+
+pub(crate) fn collect_wisps(
+    wisps: Query<(Entity, &WispType, &GridCoords, &IntegrityPoints, &Transform, &WispState), With<Wisp>>,
+    mut save: SaveWriter,
+) {
+    if wisps.is_empty() { return; }
+    let rows: Vec<(i64, String, i32, i32, f32, f32, f32)> = wisps
+        .iter()
+        .map(|(entity, wisp_type, coords, integrity_points, transform, wisp_state)| {
+            // TODO: Once the wisps logic is mature, save the full wisp state properly. Right now we are ignoring some states(for exmample, attacking) and simply allow wisp to retarget on spawn, and continue from there.
+            let world_position = if matches!(wisp_state, WispState::Attacking) {
+                coords.to_world_position_centered(WISP_GRID_IMPRINT)
+            } else {
+                transform.translation.xy()
+            };
+            (
+                entity.index_u32() as i64,
+                wisp_type.as_ref().to_string(),
+                coords.x,
+                coords.y,
+                integrity_points.get_current(),
+                world_position.x,
+                world_position.y,
+            )
+        })
+        .collect();
+    save.submit(move |tx| {
+        for (id, type_str, gx, gy, integrity_points, pos_x, pos_y) in rows {
+            tx.register_entity(id)?;
+            tx.save_world_position(id, Vec2::new(pos_x, pos_y))?;
+            tx.save_grid_coords(id, GridCoords { x: gx, y: gy })?;
+            tx.save_integrity_points(id, integrity_points)?;
+            tx.execute(
+                "INSERT OR REPLACE INTO wisps (id, wisp_type) VALUES (?1, ?2)",
+                rusqlite::params![id, type_str],
+            )?;
+        }
+        Ok(())
+    });
+}
+
+pub(crate) fn load_wisps(ctx: &mut LoadContext) -> rusqlite::Result<()> {
+    let mut stmt = ctx.conn.prepare("SELECT id, wisp_type FROM wisps")?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let old_id: i64 = row.get(0)?;
+        let type_str: String = row.get(1)?;
+
+        let Ok(wisp_type) = WispType::from_str(&type_str) else {
+            Log::warn().dev().tag(Tag::GameLoad).message(format!("Unknown WispType '{type_str}'"));
+            continue;
+        };
+
+        let grid_coords = ctx.conn.get_grid_coords(old_id)?;
+        let integrity_points = ctx.conn.get_integrity_points(old_id)?;
+        let world_position = ctx.conn.get_world_position(old_id)?;
+
+        let Some(entity) = ctx.entity(old_id) else { continue; };
+        let builder = BuilderWisp::new(wisp_type, grid_coords)
+            .with_integrity_points(integrity_points)
+            .with_world_position(world_position);
+        ctx.insert(entity, builder);
+    }
+    Ok(())
 }
 
 pub(crate) fn wisp_validator(

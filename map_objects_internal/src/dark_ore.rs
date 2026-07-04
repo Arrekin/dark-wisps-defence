@@ -10,8 +10,10 @@ use grids::placement::{annotate_non_empty, GridsCollectionParam, PlacementValidi
 use grids::prelude::{GridObjectPlacer, ObstacleGrid, PlacementEmitter, PlacementMode, PlaceRequest, RemoveRequest};
 use logging::prelude::*;
 use map_objects::prelude::*;
-use persistence::prelude::{AppGameLoadSaveExtension, GameDbHelpers, Loadable, LoadContext, LoadResult, Saveable, SaveableBatchCommand};
-use persistence::rusqlite;
+use persistence::{
+    prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveWriter},
+    rusqlite,
+};
 use states::prelude::MapLoadingStage;
 
 pub struct DarkOrePlugin;
@@ -26,8 +28,8 @@ impl Plugin for DarkOrePlugin {
             .add_observer(dark_ore_area_scanner::on_add_dark_ore_sync_scanners)
             .add_observer(on_dark_ore_place_request_do_so)
             .add_observer(on_dark_ore_remove_request_do_so)
-            .register_db_loader::<BuilderDarkOre>(MapLoadingStage::SpawnMapElements)
-            .register_db_saver(BuilderDarkOre::on_game_save_collect_dark_ores)
+            .add_systems(CollectSave, collect_dark_ores)
+            .register_loader(MapLoadingStage::SpawnMapElements, "dark_ores", load_dark_ores)
             .register_dark_ore(almanach_info)
             ;
     }
@@ -37,56 +39,10 @@ pub(crate) const DARK_ORE_GRID_IMPRINT: GridImprint = GridImprint::Rectangle { w
 
 
 
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct DarkOreSaveData {
-    pub entity: Entity,
-}
-
 #[derive(Component, SSS)]
 pub(crate) struct BuilderDarkOre {
     pub grid_position: GridCoords,
     pub amount: u32,
-    pub save_data: Option<DarkOreSaveData>,
-}
-impl Saveable for BuilderDarkOre {
-    fn save(self, tx: &rusqlite::Transaction) -> rusqlite::Result<()> {
-        let save_data = self.save_data.expect("BuilderDarkOre for saving purpose must have save_data");
-        let entity_index = save_data.entity.index_u32() as i64;
-
-        // 1. Insert into dark_ores table
-        tx.register_entity(entity_index)?;
-        tx.execute(
-            "INSERT OR REPLACE INTO dark_ores (id, amount) VALUES (?1, ?2)",
-            (entity_index, self.amount),
-        )?;
-
-        // 2. Insert into grid_positions table
-        tx.save_grid_coords(entity_index, self.grid_position)?;
-        Ok(())
-    }
-}
-impl Loadable for BuilderDarkOre {
-    fn load(ctx: &mut LoadContext) -> rusqlite::Result<LoadResult> {
-        let mut stmt = ctx.conn.prepare("SELECT id, amount FROM dark_ores LIMIT ?1 OFFSET ?2")?;
-        let mut rows = stmt.query(ctx.pagination.as_params())?;
-
-        let mut count = 0;
-        while let Some(row) = rows.next()? {
-            let old_id: i64 = row.get(0)?;
-            let amount: u32 = row.get(1)?;
-            let grid_position = ctx.conn.get_grid_coords(old_id)?;
-
-            if let Some(new_entity) = ctx.get_new_entity_for_old(old_id) {
-                let save_data = DarkOreSaveData { entity: new_entity };
-                ctx.commands.entity(new_entity).insert(BuilderDarkOre::new_for_saving(grid_position, amount, save_data));
-            } else {
-                Log::warn().dev().tag(Tag::GameLoad).message(format!("DarkOre with old ID {old_id} has no corresponding new entity"));
-            }
-            count += 1;
-        }
-
-        Ok(count.into())
-    }
 }
 impl BuilderDarkOre {
     pub fn almanach_info(asset_server: &AssetServer) -> DarkOreInfo {
@@ -109,23 +65,7 @@ impl BuilderDarkOre {
     }
 
     pub fn new(grid_position: GridCoords, amount: u32) -> Self {
-        Self { grid_position, amount, save_data: None }
-    }
-    pub fn new_for_saving(grid_position: GridCoords, amount: u32, save_data: DarkOreSaveData) -> Self {
-        Self { grid_position, amount, save_data: Some(save_data) }
-    }
-
-    fn on_game_save_collect_dark_ores(
-        mut commands: Commands,
-        dark_ores: Query<(Entity, &GridCoords, &DarkOre)>,
-    ) {
-        if dark_ores.is_empty() { return; }
-        Log::debug().dev().tag(Tag::GameSave).message(format!("Saving {} dark ores", dark_ores.iter().count()));
-        let batch = dark_ores.iter().map(|(entity, coords, dark_ore)| {
-                let save_data = DarkOreSaveData { entity };
-                BuilderDarkOre::new_for_saving(*coords, dark_ore.amount as u32, save_data)
-        }).collect::<SaveableBatchCommand<_>>();
-        commands.queue(batch);
+        Self { grid_position, amount }
     }
 
     fn on_builder_add_spawn_dark_ore(
@@ -157,6 +97,53 @@ impl BuilderDarkOre {
             DARK_ORE_GRID_IMPRINT,
         ));
     }
+}
+
+fn collect_dark_ores(
+    dark_ores: Query<(Entity, &GridCoords, &DarkOre)>,
+    mut save: SaveWriter,
+) {
+    if dark_ores.is_empty() { return; }
+    let rows: Vec<(i64, i32, i32, u32)> = dark_ores
+        .iter()
+        .map(|(entity, coords, dark_ore)| {
+            (
+                entity.index_u32() as i64,
+                coords.x,
+                coords.y,
+                dark_ore.amount as u32,
+            )
+        })
+        .collect();
+    Log::debug().dev().tag(Tag::GameSave).message(format!("Saving {} dark ores", rows.len()));
+    save.submit(move |tx| {
+        for (id, gx, gy, amount) in rows {
+            tx.register_entity(id)?;
+            tx.execute(
+                "INSERT OR REPLACE INTO dark_ores (id, amount) VALUES (?1, ?2)",
+                (id, amount),
+            )?;
+            tx.save_grid_coords(id, GridCoords { x: gx, y: gy })?;
+        }
+        Ok(())
+    });
+}
+
+fn load_dark_ores(ctx: &mut LoadContext) -> rusqlite::Result<()> {
+    let mut stmt = ctx.conn.prepare("SELECT id, amount FROM dark_ores")?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let old_id: i64 = row.get(0)?;
+        let amount: u32 = row.get(1)?;
+        let grid_position = ctx.conn.get_grid_coords(old_id)?;
+
+        let Some(entity) = ctx.entity(old_id) else {
+            Log::warn().dev().tag(Tag::GameLoad).message(format!("DarkOre with old ID {old_id} has no corresponding new entity"));
+            continue;
+        };
+        ctx.insert(entity, BuilderDarkOre::new(grid_position, amount));
+    }
+    Ok(())
 }
 
 fn remove_empty(

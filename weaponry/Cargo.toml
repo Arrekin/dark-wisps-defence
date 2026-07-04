@@ -8,4 +8,3 @@ bevy = { workspace = true }
 nanorand = { workspace = true }
 game_core = { workspace = true }
 alteration = { workspace = true }
-persistence = { workspace = true }

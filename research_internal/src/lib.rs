@@ -1,10 +1,9 @@
 use bevy::prelude::*;
 use strum::IntoEnumIterator;
 
-use ::persistence::prelude::AppGameLoadSaveExtension;
+use ::persistence::prelude::{AppGameLoadSaveExtension, CollectSave};
 use research::{
-    model::{Research, ResearchCatalog, ResearchType},
-    persistence::{BuilderResearch, ShardBlueprintOutcomeLoader},
+    model::{BuilderResearch, Research, ResearchCatalog, ResearchType},
 };
 use states::prelude::{GameState, MapLoadingStage};
 
@@ -30,10 +29,10 @@ impl Plugin for ResearchPlugin {
             .add_observer(process::on_stop_research_do_so)
             .add_systems(Update, process::research_tick.run_if(in_state(GameState::Running)))
             .add_systems(OnEnter(MapLoadingStage::Ready), seed_research)
-            .register_db_loader::<BuilderResearch>(MapLoadingStage::SpawnMapElements)
-            .register_db_loader::<ShardBlueprintOutcomeLoader>(MapLoadingStage::SpawnMapElements)
-            .register_db_saver(persistence::save_researches)
-            .register_db_saver(persistence::save_shard_blueprint_outcomes)
+            .add_systems(CollectSave, persistence::collect_researches)
+            .add_systems(CollectSave, persistence::collect_shard_blueprint_outcomes)
+            .register_loader(MapLoadingStage::SpawnMapElements, "researches", persistence::load_researches)
+            .register_loader(MapLoadingStage::SpawnMapElements, "research_outcome_shard_blueprints", persistence::load_shard_blueprint_outcomes)
             ;
         panel::register(app);
     }

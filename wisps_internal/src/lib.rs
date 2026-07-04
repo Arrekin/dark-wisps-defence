@@ -9,7 +9,7 @@ use bevy::sprite_render::Material2dPlugin;
 use almanach::{WispInfo, prelude::*};
 use game_core::{motion::MotionSystems, prelude::*};
 use grids::{placement::annotate_non_empty, prelude::*};
-use persistence::prelude::*;
+use persistence::prelude::{AppGameLoadSaveExtension, CollectSave};
 use states::prelude::*;
 use visuals::prelude::*;
 use wisps::{WispElectricType, WispFireType, WispLightType, WispWaterType, prelude::*};
@@ -58,8 +58,8 @@ impl Plugin for WispsPlugin {
             .add_observer(spawning::on_wisp_spawn_attach_material::<WispWaterType, materials::WispWaterMaterial>)
             .add_observer(spawning::on_wisp_spawn_attach_material::<WispLightType, materials::WispLightMaterial>)
             .add_observer(spawning::on_wisp_spawn_attach_material::<WispElectricType, materials::WispElectricMaterial>)
-            .register_db_loader::<spawning::BuilderWisp>(MapLoadingStage::SpawnMapElements)
-            .register_db_saver(spawning::BuilderWisp::on_game_save_collect_wisps)
+            .add_systems(CollectSave, spawning::collect_wisps)
+            .register_loader(MapLoadingStage::SpawnMapElements, "wisps", spawning::load_wisps)
             .register_wisps(WispInfo {
                 grid_imprint: WISP_GRID_IMPRINT,
                 validate: spawning::wisp_validator,

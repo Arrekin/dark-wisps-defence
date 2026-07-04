@@ -15,3 +15,4 @@ viewport = { workspace = true }
 game_core = { workspace = true }
 states = { workspace = true }
 persistence = { workspace = true }
+logging = { workspace = true }

@@ -4,9 +4,12 @@ use nanorand::Rng;
 use game_core::prelude::*;
 use grids::prelude::ObstacleGrid;
 use logging::prelude::*;
-use persistence::{prelude::*, rusqlite};
+use persistence::{
+    prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveWriter},
+    rusqlite,
+};
 use states::prelude::*;
-use wisps::summoning::{BuilderSummoning, SpawnTempo, Summoning, SummoningRuntime, SummoningSaveData};
+use wisps::summoning::{BuilderSummoning, SpawnTempo, Summoning, SummoningRuntime, SummoningRuntimeState};
 
 use super::spawning::BuilderWisp;
 
@@ -18,10 +21,11 @@ impl Plugin for SummoningPlugin {
             .add_systems(Update, tick_active_summoning_system.run_if(in_state(GameState::Running)))
             .add_observer(on_summoning_activation_event_do_so)
             .add_observer(on_builder_add_spawn_summoning)
-            .register_db_loader::<BuilderSummoning>(MapLoadingStage::LoadResources)
-            .register_db_loader::<SummoningClock>(MapLoadingStage::LoadResources)
-            .register_db_saver(on_game_save_collect_summonings)
-            .register_db_saver(SummoningClock::on_game_save_collect_summoning_clock);
+            .add_systems(CollectSave, collect_summonings)
+            .add_systems(CollectSave, collect_summoning_clock)
+            .register_loader(MapLoadingStage::LoadResources, "summonings", load_summonings)
+            .register_loader(MapLoadingStage::LoadResources, "stats_summoning_clock", load_summoning_clock)
+            ;
     }
 }
 
@@ -29,46 +33,82 @@ impl Plugin for SummoningPlugin {
 #[derive(Component, Default)]
 pub(crate) struct SummoningMarkerActive;
 
-#[derive(Resource, Default, Clone, SSS)]
+#[derive(Resource, Default, Clone)]
 struct SummoningClock(f32);
-impl Saveable for SummoningClock {
-    fn save(self, tx: &rusqlite::Transaction) -> rusqlite::Result<()> {
-        tx.save_stat("summoning_clock", self.0)?;
+
+fn collect_summoning_clock(clock: Res<SummoningClock>, mut save: SaveWriter) {
+    let value = clock.0;
+    save.submit(move |tx| {
+        tx.save_stat("summoning_clock", value)?;
         Ok(())
-    }
+    });
 }
 
-impl Loadable for SummoningClock {
-    fn load(ctx: &mut LoadContext) -> rusqlite::Result<LoadResult> {
-        let clock_value = ctx.conn.get_stat("summoning_clock").unwrap_or(0.0);
-        ctx.commands.insert_resource(SummoningClock(clock_value));
-        Ok(LoadResult::Finished)
-    }
-}
-impl SummoningClock {
-    fn on_game_save_collect_summoning_clock(
-        mut commands: Commands,
-        clock: Res<SummoningClock>,
-    ) {
-        commands.queue(SaveableBatchCommand::from_single(clock.clone()));
-    }
+fn load_summoning_clock(ctx: &mut LoadContext) -> rusqlite::Result<()> {
+    let clock_value = ctx.conn.get_stat("summoning_clock").unwrap_or(0.0);
+    ctx.insert_resource(SummoningClock(clock_value));
+    Ok(())
 }
 
-fn on_game_save_collect_summonings(
-    mut commands: Commands,
+fn collect_summonings(
     summonings: Query<(Entity, &Summoning, &SummoningRuntime, Has<SummoningMarkerActive>)>,
+    mut save: SaveWriter,
 ) {
     if summonings.is_empty() { return; }
-    let batch = summonings.iter().map(|(entity, summoning, runtime, is_active)| {
-        let save_data = SummoningSaveData {
-            entity,
-            produced: runtime.produced,
-            next_spawn_time: runtime.next_spawn_time,
-            is_active,
+    let rows: Vec<(i64, String, i32, f32, bool)> = summonings
+        .iter()
+        .map(|(entity, summoning, runtime, is_active)| {
+            let summoning_json = serde_json::to_string(summoning)
+                .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))
+                .unwrap_or_default();
+            (
+                entity.index_u32() as i64,
+                summoning_json,
+                runtime.produced,
+                runtime.next_spawn_time,
+                is_active,
+            )
+        })
+        .collect();
+    save.submit(move |tx| {
+        for (id, summoning_json, produced, next_spawn_time, is_active) in rows {
+            tx.register_entity(id)?;
+            tx.execute(
+                "INSERT OR REPLACE INTO summonings (id, summoning_json, produced, next_spawn_time, is_active) VALUES (?1, ?2, ?3, ?4, ?5)",
+                (id, summoning_json, produced, next_spawn_time, if is_active { 1 } else { 0 }),
+            )?;
+        }
+        Ok(())
+    });
+}
+
+fn load_summonings(ctx: &mut LoadContext) -> rusqlite::Result<()> {
+    let mut stmt = ctx.conn.prepare(
+        "SELECT id, summoning_json, produced, next_spawn_time, is_active FROM summonings",
+    )?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let old_id: i64 = row.get(0)?;
+        let summoning_json: String = row.get(1)?;
+        let produced: i32 = row.get(2)?;
+        let next_spawn_time: f32 = row.get(3)?;
+        let is_active: i32 = row.get(4)?;
+
+        let summoning: Summoning = serde_json::from_str(&summoning_json)
+            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, Box::new(e)))?;
+
+        let Some(entity) = ctx.entity(old_id) else {
+            Log::warn().dev().tag(Tag::GameLoad).message(format!("Summoning with old ID {old_id} has no corresponding new entity"));
+            continue;
         };
-        BuilderSummoning::new_for_saving(summoning.clone(), save_data)
-    }).collect::<SaveableBatchCommand<_>>();
-    commands.queue(batch);
+        let builder = BuilderSummoning::new(summoning).with_runtime(SummoningRuntimeState {
+            produced,
+            next_spawn_time,
+            is_active: is_active != 0,
+        });
+        ctx.insert(entity, builder);
+    }
+    Ok(())
 }
 
 fn on_builder_add_spawn_summoning(
@@ -82,13 +122,13 @@ fn on_builder_add_spawn_summoning(
     let mut entity_commands = commands.entity(entity);
 
     // Restore runtime state if loading from save
-    if let Some(save_data) = &builder.save_data {
+    if let Some(runtime) = &builder.runtime {
         entity_commands.insert(SummoningRuntime {
-            produced: save_data.produced,
-            next_spawn_time: save_data.next_spawn_time,
+            produced: runtime.produced,
+            next_spawn_time: runtime.next_spawn_time,
         });
 
-        if save_data.is_active {
+        if runtime.is_active {
             entity_commands.insert(SummoningMarkerActive);
         }
     }

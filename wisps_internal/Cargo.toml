@@ -18,3 +18,4 @@ states = { workspace = true }
 persistence = { workspace = true }
 resources = { workspace = true }
 buildings = { workspace = true }
+serde_json = { workspace = true }

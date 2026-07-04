@@ -1,7 +1,10 @@
 use bevy::prelude::*;
 
 use game_core::prelude::SSS;
-use persistence::{prelude::*, rusqlite};
+use persistence::{
+    prelude::{AppGameLoadSaveExtension, CollectSave, LoadContext, SaveWriter},
+    rusqlite,
+};
 use states::{GameState, MapLoadingStage};
 
 pub struct GameClockPlugin;
@@ -10,8 +13,8 @@ impl Plugin for GameClockPlugin {
         app
             .init_resource::<GameClock>()
             .add_systems(PreUpdate, GameClock::advance.run_if(in_state(GameState::Running)))
-            .register_db_loader::<GameClock>(MapLoadingStage::LoadResources)
-            .register_db_saver(GameClock::on_game_save)
+            .add_systems(CollectSave, collect_game_clock)
+            .register_loader(MapLoadingStage::LoadResources, "game_clock", load_game_clock)
             ;
     }
 }
@@ -28,27 +31,25 @@ impl GameClock {
     fn advance(time: Res<Time>, mut clock: ResMut<GameClock>) {
         clock.elapsed += time.delta_secs_f64();
     }
-
-    fn on_game_save(mut commands: Commands, clock: Res<GameClock>) {
-        commands.queue(SaveableBatchCommand::from_single(clock.clone()));
-    }
 }
-impl Saveable for GameClock {
-    fn save(self, tx: &rusqlite::Transaction) -> rusqlite::Result<()> {
+
+fn collect_game_clock(clock: Res<GameClock>, mut save: SaveWriter) {
+    let elapsed = clock.elapsed;
+    save.submit(move |tx| {
         tx.execute(
             "INSERT OR REPLACE INTO game_clock (id, elapsed) VALUES (1, ?1)",
-            [self.elapsed],
+            [elapsed],
         )?;
         Ok(())
-    }
+    });
 }
-impl Loadable for GameClock {
-    fn load(ctx: &mut LoadContext) -> rusqlite::Result<LoadResult> {
-        let elapsed: f64 = ctx.conn
-            .prepare("SELECT elapsed FROM game_clock WHERE id = 1")?
-            .query_row([], |row| row.get(0))
-            .unwrap_or(0.0);
-        ctx.commands.insert_resource(GameClock { elapsed });
-        Ok(LoadResult::Finished)
-    }
+
+fn load_game_clock(ctx: &mut LoadContext) -> rusqlite::Result<()> {
+    let elapsed: f64 = ctx
+        .conn
+        .prepare("SELECT elapsed FROM game_clock WHERE id = 1")?
+        .query_row([], |row| row.get(0))
+        .unwrap_or(0.0);
+    ctx.insert_resource(GameClock { elapsed });
+    Ok(())
 }

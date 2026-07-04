@@ -26,7 +26,7 @@ use grids::{
 use hud::prelude::*;
 use logging::prelude::*;
 use persistence::{
-    prelude::*,
+    prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveWriter},
     rusqlite,
 };
 use resources::prelude::*;
@@ -60,8 +60,8 @@ impl Plugin for ForgePlugin {
             .add_observer(ForgeShardButton::on_add_construct_forge_shard_button)
             .add_observer(on_insert_forge_job_rebuild_ui)
             .add_observer(on_remove_forge_job_rebuild_ui)
-            .register_db_loader::<BuilderForge>(MapLoadingStage::SpawnMapElements)
-            .register_db_saver(BuilderForge::on_game_save_collect_forge)
+            .add_systems(CollectSave, collect_forges)
+            .register_loader(MapLoadingStage::SpawnMapElements, "forges", load_forges)
             .register_building(BuildingType::Forge, almanach_info)
             ;
     }
@@ -196,72 +196,16 @@ fn forge_crafting_system(
 }
 
 
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct ForgeSaveData {
-    pub entity: Entity,
-    pub integrity_points: f32,
-    pub disabled_by_player: bool,
-    /// An in-progress craft as `(shard type, seconds remaining)`, or `None` when idle.
-    pub forging: Option<(ShardType, f32)>,
-}
-
 #[derive(Component, SSS)]
 pub(crate) struct BuilderForge {
     pub grid_position: GridCoords,
-    pub save_data: Option<ForgeSaveData>,
-}
-impl Saveable for BuilderForge {
-    fn save(self, tx: &rusqlite::Transaction) -> rusqlite::Result<()> {
-        let save_data = self.save_data.expect("BuilderForge for saving purpose must have save_data");
-        let entity_index = save_data.entity.index_u32() as i64;
-
-        tx.save_marker("forges", entity_index)?;
-        tx.save_grid_coords(entity_index, self.grid_position)?;
-        tx.save_integrity_points(entity_index, save_data.integrity_points)?;
-        if save_data.disabled_by_player {
-            tx.save_disabled_by_player(entity_index)?;
-        }
-        if let Some((shard_type, remaining_secs)) = save_data.forging {
-            tx.execute(
-                "UPDATE forges SET forging_shard_type = ?1, forging_remaining_secs = ?2 WHERE id = ?3",
-                rusqlite::params![shard_type.to_string(), remaining_secs, entity_index],
-            )?;
-        }
-        Ok(())
-    }
-}
-impl Loadable for BuilderForge {
-    fn load(ctx: &mut LoadContext) -> rusqlite::Result<LoadResult> {
-        let mut stmt = ctx.conn.prepare("SELECT id, forging_shard_type, forging_remaining_secs FROM forges LIMIT ?1 OFFSET ?2")?;
-        let mut rows = stmt.query(ctx.pagination.as_params())?;
-
-        let mut count = 0;
-        while let Some(row) = rows.next()? {
-            let old_id: i64 = row.get(0)?;
-            let forging_shard_type: Option<String> = row.get(1)?;
-            let forging_remaining_secs: Option<f32> = row.get(2)?;
-            let grid_position = ctx.conn.get_grid_coords(old_id)?;
-            let integrity_points = ctx.conn.get_integrity_points(old_id)?;
-            let disabled_by_player = ctx.conn.get_disabled_by_player(old_id)?;
-
-            let forging = match (forging_shard_type, forging_remaining_secs) {
-                (Some(shard_str), Some(remaining_secs)) => {
-                    shard_str.parse::<ShardType>().ok().map(|shard_type| (shard_type, remaining_secs))
-                }
-                _ => None,
-            };
-
-            if let Some(new_entity) = ctx.get_new_entity_for_old(old_id) {
-                let save_data = ForgeSaveData { entity: new_entity, integrity_points, disabled_by_player, forging };
-                ctx.commands.entity(new_entity).insert(BuilderForge::new_for_saving(grid_position, save_data));
-            } else {
-                Log::warn().dev().tag(Tag::GameLoad).message(format!("Forge with old ID {old_id} has no corresponding new entity"));
-            }
-            count += 1;
-        }
-
-        Ok(count.into())
-    }
+    /// Saved integrity points. `None` ⇒ defer to baseline (fresh spawn);
+    /// `Some` ⇒ override with saved value (restore).
+    pub integrity_points: Option<f32>,
+    /// Whether the player disabled this building. False on fresh spawn.
+    pub disabled_by_player: bool,
+    /// In-progress craft to restore, or `None` when idle.
+    pub forging: Option<(ShardType, f32)>,
 }
 impl BuilderForge {
     pub fn almanach_info(asset_server: &AssetServer) -> BuildingInfo {
@@ -283,28 +227,13 @@ impl BuilderForge {
     }
 
     pub fn new(grid_position: GridCoords) -> Self {
-        Self { grid_position, save_data: None }
+        Self { grid_position, integrity_points: None, disabled_by_player: false, forging: None }
     }
-    pub fn new_for_saving(grid_position: GridCoords, save_data: ForgeSaveData) -> Self {
-        Self { grid_position, save_data: Some(save_data) }
-    }
-
-    fn on_game_save_collect_forge(
-        mut commands: Commands,
-        forges: Query<(Entity, &GridCoords, &IntegrityPoints, Has<DisabledByPlayer>, Option<&ForgeJob>), With<Forge>>,
-    ) {
-        if forges.is_empty() { return; }
-        let batch = forges.iter().map(|(entity, coords, integrity_points, disabled_by_player, forge_job)| {
-            let save_data = ForgeSaveData {
-                entity,
-                integrity_points: integrity_points.get_current(),
-                disabled_by_player,
-                forging: forge_job.map(|job| (job.shard_type(), job.remaining_secs())),
-            };
-            BuilderForge::new_for_saving(*coords, save_data)
-        }).collect::<SaveableBatchCommand<_>>();
-        Log::debug().dev().tag(Tag::GameSave).message(format!("Saving {} forges", batch.len()));
-        commands.queue(batch);
+    pub fn with_integrity_points(mut self, v: f32) -> Self { self.integrity_points = Some(v); self }
+    pub fn with_disabled_by_player(mut self) -> Self { self.disabled_by_player = true; self }
+    pub fn with_forging(mut self, shard_type: ShardType, remaining_secs: f32) -> Self {
+        self.forging = Some((shard_type, remaining_secs));
+        self
     }
 
     pub fn on_builder_add_spawn_forge(
@@ -320,16 +249,16 @@ impl BuilderForge {
         let grid_imprint = building_info.grid_imprint;
 
         let mut entity_commands = commands.entity(entity);
-        if let Some(save_data) = &builder.save_data {
-            entity_commands.insert(IntegrityPoints::new(save_data.integrity_points));
-            if save_data.disabled_by_player {
-                entity_commands.insert(DisabledByPlayer);
-            }
-            if let Some((shard_type, remaining_secs)) = save_data.forging {
-                if let Some(recipe) = &almanach.get_shard_info(shard_type).recipe {
-                    entity_commands.insert(ForgeJob::resumed(shard_type, recipe.duration, remaining_secs));
-                    Log::debug().dev().tag(Tag::Forge).message(format!("Forge {entity} resumed forging {shard_type} ({remaining_secs:.1}s left)"));
-                }
+        if let Some(ip) = builder.integrity_points {
+            entity_commands.insert(IntegrityPoints::new(ip));
+        }
+        if builder.disabled_by_player {
+            entity_commands.insert(DisabledByPlayer);
+        }
+        if let Some((shard_type, remaining_secs)) = builder.forging {
+            if let Some(recipe) = &almanach.get_shard_info(shard_type).recipe {
+                entity_commands.insert(ForgeJob::resumed(shard_type, recipe.duration, remaining_secs));
+                Log::debug().dev().tag(Tag::Forge).message(format!("Forge {entity} resumed forging {shard_type} ({remaining_secs:.1}s left)"));
             }
         }
 
@@ -357,6 +286,74 @@ impl BuilderForge {
                 ],
             ));
     }
+}
+
+fn collect_forges(
+    forges: Query<(Entity, &GridCoords, &IntegrityPoints, Has<DisabledByPlayer>, Option<&ForgeJob>), With<Forge>>,
+    mut save: SaveWriter,
+) {
+    if forges.is_empty() { return; }
+    let rows: Vec<(i64, i32, i32, f32, bool, Option<(ShardType, f32)>)> = forges
+        .iter()
+        .map(|(entity, coords, integrity_points, disabled_by_player, forge_job)| {
+            (
+                entity.index_u32() as i64,
+                coords.x,
+                coords.y,
+                integrity_points.get_current(),
+                disabled_by_player,
+                forge_job.map(|job| (job.shard_type(), job.remaining_secs())),
+            )
+        })
+        .collect();
+    Log::debug().dev().tag(Tag::GameSave).message(format!("Saving {} forges", rows.len()));
+    save.submit(move |tx| {
+        for (id, gx, gy, integrity_points, disabled_by_player, forging) in rows {
+            tx.save_marker("forges", id)?;
+            tx.save_grid_coords(id, GridCoords { x: gx, y: gy })?;
+            tx.save_integrity_points(id, integrity_points)?;
+            if disabled_by_player {
+                tx.save_disabled_by_player(id)?;
+            }
+            if let Some((shard_type, remaining_secs)) = forging {
+                tx.execute(
+                    "UPDATE forges SET forging_shard_type = ?1, forging_remaining_secs = ?2 WHERE id = ?3",
+                    rusqlite::params![shard_type.to_string(), remaining_secs, id],
+                )?;
+            }
+        }
+        Ok(())
+    });
+}
+
+fn load_forges(ctx: &mut LoadContext) -> rusqlite::Result<()> {
+    let mut stmt = ctx.conn.prepare("SELECT id, forging_shard_type, forging_remaining_secs FROM forges")?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let old_id: i64 = row.get(0)?;
+        let forging_shard_type: Option<String> = row.get(1)?;
+        let forging_remaining_secs: Option<f32> = row.get(2)?;
+        let grid_position = ctx.conn.get_grid_coords(old_id)?;
+        let integrity_points = ctx.conn.get_integrity_points(old_id)?;
+        let disabled_by_player = ctx.conn.get_disabled_by_player(old_id)?;
+
+        let Some(entity) = ctx.entity(old_id) else {
+            Log::warn().dev().tag(Tag::GameLoad).message(format!("Forge with old ID {old_id} has no corresponding new entity"));
+            continue;
+        };
+        let mut builder = BuilderForge::new(grid_position)
+            .with_integrity_points(integrity_points);
+        if disabled_by_player {
+            builder = builder.with_disabled_by_player();
+        }
+        if let (Some(shard_str), Some(remaining_secs)) = (forging_shard_type, forging_remaining_secs) {
+            if let Ok(shard_type) = shard_str.parse::<ShardType>() {
+                builder = builder.with_forging(shard_type, remaining_secs);
+            }
+        }
+        ctx.insert(entity, builder);
+    }
+    Ok(())
 }
 
 

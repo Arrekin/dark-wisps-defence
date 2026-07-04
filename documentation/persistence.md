@@ -1,257 +1,271 @@
 # Persistence Architecture
 
-The save/load system enables full game state serialization to SQLite databases using a Builder pattern integrated with Bevy's ECS.
+The save/load system serializes full game state to SQLite databases (one `.dwd` file per map).
+Domains contribute *collector systems* to a dedicated save schedule and *loader functions* to a
+per-stage registry. All persistence behavior (SQL, schema knowledge) lives in `_internal` crates;
+api crates carry none of it.
 
 ## Core Concepts
 
-The persistence system is built around three ideas:
+1. **Persistence is behavior, so it lives in `_internal`** — Saving is a system in the
+   `CollectSave` schedule; loading is a plain `fn(&mut LoadContext) -> rusqlite::Result<()>`.
+   Systems and functions register from `_internal` plugins, so api crates never depend on
+   `persistence` (see `crates_expansion.md` for the api/internal split rules).
 
-1. **Builder Pattern** - Each persistable entity type has a `Builder*` component that encapsulates all data needed to reconstruct it. The same builder is used for fresh spawns and loaded entities.
+2. **Builder Pattern for spawning** — Each spawnable entity type has a `Builder*` component; an
+   `Add` observer expands it into the full entity. The same builder serves fresh spawns and loads:
+   a *restore is just a spawn with fully-specified state*, carried in ordinary builder fields
+   (e.g. `initial_distance: f32`, `integrity_points: Option<f32>`).
 
-2. **Trait-based Serialization** - `Saveable` and `Loadable` traits define how builders serialize to/from the database.
+3. **Entity ID Mapping** — `EntityIdMap` (old saved id → freshly pre-spawned `Entity`) lets
+   cross-entity references survive save/load. Saved ids are `entity.index_u32() as i64`.
 
-3. **Entity ID Mapping** - A `DbEntityMap` maintains correspondence between old (saved) and new (loaded) entity IDs, enabling cross-entity references to survive save/load cycles.
+4. **Off-thread I/O, on-thread application** — DB writes happen on a detached IO task; DB reads
+   happen on IO tasks that ship `CommandQueue`s to the main thread, which applies them within a
+   per-frame time budget. Disk I/O never sits inside a frame.
 
-## High-Level Flow
-
-### Save Flow
-
-```
-SaveGameSignal
-    │
-    ▼
-on_game_save_collect_* systems (one per entity type)
-    │
-    ▼
-Builder components collected into SaveableBatchCommand
-    │
-    ▼
-GameSaveExecutor writes to SQLite (background thread)
-```
-
-**Why background thread?** Prevents frame hitches during save.
-
-### Load Flow
+## Save Flow
 
 ```
-LoadGameSignal
+SaveGameSignal (message; dev keybind Z)
+    │
+    ▼  Last: drive_save (exclusive system)
+world.run_schedule(CollectSave)          ← runs ONCE; never part of the main loop
+    │       domain collector systems query ECS, SaveWriter::submit(closure)
+    ▼
+PendingSaveJobs (Vec<SaveJob>) taken by driver
+    │
+    ▼  detached IoTaskPool task
+write <path>.tmp: migrations → one transaction → all jobs → commit
     │
     ▼
-MapLoadingStage state machine
-    │
-    ├─► LoadMapInfo    - Pre-allocate entities, build ID mapping
-    ├─► LoadResources  - Global state (stats, stock, objectives)
-    └─► SpawnMapElements - All game entities
-    │
-    ▼
-Loadable::load() inserts Builder components
-    │
-    ▼
-on_builder_add_spawn_* observers spawn full entities
+drop connection → fs::rename(tmp, path)   ← atomic replace
 ```
 
-**Why pre-allocate entities?** Cross-references (e.g., rocket → target wisp) require knowing new entity IDs before data is loaded. Pre-allocation creates empty entities upfront, allowing loaders to resolve references.
+**Why a custom schedule?** `CollectSave` only executes when the driver calls `run_schedule` — zero
+cost on non-save frames, no `run_if` boilerplate on collectors, and the snapshot is atomic by
+construction (one schedule run = one frame). Collectors parallelize under the normal Bevy
+executor.
 
-## The Builder Pattern
+**Why tmp + rename?** The old save survives a mid-write crash; a failed save never corrupts the
+target file. The SQLite connection is dropped before the rename (Windows file-handle semantics —
+see `with_db_connection`'s doc comment).
 
-### Why Builders?
+**Overlap guard:** `SaveInFlight` (an `Arc<AtomicBool>`) makes the driver skip (with a warn) if a
+save is still writing. `ActiveSaveFile` holds the target path — set by the load observer, forced
+to `test_save.dwd` by the dev keybind.
 
-- **Decoupling** - Separates persistence concerns from runtime components
-- **Consistency** - Same code path for fresh spawns and loaded entities  
-- **Observer-based** - `on_builder_add_spawn_*` observer triggers entity construction
-- **Transient** - Builders are removed after spawning, leaving only runtime components
-
-### Structure
-
-Every persistable entity follows this pattern:
+### Writing a collector
 
 ```rust
-#[derive(Component, SSS)]
-pub struct BuilderMyEntity {
-    pub position: GridCoords,
-    pub save_data: Option<MyEntitySaveData>,  // None = fresh spawn
+app.add_systems(CollectSave, collect_my_entities);
+
+fn collect_my_entities(
+    q: Query<(Entity, &MyData), With<MyEntity>>,
+    mut save: SaveWriter,
+) {
+    if q.is_empty() { return; }
+    // Copy into owned rows — the closure must not borrow the World.
+    let rows: Vec<(i64, f32)> = q.iter()
+        .map(|(e, d)| (e.index_u32() as i64, d.value))
+        .collect();
+    save.submit(move |tx| {
+        for (id, value) in rows {
+            tx.register_entity(id)?;
+            tx.execute("INSERT OR REPLACE INTO my_entities (id, value) VALUES (?1, ?2)",
+                       rusqlite::params![id, value])?;
+        }
+        Ok(())
+    });
 }
 ```
 
-The `save_data` field distinguishes:
-- `None` → Fresh spawn (from editor or gameplay)
-- `Some(...)` → Loaded from save (contains persisted state)
+`SaveJob` closures are `FnOnce(&Transaction) -> rusqlite::Result<()> + Send + Sync + 'static`
+(`Sync` because the buffer resource requires it). They run on the IO thread inside the single
+save transaction; the first `Err` aborts the save.
 
-The `on_builder_add_spawn_*` observer checks this to apply saved state (integrity points, upgrades, etc.) before spawning the full entity.
+## Load Flow
+
+```
+LoadGameSignal (observer; dev keybind A)
+    │  migrations (sync) · ActiveSaveFile ← map_path · LoadRunner + fresh LoadProgress
+    │  despawn MapBound · GameState::Loading · MapLoadingStage::Init
+    ▼
+MapLoadingStage state machine (stages are ordering barriers)
+    ├─► Init                 (no loaders; advances immediately)
+    ├─► LoadMapInfo          build_entity_id_map (exclusive) → map_info loader
+    ├─► LoadResources        global state (stats, stock, clock, objectives, ...)
+    ├─► SpawnMapElements     entities (walls, buildings, wisps, projectiles, ...)
+    ├─► SpawnEffectInstances effects referencing entities (brittle, shard slots)
+    └─► Ready                on_map_load_ready
+```
+
+Per stage: `OnEnter` spawns **one IO task per registered loader**. Each task opens its own
+short-lived connection, streams a single cursor over its table (no `LIMIT/OFFSET`), and pushes
+world mutations through `LoadContext`, which auto-chunks them into `CommandQueue`s (128 rows
+each) sent over a crossbeam channel. Every frame, `apply_load_queues` drains the channel within a
+~4 ms budget via `commands.append(&mut queue)`; `advance_stage` moves to the next stage only when
+all of the stage's tasks are finished **and** the channel is empty.
+
+**Why pre-allocate entities?** Cross-references (rocket → target wisp) need new entity IDs before
+row data loads. `build_entity_id_map` (exclusive system, `OnEnter(LoadMapInfo)`, before the
+stage's loaders spawn) reads the `entities` table and `world.spawn_empty()`s one entity per row.
+It is exclusive on purpose: deferred `Commands` inserts would be invisible to
+`spawn_stage_loaders` running `.after()` it in the same `OnEnter` schedule.
+
+**Progress:** `LoadProgress { total_rows, done_rows }` is a public resource. Totals come from
+`SELECT COUNT(*)` over every registered table at load start; `done_rows` is bumped per pushed
+mutation. `fraction()` drives a determinate progress bar (approximate by design).
+
+**Cancellation:** a new `LoadGameSignal` during an in-flight load flags the old runner's cancel
+`AtomicBool` and replaces it; in-flight loaders drain harmlessly (`push` no-ops when cancelled).
+
+### Writing a loader
+
+```rust
+app.register_loader(MapLoadingStage::SpawnMapElements, "my_entities", load_my_entities);
+
+fn load_my_entities(ctx: &mut LoadContext) -> rusqlite::Result<()> {
+    let mut stmt = ctx.conn.prepare("SELECT id, value FROM my_entities")?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let old_id: i64 = row.get(0)?;
+        let Some(entity) = ctx.entity(old_id) else {
+            Log::warn().dev().tag(Tag::GameLoad).message(format!("my_entities: unmapped id {old_id}"));
+            continue;
+        };
+        ctx.insert(entity, BuilderMyEntity::new(row.get(1)?));  // observer expands it
+    }
+    Ok(())
+}
+```
+
+`LoadContext` API: `entity(old_id) -> Option<Entity>` (warn + `continue` on `None`),
+`insert(entity, bundle)`, `insert_resource(res)`, `push(FnOnce(&mut World))` as the escape hatch,
+`cancelled()` for optional early-exit in long loops. The context runs on an IO thread — it never
+touches the World directly; everything is deferred through the channel. The `table` argument of
+`register_loader` feeds the progress totals — use the primary table the loader reads.
+
+## Where Code Lives
+
+- **`persistence` crate** — infrastructure only: `CollectSave` + `SaveWriter` + driver,
+  `LoadContext` + registry + runner systems, `LoadProgress`, `GameDbHelpers`, migrations. Only
+  `_internal` crates (plus `session`, `hud_internal`, the binary) depend on it. **Api crates must
+  never depend on `persistence`.**
+- **`<domain>_internal`** — collector systems and loader fns, owning their SQL end-to-end.
+  Registered in the domain's plugin: `.add_systems(CollectSave, ...)` and `.register_loader(...)`.
+- **`<domain>` (api)** — builders as cross-domain *spawn contracts* only. Builder fields describe
+  the state of the thing to spawn; anything that exists only to talk to the DB doesn't belong
+  here. Single-crate domains (e.g. `session`) keep collectors/loaders in place.
+
+## The Builder Pattern and Restores
+
+Builders are transient components: an `on_builder_add_spawn_*` observer expands them into full
+entities and removes them. Loaders reuse this path — they fill a builder from row data and
+`ctx.insert` it, staying ignorant of construction internals.
+
+Restore-relevant state is a plain builder field with fresh-spawn semantics built in:
+
+```rust
+pub struct BuilderWisp {
+    pub wisp_type: WispType,
+    pub grid_coords: GridCoords,
+    pub integrity_points: Option<f32>,  // None => baseline (fresh spawn)
+    pub world_position: Option<Vec2>,   // None => computed from grid_coords
+}
+```
+
+The observer branches on the field, not on "is this a load". If a type has no cross-domain spawn
+contract, skip the builder and `ctx.insert` the real components directly — the loader lives in
+`_internal` and is allowed to know them.
 
 ## Database Design
 
-Schema lives in `persistence/migrations/` and uses refinery for migrations.
+Schema lives in `persistence/migrations/` and uses refinery.
 
 ### Shared Tables
 
-Common data types have dedicated tables to avoid duplication:
-
-- `entities` - Master registry; all saved entities register here first
-- `grid_coords` - Grid-based positions
-- `world_positions` - Pixel-precise positions (for smooth movement resume)
-- `integrity_points` - Integrity-point values
+- `entities` — master registry; all saved entities register here first (`tx.register_entity`)
+- `grid_coords` — grid-based positions
+- `world_positions` — pixel-precise positions (smooth movement resume)
+- `integrity_points` — integrity-point values
 
 ### Marker Tables
 
-Each entity type has a marker table (e.g., `mining_complexes`, `tower_cannons`, `wisps`). These allow efficient type-specific queries while the shared tables store common data.
-
-Entity-specific data (e.g., wisp type, rocket damage) goes in columns on the marker table.
-
-## Key Traits
-
-### `Saveable`
-
-```rust
-pub trait Saveable: SSS {
-    fn save(self, tx: &rusqlite::Transaction) -> rusqlite::Result<()>;
-}
-```
-
-Consumes the builder and writes data to the database transaction.
-
-### `Loadable`
-
-```rust
-pub trait Loadable {
-    fn load(ctx: &mut LoadContext) -> rusqlite::Result<LoadResult>;
-}
-```
-
-Reads from database and inserts builder components on pre-allocated entities. Returns `LoadResult::Progressed(count)` for pagination or `LoadResult::Finished` when done.
-
-### `GameDbHelpers`
-
-Extension trait on `rusqlite::Connection` providing reusable save/load operations for common data types. Check `persistence/src/common.rs` for available helpers.
+Each entity type has a marker table (`mining_complexes`, `tower_cannons`, `wisps`, ...); shared
+tables hold common data, entity-specific columns go on the marker table. `GameDbHelpers`
+(extension trait on `rusqlite::Connection`, see `persistence/src/common.rs`) provides the
+save/get helpers for the shared tables.
 
 ## Adding a New Persistable Entity
 
-### 1. Create the Builder
+1. **Builder + observer** (if the type is spawnable cross-domain): builder in api with honest
+   spawn-state fields, observer in `_internal`.
+2. **Collector system** in `_internal`: query live entities → owned rows → `save.submit(closure)`.
+3. **Loader fn** in `_internal`: stream the marker table, `ctx.entity(old_id)`, fill the builder
+   (or insert components directly), `ctx.insert`.
+4. **Register** in the domain plugin:
+   ```rust
+   app.add_observer(on_builder_add_spawn_my_entity)
+      .add_systems(CollectSave, collect_my_entities)
+      .register_loader(MapLoadingStage::SpawnMapElements, "my_entities", load_my_entities);
+   ```
+5. **Schema**: add/extend a migration in `persistence/migrations/`; reuse shared tables.
 
-```rust
-#[derive(Component, SSS)]
-pub struct BuilderMyEntity {
-    pub my_field: SomeType,
-    pub save_data: Option<MyEntitySaveData>,
-}
-```
-
-### 2. Implement Saveable
-
-Use helpers for common data, custom SQL for entity-specific fields.
-
-### 3. Implement Loadable
-
-Query the marker table, use helpers to fetch common data, resolve entity references via `ctx.get_new_entity_for_old()`.
-
-### 4. Create the Save Snapshot System
-
-The saver needs a system that queries live entities and produces builders when `SaveGameSignal` is received:
-
-```rust
-fn on_game_save_collect_my_entities(
-    mut commands: Commands,
-    entities: Query<(Entity, &MyData, &IntegrityPoints), With<MyEntity>>,
-) {
-    if entities.is_empty() { return; }
-
-    let batch = entities.iter().map(|(entity, data, integrity_points)| {
-        let save_data = MyEntitySaveData {
-            entity,
-            integrity_points: integrity_points.get_current(),
-            // ... other persisted state
-        };
-        BuilderMyEntity::new_for_saving(data.clone(), save_data)
-    }).collect::<SaveableBatchCommand<_>>();
-
-    commands.queue(batch);
-}
-```
-
-This system converts live ECS state into builder components that know how to serialize themselves.
-
-### 5. Register in Plugin
-
-```rust
-app
-    // Observer spawns entities when builder is inserted (used by both fresh spawns and loads)
-    .add_observer(BuilderMyEntity::on_builder_add_spawn_my_entity)
-
-    // Loader: just register the builder type with appropriate stage
-    // The Loadable::load() implementation handles the rest
-    .register_db_loader::<BuilderMyEntity>(MapLoadingStage::SpawnMapElements)
-
-    // Saver: register the snapshot system that produces builders
-    // This system runs when SaveGameSignal is received
-    .register_db_saver(BuilderMyEntity::on_game_save_collect_my_entities);
-```
-
-**Key distinction:**
-- **Loader** - Register the builder type; the `Loadable` trait implementation does the work
-- **Saver** - Register a *system* that queries entities and produces `SaveableBatchCommand<Builder>`
-
-### 6. Add Schema
-
-Create/update migration in `persistence/migrations/`. Add marker table, reuse shared tables for common data.
+Pick the stage by dependency: `LoadResources` for global state, `SpawnMapElements` for entities,
+`SpawnEffectInstances` for things referencing entities loaded a stage earlier. Within a stage,
+loaders run in parallel with no ordering — if A must precede B, put them in different stages.
 
 ## Handling Entity References
 
-Some entities reference others (e.g., projectile → target). During load:
+Loaders resolve references through the id map; a missing target is a warn + skip (or a nullable
+field), never a panic:
 
 ```rust
-let new_target = ctx.get_new_entity_for_old(old_target_id)
-    .unwrap_or(Entity::PLACEHOLDER);
+let Some(target) = ctx.entity(old_target_id) else { /* warn */ continue; };
 ```
 
-If the referenced entity doesn't exist, use a placeholder. Runtime systems should detect invalid references and handle gracefully (e.g., find new target).
-
-For nullable references, use nullable columns in the schema.
+Runtime systems should tolerate dangling references anyway — entities can despawn between save
+and load. For nullable references use nullable columns.
 
 ## Best Practices
 
-- **Use helpers** for common data types to ensure consistency
-- **Handle missing references** gracefully - entities may be despawned between save and load
-- **Batch saves** using `SaveableBatchCommand::from_iter()` 
-- **Respect pagination** in loaders for large datasets
-- **Skip transient state** - some runtime state (animations, timers) can be reset on load
-- **Save world position** for moving entities to avoid snapping to grid centers
+- **Copy, don't borrow** — collector closures must own their data; snapshot in the query, write
+  in the closure.
+- **One cursor per loader** — never paginate with `LIMIT/OFFSET`; the multi-frame behavior comes
+  from chunked application, not from re-querying.
+- **Use `GameDbHelpers`** for shared-table data.
+- **Skip transient state** (animations, timers) — reset on load; save world positions for moving
+  entities to avoid grid-snapping.
+- **Log with tags** — `Tag::GameSave` / `Tag::GameLoad`, `.dev()` for diagnostics, `.player()`
+  for user-facing results.
 
 ## Merging Migrations
 
-During development, schema changes accumulate as incremental migrations (V2, V3, etc.). Once a feature is complete and all save files are migrated to the latest version, these can be consolidated back into V1 for cleaner history.
+During development, schema changes accumulate as incremental migrations (V2, V3, ...). Once a
+feature is complete and all save files are at the latest version, consolidate back into V1.
 
-### When to Merge
+**When:** feature complete, every save migrated, no legacy saves you care about. ⚠️ Unmigrated
+saves are corrupted by this — for released builds, don't.
 
-- **Feature complete** - All schema changes for the feature are finalized
-- **All saves migrated** - Every save file has already run through all migrations
-- **No legacy saves** - You accept that older saves (pre-migration) will become incompatible
+**How:**
 
-⚠️ **Warning**: If any saves exist that haven't been migrated to the latest version, merging will corrupt them. For released games with player saves, this is generally not safe unless you're certain no unmigrated saves exist.
+1. Apply all changes directly into `V1__initial.sql` (final column types, final table names,
+   dropped columns simply absent).
+2. Use `CREATE TABLE IF NOT EXISTS` everywhere so V1 is idempotent on existing databases.
+3. Delete the later migration files.
+4. Clear refinery metadata per save so V1 re-runs (`DELETE FROM refinery_schema_history;` — a
+   commented helper exists in `LoadGameSignal::on_trigger`, and `run_migrations_on_paths` supports
+   a rebuild mode).
 
-### How to Merge
-
-1. **Consolidate V1**: Apply all migration changes directly to `V1__initial.sql`:
-   - Add new tables/columns from later migrations
-   - Remove dropped columns (don't include them at all)
-   - Use final column types (e.g., if V5 changed INTEGER→REAL, use REAL in V1)
-   - Drop intermediate table names (e.g., if V2 added `foo2` and V4 renamed it to `foo`, just define `foo`)
-
-2. **Use `IF NOT EXISTS`**: Change all `CREATE TABLE` to `CREATE TABLE IF NOT EXISTS` so the migration is idempotent on existing databases.
-
-3. **Delete later migrations**: Remove V2, V3, etc. files.
-
-4. **Clear refinery metadata**: Before loading each save, clear the migration history so refinery re-runs V1:
-   ```sql
-   DELETE FROM refinery_schema_history;
-   ```
-   A commented helper exists in `LoadGameSignal::on_trigger` for this purpose.
-
-### Why This Works
-
-Since all saves are already at the final schema state, re-running V1 with `IF NOT EXISTS` is a no-op for data—tables already exist with correct structure. Refinery simply re-registers that V1 has run.
+Since all saves already have the final schema, re-running V1 with `IF NOT EXISTS` is a data no-op.
 
 ## File Locations
 
-- `persistence/src/` - Core infrastructure (traits, executor, registry)
-- `persistence/migrations/` - SQLite schema migrations
-- `states/src/map_loading_stage.rs` - `MapLoadingStage` definitions
+- `persistence/src/save.rs` — `CollectSave`, `SaveWriter`, driver, atomic write
+- `persistence/src/load.rs` — `LoadContext`, registry, runner systems, `LoadProgress`,
+  `LoadGameSignal` observer
+- `persistence/src/common.rs` — `with_db_connection`, `GameDbHelpers`, `register_loader`
+  extension, migration helpers
+- `persistence/migrations/` — SQLite schema
+- `states/src/map_loading_stage.rs` — `MapLoadingStage` definitions

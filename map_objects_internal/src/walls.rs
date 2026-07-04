@@ -7,8 +7,10 @@ use grids::placement::{annotate_non_empty, GridsCollectionParam, PlacementValidi
 use grids::prelude::{GridObjectPlacer, PlacementEmitter, PlacementMode, PlaceRequest, RemoveRequest};
 use logging::prelude::*;
 use map_objects::Wall;
-use persistence::prelude::{AppGameLoadSaveExtension, GameDbHelpers, Loadable, LoadContext, LoadResult, Saveable, SaveableBatchCommand};
-use persistence::rusqlite;
+use persistence::{
+    prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveWriter},
+    rusqlite,
+};
 use states::prelude::MapLoadingStage;
 
 pub struct WallPlugin;
@@ -17,8 +19,8 @@ impl Plugin for WallPlugin {
         let almanach_info = BuilderWall::almanach_info(app.world().resource::<AssetServer>());
         app
             .add_systems(Update, pulsate_brightness)
-            .register_db_loader::<BuilderWall>(MapLoadingStage::SpawnMapElements)
-            .register_db_saver(BuilderWall::on_game_save_collect_walls)
+            .add_systems(CollectSave, collect_walls)
+            .register_loader(MapLoadingStage::SpawnMapElements, "walls", load_walls)
             .add_observer(BuilderWall::on_builder_add_spawn_wall)
             .add_observer(on_wall_place_request_do_so)
             .add_observer(on_wall_remove_request_do_so)
@@ -32,40 +34,6 @@ const WALL_GRID_IMPRINT: GridImprint = GridImprint::Rectangle { width: 1, height
 #[derive(Component, SSS)]
 pub(crate) struct BuilderWall {
     pub grid_position: GridCoords,
-    pub entity: Option<Entity>,
-}
-impl Saveable for BuilderWall {
-    fn save(self, tx: &rusqlite::Transaction) -> rusqlite::Result<()> {
-        let entity_index = self.entity.expect("BuilderWall for saving purpose must have an entity").index_u32() as i64;
-
-        tx.save_marker("walls", entity_index)?;
-        tx.save_grid_coords(entity_index, self.grid_position)?;
-        Ok(())
-    }
-}
-impl Loadable for BuilderWall {
-    fn load(ctx: &mut LoadContext) -> rusqlite::Result<LoadResult> {
-        let mut stmt = ctx.conn.prepare_cached("SELECT id FROM walls LIMIT ?1 OFFSET ?2")?;
-
-        let mut rows = stmt.query(ctx.pagination.as_params())?;
-
-        let mut batch = Vec::new();
-        while let Some(row) = rows.next()? {
-            let old_id: i64 = row.get(0)?;
-            let grid_position = ctx.conn.get_grid_coords(old_id)?;
-
-            if let Some(new_entity) = ctx.get_new_entity_for_old(old_id) {
-                batch.push((new_entity, BuilderWall::new_for_saving(grid_position, new_entity)));
-            } else {
-                Log::warn().dev().tag(Tag::GameLoad).message(format!("Wall with old ID {old_id} has no corresponding new entity"));
-            }
-        }
-
-        let batch_size = batch.len();
-        ctx.commands.insert_batch(batch);
-
-        Ok(batch_size.into())
-    }
 }
 impl BuilderWall {
     pub fn almanach_info(asset_server: &AssetServer) -> WallInfo {
@@ -84,10 +52,7 @@ impl BuilderWall {
     }
 
     pub fn new(grid_position: GridCoords) -> Self {
-        Self { grid_position, entity: None }
-    }
-    pub fn new_for_saving(grid_position: GridCoords, entity: Entity) -> Self {
-        Self { grid_position, entity: Some(entity) }
+        Self { grid_position }
     }
 
     fn on_builder_add_spawn_wall(
@@ -114,18 +79,47 @@ impl BuilderWall {
             Wall,
         ));
     }
+}
 
-    fn on_game_save_collect_walls(
-        mut commands: Commands,
-        walls: Query<(Entity, &GridCoords), With<Wall>>,
-    ) {
-        Log::debug().dev().tag(Tag::GameSave).message(format!("Saving {} walls", walls.iter().count()));
-        let batch = walls
-            .iter()
-            .map(|(entity, grid_coords)| BuilderWall::new_for_saving(*grid_coords, entity))
-            .collect::<SaveableBatchCommand<_>>();
-        commands.queue(batch);
+fn collect_walls(
+    walls: Query<(Entity, &GridCoords), With<Wall>>,
+    mut save: SaveWriter,
+) {
+    if walls.is_empty() { return; }
+    let rows: Vec<(i64, i32, i32)> = walls
+        .iter()
+        .map(|(entity, coords)| {
+            (
+                entity.index_u32() as i64,
+                coords.x,
+                coords.y,
+            )
+        })
+        .collect();
+    Log::debug().dev().tag(Tag::GameSave).message(format!("Saving {} walls", rows.len()));
+    save.submit(move |tx| {
+        for (id, gx, gy) in rows {
+            tx.save_marker("walls", id)?;
+            tx.save_grid_coords(id, GridCoords { x: gx, y: gy })?;
+        }
+        Ok(())
+    });
+}
+
+fn load_walls(ctx: &mut LoadContext) -> rusqlite::Result<()> {
+    let mut stmt = ctx.conn.prepare("SELECT id FROM walls")?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let old_id: i64 = row.get(0)?;
+        let grid_position = ctx.conn.get_grid_coords(old_id)?;
+
+        let Some(entity) = ctx.entity(old_id) else {
+            Log::warn().dev().tag(Tag::GameLoad).message(format!("Wall with old ID {old_id} has no corresponding new entity"));
+            continue;
+        };
+        ctx.insert(entity, BuilderWall::new(grid_position));
     }
+    Ok(())
 }
 
 fn pulsate_brightness(

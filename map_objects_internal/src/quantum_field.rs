@@ -29,8 +29,10 @@ use grids::prelude::{GridObjectPlacer, PlacementEmitter, PlacementMode, PlaceReq
 use hud::prelude::{DisplayPanelMainContentRoot, FocusedMapObject};
 use logging::prelude::*;
 use map_objects::prelude::*;
-use persistence::prelude::{AppGameLoadSaveExtension, GameDbHelpers, Loadable, LoadContext, LoadResult, Saveable, SaveableBatchCommand};
-use persistence::rusqlite;
+use persistence::{
+    prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveWriter},
+    rusqlite,
+};
 use resources::prelude::*;
 use states::prelude::{GameState, MapLoadingStage, UiInteraction};
 use units::expedition_drone::{DroneState, ExpeditionDrone, ExpeditionDroneDeploymentRequest};
@@ -58,8 +60,8 @@ impl Plugin for QuantumFieldPlugin {
         .add_observer(on_focused_map_object_insert_update_quantum_field_panel)
         .add_observer(on_quantum_field_place_request_do_so)
         .add_observer(on_quantum_field_remove_request_do_so)
-        .register_db_loader::<BuilderQuantumField>(MapLoadingStage::SpawnMapElements)
-        .register_db_saver(BuilderQuantumField::on_game_save_collect_quantum_fields)
+        .add_systems(CollectSave, collect_quantum_fields)
+        .register_loader(MapLoadingStage::SpawnMapElements, "quantum_fields", load_quantum_fields)
         .register_quantum_field(QuantumFieldInfo {
             name: "Quantum Field".to_string(),
             min_size: 3,
@@ -118,95 +120,27 @@ pub(crate) struct QuantumFieldLayer {
     pub costs: Vec<Cost>, // resources required after scanning to finalize
 }
 
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct QuantumFieldSaveData {
-    pub entity: Entity,
-    pub current_layer: usize,
-    pub current_layer_progress: f32,
-}
-
 #[derive(Component, SSS)]
 pub(crate) struct BuilderQuantumField {
     pub grid_position: GridCoords,
     pub grid_imprint: GridImprint,
-    pub save_data: Option<QuantumFieldSaveData>,
-}
-
-impl Saveable for BuilderQuantumField {
-    fn save(self, tx: &rusqlite::Transaction) -> rusqlite::Result<()> {
-        let save_data = self.save_data.expect("BuilderQuantumField for saving purpose must have save_data");
-        let entity_index = save_data.entity.index_u32() as i64;
-
-        // 1. Insert into quantum_fields table
-        tx.register_entity(entity_index)?;
-        tx.execute(
-            "INSERT OR REPLACE INTO quantum_fields (id, current_layer, current_layer_progress) VALUES (?1, ?2, ?3)",
-            rusqlite::params![entity_index, save_data.current_layer, save_data.current_layer_progress],
-        )?;
-
-        // 2. Insert into grid_positions table
-        tx.save_grid_coords(entity_index, self.grid_position)?;
-
-        // 3. Insert into grid_imprints table
-        tx.save_grid_imprint(entity_index, self.grid_imprint)?;
-
-        Ok(())
-    }
-}
-impl Loadable for BuilderQuantumField {
-    fn load(ctx: &mut LoadContext) -> rusqlite::Result<LoadResult> {
-        let mut stmt = ctx.conn.prepare("SELECT id, current_layer, current_layer_progress FROM quantum_fields LIMIT ?1 OFFSET ?2")?;
-        let mut rows = stmt.query(ctx.pagination.as_params())?;
-
-        let mut count = 0;
-        while let Some(row) = rows.next()? {
-            let old_id: i64 = row.get(0)?;
-            let current_layer: usize = row.get(1)?;
-            let current_layer_progress: f32 = row.get(2)?;
-
-            let grid_position = ctx.conn.get_grid_coords(old_id)?;
-            let grid_imprint = ctx.conn.get_grid_imprint(old_id)?;
-
-            if let Some(new_entity) = ctx.get_new_entity_for_old(old_id) {
-                let save_data = QuantumFieldSaveData {
-                    entity: new_entity,
-                    current_layer,
-                    current_layer_progress,
-                };
-                ctx.commands.entity(new_entity).insert(BuilderQuantumField::new_for_saving(grid_position, grid_imprint, save_data));
-            } else {
-                Log::warn().dev().tag(Tag::GameLoad).message(format!("QuantumField with old ID {old_id} has no corresponding new entity"));
-            }
-            count += 1;
-        }
-
-        Ok(count.into())
-    }
+    /// Saved layer progress. `None` ⇒ fresh spawn (layer 0, 0.0 progress);
+    /// `Some` ⇒ restore from save.
+    pub current_layer: Option<usize>,
+    pub current_layer_progress: Option<f32>,
 }
 
 impl BuilderQuantumField {
     pub fn new(grid_position: GridCoords, grid_imprint: GridImprint) -> Self {
-        Self { grid_position, grid_imprint, save_data: None }
+        Self { grid_position, grid_imprint, current_layer: None, current_layer_progress: None }
     }
-    pub fn new_for_saving(grid_position: GridCoords, grid_imprint: GridImprint, save_data: QuantumFieldSaveData) -> Self {
-        Self { grid_position, grid_imprint, save_data: Some(save_data) }
+    pub fn with_current_layer(mut self, current_layer: usize) -> Self {
+        self.current_layer = Some(current_layer);
+        self
     }
-
-    fn on_game_save_collect_quantum_fields(
-        mut commands: Commands,
-        quantum_fields: Query<(Entity, &GridCoords, &GridImprint, &QuantumFieldLayers)>,
-    ) {
-        if quantum_fields.is_empty() { return; }
-        Log::debug().dev().tag(Tag::GameSave).message(format!("Saving {} quantum fields", quantum_fields.iter().count()));
-        let batch = quantum_fields.iter().map(|(entity, coords, imprint, quantum_field)| {
-                let save_data = QuantumFieldSaveData {
-                    entity,
-                    current_layer: quantum_field.current_layer,
-                    current_layer_progress: quantum_field.current_layer_progress,
-                };
-                BuilderQuantumField::new_for_saving(*coords, *imprint, save_data)
-        }).collect::<SaveableBatchCommand<_>>();
-        commands.queue(batch);
+    pub fn with_current_layer_progress(mut self, current_layer_progress: f32) -> Self {
+        self.current_layer_progress = Some(current_layer_progress);
+        self
     }
 
     fn on_builder_add_spawn_quantum_field(
@@ -236,10 +170,14 @@ impl BuilderQuantumField {
             ],
         };
 
-        if let Some(save_data) = &builder.save_data {
-            quantum_field.current_layer = save_data.current_layer;
-            quantum_field.current_layer_progress = save_data.current_layer_progress;
+        if let Some(current_layer) = builder.current_layer {
+            quantum_field.current_layer = current_layer;
+        }
+        if let Some(current_layer_progress) = builder.current_layer_progress {
+            quantum_field.current_layer_progress = current_layer_progress;
+        }
 
+        if builder.current_layer.is_some() || builder.current_layer_progress.is_some() {
             if quantum_field.is_solved() {
                 commands.entity(entity).insert(Solved);
             }
@@ -260,6 +198,62 @@ impl BuilderQuantumField {
                 ExpeditionZone::default(),
             ));
     }
+}
+
+fn collect_quantum_fields(
+    quantum_fields: Query<(Entity, &GridCoords, &GridImprint, &QuantumFieldLayers)>,
+    mut save: SaveWriter,
+) {
+    if quantum_fields.is_empty() { return; }
+    let rows: Vec<(i64, i32, i32, GridImprint, usize, f32)> = quantum_fields
+        .iter()
+        .map(|(entity, coords, imprint, quantum_field)| {
+            (
+                entity.index_u32() as i64,
+                coords.x,
+                coords.y,
+                *imprint,
+                quantum_field.current_layer,
+                quantum_field.current_layer_progress,
+            )
+        })
+        .collect();
+    Log::debug().dev().tag(Tag::GameSave).message(format!("Saving {} quantum fields", rows.len()));
+    save.submit(move |tx| {
+        for (id, gx, gy, grid_imprint, current_layer, current_layer_progress) in rows {
+            tx.register_entity(id)?;
+            tx.execute(
+                "INSERT OR REPLACE INTO quantum_fields (id, current_layer, current_layer_progress) VALUES (?1, ?2, ?3)",
+                rusqlite::params![id, current_layer, current_layer_progress],
+            )?;
+            tx.save_grid_coords(id, GridCoords { x: gx, y: gy })?;
+            tx.save_grid_imprint(id, grid_imprint)?;
+        }
+        Ok(())
+    });
+}
+
+fn load_quantum_fields(ctx: &mut LoadContext) -> rusqlite::Result<()> {
+    let mut stmt = ctx.conn.prepare("SELECT id, current_layer, current_layer_progress FROM quantum_fields")?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let old_id: i64 = row.get(0)?;
+        let current_layer: usize = row.get(1)?;
+        let current_layer_progress: f32 = row.get(2)?;
+
+        let grid_position = ctx.conn.get_grid_coords(old_id)?;
+        let grid_imprint = ctx.conn.get_grid_imprint(old_id)?;
+
+        let Some(entity) = ctx.entity(old_id) else {
+            Log::warn().dev().tag(Tag::GameLoad).message(format!("QuantumField with old ID {old_id} has no corresponding new entity"));
+            continue;
+        };
+        let builder = BuilderQuantumField::new(grid_position, grid_imprint)
+            .with_current_layer(current_layer)
+            .with_current_layer_progress(current_layer_progress);
+        ctx.insert(entity, builder);
+    }
+    Ok(())
 }
 
 fn quantum_field_validator(

@@ -1,7 +1,6 @@
 use bevy::prelude::*;
 
 use game_core::prelude::{MapBound, SSS};
-use persistence::{prelude::{GameDbHelpers, Loadable, LoadContext, LoadResult, Saveable}, rusqlite};
 
 /// Drone cost in dark ore - kept as constant for easy balancing
 pub const DRONE_COST_ORE: u32 = 100;
@@ -120,119 +119,58 @@ impl DroneFuel {
 }
 
 ////////////////////////////////////////////
-////       Builder / Persistence        ////
+////              Builder               ////
 ////////////////////////////////////////////
 
-#[derive(Clone, Copy, Debug)]
-pub struct DroneSaveData {
-    pub entity: Entity,
+#[derive(Component, SSS)]
+pub struct BuilderExpeditionDrone {
+    pub home_base: Entity,
     pub state: DroneState,
     pub mission_target: Option<Entity>,
-    pub world_position: Vec2,
+    /// Saved world position. `None` ⇒ compute from home base (fresh spawn);
+    /// `Some` ⇒ override with saved value (restore).
+    pub world_position: Option<Vec2>,
     pub heading: f32,
     pub waypoint: Vec2,
     pub fuel_current: f32,
     pub fuel_max: f32,
 }
-
-#[derive(Component, SSS)]
-pub struct BuilderExpeditionDrone {
-    pub home_base: Entity,
-    pub save_data: Option<DroneSaveData>,
-}
 impl BuilderExpeditionDrone {
     pub fn new(home_base: Entity) -> Self {
-        Self { home_base, save_data: None }
-    }
-    pub fn new_for_saving(drone: &ExpeditionDrone, drone_state: &DroneState, home_base: Entity, fuel: &DroneFuel, transform: &Transform, entity: Entity) -> Self {
         Self {
             home_base,
-            save_data: Some(DroneSaveData {
-                entity,
-                state: *drone_state,
-                mission_target: drone.mission_target,
-                world_position: transform.translation.xy(),
-                heading: drone.heading,
-                waypoint: drone.waypoint,
-                fuel_current: fuel.current,
-                fuel_max: fuel.max,
-            }),
+            state: DroneState::Stationed,
+            mission_target: None,
+            world_position: None,
+            heading: 0.0,
+            waypoint: Vec2::ZERO,
+            fuel_current: DEFAULT_MAX_FUEL,
+            fuel_max: DEFAULT_MAX_FUEL,
         }
     }
-}
-
-impl Saveable for BuilderExpeditionDrone {
-    fn save(self, tx: &rusqlite::Transaction) -> rusqlite::Result<()> {
-        let data = self.save_data.expect("BuilderExpeditionDrone for saving must have save_data");
-        let entity_id = data.entity.index_u32() as i64;
-        let home_base_id = self.home_base.index_u32() as i64;
-        let mission_target_id = data.mission_target.map(|e| e.index_u32() as i64);
-        let state_u8: u8 = match data.state {
-            DroneState::Stationed => 0,
-            DroneState::Refueling => 1,
-            DroneState::Deploying => 2,
-            DroneState::Scanning => 3,
-            DroneState::Returning => 4,
-        };
-
-        tx.register_entity(entity_id)?;
-        tx.save_world_position(entity_id, data.world_position)?;
-        tx.execute(
-            "INSERT OR REPLACE INTO expedition_drones (id, home_base_id, state, mission_target_id, heading, waypoint_x, waypoint_y, fuel_current, fuel_max) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            rusqlite::params![entity_id, home_base_id, state_u8, mission_target_id, data.heading, data.waypoint.x, data.waypoint.y, data.fuel_current, data.fuel_max],
-        )?;
-        Ok(())
+    pub fn with_state(mut self, state: DroneState) -> Self {
+        self.state = state;
+        self
     }
-}
-
-impl Loadable for BuilderExpeditionDrone {
-    fn load(ctx: &mut LoadContext) -> rusqlite::Result<LoadResult> {
-        let mut stmt = ctx.conn.prepare("SELECT id, home_base_id, state, mission_target_id, heading, waypoint_x, waypoint_y, fuel_current, fuel_max FROM expedition_drones LIMIT ?1 OFFSET ?2")?;
-        let mut rows = stmt.query(ctx.pagination.as_params())?;
-
-        let mut count = 0;
-        while let Some(row) = rows.next()? {
-            let old_id: i64 = row.get(0)?;
-            let home_base_old_id: i64 = row.get(1)?;
-            let state_u8: u8 = row.get(2)?;
-            let mission_target_old_id: Option<i64> = row.get(3)?;
-            let heading: f32 = row.get(4)?;
-            let waypoint_x: f32 = row.get(5)?;
-            let waypoint_y: f32 = row.get(6)?;
-            let fuel_current: f32 = row.get(7)?;
-            let fuel_max: f32 = row.get(8)?;
-            let world_position = ctx.conn.get_world_position(old_id)?;
-
-            let Some(new_entity) = ctx.get_new_entity_for_old(old_id) else { continue; };
-            let Some(new_home_base) = ctx.get_new_entity_for_old(home_base_old_id) else { continue; };
-            let new_mission_target = mission_target_old_id.and_then(|id| ctx.get_new_entity_for_old(id));
-
-            let state = match state_u8 {
-                0 => DroneState::Stationed,
-                1 => DroneState::Refueling,
-                2 => DroneState::Deploying,
-                3 => DroneState::Scanning,
-                4 => DroneState::Returning,
-                _ => DroneState::Stationed,
-            };
-
-            let save_data = DroneSaveData {
-                entity: new_entity,
-                state,
-                mission_target: new_mission_target,
-                world_position,
-                heading,
-                waypoint: Vec2::new(waypoint_x, waypoint_y),
-                fuel_current,
-                fuel_max,
-            };
-            let builder = BuilderExpeditionDrone {
-                home_base: new_home_base,
-                save_data: Some(save_data),
-            };
-            ctx.commands.entity(new_entity).insert(builder);
-            count += 1;
-        }
-        Ok(count.into())
+    pub fn with_mission_target(mut self, mission_target: Entity) -> Self {
+        self.mission_target = Some(mission_target);
+        self
+    }
+    pub fn with_world_position(mut self, world_position: Vec2) -> Self {
+        self.world_position = Some(world_position);
+        self
+    }
+    pub fn with_heading(mut self, heading: f32) -> Self {
+        self.heading = heading;
+        self
+    }
+    pub fn with_waypoint(mut self, waypoint: Vec2) -> Self {
+        self.waypoint = waypoint;
+        self
+    }
+    pub fn with_fuel(mut self, current: f32, max: f32) -> Self {
+        self.fuel_current = current;
+        self.fuel_max = max;
+        self
     }
 }

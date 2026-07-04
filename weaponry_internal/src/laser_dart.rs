@@ -3,12 +3,13 @@ use bevy::prelude::*;
 use alteration::modifiers::prelude::AttackDamage;
 use game_core::prelude::{DamageMessage, GridCoords, Property, Z_PROJECTILE};
 use grids::prelude::WispsGrid;
-use persistence::prelude::{AppGameLoadSaveExtension, SaveableBatchCommand};
-use states::prelude::{GameState, MapLoadingStage};
-use weaponry::{
-    laser_dart::LaserDartSaveData,
-    prelude::*,
+use logging::prelude::*;
+use persistence::{
+    prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveWriter},
+    rusqlite,
 };
+use states::prelude::{GameState, MapLoadingStage};
+use weaponry::prelude::*;
 use wisps::prelude::Wisp;
 
 pub struct LaserDartPlugin;
@@ -22,27 +23,77 @@ impl Plugin for LaserDartPlugin {
                 ).run_if(in_state(GameState::Running)),
             ))
             .add_observer(on_builder_add_spawn_laser_dart)
-            .register_db_loader::<BuilderLaserDart>(MapLoadingStage::SpawnMapElements)
-            .register_db_saver(on_game_save_collect_laser_darts);
+            .add_systems(CollectSave, collect_laser_darts)
+            .register_loader(MapLoadingStage::SpawnMapElements, "laser_darts", load_laser_darts)
+            ;
     }
 }
 
-fn on_game_save_collect_laser_darts(
-    mut commands: Commands,
+fn collect_laser_darts(
     laser_darts: Query<(Entity, &Transform, &LaserDartTarget, &AttackDamage), With<LaserDart>>,
+    mut save: SaveWriter,
 ) {
     if laser_darts.is_empty() { return; }
-    let batch = laser_darts.iter().map(|(entity, transform, target, damage)| {
-         let save_data = LaserDartSaveData { entity };
-         BuilderLaserDart::new_for_saving(
-             transform.translation.xy(),
-             target.target_wisp,
-             target.target_vector,
-             damage.clone(),
-             save_data
-         )
-    }).collect::<SaveableBatchCommand<_>>();
-    commands.queue(batch);
+    let rows: Vec<(i64, f32, f32, Option<i64>, f32, f32, f32)> = laser_darts
+        .iter()
+        .map(|(entity, transform, target, damage)| {
+            (
+                entity.index_u32() as i64,
+                transform.translation.x,
+                transform.translation.y,
+                target.target_wisp.map(|e| e.index_u32() as i64),
+                target.target_vector.x,
+                target.target_vector.y,
+                damage.get(),
+            )
+        })
+        .collect();
+    save.submit(move |tx| {
+        for (id, pos_x, pos_y, target_wisp_id, vec_x, vec_y, damage) in rows {
+            tx.register_entity(id)?;
+            tx.save_world_position(id, Vec2::new(pos_x, pos_y))?;
+            tx.execute(
+                "INSERT OR REPLACE INTO laser_darts (id, target_wisp_id, vector_x, vector_y, damage) VALUES (?1, ?2, ?3, ?4, ?5)",
+                rusqlite::params![id, target_wisp_id, vec_x, vec_y, damage],
+            )?;
+        }
+        Ok(())
+    });
+}
+
+fn load_laser_darts(ctx: &mut LoadContext) -> rusqlite::Result<()> {
+    let mut stmt = ctx.conn.prepare(
+        "SELECT id, target_wisp_id, vector_x, vector_y, damage FROM laser_darts",
+    )?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let old_id: i64 = row.get(0)?;
+        let target_wisp_old_id: Option<i64> = row.get(1)?;
+        let vector_x: f32 = row.get(2)?;
+        let vector_y: f32 = row.get(3)?;
+        let damage_val: f32 = row.get(4)?;
+        let world_position = ctx.conn.get_world_position(old_id)?;
+
+        let Some(entity) = ctx.entity(old_id) else {
+            Log::warn().dev().tag(Tag::GameLoad).message(format!(
+                "laser_darts: unmapped id for row {old_id}"
+            ));
+            continue;
+        };
+        let new_target_wisp = target_wisp_old_id.and_then(|id| ctx.entity(id));
+
+        let builder = BuilderLaserDart::new(
+            world_position,
+            // new() requires an Entity; use PLACEHOLDER, then override via
+            // with_target_wisp which accepts Option (including None).
+            Entity::PLACEHOLDER,
+            Vec2::new(vector_x, vector_y),
+            AttackDamage::new(damage_val),
+        )
+        .with_target_wisp(new_target_wisp);
+        ctx.insert(entity, builder);
+    }
+    Ok(())
 }
 
 fn on_builder_add_spawn_laser_dart(

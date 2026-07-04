@@ -4,10 +4,6 @@ use bevy::prelude::*;
 use strum::IntoEnumIterator;
 
 use game_core::prelude::SSS;
-use persistence::{
-    prelude::{GameDbHelpers, Saveable},
-    rusqlite,
-};
 
 use crate::common::{Cost, EssenceType, ResourceType};
 
@@ -103,13 +99,4 @@ impl Default for Stock {
     }
 }
 
-impl Saveable for Stock {
-    fn save(self, tx: &rusqlite::Transaction) -> rusqlite::Result<()> {
-        tx.save_stock_resource("DarkOre", self.get(ResourceType::DarkOre))?;
-        for essence_type in EssenceType::iter() {
-            let resource_key = essence_type.as_ref();
-            tx.save_stock_resource(&resource_key, self.get(ResourceType::Essence(essence_type)))?;
-        }
-        Ok(())
-    }
-}
+

@@ -40,7 +40,7 @@ use hud::prelude::*;
 use logging::prelude::*;
 use map_objects::prelude::*;
 use persistence::{
-    prelude::*,
+    prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveWriter},
     rusqlite,
 };
 use resources::prelude::*;
@@ -95,8 +95,8 @@ impl Plugin for ExplorationCenterPlugin {
             .add_observer(TargetSelectionPanel::on_map_object_unfocused_close_panel)
             .add_observer(TargetListItem::on_add_construct_target_list_item)
             .add_observer(TargetListItemCameraPreview::on_add_construct_target_camera_preview)
-            .register_db_loader::<BuilderExplorationCenter>(MapLoadingStage::SpawnMapElements)
-            .register_db_saver(BuilderExplorationCenter::on_game_save_collect_exploration_center)
+            .add_systems(CollectSave, collect_exploration_centers)
+            .register_loader(MapLoadingStage::SpawnMapElements, "exploration_centers", load_exploration_centers)
             .register_building(BuildingType::ExplorationCenter, almanach_info)
             ;
     }
@@ -104,55 +104,14 @@ impl Plugin for ExplorationCenterPlugin {
 
 
 
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct ExplorationCenterSaveData {
-    pub entity: Entity,
-    pub integrity_points: f32,
-    pub disabled_by_player: bool,
-}
-
 #[derive(Component, SSS)]
 pub(crate) struct BuilderExplorationCenter {
     pub grid_position: GridCoords,
-    pub save_data: Option<ExplorationCenterSaveData>,
-}
-impl Saveable for BuilderExplorationCenter {
-    fn save(self, tx: &rusqlite::Transaction) -> rusqlite::Result<()> {
-        let save_data = self.save_data.expect("BuilderExplorationCenter for saving purpose must have save_data");
-        let entity_index = save_data.entity.index_u32() as i64;
-
-        tx.save_marker("exploration_centers", entity_index)?;
-        tx.save_grid_coords(entity_index, self.grid_position)?;
-        tx.save_integrity_points(entity_index, save_data.integrity_points)?;
-        if save_data.disabled_by_player {
-            tx.save_disabled_by_player(entity_index)?;
-        }
-        Ok(())
-    }
-}
-impl Loadable for BuilderExplorationCenter {
-    fn load(ctx: &mut LoadContext) -> rusqlite::Result<LoadResult> {
-        let mut stmt = ctx.conn.prepare("SELECT id FROM exploration_centers LIMIT ?1 OFFSET ?2")?;
-        let mut rows = stmt.query(ctx.pagination.as_params())?;
-        
-        let mut count = 0;
-        while let Some(row) = rows.next()? {
-            let old_id: i64 = row.get(0)?;
-            let grid_position = ctx.conn.get_grid_coords(old_id)?;
-            let integrity_points = ctx.conn.get_integrity_points(old_id)?;
-            let disabled_by_player = ctx.conn.get_disabled_by_player(old_id)?;
-            
-            if let Some(new_entity) = ctx.get_new_entity_for_old(old_id) {
-                let save_data = ExplorationCenterSaveData { entity: new_entity, integrity_points, disabled_by_player };
-                ctx.commands.entity(new_entity).insert(BuilderExplorationCenter::new_for_saving(grid_position, save_data));
-            } else {
-                Log::warn().dev().tag(Tag::GameLoad).message(format!("ExplorationCenter with old ID {old_id} has no corresponding new entity"));
-            }
-            count += 1;
-        }
-
-        Ok(count.into())
-    }
+    /// Saved integrity points. `None` ⇒ defer to baseline (fresh spawn);
+    /// `Some` ⇒ override with saved value (restore).
+    pub integrity_points: Option<f32>,
+    /// Whether the player disabled this building. False on fresh spawn.
+    pub disabled_by_player: bool,
 }
 impl BuilderExplorationCenter {
     pub fn almanach_info(asset_server: &AssetServer) -> BuildingInfo {
@@ -174,27 +133,15 @@ impl BuilderExplorationCenter {
     }
 
     pub fn new(grid_position: GridCoords) -> Self {
-        Self { grid_position, save_data: None }
+        Self { grid_position, integrity_points: None, disabled_by_player: false }
     }
-    pub fn new_for_saving(grid_position: GridCoords, save_data: ExplorationCenterSaveData) -> Self {
-        Self { grid_position, save_data: Some(save_data) }
+    pub fn with_integrity_points(mut self, integrity_points: f32) -> Self {
+        self.integrity_points = Some(integrity_points);
+        self
     }
-
-    fn on_game_save_collect_exploration_center(
-        mut commands: Commands,
-        exploration_centers: Query<(Entity, &GridCoords, &IntegrityPoints, Has<DisabledByPlayer>), With<ExplorationCenter>>,
-    ) {
-        if exploration_centers.is_empty() { return; }
-        let batch = exploration_centers.iter().map(|(entity, coords, integrity_points, disabled_by_player)| {
-            let save_data = ExplorationCenterSaveData {
-                entity,
-                integrity_points: integrity_points.get_current(),
-                disabled_by_player,
-            };
-            BuilderExplorationCenter::new_for_saving(*coords, save_data)
-        }).collect::<SaveableBatchCommand<_>>();
-        Log::debug().dev().tag(Tag::GameSave).message(format!("Saving {} exploration centers", batch.len()));
-        commands.queue(batch);
+    pub fn with_disabled_by_player(mut self) -> Self {
+        self.disabled_by_player = true;
+        self
     }
 
     pub fn on_builder_add_spawn_exploration_center(
@@ -210,12 +157,11 @@ impl BuilderExplorationCenter {
         let grid_imprint = building_info.grid_imprint;
         
         let mut entity_commands = commands.entity(entity);
-        if let Some(save_data) = &builder.save_data {
-            // Save data
-            entity_commands.insert(IntegrityPoints::new(save_data.integrity_points));
-            if save_data.disabled_by_player {
-                entity_commands.insert(DisabledByPlayer);
-            }
+        if let Some(ip) = builder.integrity_points {
+            entity_commands.insert(IntegrityPoints::new(ip));
+        }
+        if builder.disabled_by_player {
+            entity_commands.insert(DisabledByPlayer);
         }
 
         entity_commands
@@ -242,6 +188,60 @@ impl BuilderExplorationCenter {
                 ],
             ));
     }
+}
+
+fn collect_exploration_centers(
+    exploration_centers: Query<(Entity, &GridCoords, &IntegrityPoints, Has<DisabledByPlayer>), With<ExplorationCenter>>,
+    mut save: SaveWriter,
+) {
+    if exploration_centers.is_empty() { return; }
+    let rows: Vec<(i64, i32, i32, f32, bool)> = exploration_centers
+        .iter()
+        .map(|(entity, coords, integrity_points, disabled_by_player)| {
+            (
+                entity.index_u32() as i64,
+                coords.x,
+                coords.y,
+                integrity_points.get_current(),
+                disabled_by_player,
+            )
+        })
+        .collect();
+    Log::debug().dev().tag(Tag::GameSave).message(format!("Saving {} exploration centers", rows.len()));
+    save.submit(move |tx| {
+        for (id, gx, gy, integrity_points, disabled_by_player) in rows {
+            tx.save_marker("exploration_centers", id)?;
+            tx.save_grid_coords(id, GridCoords { x: gx, y: gy })?;
+            tx.save_integrity_points(id, integrity_points)?;
+            if disabled_by_player {
+                tx.save_disabled_by_player(id)?;
+            }
+        }
+        Ok(())
+    });
+}
+
+fn load_exploration_centers(ctx: &mut LoadContext) -> rusqlite::Result<()> {
+    let mut stmt = ctx.conn.prepare("SELECT id FROM exploration_centers")?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let old_id: i64 = row.get(0)?;
+        let grid_position = ctx.conn.get_grid_coords(old_id)?;
+        let integrity_points = ctx.conn.get_integrity_points(old_id)?;
+        let disabled_by_player = ctx.conn.get_disabled_by_player(old_id)?;
+
+        let Some(entity) = ctx.entity(old_id) else {
+            Log::warn().dev().tag(Tag::GameLoad).message(format!("ExplorationCenter with old ID {old_id} has no corresponding new entity"));
+            continue;
+        };
+        let mut builder = BuilderExplorationCenter::new(grid_position)
+            .with_integrity_points(integrity_points);
+        if disabled_by_player {
+            builder = builder.with_disabled_by_player();
+        }
+        ctx.insert(entity, builder);
+    }
+    Ok(())
 }
 
 ////////////////////////////////////////////

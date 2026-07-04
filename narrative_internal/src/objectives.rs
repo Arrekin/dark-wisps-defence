@@ -1,11 +1,15 @@
+use std::str::FromStr;
+
 use bevy::prelude::*;
 
 use game_core::prelude::{DynamicGameEvent, MapBound};
 use logging::prelude::*;
 use map_objects::prelude::{QuantumField, Solved};
-use narrative::objectives::ObjectiveSaveData;
 use narrative::prelude::*;
-use persistence::prelude::{AppGameLoadSaveExtension, SaveableBatchCommand};
+use persistence::{
+    prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveWriter},
+    rusqlite,
+};
 use session::StatsWispsKilled;
 use states::prelude::{GameState, MapLoadingStage};
 
@@ -13,8 +17,8 @@ pub struct ObjectivesPlugin;
 impl Plugin for ObjectivesPlugin {
     fn build(&self, app: &mut App) {
         app
-            .register_db_loader::<BuilderObjective>(MapLoadingStage::LoadResources)
-            .register_db_saver(on_game_save_collect_objectives)
+            .add_systems(CollectSave, collect_objectives)
+            .register_loader(MapLoadingStage::LoadResources, "objectives", load_objectives)
             .add_systems(Update, (
                 (
                     update_clear_all_quantum_fields,
@@ -30,28 +34,100 @@ impl Plugin for ObjectivesPlugin {
     }
 }
 
-fn on_game_save_collect_objectives(
-    mut commands: Commands,
+fn collect_objectives(
     objectives: Query<(
         Entity,
         &ObjectiveDetails,
         &ObjectiveState,
         Option<&ObjectiveKillWisps>,
     )>,
+    mut save: SaveWriter,
 ) {
     if objectives.is_empty() { return; }
-    let batch = objectives.iter().map(|(entity, details, state, kill_wisps)| {
-        let kill_wisps_data = kill_wisps.map(|kw| (kw.target_amount, kw.started_amount));
+    let rows: Vec<(i64, String, &'static str, String, String, Option<(i64, i64)>)> = objectives
+        .iter()
+        .map(|(entity, details, state, kill_wisps)| {
+            let objective_type_str = match details.objective_type {
+                ObjectiveType::ClearAllQuantumFields => "clear_quantum_fields",
+                ObjectiveType::KillWisps(_) => "kill_wisps",
+            };
+            let kill_wisps_data = kill_wisps.map(|kw| (kw.target_amount as i64, kw.started_amount as i64));
+            (
+                entity.index_u32() as i64,
+                details.id_name.clone(),
+                objective_type_str,
+                details.activation_event.clone(),
+                state.as_ref().to_string(),
+                kill_wisps_data,
+            )
+        })
+        .collect();
+    Log::debug().dev().tag(Tag::GameSave).message(format!("Saving {} objectives", rows.len()));
+    save.submit(move |tx| {
+        for (id, id_name, objective_type_str, activation_event, state_str, kill_wisps_data) in rows {
+            tx.register_entity(id)?;
+            tx.execute(
+                "INSERT INTO objectives (id, id_name, objective_type, activation_event, state) VALUES (?1, ?2, ?3, ?4, ?5)",
+                (id, &id_name, objective_type_str, &activation_event, &state_str),
+            )?;
+            if let Some((target_amount, started_amount)) = kill_wisps_data {
+                tx.execute(
+                    "INSERT INTO objective_kill_wisps (id, target_amount, started_amount) VALUES (?1, ?2, ?3)",
+                    (id, target_amount, started_amount),
+                )?;
+            }
+        }
+        Ok(())
+    });
+}
 
-        let save_data = ObjectiveSaveData {
-            entity,
-            state: state.clone(),
-            kill_wisps_data,
+fn load_objectives(ctx: &mut LoadContext) -> rusqlite::Result<()> {
+    let mut stmt = ctx.conn.prepare("SELECT id, id_name, objective_type, activation_event, state FROM objectives")?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let old_id: i64 = row.get(0)?;
+        let id_name: String = row.get(1)?;
+        let objective_type_str: String = row.get(2)?;
+        let activation_event: String = row.get(3)?;
+        let state_str: String = row.get(4)?;
+
+        let state = ObjectiveState::from_str(state_str.as_str()).unwrap();
+
+        // Load type-specific data
+        let (objective_type, kill_wisps_data) = match objective_type_str.as_str() {
+            "clear_quantum_fields" => {
+                (ObjectiveType::ClearAllQuantumFields, None)
+            }
+            "kill_wisps" => {
+                let mut kw_stmt = ctx.conn.prepare("SELECT target_amount, started_amount FROM objective_kill_wisps WHERE id = ?1")?;
+                let mut kw_rows = kw_stmt.query([old_id])?;
+                if let Some(kw_row) = kw_rows.next()? {
+                    let target_amount: i64 = kw_row.get(0)?;
+                    let started_amount: i64 = kw_row.get(1)?;
+                    (ObjectiveType::KillWisps(target_amount as usize), Some((target_amount as usize, started_amount as usize)))
+                } else {
+                    (ObjectiveType::KillWisps(0), None)
+                }
+            }
+            _ => {
+                Log::error().dev().tag(Tag::GameLoad).message(format!("Unknown objective type '{objective_type_str}'"));
+                continue;
+            }
         };
-        BuilderObjective::new_for_saving(details.clone(), save_data)
-    }).collect::<SaveableBatchCommand<_>>();
-    Log::debug().dev().tag(Tag::GameSave).message(format!("Saving {} objectives", batch.len()));
-    commands.queue(batch);
+
+        let Some(entity) = ctx.entity(old_id) else {
+            Log::warn().dev().tag(Tag::GameLoad).message(format!("Objective with old ID {old_id} has no corresponding new entity"));
+            continue;
+        };
+        let objective_details = ObjectiveDetails::new(id_name, objective_type, activation_event);
+        let mut builder = BuilderObjective::new(objective_details)
+            .with_state(state);
+        if let Some((target_amount, started_amount)) = kill_wisps_data {
+            builder = builder.with_kill_wisps_data(target_amount, started_amount);
+        }
+        ctx.insert(entity, builder);
+    }
+    Ok(())
 }
 
 fn on_builder_add_spawn_objective(
@@ -102,9 +178,9 @@ fn on_builder_add_spawn_objective(
         ))
         .add_children(&[checkmark, text]);
 
-    if let Some(save_data) = &builder.save_data {
+    if let Some(state) = &builder.state {
         // Apply saved state
-        entity_commands.insert(save_data.state.clone());
+        entity_commands.insert(state.clone());
 
         // Restore objective-specific components with saved data
         match builder.objective_details.objective_type {
@@ -112,7 +188,7 @@ fn on_builder_add_spawn_objective(
                 entity_commands.insert(ObjectiveClearAllQuantumFields::default());
             }
             ObjectiveType::KillWisps(_) => {
-                if let Some((target_amount, started_amount)) = save_data.kill_wisps_data {
+                if let Some((target_amount, started_amount)) = builder.kill_wisps_data {
                     entity_commands.insert(ObjectiveKillWisps { target_amount, started_amount });
                 }
             }

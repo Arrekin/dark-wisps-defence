@@ -1,16 +1,10 @@
-use bevy::{
-    ecs::system::ScheduleSystem,
-    prelude::*,
-};
+use bevy::prelude::*;
 
 use game_core::prelude::{GridCoords, GridImprint};
 use logging::prelude::*;
 use states::MapLoadingStage;
 
-use crate::{
-    load::{GameLoadRegistry, Loadable},
-    save::SaveGameSignal,
-};
+use crate::load::GameLoadRegistry;
 
 /// Run `f` against a freshly opened SQLite connection to `path`.
 ///
@@ -210,22 +204,35 @@ impl GameDbHelpers for rusqlite::Connection {
 }
 
 pub trait AppGameLoadSaveExtension {
-    fn register_db_loader<T: Loadable>(&mut self, stage: MapLoadingStage) -> &mut Self;
-    fn register_db_saver<M>(&mut self, save_system: impl IntoScheduleConfigs<ScheduleSystem, M>) -> &mut Self;
+    fn register_loader(
+        &mut self,
+        stage: MapLoadingStage,
+        table: &'static str,
+        loader: crate::load::LoaderFn,
+    ) -> &mut Self;
 }
 impl AppGameLoadSaveExtension for App {
-    fn register_db_loader<T: Loadable>(&mut self, stage: MapLoadingStage) -> &mut Self {
+    fn register_loader(
+        &mut self,
+        stage: MapLoadingStage,
+        table: &'static str,
+        loader: crate::load::LoaderFn,
+    ) -> &mut Self {
         if !self.world().contains_resource::<GameLoadRegistry>() {
             self.init_resource::<GameLoadRegistry>();
         }
-        let mut registry = self.world_mut().resource_mut::<GameLoadRegistry>();
-        registry.register::<T>(stage);
+        let mut registry = self
+            .world_mut()
+            .resource_mut::<GameLoadRegistry>();
+        registry
+            .loaders
+            .entry(stage)
+            .or_default()
+            .push(crate::load::LoaderDescriptor {
+                table,
+                run: loader,
+            });
 
-        self
-    }
-    fn register_db_saver<M>(&mut self, save_system: impl IntoScheduleConfigs<ScheduleSystem, M>) -> &mut Self {
-        self.add_systems(PostUpdate, save_system.run_if(on_message::<SaveGameSignal>));
-        
         self
     }
 }

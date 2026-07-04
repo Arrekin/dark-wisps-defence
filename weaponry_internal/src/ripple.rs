@@ -18,13 +18,14 @@ use alteration::{
 };
 use game_core::prelude::{CELL_SIZE, GridCoords, Property, Z_ABOVE_ALL};
 use grids::prelude::WispsGrid;
-use persistence::prelude::{AppGameLoadSaveExtension, SaveableBatchCommand};
+use logging::prelude::*;
+use persistence::{
+    prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveWriter},
+    rusqlite,
+};
 use session::GameClock;
 use states::prelude::{GameState, MapLoadingStage};
-use weaponry::{
-    prelude::*,
-    ripple::RippleSaveData,
-};
+use weaponry::prelude::*;
 use wisps::prelude::Wisp;
 
 // Brittle debuff parameters applied by this ripple source
@@ -42,29 +43,62 @@ impl Plugin for RipplePlugin {
                 ).chain().run_if(in_state(GameState::Running)), // Chained as otherwise ripples may try to apply effects as they are removed, causing relations issues.
             ))
             .add_observer(on_builder_add_spawn_ripple)
-            .register_db_loader::<BuilderRipple>(MapLoadingStage::SpawnMapElements)
-            .register_db_saver(on_game_save_collect_ripples)
+            .add_systems(CollectSave, collect_ripples)
+            .register_loader(MapLoadingStage::SpawnMapElements, "ripples", load_ripples)
             ;
     }
 }
 
-fn on_game_save_collect_ripples(
-    mut commands: Commands,
+fn collect_ripples(
     ripples: Query<(Entity, &Transform, &Ripple)>,
+    mut save: SaveWriter,
 ) {
     if ripples.is_empty() { return; }
-    let batch = ripples.iter().map(|(entity, transform, ripple)| {
-         let save_data = RippleSaveData {
-             entity,
-             current_radius: ripple.current_radius,
-         };
-         BuilderRipple::new_for_saving(
-             transform.translation.xy(),
-             ripple.max_radius,
-             save_data
-         )
-    }).collect::<SaveableBatchCommand<_>>();
-    commands.queue(batch);
+    let rows: Vec<(i64, f32, f32, f32, f32)> = ripples
+        .iter()
+        .map(|(entity, transform, ripple)| {
+            (
+                entity.index_u32() as i64,
+                transform.translation.x,
+                transform.translation.y,
+                ripple.max_radius,
+                ripple.current_radius,
+            )
+        })
+        .collect();
+    save.submit(move |tx| {
+        for (id, pos_x, pos_y, max_radius, current_radius) in rows {
+            tx.register_entity(id)?;
+            tx.save_world_position(id, Vec2::new(pos_x, pos_y))?;
+            tx.execute(
+                "INSERT OR REPLACE INTO ripples (id, max_radius, current_radius) VALUES (?1, ?2, ?3)",
+                rusqlite::params![id, max_radius, current_radius],
+            )?;
+        }
+        Ok(())
+    });
+}
+
+fn load_ripples(ctx: &mut LoadContext) -> rusqlite::Result<()> {
+    let mut stmt = ctx.conn.prepare("SELECT id, max_radius, current_radius FROM ripples")?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let old_id: i64 = row.get(0)?;
+        let max_radius: f32 = row.get(1)?;
+        let current_radius: f32 = row.get(2)?;
+        let world_position = ctx.conn.get_world_position(old_id)?;
+
+        let Some(entity) = ctx.entity(old_id) else {
+            Log::warn().dev().tag(Tag::GameLoad).message(format!(
+                "ripples: unmapped id for row {old_id}"
+            ));
+            continue;
+        };
+        let builder = BuilderRipple::new(world_position, max_radius)
+            .with_current_radius(current_radius);
+        ctx.insert(entity, builder);
+    }
+    Ok(())
 }
 
 fn on_builder_add_spawn_ripple(
@@ -75,13 +109,11 @@ fn on_builder_add_spawn_ripple(
     let entity = trigger.entity;
     let Ok(builder) = builders.get(entity) else { return; };
 
-    let current_radius = builder.save_data.as_ref().map_or(0., |d| d.current_radius);
-
     commands.entity(entity)
         .remove::<BuilderRipple>()
         .insert((
             Transform::from_translation(builder.world_position.extend(Z_ABOVE_ALL)),
-            Ripple { max_radius: builder.radius, current_radius },
+            Ripple { max_radius: builder.radius, current_radius: builder.current_radius },
             MovementSpeed::new(50.0),
         ));
 }

@@ -12,4 +12,5 @@ grids = { workspace = true }
 buildings = { workspace = true }
 map_objects = { workspace = true }
 states = { workspace = true }
+logging = { workspace = true }
 persistence = { workspace = true }

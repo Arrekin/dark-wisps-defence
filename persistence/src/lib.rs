@@ -11,8 +11,8 @@ pub use crate::load::{GameMapList, LoadGameSignal, LoadMapConfig};
 
 pub mod prelude {
     pub use crate::common::{AppGameLoadSaveExtension, GameDbHelpers};
-    pub use crate::load::{Loadable, LoadContext, LoadResult};
-    pub use crate::save::{Saveable, SaveableBatchCommand};
+    pub use crate::load::{EntityIdMap, LoadContext, LoadProgress, LoaderFn};
+    pub use crate::save::{ActiveSaveFile, CollectSave, SaveWriter};
 }
 
 pub struct PersistencePlugin;
