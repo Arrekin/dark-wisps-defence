@@ -4,13 +4,13 @@ Architectural hints and patterns to maintain consistency across the codebase.
 
 ## Persistence
 
-Entities are saved/loaded via `Builder*` components that implement `Saveable` and `Loadable` traits. The builder spawns the full entity on insertion via an `on_builder_add_spawn_X` observer.
+Entities are saved via collector systems in the `CollectSave` schedule and loaded via plain `LoaderFn`s registered per `MapLoadingStage`. All persistence logic lives in `_internal` crates; api crates carry none of it. Builders serve as cross-domain spawn contracts for both fresh spawns and loads.
 
 See [persistence.md](persistence.md) for full details.
 
 ## Builder Pattern for Persistable Entities
 
-Every persistable entity type has a `Builder*` component (e.g., `BuilderTowerCannon`, `BuilderExpeditionDrone`).
+Every persistable entity type has a `Builder*` component (e.g., `BuilderTowerCannon`, `BuilderExpeditionDrone`). The builder carries honest fields for both fresh-spawn and restore paths — no `SaveData` struct, no `save_data: Option<...>`.
 
 ### Structure
 
@@ -18,30 +18,25 @@ Every persistable entity type has a `Builder*` component (e.g., `BuilderTowerCan
 #[derive(Component, SSS)]
 pub struct BuilderFoo {
     grid_position: GridCoords,           // or other spawn-time data
-    save_data: Option<FooSaveData>,      // None for fresh spawn, Some for load
-}
-
-pub struct FooSaveData {
-    entity: Entity,
-    integrity_points: f32,
-    // ... other runtime state to persist
+    integrity_points: Option<f32>,       // None => baseline (fresh spawn), Some => restore
+    // ... other fields with fresh-spawn defaults
 }
 ```
 
 ### Key Methods
 
-- `new(...)` - For spawning fresh entities (no save data)
-- `new_for_saving(...)` - For loading (includes save data)
-- `on_builder_add_spawn_foo(...)` - Observer that builds the real entity, applies save data, then removes the builder
-- `on_game_save_collect_foos(...)` - System that collects live entities and queues builders for saving
+- `new(...)` - For spawning fresh entities (defaults for all restore-relevant fields)
+- `with_*(...)` - Setters for restore-relevant fields, chained after `new()` by loaders
+- `on_builder_add_spawn_foo(...)` - Observer that builds the real entity, applies builder fields, then removes the builder
+- `collect_foos(...)` - Collector system (registered in `CollectSave`) that queries live entities and submits save jobs
 
 ### Registration in Plugin
 
 ```rust
 app
-    .add_observer(BuilderFoo::on_builder_add_spawn_foo)
-    .register_db_loader::<BuilderFoo>(MapLoadingStage::SpawnMapElements)
-    .register_db_saver(BuilderFoo::on_game_save_collect_foos);
+    .add_observer(on_builder_add_spawn_foo)
+    .add_systems(CollectSave, collect_foos)
+    .register_loader(MapLoadingStage::SpawnMapElements, "foos", load_foos);
 ```
 
 ### Why This Pattern
@@ -122,7 +117,7 @@ Focus on **intent** and **design decisions**, not code descriptions.
 One plugin per logical feature/entity type. Plugin `build()` should clearly show:
 - Systems (with run conditions)
 - Observers
-- DB loader/saver registration
+- Collector systems (`CollectSave` schedule) and loader registration
 
 ```rust
 impl Plugin for FooPlugin {
@@ -132,9 +127,9 @@ impl Plugin for FooPlugin {
                 system_a.run_if(in_state(GameState::Running)),
                 system_b,
             ))
-            .add_observer(BuilderFoo::on_builder_add_spawn_foo)
-            .register_db_loader::<BuilderFoo>(MapLoadingStage::SpawnMapElements)
-            .register_db_saver(BuilderFoo::on_game_save_collect_foos);
+            .add_observer(on_builder_add_spawn_foo)
+            .add_systems(CollectSave, collect_foos)
+            .register_loader(MapLoadingStage::SpawnMapElements, "foos", load_foos);
     }
 }
 ```
@@ -212,7 +207,6 @@ Observer names describe both the trigger and what the function does. The trigger
 
 - `on_builder_add_spawn_cannonball` — trigger: builder added, action: spawn cannonball
 - `on_click_toggle_research` — trigger: click, action: toggle research
-- `on_game_save_collect_cannonballs` — trigger: game save, action: collect cannonballs
 - `on_insert_obsolete_request_rebuild` — trigger: Obsolete inserted, action: request rebuild
 
 **Tautology rule:** when trigger and action mean the same thing, use `do_so`:
@@ -226,6 +220,8 @@ Observer names describe both the trigger and what the function does. The trigger
 
 Systems have no single trigger (they run every frame or on schedule), so they use plain action names:
 - `update_emissions_grid`, `show_main_menu`, `apply_supplier_changes`
+- Save collectors: `collect_cannonballs`, `collect_walls` (registered in `CollectSave`)
+- Loaders: `load_cannonballs`, `load_walls` (registered via `register_loader`)
 
 ### Import Ordering
 

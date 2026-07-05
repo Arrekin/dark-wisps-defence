@@ -133,8 +133,7 @@ pub struct BuilderSummoning {
 }
 
 /// Snapshot of `SummoningRuntime` + active marker, used to restore a summoning
-/// mid-wave. Promoted from the old `SummoningSaveData` (minus the `entity` field,
-/// which was persistence plumbing).
+/// mid-wave.
 #[derive(Clone, Copy, Debug)]
 pub struct SummoningRuntimeState {
     pub produced: i32,

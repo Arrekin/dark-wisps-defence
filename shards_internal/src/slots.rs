@@ -26,7 +26,7 @@ impl Plugin for ShardSlotsPlugin {
 /// as a separate row in `entity_shards`. This breaks the standard builder pattern (one
 /// component → one row → one entity spawn) because:
 /// - Save: `collect_shard_slots` produces N rows (one per occupied slot).
-/// - Load: the v2 loader can only insert components via `LoadContext`, not mutate existing
+/// - Load: the loader can only insert components via `LoadContext`, not mutate existing
 ///   ones. So on load, `BuilderShardSlot` is inserted as a throwaway component on the existing
 ///   entity; `populate_shard_slots_on_add` copies the slot data into `ShardSlots` via `insert_at` and removes itself.
 ///

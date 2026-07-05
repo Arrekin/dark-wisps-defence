@@ -7,7 +7,9 @@ use game_core::prelude::SSS;
 #[derive(Copy, Clone, Debug)]
 pub enum ObjectiveType {
     ClearAllQuantumFields,
-    // TODO: Get rid of this param once legacy load/save is removed
+    // TODO: The `usize` target is redundant with `ObjectiveKillWisps.target_amount`.
+    //       It's only consumed on fresh spawn; save/load ignore it. Consider moving
+    //       the target out of the enum and into the objective definition flow.
     KillWisps(usize),
 }
 
