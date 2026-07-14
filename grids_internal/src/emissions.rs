@@ -14,13 +14,6 @@ fn on_add_emitter_energy_enable_emitter(
         .observe(on_discard_emitter_enable_emit_removed_event)
         .insert(EmitterEnergyEnabled);
 }
-fn on_remove_emitter_energy_disable_emitter(
-    trigger: On<Remove, EmitterEnergy>,
-    mut commands: Commands,
-) {
-    let observer = trigger.observer();
-    commands.entity(observer).despawn();
-}
 fn on_insert_emitter_enable_emit_added_event(
     trigger: On<Insert, (GridCoords, GridImprint, EmitterEnergyEnabled)>,
     mut events: MessageWriter<EmitterChangedEvent>,
@@ -107,7 +100,6 @@ impl Plugin for EmissionsPlugin {
                 update_emissions_grid,
             ))
             .add_observer(on_add_emitter_energy_enable_emitter)
-            .add_observer(on_remove_emitter_energy_disable_emitter)
             .add_observer(on_insert_emissions_spread_affector_flag_for_recalculation)
             .add_observer(on_remove_emissions_spread_affector_flag_for_recalculation)
             ;
