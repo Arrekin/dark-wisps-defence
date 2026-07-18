@@ -6,8 +6,8 @@ use nanorand::Rng;
 use almanach::prelude::AlmanachAppExt;
 use almanach::{Almanach, DarkOreInfo};
 use game_core::prelude::{GridCoords, GridImprint, MapObject, SSS, Z_OBSTACLE};
-use grids::placement::{annotate_non_empty, GridsCollectionParam, PlacementValidity, validator_all_empty};
-use grids::prelude::{GridObjectPlacer, ObstacleGrid, PlacementEmitter, PlacementMode, PlaceRequest, RemoveRequest};
+use grids::placement::{annotate_non_empty, GridObjectPlacer, GridsCollectionParam, PlacementEmitter, PlacementMode, PlacementValidity, PlaceRequest, RemoveRequest, validator_all_empty};
+use grids::prelude::ObstacleGrid;
 use logging::prelude::*;
 use map_objects::prelude::*;
 use persistence::{

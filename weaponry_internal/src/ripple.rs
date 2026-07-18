@@ -17,7 +17,7 @@ use alteration::{
     modifiers::prelude::MovementSpeed,
 };
 use game_core::prelude::{CELL_SIZE, GridCoords, Property, Z_ABOVE_ALL};
-use grids::prelude::WispsGrid;
+use grids::wisps::WispsGrid;
 use logging::prelude::*;
 use persistence::{
     prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveWriter},

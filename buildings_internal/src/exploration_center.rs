@@ -32,10 +32,7 @@ use alteration::{
 use almanach::prelude::*;
 use buildings::prelude::*;
 use game_core::prelude::*;
-use grids::{
-    placement::annotate_non_empty,
-    prelude::*,
-};
+use grids::placement::{annotate_non_empty, PlacementMode};
 use hud::prelude::*;
 use logging::prelude::*;
 use map_objects::prelude::*;
@@ -186,7 +183,9 @@ impl BuilderExplorationCenter {
                 children![
                     IndicatorDisplay::default(),
                 ],
-            ));
+            ))
+            .observe(on_technical_state_changed_recompute_operational);
+        commands.trigger(TechnicalStateChanged { entity, kind: TechnicalChange::JustSpawned });
     }
 }
 

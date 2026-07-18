@@ -11,10 +11,7 @@ use alteration::{
 use almanach::prelude::*;
 use buildings::prelude::*;
 use game_core::{math::angle_difference, prelude::*};
-use grids::{
-    placement::annotate_non_empty,
-    prelude::*,
-};
+use grids::placement::{annotate_non_empty, PlacementMode};
 use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
 use logging::prelude::*;
 use persistence::{
@@ -135,6 +132,7 @@ impl BuilderTowerRocketLauncher {
                 ],
             ))
             .observe(Self::on_shard_apply_do_so)
+            .observe(on_technical_state_changed_recompute_operational)
             .id();
         let world_size = grid_imprint.world_size();
         let tower_top = commands.spawn((
@@ -148,6 +146,7 @@ impl BuilderTowerRocketLauncher {
             MarkerTowerRotationalTop(tower_base_entity),
         )).id();
         commands.entity(entity).add_child(tower_top);
+        commands.trigger(TechnicalStateChanged { entity, kind: TechnicalChange::JustSpawned });
     }
 
     fn on_shard_apply_do_so(
@@ -225,7 +224,7 @@ fn load_tower_rocket_launchers(ctx: &mut LoadContext) -> rusqlite::Result<()> {
 
 fn shooting_system(
     mut commands: Commands,
-    mut tower_rocket_launchers: Query<(&GridImprint, &Transform, &mut TowerShootingTimer, &mut TowerWispTarget, &TowerTopRotation, &AttackDamage), (With<TowerRocketLauncher>, With<HasPower>, Without<DisabledByPlayer>)>,
+    mut tower_rocket_launchers: Query<(&GridImprint, &Transform, &mut TowerShootingTimer, &mut TowerWispTarget, &TowerTopRotation, &AttackDamage), (With<TowerRocketLauncher>, With<IsOperational>)>,
     wisps: Query<&Transform, With<Wisp>>,
 ) {
     for (grid_imprint, transform, mut timer, mut target, top_rotation, attack_damage) in tower_rocket_launchers.iter_mut() {

@@ -11,10 +11,7 @@ use alteration::{
 use almanach::prelude::*;
 use buildings::prelude::*;
 use game_core::prelude::*;
-use grids::{
-    placement::{CellHighlight, PlacementValidity},
-    prelude::*,
-};
+use grids::placement::{CellHighlight, GridsCollectionParam, PlacementMode, PlacementValidity};
 use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
 use logging::prelude::*;
 use map_objects::{
@@ -176,7 +173,9 @@ impl BuilderMiningComplex {
                 children![
                     IndicatorDisplay::default(),
                 ],
-            ));
+            ))
+            .observe(on_technical_state_changed_recompute_operational);
+        commands.trigger(TechnicalStateChanged { entity, kind: TechnicalChange::JustSpawned });
     }
 }
 
@@ -237,7 +236,7 @@ fn load_mining_complexes(ctx: &mut LoadContext) -> rusqlite::Result<()> {
 fn mine_ore_system(
     mut stock: ResMut<Stock>,
     time: Res<Time>,
-    mut mining_complexes: Query<(&mut MiningComplexDeliveryTimer, &DarkOreInRange), (With<MiningComplex>, With<HasPower>, Without<DisabledByPlayer>)>,
+    mut mining_complexes: Query<(&mut MiningComplexDeliveryTimer, &DarkOreInRange), (With<MiningComplex>, With<IsOperational>)>,
     mut dark_ores: Query<&mut DarkOre>,
 ) {
     let mut rng = nanorand::tls_rng();

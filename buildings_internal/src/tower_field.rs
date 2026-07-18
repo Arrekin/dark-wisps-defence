@@ -13,10 +13,7 @@ use alteration::{
 use almanach::prelude::*;
 use buildings::prelude::*;
 use game_core::prelude::*;
-use grids::{
-    placement::annotate_non_empty,
-    prelude::*,
-};
+use grids::placement::{annotate_non_empty, PlacementMode};
 use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
 use logging::prelude::*;
 use persistence::{
@@ -136,14 +133,10 @@ impl BuilderTowerField {
                     IndicatorDisplay::default(),
                 ],
             ))
-            .observe(ManageForceField::observe_and_trigger::<Insert, HasPower>(entity))
-            .observe(ManageForceField::observe_and_trigger::<Remove, HasPower>(entity))
-            .observe(ManageForceField::observe_and_trigger::<Insert, DisabledByPlayer>(entity))
-            .observe(ManageForceField::observe_and_trigger::<Remove, DisabledByPlayer>(entity))
             .observe(Self::on_attack_range_change_resize_force_field)
             .observe(Self::on_shard_apply_do_so)
-            .observe(ManageForceField::on_trigger_manage_force_field_state);
-        commands.trigger(ManageForceField { entity });
+            .observe(Self::on_technical_state_changed_manage_force_field);
+        commands.trigger(TechnicalStateChanged { entity, kind: TechnicalChange::JustSpawned });
     }
 
     fn on_attack_range_change_resize_force_field(
@@ -230,26 +223,18 @@ fn load_tower_fields(ctx: &mut LoadContext) -> rusqlite::Result<()> {
     Ok(())
 }
 
-#[derive(EntityEvent)]
-struct ManageForceField {
-    entity: Entity,
-}
-impl ManageForceField {
-    fn observe_and_trigger<E: Event, B: Bundle>(trigger_entity: Entity) -> impl Fn(On<E, B>, Commands) {
-        move |_trigger: On<E, B>, mut commands: Commands| {
-            commands.trigger(Self { entity: trigger_entity });
-        }
-    }
-
-    fn on_trigger_manage_force_field_state(
-        trigger: On<ManageForceField>,
+impl BuilderTowerField {
+    fn on_technical_state_changed_manage_force_field(
+        trigger: On<TechnicalStateChanged>,
         mut commands: Commands,
-        towers: Query<(Option<&GeneratedForceField>, &AttackRange, &Transform, Has<HasPower>, Has<DisabledByPlayer>), With<TowerField>>,
+        towers: Query<(Option<&GeneratedForceField>, &AttackRange, &Transform, Has<IsPowered>, Has<DisabledByPlayer>), With<TowerField>>,
     ) {
         let tower_entity = trigger.entity;
         let Ok((generated_field, attack_range, transform, has_power, is_disabled)) = towers.get(tower_entity) else { return; };
 
-        if has_power && !is_disabled {
+        let is_operational = has_power && !is_disabled;
+        if is_operational {
+            commands.entity(tower_entity).insert(IsOperational);
             if let Some(generated_field) = generated_field {
                 let field_entity = generated_field.collection();
                 commands.entity(*field_entity).insert(ForceFieldState::Growing);
@@ -260,9 +245,12 @@ impl ManageForceField {
                     .observe(Self::on_field_exited_remove_effect)
                     .observe(Self::on_field_despawn_remove_all_effects);
             }
-        } else if let Some(generated_field) = generated_field {
-            let field_entity = generated_field.collection();
-            commands.entity(*field_entity).insert(ForceFieldState::Shrinking);
+        } else {
+            commands.entity(tower_entity).remove::<IsOperational>();
+            if let Some(generated_field) = generated_field {
+                let field_entity = generated_field.collection();
+                commands.entity(*field_entity).insert(ForceFieldState::Shrinking);
+            }
         }
     }
 

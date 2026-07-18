@@ -6,8 +6,8 @@ use bevy::{
 use alteration::modifiers::prelude::AttackDamage;
 use game_core::prelude::{DamageMessage, GridCoords, Property, Z_PROJECTILE};
 use grids::{
-    prelude::WispsGrid,
     search::common::ALL_DIRECTIONS,
+    wisps::WispsGrid,
 };
 use logging::prelude::*;
 use persistence::{

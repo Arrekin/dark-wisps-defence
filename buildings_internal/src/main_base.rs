@@ -13,8 +13,7 @@ use game_core::prelude::*;
 use grids::{
     emissions::{EmissionsType, EmitterEnergy, FloodEmissionsDetails, FloodEmissionsEvaluator, FloodEmissionsMode},
     energy_supply::{GeneratorEnergy, SupplierEnergy},
-    placement::annotate_non_empty,
-    prelude::*,
+    placement::{annotate_non_empty, PlacementMode},
 };
 use logging::prelude::*;
 use persistence::{

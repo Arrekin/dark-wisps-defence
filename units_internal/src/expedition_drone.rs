@@ -62,12 +62,11 @@ use bevy::{
     sprite_render::{AlphaMode2d, Material2d, Material2dPlugin},
 };
 
-use buildings::prelude::{DisabledByPlayer, ExplorationCenter};
+use buildings::prelude::ExplorationCenter;
 use game_core::{
     math::angle_difference,
-    prelude::{GridCoords, GridImprint, Z_AERIAL_UNIT, Z_GROUND_EFFECT},
+    prelude::{GridCoords, GridImprint, IsOperational, Z_AERIAL_UNIT, Z_GROUND_EFFECT},
 };
-use grids::prelude::HasPower;
 use logging::prelude::*;
 use map_objects::prelude::ExpeditionZone;
 use persistence::{
@@ -124,7 +123,7 @@ fn refueling_system(
     mut commands: Commands,
     time: Res<Time>,
     mut drones: Query<(Entity, &DroneState, &mut DroneFuel, &HomeBase), With<ExpeditionDrone>>,
-    exploration_centers: Query<(), (With<ExplorationCenter>, With<HasPower>, Without<DisabledByPlayer>)>,
+    exploration_centers: Query<(), (With<ExplorationCenter>, With<IsOperational>)>,
 ) {
     for (entity, drone_state, mut drone_fuel, home_base) in drones.iter_mut() {
         if !matches!(drone_state, DroneState::Refueling) { continue; }
@@ -148,7 +147,7 @@ fn on_deployment_request_drone_do_so(
     mut commands: Commands,
     mut drones: Query<(&mut Transform, &DroneState, &mut ExpeditionDrone, &HomeBase)>,
     home_bases: Query<&Transform, (With<ExplorationCenter>, Without<ExpeditionDrone>)>,
-    exploration_centers: Query<(), (With<ExplorationCenter>, With<HasPower>, Without<DisabledByPlayer>)>,
+    exploration_centers: Query<(), (With<ExplorationCenter>, With<IsOperational>)>,
     targets: Query<&Transform, Without<ExpeditionDrone>>,
 ) {
     let event = trigger.event();

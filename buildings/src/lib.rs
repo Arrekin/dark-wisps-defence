@@ -73,13 +73,9 @@ pub enum TowerWispTarget {
     NoValidTargets(GridVersion),
 }
 
-#[derive(Component, Default)]
-pub struct DisabledByPlayer;
-
 pub mod prelude {
     pub use super::{
         Building,
-        DisabledByPlayer,
         EnergyRelay,
         ExplorationCenter,
         Forge,

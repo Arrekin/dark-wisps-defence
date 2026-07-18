@@ -2,7 +2,7 @@ use std::collections::BinaryHeap;
 
 use game_core::prelude::GridCoords;
 
-use crate::{obstacles::GridStructureType, prelude::*};
+use crate::{emissions::EmissionsGrid, obstacles::GridStructureType, prelude::*};
 
 use super::common::{ALL_DIRECTIONS, State, TRACKING_GRID};
 

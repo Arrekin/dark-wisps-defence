@@ -4,7 +4,7 @@ use bevy::prelude::*;
 
 use game_core::prelude::GridCoords;
 
-use crate::prelude::*;
+use crate::{prelude::*, wisps::WispsGrid};
 
 use super::common::{CARDINAL_DIRECTIONS, State, VISITED_GRID};
 

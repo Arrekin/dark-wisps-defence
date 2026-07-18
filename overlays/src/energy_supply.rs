@@ -16,7 +16,8 @@ use alteration::modifiers::prelude::ModifierType;
 use game_core::prelude::{BuildingType, GridCoords, GridImprint, MapObject, ZDepth, Z_OVERLAY_ENERGY_SUPPLY};
 use grids::{
     energy_supply::EnergySupplyGrid,
-    prelude::{GridObjectPlacer, GridPlacerChanged, GridVersion, MapInfo},
+    placement::{GridObjectPlacer, GridPlacerChanged},
+    prelude::{GridVersion, MapInfo},
     search::common::{CARDINAL_DIRECTIONS, VISITED_GRID},
 };
 use hud::prelude::FocusedMapObject;

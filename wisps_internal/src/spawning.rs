@@ -5,7 +5,10 @@ use bevy::{platform::collections::HashMap, prelude::*};
 use alteration::{effects::prelude::*, modifiers::prelude::*};
 use almanach::prelude::*;
 use game_core::prelude::*;
-use grids::{placement::{GridsCollectionParam, PlacementValidity}, prelude::*};
+use grids::{
+    placement::{GridObjectPlacer, GridsCollectionParam, PlacementValidity, PlaceRequest, RemoveRequest},
+    wisps::WispsGrid,
+};
 use logging::prelude::*;
 use persistence::{
     prelude::{GameDbHelpers, LoadContext, SaveWriter},

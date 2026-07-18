@@ -1,7 +1,7 @@
 use bevy::{platform::collections::HashSet, prelude::*};
 
 use alteration::modifiers::prelude::EnergySupplyRange;
-use game_core::prelude::{GridCoords, GridImprint};
+use game_core::prelude::{GridCoords, GridImprint, IsPowered};
 
 use crate::{GridVersion, base::BaseGrid};
 
@@ -12,7 +12,7 @@ pub struct SupplierEnergy;
 
 // Produces energy
 #[derive(Component, Copy, Clone, Debug)]
-#[require(HasPower)]
+#[require(IsPowered)]
 pub struct GeneratorEnergy;
 
 #[derive(Message)]
@@ -70,34 +70,3 @@ impl EnergySupplyGrid {
         self.version = self.version.wrapping_add(1);
     }
 }
-
-// ============================================================================
-// Power State Components
-// ============================================================================
-
-/// Component indicating that an entity uses power and should have its power state managed.
-/// Automatically manages HasPower/NoPower companion components based on energy grid state.
-/// Also stores the current power state directly for convenience access.
-#[derive(Component, Default)]
-#[require(GridCoords, GridImprint, NoPower)]
-pub struct NeedsPower {
-    pub has_power: bool,
-}
-impl NeedsPower {
-    /// Set the expected value and manage companion components
-    pub fn set(&mut self, commands: &mut Commands, entity: Entity, has_power: bool) {
-        if self.has_power != has_power {
-            if has_power {
-                commands.entity(entity).remove::<NoPower>().insert(HasPower);
-            } else {
-                commands.entity(entity).remove::<HasPower>().insert(NoPower);
-            }
-        }
-        self.has_power = has_power;
-    }
-}
-
-#[derive(Component, Default)]
-pub struct HasPower;
-#[derive(Component, Default)]
-pub struct NoPower;

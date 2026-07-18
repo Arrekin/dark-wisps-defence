@@ -1,8 +1,7 @@
 use bevy::ecs::entity_disabling::Disabled;
 use bevy::prelude::*;
 
-use buildings::prelude::DisabledByPlayer;
-use grids::prelude::{HasPower, NoPower};
+use game_core::prelude::{DisabledByPlayer, IsPowered, NeedsPower};
 use hud::prelude::*;
 use map_objects::prelude::{HasOreInScannerRange, NoOreInScannerRange};
 
@@ -31,7 +30,7 @@ fn on_insert_update_sprite_handle(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut indicators: Query<(&IndicatorType, &mut IndicatorSpriteHandle, &IndicatorOf, Has<Disabled>)>,
-    parents_with_no_power: Query<(), With<NoPower>>,
+    parents_with_no_power: Query<(), (With<NeedsPower>, Without<IsPowered>)>,
     parents_with_no_ore: Query<(), With<NoOreInScannerRange>>,
     parents_disabled_by_player: Query<(), With<DisabledByPlayer>>,
 ) {
@@ -77,35 +76,29 @@ fn on_insert_update_sprite_handle(
 
 // TODO: Condolidate when Bevy supports multiple different triggers in one expression
 fn on_parent_looses_power_update_indicator(
-    trigger: On<Insert, NoPower>,
+    trigger: On<Remove, IsPowered>,
     mut commands: Commands,
     observers_for_changes: Query<&IndicatorObserverForChanges>,
     indicators: Query<(&IndicatorType, Has<Disabled>)>,
 ) {
     let observer_entity = trigger.observer();
     let Ok(indicator_entity) = observers_for_changes.get(observer_entity) else { return; };
-    let Ok((indicator_type, _)) = indicators.get(indicator_entity.0) else {
-        commands.entity(indicator_entity.0).despawn(); // Indicator no longer exist, remove the observer
-        return;
-    };
+    let Ok((indicator_type, _)) = indicators.get(indicator_entity.0) else { return; };
     if !matches!(indicator_type, IndicatorType::NoPower) { return; };
-    commands.entity(indicator_entity.0).remove::<Disabled>();
+    commands.entity(indicator_entity.0).try_remove::<Disabled>();
 }
 
 fn on_parent_gains_power_update_indicator(
-    trigger: On<Insert, HasPower>,
+    trigger: On<Insert, IsPowered>,
     mut commands: Commands,
     observers_for_changes: Query<&IndicatorObserverForChanges>,
     indicators: Query<&IndicatorType>,
 ) {
     let observer_entity = trigger.observer();
     let Ok(indicator_entity) = observers_for_changes.get(observer_entity) else { return; };
-    let Ok(indicator_type) = indicators.get(indicator_entity.0) else {
-        commands.entity(indicator_entity.0).despawn(); // Indicator no longer exist, remove the observer
-        return;
-    };
+    let Ok(indicator_type) = indicators.get(indicator_entity.0) else { return; };
     if !matches!(indicator_type, IndicatorType::NoPower) { return; };
-    commands.entity(indicator_entity.0).insert(Disabled);
+    commands.entity(indicator_entity.0).try_insert(Disabled);
 }
 
 fn on_parent_looses_ore_update_indicator(
@@ -116,12 +109,9 @@ fn on_parent_looses_ore_update_indicator(
 ) {
     let observer_entity = trigger.observer();
     let Ok(indicator_entity) = observers_for_changes.get(observer_entity) else { return; };
-    let Ok((indicator_type, _)) = indicators.get(indicator_entity.0) else {
-        commands.entity(indicator_entity.0).despawn(); // Indicator no longer exist, remove the observer
-        return;
-    };
+    let Ok((indicator_type, _)) = indicators.get(indicator_entity.0) else { return; };
     if !matches!(indicator_type, IndicatorType::OreDepleted) { return; };
-    commands.entity(indicator_entity.0).remove::<Disabled>();
+    commands.entity(indicator_entity.0).try_remove::<Disabled>();
 }
 
 fn on_parent_gains_ore_update_indicator(
@@ -132,12 +122,9 @@ fn on_parent_gains_ore_update_indicator(
 ) {
     let observer_entity = trigger.observer();
     let Ok(indicator_entity) = observers_for_changes.get(observer_entity) else { return; };
-    let Ok(indicator_type) = indicators.get(indicator_entity.0) else {
-        commands.entity(indicator_entity.0).despawn(); // Indicator no longer exist, remove the observer
-        return;
-    };
+    let Ok(indicator_type) = indicators.get(indicator_entity.0) else { return; };
     if !matches!(indicator_type, IndicatorType::OreDepleted) { return; };
-    commands.entity(indicator_entity.0).insert(Disabled);
+    commands.entity(indicator_entity.0).try_insert(Disabled);
 }
 
 fn on_parent_disabled_by_player_update_indicator(
@@ -148,12 +135,9 @@ fn on_parent_disabled_by_player_update_indicator(
 ) {
     let observer_entity = trigger.observer();
     let Ok(indicator_entity) = observers_for_changes.get(observer_entity) else { return; };
-    let Ok(indicator_type) = indicators.get(indicator_entity.0) else {
-        commands.entity(indicator_entity.0).despawn(); // Indicator no longer exist, remove the observer
-        return;
-    };
+    let Ok(indicator_type) = indicators.get(indicator_entity.0) else { return; };
     if !matches!(indicator_type, IndicatorType::DisabledByPlayer) { return; };
-    commands.entity(indicator_entity.0).remove::<Disabled>();
+    commands.entity(indicator_entity.0).try_remove::<Disabled>();
 }
 
 fn on_parent_enabled_by_player_update_indicator(
@@ -164,10 +148,7 @@ fn on_parent_enabled_by_player_update_indicator(
 ) {
     let observer_entity = trigger.observer();
     let Ok(indicator_entity) = observers_for_changes.get(observer_entity) else { return; };
-    let Ok(indicator_type) = indicators.get(indicator_entity.0) else {
-        commands.entity(indicator_entity.0).despawn(); // Indicator no longer exist, remove the observer
-        return;
-    };
+    let Ok(indicator_type) = indicators.get(indicator_entity.0) else { return; };
     if !matches!(indicator_type, IndicatorType::DisabledByPlayer) { return; };
     commands.entity(indicator_entity.0).try_insert(Disabled);
 }

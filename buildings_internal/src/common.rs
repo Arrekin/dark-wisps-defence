@@ -1,10 +1,9 @@
 use bevy::prelude::*;
 
 use buildings::prelude::Building;
-use game_core::prelude::{BuildingType, GridCoords, GridImprint, MapObject};
+use game_core::prelude::{BuildingType, DisabledByPlayer, GridCoords, GridImprint, IsOperational, IsPowered, MapObject, TechnicalStateChanged};
 use grids::{
-    placement::validator_all_empty,
-    prelude::{GridsCollectionParam, PlaceRequest, PlacementEmitter, PlacementValidity},
+    placement::{validator_all_empty, GridsCollectionParam, PlaceRequest, PlacementEmitter, PlacementValidity},
 };
 
 pub(crate) fn building_place_emitter() -> Box<dyn PlacementEmitter> {
@@ -26,6 +25,22 @@ pub(crate) fn building_validator(map_object: MapObject, coords: GridCoords, impr
     }
 
     PlacementValidity::Valid
+}
+
+/// Default observer for `TechnicalStateChanged`. Buildings that want default
+/// "powered && !disabled → operational" behavior attach this. Buildings with
+/// custom needs attach their own observer instead.
+pub(crate) fn on_technical_state_changed_recompute_operational(
+    trigger: On<TechnicalStateChanged>,
+    mut commands: Commands,
+    state: Query<(Has<IsPowered>, Has<DisabledByPlayer>)>,
+) {
+    let Ok((has_power, is_disabled)) = state.get(trigger.entity) else { return; };
+    if has_power && !is_disabled {
+        commands.entity(trigger.entity).insert(IsOperational);
+    } else {
+        commands.entity(trigger.entity).remove::<IsOperational>();
+    }
 }
 
 // Building sub-parts markers

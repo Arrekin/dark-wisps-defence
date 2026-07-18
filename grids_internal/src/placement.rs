@@ -8,17 +8,9 @@ use bevy::{
 
 use almanach::prelude::Almanach;
 use game_core::prelude::{BuildingType, CELL_SIZE, GridCoords, GridImprint, MapObject, TowerType};
-use grids::{
-    placement::{ActivePlacement, GridPlacerOverridePropertyRequest, StopPlacing},
-    prelude::{
-        CellHighlight,
-        GridObjectPlacer,
-        GridObjectPlacerRequest,
-        GridPlacerChanged,
-        GridsCollectionParam,
-        PlacementMode,
-        PlacementValidity,
-    },
+use grids::placement::{
+    ActivePlacement, CellHighlight, GridObjectPlacer, GridObjectPlacerRequest, GridPlacerChanged,
+    GridPlacerOverridePropertyRequest, GridsCollectionParam, PlacementMode, PlacementValidity, StopPlacing,
 };
 use states::prelude::UiInteraction;
 use viewport::MouseInfo;

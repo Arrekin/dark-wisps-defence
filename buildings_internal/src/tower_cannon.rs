@@ -11,7 +11,7 @@ use almanach::prelude::*;
 use buildings::prelude::*;
 use game_core::prelude::*;
 use grids::{
-    placement::annotate_non_empty,
+    placement::{annotate_non_empty, PlacementMode},
     prelude::*,
 };
 use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
@@ -134,7 +134,9 @@ impl BuilderTowerCannon {
                     IndicatorDisplay::default(),
                 ],
             ))
-            .observe(Self::on_shard_apply_do_so);
+            .observe(Self::on_shard_apply_do_so)
+            .observe(on_technical_state_changed_recompute_operational);
+        commands.trigger(TechnicalStateChanged { entity, kind: TechnicalChange::JustSpawned });
     }
 
     fn on_shard_apply_do_so(
@@ -212,7 +214,7 @@ fn load_tower_cannons(ctx: &mut LoadContext) -> rusqlite::Result<()> {
 
 fn shooting_system(
     mut commands: Commands,
-    mut tower_cannons: Query<(&Transform, &mut TowerShootingTimer, &mut TowerWispTarget, &AttackDamage), (With<TowerCannon>, With<HasPower>, Without<DisabledByPlayer>)>,
+    mut tower_cannons: Query<(&Transform, &mut TowerShootingTimer, &mut TowerWispTarget, &AttackDamage), (With<TowerCannon>, With<IsOperational>)>,
     wisps: Query<(&GridPath, &GridCoords), With<Wisp>>,
 ) {
     for (transform, mut timer, mut target, attack_damage) in tower_cannons.iter_mut() {

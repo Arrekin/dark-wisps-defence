@@ -13,8 +13,7 @@ use game_core::prelude::*;
 use grids::{
     emissions::{EmissionsType, EmitterEnergy, EmitterEnergyEnabled, FloodEmissionsDetails, FloodEmissionsEvaluator, FloodEmissionsMode},
     energy_supply::SupplierEnergy,
-    placement::annotate_non_empty,
-    prelude::*,
+    placement::{annotate_non_empty, PlacementMode},
 };
 use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
 use logging::prelude::*;
@@ -134,13 +133,9 @@ impl BuilderEnergyRelay {
                     IndicatorDisplay::default(),
                 ],
             ))
-            .observe(|trigger: On<Insert, HasPower>, mut commands: Commands| { commands.trigger(RequestTechnicalStateUpdate{ entity: trigger.entity }); })
-            .observe(|trigger: On<Insert, NoPower>, mut commands: Commands| { commands.trigger(RequestTechnicalStateUpdate{ entity: trigger.entity }); })
-            .observe(|trigger: On<Insert, DisabledByPlayer>, mut commands: Commands| { commands.trigger(RequestTechnicalStateUpdate{ entity: trigger.entity }); })
-            .observe(|trigger: On<Remove, DisabledByPlayer>, mut commands: Commands| { commands.trigger(RequestTechnicalStateUpdate{ entity: trigger.entity }); })
-            .observe(RequestTechnicalStateUpdate::on_trigger_update_technical_state)
+            .observe(Self::on_technical_state_changed_update_technical_state)
             ;
-        commands.trigger(RequestTechnicalStateUpdate{ entity });
+        commands.trigger(TechnicalStateChanged { entity, kind: TechnicalChange::JustSpawned });
     }
 }
 
@@ -198,21 +193,19 @@ fn load_energy_relays(ctx: &mut LoadContext) -> rusqlite::Result<()> {
     Ok(())
 }
 
-#[derive(EntityEvent)]
-struct RequestTechnicalStateUpdate { entity: Entity }
-impl RequestTechnicalStateUpdate {
-    fn on_trigger_update_technical_state(
-        trigger: On<RequestTechnicalStateUpdate>,
+impl BuilderEnergyRelay {
+    fn on_technical_state_changed_update_technical_state(
+        trigger: On<TechnicalStateChanged>,
         mut commands: Commands,
-        relays: Query<(Has<DisabledByPlayer>, Has<NoPower>), With<EnergyRelay>>,
+        relays: Query<(Has<DisabledByPlayer>, Has<IsPowered>), With<EnergyRelay>>,
     ) {
         let entity = trigger.entity;
-        let Ok((has_disabled_by_player, has_no_power)) = relays.get(entity) else { return; };
+        let Ok((has_disabled_by_player, has_power)) = relays.get(entity) else { return; };
         let mut entity_commands = commands.entity(entity);
         if has_disabled_by_player {
             entity_commands.remove::<SupplierEnergy>().remove::<EmitterEnergyEnabled>().remove::<ColorPulsation>();
         }
-        else if has_no_power {
+        else if !has_power {
             entity_commands.remove::<EmitterEnergyEnabled>().remove::<ColorPulsation>().try_insert(SupplierEnergy);
         } else {
             entity_commands.try_insert(SupplierEnergy).try_insert(EmitterEnergyEnabled).try_insert(ColorPulsation::new(1.0, 1.8, 3.0));

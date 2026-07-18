@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
 use game_core::prelude::{GridCoords, GridImprint, MapBound};
-use grids::prelude::{EmissionsGridSpreadAffector, ObstacleGridObject};
+use grids::{prelude::ObstacleGridObject, EmissionsGridSpreadAffector};
 
 #[derive(Component)]
 #[require(MapBound, ObstacleGridObject = ObstacleGridObject::DarkOre)]

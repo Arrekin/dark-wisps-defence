@@ -11,7 +11,7 @@ use bevy::ui::FocusPolicy;
 
 use almanach::prelude::*;
 use game_core::prelude::*;
-use grids::prelude::*;
+use grids::placement::GridObjectPlacerRequest;
 use states::{AdminMode, prelude::UiInteraction};
 
 const NOT_HOVERED_ALPHA: f32 = 0.2;

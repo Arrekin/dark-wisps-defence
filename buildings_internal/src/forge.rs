@@ -19,10 +19,7 @@ use alteration::{
 use almanach::prelude::*;
 use buildings::prelude::*;
 use game_core::prelude::*;
-use grids::{
-    placement::annotate_non_empty,
-    prelude::*,
-};
+use grids::placement::{annotate_non_empty, PlacementMode};
 use hud::prelude::*;
 use logging::prelude::*;
 use persistence::{
@@ -182,7 +179,7 @@ fn forge_crafting_system(
     mut commands: Commands,
     mut shard_inventory: ResMut<ShardInventory>,
     time: Res<Time>,
-    mut forges: Query<(Entity, &mut ForgeJob), (With<Forge>, With<HasPower>, Without<DisabledByPlayer>)>,
+    mut forges: Query<(Entity, &mut ForgeJob), (With<Forge>, With<IsOperational>)>,
 ) {
     for (entity, mut job) in forges.iter_mut() {
         job.timer.tick(time.delta());
@@ -284,7 +281,9 @@ impl BuilderForge {
                 children![
                     IndicatorDisplay::default(),
                 ],
-            ));
+            ))
+            .observe(on_technical_state_changed_recompute_operational);
+        commands.trigger(TechnicalStateChanged { entity, kind: TechnicalChange::JustSpawned });
     }
 }
 

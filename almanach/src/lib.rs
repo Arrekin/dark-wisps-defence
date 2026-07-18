@@ -3,12 +3,7 @@ use bevy::prelude::*;
 
 use alteration::modifiers::prelude::ModifierType;
 use game_core::prelude::{BuildingType, GridImprint, MapObject, ShardType};
-use grids::placement::{PlacementAnnotatorFn, PlacementValidatorFn};
-use grids::prelude::{
-    ObjectPlacementInfo,
-    PlacementEmitter,
-    PlacementMode,
-};
+use grids::placement::{ObjectPlacementInfo, PlacementAnnotatorFn, PlacementEmitter, PlacementMode, PlacementValidatorFn};
 use resources::prelude::Cost;
 use states::prelude::MapLoadingStage;
 

@@ -2,7 +2,7 @@ use bevy::prelude::*;
 
 use alteration::modifiers::prelude::AttackDamage;
 use game_core::prelude::{DamageMessage, GridCoords, Property, Z_PROJECTILE};
-use grids::prelude::WispsGrid;
+use grids::wisps::WispsGrid;
 use logging::prelude::*;
 use persistence::{
     prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveWriter},

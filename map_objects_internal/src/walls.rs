@@ -3,8 +3,7 @@ use bevy::prelude::*;
 use almanach::{Almanach, AlmanachAppExt, WallInfo};
 use game_core::prelude::{GridCoords, GridImprint, MapObject, SSS, Z_OBSTACLE};
 use grids::obstacles::GridStructureType;
-use grids::placement::{annotate_non_empty, GridsCollectionParam, PlacementValidity, validator_all_empty};
-use grids::prelude::{GridObjectPlacer, PlacementEmitter, PlacementMode, PlaceRequest, RemoveRequest};
+use grids::placement::{annotate_non_empty, GridObjectPlacer, GridsCollectionParam, PlacementEmitter, PlacementMode, PlacementValidity, PlaceRequest, RemoveRequest, validator_all_empty};
 use logging::prelude::*;
 use map_objects::Wall;
 use persistence::{

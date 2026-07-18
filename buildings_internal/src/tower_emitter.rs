@@ -10,10 +10,7 @@ use alteration::{
 use almanach::prelude::*;
 use buildings::prelude::*;
 use game_core::prelude::*;
-use grids::{
-    placement::annotate_non_empty,
-    prelude::*,
-};
+use grids::placement::{annotate_non_empty, PlacementMode};
 use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
 use logging::prelude::*;
 use persistence::{
@@ -132,7 +129,9 @@ impl BuilderTowerEmitter {
                     IndicatorDisplay::default(),
                 ],
             ))
-            .observe(Self::on_shard_apply_do_so);
+            .observe(Self::on_shard_apply_do_so)
+            .observe(on_technical_state_changed_recompute_operational);
+        commands.trigger(TechnicalStateChanged { entity, kind: TechnicalChange::JustSpawned });
     }
 
     fn on_shard_apply_do_so(
@@ -210,7 +209,7 @@ fn load_tower_emitters(ctx: &mut LoadContext) -> rusqlite::Result<()> {
 
 fn shooting_system(
     mut commands: Commands,
-    mut tower_emitters: Query<(&Transform, &AttackRange, &mut TowerShootingTimer, &mut TowerWispTarget), (With<TowerEmitter>, With<HasPower>, Without<DisabledByPlayer>)>,
+    mut tower_emitters: Query<(&Transform, &AttackRange, &mut TowerShootingTimer, &mut TowerWispTarget), (With<TowerEmitter>, With<IsOperational>)>,
     wisps: Query<(), With<Wisp>>,
 ) {
     for (transform, range, mut timer, mut target) in tower_emitters.iter_mut() {

@@ -15,8 +15,8 @@ pub mod prelude {
     // traits are in scope.
     pub use lib_derive::{Property, SSS};
 
-    pub use crate::components::{FieldAffectable, IntegrityPoints, MapBound};
-    pub use crate::events::{DamageMessage, DynamicGameEvent};
+    pub use crate::components::{DisabledByPlayer, FieldAffectable, IntegrityPoints, IsOperational, IsPowered, MapBound, NeedsPower};
+    pub use crate::events::{DamageMessage, DynamicGameEvent, TechnicalChange, TechnicalStateChanged};
     pub use crate::grid::{CELL_SIZE, GridCoords, GridImprint};
     pub use crate::motion::Locomotion;
     pub use crate::traits::{Property, SSS};

@@ -8,7 +8,7 @@ use bevy::sprite_render::Material2dPlugin;
 
 use almanach::{WispInfo, prelude::*};
 use game_core::{motion::MotionSystems, prelude::*};
-use grids::{placement::annotate_non_empty, prelude::*};
+use grids::placement::{annotate_non_empty, PlacementEmitter, PlacementMode, PlaceRequest, RemoveRequest};
 use persistence::prelude::{AppGameLoadSaveExtension, CollectSave};
 use states::prelude::*;
 use visuals::prelude::*;

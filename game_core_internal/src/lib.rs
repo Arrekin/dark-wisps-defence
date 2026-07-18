@@ -8,6 +8,14 @@ impl Plugin for GameCorePlugin {
     fn build(&self, app: &mut App) {
         app
             .add_observer(on_insert_zdepth_apply_zdepth)
+            // Technical-state global observers: fold primitive component
+            // events into one shared `TechnicalStateChanged` event. They fire
+            // for every entity; the event is a no-op unless the target entity
+            // has a local observer for `TechnicalStateChanged`.
+            .add_observer(on_insert_is_powered_emit_technical_state_changed)
+            .add_observer(on_remove_is_powered_emit_technical_state_changed)
+            .add_observer(on_insert_disabled_by_player_emit_technical_state_changed)
+            .add_observer(on_remove_disabled_by_player_emit_technical_state_changed)
             .add_systems(
                 PostUpdate,
                 track_locomotion
@@ -50,4 +58,21 @@ fn process_damage(
         let incoming_damage_multiplier = incoming_damage_multiplier.map_or(1.0, |multiplier| multiplier.get());
         integrity_points.decrease(message.amount * incoming_damage_multiplier);
     }
+}
+
+// ============================================================================
+// Technical State — global observers
+// ============================================================================
+
+fn on_insert_is_powered_emit_technical_state_changed(trigger: On<Insert, IsPowered>, mut commands: Commands) {
+    commands.trigger(TechnicalStateChanged { entity: trigger.entity, kind: TechnicalChange::PowerGained });
+}
+fn on_remove_is_powered_emit_technical_state_changed(trigger: On<Remove, IsPowered>, mut commands: Commands) {
+    commands.trigger(TechnicalStateChanged { entity: trigger.entity, kind: TechnicalChange::PowerLost });
+}
+fn on_insert_disabled_by_player_emit_technical_state_changed(trigger: On<Insert, DisabledByPlayer>, mut commands: Commands) {
+    commands.trigger(TechnicalStateChanged { entity: trigger.entity, kind: TechnicalChange::PlayerDisabled });
+}
+fn on_remove_disabled_by_player_emit_technical_state_changed(trigger: On<Remove, DisabledByPlayer>, mut commands: Commands) {
+    commands.trigger(TechnicalStateChanged { entity: trigger.entity, kind: TechnicalChange::PlayerEnabled });
 }

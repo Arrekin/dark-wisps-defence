@@ -7,9 +7,10 @@ use almanach::prelude::*;
 use buildings::prelude::*;
 use game_core::{math::angle_difference, prelude::*};
 use grids::{
-    placement::{GridsCollectionParam, PlacementValidity},
+    placement::{GridObjectPlacer, GridsCollectionParam, PlacementValidity, PlaceRequest},
     prelude::*,
     search::targetfinding::target_find_closest_wisp,
+    wisps::WispsGrid,
 };
 use logging::prelude::*;
 use resources::prelude::*;
@@ -125,7 +126,7 @@ fn on_building_place_request_do_so(
 fn targeting_system(
     obstacle_grid: Res<ObstacleGrid>,
     wisps_grid: Res<WispsGrid>,
-    mut towers: Query<(&GridCoords, &GridImprint, &AttackRange, &mut TowerWispTarget), (With<Tower>, With<HasPower>, Without<DisabledByPlayer>)>,
+    mut towers: Query<(&GridCoords, &GridImprint, &AttackRange, &mut TowerWispTarget), (With<Tower>, With<IsOperational>)>,
     wisps: Query<&GridCoords, With<Wisp>>,
 ) {
     for (coords, grid_imprint, range, mut target) in towers.iter_mut() {
@@ -159,7 +160,7 @@ fn targeting_system(
 
 fn tick_shooting_timers_system(
     time: Res<Time>,
-    mut shooting_timers: Query<&mut TowerShootingTimer, (With<HasPower>, Without<DisabledByPlayer>)>,
+    mut shooting_timers: Query<&mut TowerShootingTimer, With<IsOperational>>,
 ) {
     shooting_timers.iter_mut().for_each(|mut timer| { timer.0.tick(time.delta()); });
 }
@@ -190,7 +191,7 @@ fn rotate_tower_top_system(
 
 fn rotational_aiming_system(
     time: Res<Time>,
-    mut towers: Query<(&mut TowerTopRotation, &TowerWispTarget, &Transform), (With<HasPower>, Without<DisabledByPlayer>)>,
+    mut towers: Query<(&mut TowerTopRotation, &TowerWispTarget, &Transform), With<IsOperational>>,
     wisps: Query<&Transform, With<Wisp>>,
 ) {
     for (mut rotation, target, tower_transform) in towers.iter_mut() {
