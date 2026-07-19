@@ -11,7 +11,7 @@ use almanach::prelude::*;
 use buildings::prelude::*;
 use game_core::prelude::*;
 use grids::{
-    emissions::{EmissionsType, EmitterEnergy, EmitterEnergyEnabled, FloodEmissionsDetails, FloodEmissionsEvaluator, FloodEmissionsMode},
+    emissions::{EmissionsType, EmitterEnergy, FloodEmissionsDetails, FloodEmissionsEvaluator, FloodEmissionsMode},
     energy_supply::SupplierEnergy,
     placement::{annotate_non_empty, PlacementMode},
 };
@@ -133,7 +133,9 @@ impl BuilderEnergyRelay {
                     IndicatorDisplay::default(),
                 ],
             ))
-            .observe(Self::on_technical_state_changed_update_technical_state)
+            .observe(on_technical_state_changed_recompute_operational)
+            .observe(Self::on_add_is_operational_insert_color_pulsation)
+            .observe(Self::on_remove_is_operational_remove_color_pulsation)
             ;
         commands.trigger(TechnicalStateChanged { entity, kind: TechnicalChange::JustSpawned });
     }
@@ -194,21 +196,16 @@ fn load_energy_relays(ctx: &mut LoadContext) -> rusqlite::Result<()> {
 }
 
 impl BuilderEnergyRelay {
-    fn on_technical_state_changed_update_technical_state(
-        trigger: On<TechnicalStateChanged>,
+    fn on_add_is_operational_insert_color_pulsation(
+        trigger: On<Add, IsOperational>,
         mut commands: Commands,
-        relays: Query<(Has<DisabledByPlayer>, Has<IsPowered>), With<EnergyRelay>>,
     ) {
-        let entity = trigger.entity;
-        let Ok((has_disabled_by_player, has_power)) = relays.get(entity) else { return; };
-        let mut entity_commands = commands.entity(entity);
-        if has_disabled_by_player {
-            entity_commands.remove::<SupplierEnergy>().remove::<EmitterEnergyEnabled>().remove::<ColorPulsation>();
-        }
-        else if !has_power {
-            entity_commands.remove::<EmitterEnergyEnabled>().remove::<ColorPulsation>().try_insert(SupplierEnergy);
-        } else {
-            entity_commands.try_insert(SupplierEnergy).try_insert(EmitterEnergyEnabled).try_insert(ColorPulsation::new(1.0, 1.8, 3.0));
-        }
+        commands.entity(trigger.entity).insert(ColorPulsation::new(1.0, 1.8, 3.0));
+    }
+    fn on_remove_is_operational_remove_color_pulsation(
+        trigger: On<Remove, IsOperational>,
+        mut commands: Commands,
+    ) {
+        commands.entity(trigger.entity).try_remove::<ColorPulsation>();
     }
 }

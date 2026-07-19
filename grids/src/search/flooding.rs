@@ -91,8 +91,8 @@ pub fn flood_energy_supply(
         let mut queue = VecDeque::new();
         start_coords.into_iter().for_each(|coords| {
             match mode {
-                FloodEnergySupplyMode::Increase => energy_supply_grid.add_supplier(coords, supplier),
-                FloodEnergySupplyMode::Decrease => energy_supply_grid.remove_supplier(coords, supplier),
+                FloodEnergySupplyMode::Place { as_disabled } => energy_supply_grid.place_supplier(coords, supplier, as_disabled),
+                FloodEnergySupplyMode::Remove => energy_supply_grid.remove_supplier_from_both(coords, supplier),
             }
             queue.push_back((0, coords));
             visited_grid.set_visited(coords);
@@ -108,8 +108,8 @@ pub fn flood_energy_supply(
 
                 visited_grid.set_visited(new_coords);
                 match mode {
-                    FloodEnergySupplyMode::Increase => energy_supply_grid.add_supplier(new_coords, supplier),
-                    FloodEnergySupplyMode::Decrease => energy_supply_grid.remove_supplier(new_coords, supplier),
+                    FloodEnergySupplyMode::Place { as_disabled } => energy_supply_grid.place_supplier(new_coords, supplier, as_disabled),
+                    FloodEnergySupplyMode::Remove => energy_supply_grid.remove_supplier_from_both(new_coords, supplier),
                 }
                 let new_distance = distance + 1;
                 if new_distance < range.get() as usize {

@@ -116,7 +116,10 @@ impl BuilderMainBase {
                 related![EffectInstances[
                     (ModifierContributions(building_info.baseline.clone()), BaselineEffect),
                 ]],
-            ));
+            ))
+            .observe(on_technical_state_changed_recompute_operational)
+            ;
+        commands.trigger(TechnicalStateChanged { entity, kind: TechnicalChange::JustSpawned });
     }
 }
 

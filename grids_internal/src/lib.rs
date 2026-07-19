@@ -1,3 +1,5 @@
+#![feature(adt_const_params)]
+
 use bevy::app::{App, Plugin};
 
 pub(crate) mod obstacles;

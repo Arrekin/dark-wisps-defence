@@ -169,8 +169,12 @@ fn refresh_display_system(
             overlay_creator.generate_buffer_data(&HighlightMode::Selected(vec![*building]))
         }
         EnergySupplyOverlaySecondaryMode::PlacingConsumer{grid_coords, grid_imprint} => {
+            // Include disabled suppliers so the player can see which disabled ranges would cover the new consumer.
             let suppliers = grid_imprint.iter_in_bounds(*grid_coords, energy_supply_grid.bounds())
-                .flat_map(|coords| energy_supply_grid[coords].suppliers())
+                .flat_map(|coords| {
+                    let field = &energy_supply_grid[coords];
+                    field.suppliers().iter().chain(field.disabled_suppliers().iter())
+                })
                 .collect::<HashSet<_>>()
                 .into_iter()
                 .cloned()
@@ -240,28 +244,32 @@ fn on_grid_placer_changed(
 struct EnergySupplyCell {
     /// Whether this cell has energy supply (0 = false, 1 = true)
     has_supply: u32,
-    /// Whether this cell has power connection (0 = false, 1 = true) 
+    /// Whether this cell has power connection (0 = false, 1 = true)
     has_power: u32,
     /// Highlight level: 0 = None, 1 = Dimmed, 2 = Highlighted
     highlight_level: u32,
+    /// Whether this cell is covered by at least one intentionally disabled supplier (0 = false, 1 = true)
+    has_disabled: u32,
+    /// Highlight level of the disabled coverage: 0 = None, 1 = Dimmed, 2 = Highlighted
+    disabled_highlight_level: u32,
 }
 impl EnergySupplyCell {
-    /// Create a cell representing no energy supply
+    /// Create a cell representing no energy supply and no disabled coverage
     fn none() -> Self {
         Self {
             has_supply: 0,
             has_power: 0,
             highlight_level: HighlightLevel::None as u32,
+            has_disabled: 0,
+            disabled_highlight_level: HighlightLevel::None as u32,
         }
     }
 
-    /// Create a cell with supply and power status
-    fn with_supply(has_power: bool, highlight_level: HighlightLevel) -> Self {
-        Self {
-            has_supply: 1,
-            has_power: has_power as u32,
-            highlight_level: highlight_level as u32,
-        }
+    /// Set supply fields in place, preserving disabled-coverage fields
+    fn set_supply(&mut self, has_power: bool, highlight_level: HighlightLevel) {
+        self.has_supply = 1;
+        self.has_power = has_power as u32;
+        self.highlight_level = highlight_level as u32;
     }
 }
 
@@ -304,18 +312,27 @@ impl<'a> OverlayBufferCreator<'a> {
     /// If `highlight_supplier` is provided, only its range will be shown at full color, other ranges will be dimmed
     fn create_cell_for_grid_field(&self, idx: usize, highlight_mode: &HighlightMode) -> EnergySupplyCell {
         let grid_field = &self.energy_supply_grid.grid[idx];
-        
-        if !grid_field.has_supply() {
-            return EnergySupplyCell::none();
+        let mut cell = EnergySupplyCell::none();
+
+        if grid_field.has_supply() {
+            let highlight_level = match highlight_mode {
+                HighlightMode::All => HighlightLevel::Highlighted,
+                HighlightMode::Selected(suppliers) if suppliers.iter().any(|supplier| grid_field.has_supplier(*supplier)) => HighlightLevel::Highlighted,
+                HighlightMode::Selected(_) => HighlightLevel::Dimmed, // There is supplier, but it's not one of our suppliers.
+            };
+            cell.set_supply(grid_field.has_power(), highlight_level);
         }
-        
-        let highlight_level = match highlight_mode {
-            HighlightMode::All => HighlightLevel::Highlighted,
-            HighlightMode::Selected(suppliers) if suppliers.iter().any(|supplier| grid_field.has_supplier(*supplier)) => HighlightLevel::Highlighted,
-            HighlightMode::Selected(_) => HighlightLevel::Dimmed, // There is supplier, but it's not one of our suppliers.
-        };
-        
-        EnergySupplyCell::with_supply(grid_field.has_power(), highlight_level)
+
+        if grid_field.has_disabled_supply() {
+            cell.has_disabled = 1;
+            cell.disabled_highlight_level = match highlight_mode {
+                HighlightMode::All => HighlightLevel::Highlighted,
+                HighlightMode::Selected(suppliers) if suppliers.iter().any(|supplier| grid_field.has_disabled_supplier(*supplier)) => HighlightLevel::Highlighted,
+                HighlightMode::Selected(_) => HighlightLevel::Dimmed,
+            } as u32;
+        }
+
+        cell
     }
     
     /// Special version of `flooding::flood_energy_supply` to add the energy supply of a building we are currently placing to the overlay heatmap.
@@ -341,11 +358,11 @@ impl<'a> OverlayBufferCreator<'a> {
             // Start Flood from all fields to ensure event distance from buildings that are bigger than one cell
             start_coords.iter().for_each(|coords| {
                 let index = self.energy_supply_grid.index(*coords);
-                buffer_data[index] = EnergySupplyCell::with_supply(false, HighlightLevel::Highlighted);
+                buffer_data[index].set_supply(false, HighlightLevel::Highlighted);
                 queue.push_back((0, *coords));
                 visited_grid.set_visited(*coords);
             });
-            
+
             // First flood fill: determine reachability and check for power connection
             let mut has_power = false;
             while let Some((distance, coords)) = queue.pop_front() {
@@ -368,7 +385,7 @@ impl<'a> OverlayBufferCreator<'a> {
                     let buffer_index = self.energy_supply_grid.index(new_coords);
                     // By default we assume supply but no power.  Don't overwrite if data from the original pass is set.
                     if buffer_data[buffer_index].highlight_level != 2 {
-                        buffer_data[buffer_index] = EnergySupplyCell::with_supply(false, HighlightLevel::Highlighted);
+                        buffer_data[buffer_index].set_supply(false, HighlightLevel::Highlighted);
                     }
                     
                     let new_distance = distance + 1;
@@ -387,7 +404,7 @@ impl<'a> OverlayBufferCreator<'a> {
                 
                 start_coords.iter().for_each(|coords| {
                     let index = self.energy_supply_grid.index(*coords);
-                    buffer_data[index] = EnergySupplyCell::with_supply(true, HighlightLevel::Highlighted);
+                    buffer_data[index].set_supply(true, HighlightLevel::Highlighted);
                     queue.push_back((0, *coords));
                     visited_grid.set_visited(*coords);
                 });
@@ -403,7 +420,7 @@ impl<'a> OverlayBufferCreator<'a> {
                         let buffer_index = self.energy_supply_grid.index(new_coords);
                         // Only update cells that were marked as highlighted in the previous passes
                         if buffer_data[buffer_index].highlight_level == 2 {
-                            buffer_data[buffer_index] = EnergySupplyCell::with_supply(true, HighlightLevel::Highlighted);
+                            buffer_data[buffer_index].set_supply(true, HighlightLevel::Highlighted);
                             queue.push_back((0, new_coords));
                         }
                     }

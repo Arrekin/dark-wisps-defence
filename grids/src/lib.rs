@@ -1,3 +1,5 @@
+#![feature(adt_const_params)]
+
 use std::{collections::VecDeque, fmt::Debug};
 
 use bevy::prelude::*;
@@ -60,6 +62,11 @@ pub enum ObstacleGridObject {
 #[derive(Component, Default)]
 pub struct EmissionsGridSpreadAffector;
 
+/// System set for energy supply grid computation (supplier changes → power flood).
+/// Consumers that read `EnergySupplyGrid` should order after this set.
+#[derive(SystemSet, Clone, Copy, Eq, PartialEq, Hash, Debug)]
+pub struct EnergySupplySystems;
+
 // Marker: the entity's `Transform` is auto-synced to its `GridCoords` + `GridImprint` world position.
 #[derive(Component, Default)]
 pub struct AutoGridTransformSync;
@@ -67,6 +74,7 @@ pub struct AutoGridTransformSync;
 pub mod prelude {
     pub use super::{
         AutoGridTransformSync,
+        EnergySupplySystems,
         GridPath,
         GridVersion,
         ObstacleGridObject,

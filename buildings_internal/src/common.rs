@@ -33,13 +33,16 @@ pub(crate) fn building_validator(map_object: MapObject, coords: GridCoords, impr
 pub(crate) fn on_technical_state_changed_recompute_operational(
     trigger: On<TechnicalStateChanged>,
     mut commands: Commands,
-    state: Query<(Has<IsPowered>, Has<DisabledByPlayer>)>,
+    state: Query<(Has<IsPowered>, Has<DisabledByPlayer>, Has<IsOperational>)>,
 ) {
-    let Ok((has_power, is_disabled)) = state.get(trigger.entity) else { return; };
-    if has_power && !is_disabled {
-        commands.entity(trigger.entity).insert(IsOperational);
-    } else {
-        commands.entity(trigger.entity).remove::<IsOperational>();
+    let Ok((has_power, is_disabled, has_is_operational)) = state.get(trigger.entity) else { return; };
+    let should_be_operational = has_power && !is_disabled;
+    if should_be_operational != has_is_operational {
+        if should_be_operational {
+            commands.entity(trigger.entity).insert(IsOperational);
+        } else {
+            commands.entity(trigger.entity).remove::<IsOperational>();
+        }
     }
 }
 

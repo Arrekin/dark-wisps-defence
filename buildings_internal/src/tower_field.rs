@@ -227,12 +227,13 @@ impl BuilderTowerField {
     fn on_technical_state_changed_manage_force_field(
         trigger: On<TechnicalStateChanged>,
         mut commands: Commands,
-        towers: Query<(Option<&GeneratedForceField>, &AttackRange, &Transform, Has<IsPowered>, Has<DisabledByPlayer>), With<TowerField>>,
+        towers: Query<(Option<&GeneratedForceField>, &AttackRange, &Transform, Has<IsPowered>, Has<DisabledByPlayer>, Has<IsOperational>), With<TowerField>>,
     ) {
         let tower_entity = trigger.entity;
-        let Ok((generated_field, attack_range, transform, has_power, is_disabled)) = towers.get(tower_entity) else { return; };
+        let Ok((generated_field, attack_range, transform, has_power, is_disabled, has_is_operational)) = towers.get(tower_entity) else { return; };
 
         let is_operational = has_power && !is_disabled;
+        if is_operational == has_is_operational { return; }
         if is_operational {
             commands.entity(tower_entity).insert(IsOperational);
             if let Some(generated_field) = generated_field {

@@ -1,13 +1,33 @@
 use bevy::prelude::*;
 
 use alteration::modifiers::prelude::EnergySupplyRange;
-use game_core::prelude::{GridCoords, GridImprint, IsPowered, NeedsPower};
+use game_core::prelude::{DisabledByPlayer, GridCoords, GridImprint};
 use grids::{
-    energy_supply::{EnergySupplyGrid, FloodEnergySupplyMode, GeneratorEnergy, SupplierChangedEvent, SupplierEnergy},
+    energy_supply::{EnergySupplyGrid, FloodEnergySupplyMode, GeneratorEnergy, SupplierChange, SupplierChangedEvent, SupplierEnergy},
     prelude::*,
     search::flooding::{flood_energy_supply, flood_power_coverage},
+    EnergySupplySystems,
 };
 use states::prelude::MapLoadingStage;
+
+pub struct EnergySupplyPlugin;
+impl Plugin for EnergySupplyPlugin {
+    fn build(&self, app: &mut App) {
+        app
+            .insert_resource(EnergySupplyGrid::new_empty())
+            .init_resource::<EnergySupplyRecalculatePower>()
+            .add_message::<SupplierChangedEvent>()
+            .add_systems(OnExit(MapLoadingStage::LoadMapInfo), |mut commands: Commands, map_info: Res<MapInfo>| { commands.insert_resource(EnergySupplyGrid::new_with_size(map_info.grid_width, map_info.grid_height)); })
+            .add_systems(PostUpdate, (
+                (
+                    apply_supplier_changes,
+                    recalculate_power_coverage.run_if(resource_changed::<EnergySupplyRecalculatePower>),
+                ).chain().in_set(EnergySupplySystems),
+            ))
+            .add_observer(on_add_supplier_energy_register_supplier)
+            ;
+    }
+}
 
 #[derive(Resource, Default)]
 struct EnergySupplyRecalculatePower(bool);
@@ -17,18 +37,24 @@ fn on_add_supplier_energy_register_supplier(
     mut commands: Commands,
 ) {
     let entity = trigger.entity;
+    // All state transitions collapse into two state-free messages: coverage
+    // changes re-Place, coverage loss Removes. Which set a Place lands in
+    // (active vs disabled) is resolved from live entity state at apply time.
     commands.entity(entity)
-        .observe(on_insert_supplier_coords_or_range_emit_added_event)
-        .observe(on_discard_supplier_coords_or_range_emit_removed_event);
+        .observe(emit_supplier_changed::<Insert, (GridCoords, EnergySupplyRange, SupplierEnergy, DisabledByPlayer), { SupplierChange::Place }>)
+        .observe(emit_supplier_changed::<Discard, (GridCoords, EnergySupplyRange, SupplierEnergy), { SupplierChange::Remove }>)
+        .observe(emit_supplier_changed::<Remove, DisabledByPlayer, { SupplierChange::Place }>);
 }
 
-// Detect change in coords or range and trigger supply grid update
-fn on_insert_supplier_coords_or_range_emit_added_event(
-    trigger: On<Insert, (GridCoords, EnergySupplyRange, SupplierEnergy)>,
+fn emit_supplier_changed<E, B, const MODE: SupplierChange>(
+    trigger: On<E, B>,
     mut supplier_changed_event_writer: MessageWriter<SupplierChangedEvent>,
     suppliers: Query<(&EnergySupplyRange, &GridCoords, &GridImprint), With<SupplierEnergy>>,
-) {
-    let entity = trigger.entity;
+) where
+    E: EntityEvent,
+    B: Bundle,
+{
+    let entity = trigger.event_target();
     let Ok((energy_supply_range, grid_coords, grid_imprint)) = suppliers.get(entity) else { return; };
 
     supplier_changed_event_writer.write(SupplierChangedEvent {
@@ -36,25 +62,7 @@ fn on_insert_supplier_coords_or_range_emit_added_event(
         imprint: *grid_imprint,
         grid_coords: *grid_coords,
         range: *energy_supply_range,
-        mode: FloodEnergySupplyMode::Increase,
-    });
-}
-// Detect change in coords or range and trigger supply grid update
-fn on_discard_supplier_coords_or_range_emit_removed_event(
-    trigger: On<Discard, (GridCoords, EnergySupplyRange, SupplierEnergy)>,
-    mut supplier_changed_event_writer: MessageWriter<SupplierChangedEvent>,
-    suppliers: Query<(&EnergySupplyRange, &GridCoords, &GridImprint), With<SupplierEnergy>>,
-
-) {
-    let entity = trigger.entity;
-    let Ok((energy_supply_range, grid_coords, grid_imprint)) = suppliers.get(entity) else { return; };
-
-    supplier_changed_event_writer.write(SupplierChangedEvent {
-        supplier: entity,
-        imprint: *grid_imprint,
-        grid_coords: *grid_coords,
-        range: *energy_supply_range,
-        mode: FloodEnergySupplyMode::Decrease,
+        mode: MODE,
     });
 }
 
@@ -62,12 +70,27 @@ fn apply_supplier_changes(
     mut energy_supply_grid: ResMut<EnergySupplyGrid>,
     mut need_recalculate_power: ResMut<EnergySupplyRecalculatePower>,
     mut events: MessageReader<SupplierChangedEvent>,
+    suppliers: Query<Has<DisabledByPlayer>, With<SupplierEnergy>>,
 ) {
     for event in events.read() {
+        // Resolve the concrete grid operation from live entity state, so a
+        // message can never act on state that was stale at emit time.
+        let mode = match event.mode {
+            SupplierChange::Remove => FloodEnergySupplyMode::Remove,
+            SupplierChange::Place => {
+                // Supplier no longer alive with SupplierEnergy by apply time
+                // (despawned, or component removed): its Discard observer
+                // emitted a Remove for the same range — drop this Place so a
+                // dead supplier can't be resurrected (e.g. by the
+                // Remove<DisabledByPlayer> that fires during despawn).
+                let Ok(as_disabled) = suppliers.get(event.supplier) else { continue; };
+                FloodEnergySupplyMode::Place { as_disabled }
+            }
+        };
         flood_energy_supply(
             &mut energy_supply_grid,
             event.imprint.iter(event.grid_coords),
-            event.mode,
+            mode,
             event.range,
             event.supplier,
         );
@@ -84,80 +107,4 @@ fn recalculate_power_coverage(
     need_recalculate_power.0 = false;
 
     flood_power_coverage(&mut energy_supply_grid, generators_energy.iter().copied());
-}
-
-fn on_add_needs_power_init_power_state(
-    trigger: On<Add, NeedsPower>,
-    mut commands: Commands,
-    energy_supply_grid: Res<EnergySupplyGrid>,
-    power_query: Query<(&GridCoords, &GridImprint), With<NeedsPower>>,
-) {
-    let entity = trigger.entity;
-    let Ok((grid_coords, grid_imprint)) = power_query.get(entity) else { return; };
-
-    let has_power = energy_supply_grid.is_imprint_powered(*grid_coords, *grid_imprint);
-    if has_power {
-        commands.entity(entity).insert(IsPowered);
-    }
-    commands.entity(entity).observe(on_insert_needs_power_coords_refresh_power_state);
-}
-
-/// Local observer triggered when GridCoords or GridImprint changes on NeedsPower entities
-fn on_insert_needs_power_coords_refresh_power_state(
-    trigger: On<Insert, (GridCoords, GridImprint)>,
-    mut commands: Commands,
-    energy_supply_grid: Res<EnergySupplyGrid>,
-    power_query: Query<(&GridCoords, &GridImprint), With<NeedsPower>>,
-) {
-    let entity = trigger.entity;
-    let Ok((grid_coords, grid_imprint)) = power_query.get(entity) else { return; };
-
-    let has_power = energy_supply_grid.is_imprint_powered(*grid_coords, *grid_imprint);
-    if has_power {
-        commands.entity(entity).insert(IsPowered);
-    } else {
-        commands.entity(entity).remove::<IsPowered>();
-    }
-}
-
-/// System that updates power states when the energy grid changes
-fn update_power_state(
-    mut commands: Commands,
-    energy_supply_grid: Res<EnergySupplyGrid>,
-    power_entities: Query<(Entity, &GridCoords, &GridImprint), With<NeedsPower>>,
-    mut current_energy_supply_grid_version: Local<GridVersion>,
-) {
-    // Only run when energy grid version changes
-    if *current_energy_supply_grid_version == energy_supply_grid.version { return; }
-    *current_energy_supply_grid_version = energy_supply_grid.version;
-
-    for (entity, grid_coords, grid_imprint) in power_entities.iter() {
-        let has_power = energy_supply_grid.is_imprint_powered(*grid_coords, *grid_imprint);
-        if has_power {
-            commands.entity(entity).insert(IsPowered);
-        } else {
-            commands.entity(entity).remove::<IsPowered>();
-        }
-    }
-}
-
-pub struct EnergySupplyPlugin;
-impl Plugin for EnergySupplyPlugin {
-    fn build(&self, app: &mut App) {
-        app
-            .insert_resource(EnergySupplyGrid::new_empty())
-            .init_resource::<EnergySupplyRecalculatePower>()
-            .add_message::<SupplierChangedEvent>()
-            .add_systems(OnExit(MapLoadingStage::LoadMapInfo), |mut commands: Commands, map_info: Res<MapInfo>| { commands.insert_resource(EnergySupplyGrid::new_with_size(map_info.grid_width, map_info.grid_height)); })
-            .add_systems(PostUpdate, (
-                (
-                    apply_supplier_changes,
-                    recalculate_power_coverage.run_if(resource_changed::<EnergySupplyRecalculatePower>),
-                    update_power_state,
-                ).chain(),
-            ))
-            .add_observer(on_add_supplier_energy_register_supplier)
-            .add_observer(on_add_needs_power_init_power_state)
-            ;
-    }
 }

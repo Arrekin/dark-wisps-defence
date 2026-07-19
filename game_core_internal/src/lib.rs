@@ -2,6 +2,7 @@ use bevy::{ecs::schedule::IntoScheduleConfigs, prelude::*, transform::TransformS
 
 use alteration::modifiers::prelude::IncomingDamageMultiplier;
 use game_core::{motion::MotionSystems, prelude::*};
+use grids::{energy_supply::EnergySupplyGrid, prelude::{EnergySupplySystems, GridVersion}};
 
 pub struct GameCorePlugin;
 impl Plugin for GameCorePlugin {
@@ -25,7 +26,9 @@ impl Plugin for GameCorePlugin {
             .add_message::<DamageMessage>()
             .add_systems(PostUpdate, (
                 process_damage.run_if(on_message::<DamageMessage>),
-            ));
+                update_power_state.after(EnergySupplySystems),
+            ))
+            .add_observer(on_add_needs_power_init_power_state);
     }
 }
 
@@ -75,4 +78,67 @@ fn on_insert_disabled_by_player_emit_technical_state_changed(trigger: On<Insert,
 }
 fn on_remove_disabled_by_player_emit_technical_state_changed(trigger: On<Remove, DisabledByPlayer>, mut commands: Commands) {
     commands.trigger(TechnicalStateChanged { entity: trigger.entity, kind: TechnicalChange::PlayerEnabled });
+}
+
+// ============================================================================
+// NeedsPower — power state management
+// ============================================================================
+
+fn on_add_needs_power_init_power_state(
+    trigger: On<Add, NeedsPower>,
+    mut commands: Commands,
+    energy_supply_grid: Res<EnergySupplyGrid>,
+    power_query: Query<(&GridCoords, &GridImprint), With<NeedsPower>>,
+) {
+    let entity = trigger.entity;
+    let Ok((grid_coords, grid_imprint)) = power_query.get(entity) else { return; };
+
+    let has_power = energy_supply_grid.is_imprint_powered(*grid_coords, *grid_imprint);
+    if has_power {
+        commands.entity(entity).insert(IsPowered);
+    }
+    commands.entity(entity).observe(on_insert_needs_power_coords_refresh_power_state);
+}
+
+/// Local observer triggered when GridCoords or GridImprint changes on NeedsPower entities
+fn on_insert_needs_power_coords_refresh_power_state(
+    trigger: On<Insert, (GridCoords, GridImprint)>,
+    mut commands: Commands,
+    energy_supply_grid: Res<EnergySupplyGrid>,
+    power_query: Query<(&GridCoords, &GridImprint, Has<IsPowered>), With<NeedsPower>>,
+) {
+    let entity = trigger.entity;
+    let Ok((grid_coords, grid_imprint, has_is_powered)) = power_query.get(entity) else { return; };
+
+    let has_power = energy_supply_grid.is_imprint_powered(*grid_coords, *grid_imprint);
+    if has_power != has_is_powered {
+        if has_power {
+            commands.entity(entity).insert(IsPowered);
+        } else {
+            commands.entity(entity).remove::<IsPowered>();
+        }
+    }
+}
+
+/// System that updates power states when the energy grid changes
+fn update_power_state(
+    mut commands: Commands,
+    energy_supply_grid: Res<EnergySupplyGrid>,
+    power_entities: Query<(Entity, &GridCoords, &GridImprint, Has<IsPowered>), With<NeedsPower>>,
+    mut current_energy_supply_grid_version: Local<GridVersion>,
+) {
+    // Only run when energy grid version changes
+    if *current_energy_supply_grid_version == energy_supply_grid.version { return; }
+    *current_energy_supply_grid_version = energy_supply_grid.version;
+
+    for (entity, grid_coords, grid_imprint, has_is_powered) in power_entities.iter() {
+        let has_power = energy_supply_grid.is_imprint_powered(*grid_coords, *grid_imprint);
+        if has_power != has_is_powered {
+            if has_power {
+                commands.entity(entity).insert(IsPowered);
+            } else {
+                commands.entity(entity).remove::<IsPowered>();
+            }
+        }
+    }
 }

@@ -4,9 +4,6 @@ use game_core::prelude::{GridCoords, GridImprint};
 
 use crate::{GridVersion, base::BaseGrid};
 
-/// Companion component to EmitterEnergy. Use it to mark wheter Emitter is functional.
-#[derive(Component, Default)]
-pub struct EmitterEnergyEnabled;
 #[derive(Component)]
 pub struct EmitterEnergy(pub FloodEmissionsDetails);
 

@@ -2,7 +2,7 @@ use std::collections::BinaryHeap;
 
 use game_core::prelude::GridCoords;
 
-use crate::{emissions::EmissionsGrid, obstacles::GridStructureType, prelude::*};
+use crate::{emissions::EmissionsGrid, energy_supply::EnergySupplyGrid, obstacles::GridStructureType, prelude::*};
 
 use super::common::{ALL_DIRECTIONS, State, TRACKING_GRID};
 
@@ -12,6 +12,7 @@ const BUILDING_FIELD_MODIFIER: f32 = 0.1;
 pub fn path_find_energy_beckon(
     obstacle_grid: &ObstacleGrid,
     emissions_grid: &EmissionsGrid,
+    energy_supply_grid: &EnergySupplyGrid,
     start_coords: GridCoords,
 ) -> Option<Vec<GridCoords>> {
     // BFS to find closest building field
@@ -42,9 +43,16 @@ pub fn path_find_energy_beckon(
                 tracking.set_tracked(new_coords, coords);
                 let new_distance = distance + 1;
                 let new_cost = match obstacle_grid[new_coords].structure {
-                    GridStructureType::Building(_, building_type) => {
-                        // TODO: Currently finds the supplier even if its turned off(Disabled by player / not powered etc.)
-                        if building_type.is_energy_supplier() {
+                    GridStructureType::Building(entity, building_type) => {
+                        // A supplier is a valid target only if it is operational:
+                        //   1. has_supplier(entity) — supplier is in the active set (not disabled by player)
+                        //   2. has_power()         — the power flood reached this cell (it is powered)
+                        // Together they guarantee the supplier is on and emitting.
+                        // See energy_supply.rs for details.
+                        if building_type.is_energy_supplier()
+                            && energy_supply_grid[new_coords].has_supplier(entity)
+                            && energy_supply_grid[new_coords].has_power()
+                        {
                             // Compile the path by backtracking
                             return Some(tracking.compile_path(new_coords, start_coords));
                         } else {

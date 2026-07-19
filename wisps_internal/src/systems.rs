@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use alteration::modifiers::prelude::*;
 use buildings::prelude::*;
 use game_core::prelude::*;
-use grids::{emissions::EmissionsGrid, obstacles::GridStructureType, prelude::*, search::pathfinding::path_find_energy_beckon, wisps::WispsGrid};
+use grids::{emissions::EmissionsGrid, energy_supply::EnergySupplyGrid, obstacles::GridStructureType, prelude::*, search::pathfinding::path_find_energy_beckon, wisps::WispsGrid};
 use resources::prelude::*;
 use session::StatsWispsKilled;
 use visuals::prelude::*;
@@ -143,6 +143,7 @@ pub(crate) fn move_wisps(
 pub(crate) fn target_wisps(
     emissions_grid: Res<EmissionsGrid>,
     obstacle_grid: Res<ObstacleGrid>,
+    energy_supply_grid: Res<EnergySupplyGrid>,
     mut wisps_query: Query<(&mut WispState, &mut GridPath, &GridCoords), With<Wisp>>,
 ) {
     wisps_query.par_iter_mut().for_each(|(mut wisp_state, mut grid_path, grid_coords)| {
@@ -151,7 +152,7 @@ pub(crate) fn target_wisps(
         let need_retarget = is_path_outdated || matches!(*wisp_state, WispState::NeedTarget | WispState::JustSpawned) || matches!(*wisp_state, WispState::Stranded(ref grid_version) if obstacle_grid.version != *grid_version);
         if !need_retarget { return; }
 
-        if let Some(path) = path_find_energy_beckon(&obstacle_grid, &emissions_grid, *grid_coords) {
+        if let Some(path) = path_find_energy_beckon(&obstacle_grid, &emissions_grid, &energy_supply_grid, *grid_coords) {
             *wisp_state = WispState::MovingToTarget;
             grid_path.grid_version = obstacle_grid.version;
             grid_path.path = path.into();
