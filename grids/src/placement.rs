@@ -45,23 +45,63 @@ impl<T> Default for BeginPlacing<T> {fn default() -> Self { Self(PhantomData) } 
 impl<T> Clone for BeginPlacing<T> {fn clone(&self) -> Self { *self } }
 impl<T> Copy for BeginPlacing<T> {}
 
-/// Trait for dynamic event dispatch. Stored as `Box<dyn PlacementEmitter>` in ObjectPlacementInfo.
-pub trait PlacementEmitter: Send + Sync {
-    fn emit(&self, commands: &mut Commands);
+/// Triggers `PlaceRequest<T>::default()` via `Commands`.
+fn trigger_place<T: Send + Sync + 'static>(commands: &mut Commands) {
+    commands.trigger(PlaceRequest::<T>::default());
 }
-impl<T: Send + Sync + 'static> PlacementEmitter for PlaceRequest<T> {
-    fn emit(&self, commands: &mut Commands) {
-        commands.trigger(*self);
+/// Triggers `RemoveRequest<T>::default()` via `Commands`.
+fn trigger_remove<T: Send + Sync + 'static>(commands: &mut Commands) {
+    commands.trigger(RemoveRequest::<T>::default());
+}
+/// Triggers `BeginPlacing<T>::default()` via `Commands`.
+fn trigger_begin<T: Send + Sync + 'static>(commands: &mut Commands) {
+    commands.trigger(BeginPlacing::<T>::default());
+}
+
+/// Bundles the placement-channel events and click modes for one marker type `T`.
+///
+/// The three `fn(&mut Commands)` pointers trigger `PlaceRequest<T>` /
+/// `RemoveRequest<T>` / `BeginPlacing<T>`; they're `Copy + Clone`, so the
+/// descriptor lives directly on `*Info` and `ObjectPlacementInfo`. All three
+/// are always wired — triggering an event with no observers is a no-op in
+/// Bevy, so whether a type actually supports removal / begin-placing is
+/// determined by whether the domain registers an observer for
+/// `RemoveRequest<T>` / `BeginPlacing<T>`.
+///
+/// `place_mode` / `remove_mode` control whether the placer emits on press
+/// (burst/drag) or release (single click); both default to `OnRelease`.
+/// `begin` has no mode — it's emitted once at placement-session activation,
+/// unconditionally.
+#[derive(Clone, Copy)]
+pub struct PlacementChannel {
+    pub place: fn(&mut Commands),
+    pub remove: fn(&mut Commands),
+    pub begin: fn(&mut Commands),
+    pub place_mode: PlacementMode,
+    pub remove_mode: PlacementMode,
+}
+
+impl PlacementChannel {
+    /// Builds the descriptor for a marker type `T`, with both click modes
+    /// defaulting to `OnRelease`. Registration sites call this to state intent:
+    /// "this object routes placement through the `T` channel."
+    pub fn of<T: Send + Sync + 'static>() -> Self {
+        Self {
+            place: trigger_place::<T>,
+            remove: trigger_remove::<T>,
+            begin: trigger_begin::<T>,
+            place_mode: PlacementMode::OnRelease,
+            remove_mode: PlacementMode::OnRelease,
+        }
     }
-}
-impl<T: Send + Sync + 'static> PlacementEmitter for RemoveRequest<T> {
-    fn emit(&self, commands: &mut Commands) {
-        commands.trigger(*self);
-    }
-}
-impl<T: Send + Sync + 'static> PlacementEmitter for BeginPlacing<T> {
-    fn emit(&self, commands: &mut Commands) {
-        commands.trigger(*self);
+
+    /// Sets both `place_mode` and `remove_mode` to the same value. Use for
+    /// burst/drag placement (e.g. walls, dark ore) where both actions emit
+    /// on press.
+    pub fn with_modes(mut self, mode: PlacementMode) -> Self {
+        self.place_mode = mode;
+        self.remove_mode = mode;
+        self
     }
 }
 
@@ -117,11 +157,7 @@ pub struct ObjectPlacementInfo {
     pub imprint: GridImprint,
     pub validate: PlacementValidatorFn,
     pub annotate: PlacementAnnotatorFn,
-    pub place_emitter: Box<dyn PlacementEmitter>,
-    pub remove_emitter: Option<Box<dyn PlacementEmitter>>,
-    pub begin_placing_emitter: Option<Box<dyn PlacementEmitter>>,
-    pub place_mode: PlacementMode,
-    pub remove_mode: PlacementMode,
+    pub placement: PlacementChannel,
     /// Handle for the ghost preview image shown while placing. `None` falls back to a solid tinted shape.
     pub preview_image: Option<Handle<Image>>,
 }

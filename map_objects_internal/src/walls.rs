@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use almanach::{Almanach, AlmanachAppExt, WallInfo};
 use game_core::prelude::{GridCoords, GridImprint, MapObject, SSS, Z_OBSTACLE};
 use grids::obstacles::GridStructureType;
-use grids::placement::{annotate_non_empty, GridObjectPlacer, GridsCollectionParam, PlacementEmitter, PlacementMode, PlacementValidity, PlaceRequest, RemoveRequest, validator_all_empty};
+use grids::placement::{annotate_non_empty, GridObjectPlacer, GridsCollectionParam, PlacementChannel, PlacementMode, PlacementValidity, PlaceRequest, RemoveRequest, validator_all_empty};
 use logging::prelude::*;
 use map_objects::Wall;
 use persistence::{
@@ -42,11 +42,7 @@ impl BuilderWall {
             sprite: asset_server.load("map_objects/wall_4side.png"),
             validate: validator_all_empty,
             annotate: annotate_non_empty,
-            place_emitter: || -> Box<dyn PlacementEmitter> { Box::new(PlaceRequest::<Wall>::default()) },
-            remove_emitter: Some(|| -> Box<dyn PlacementEmitter> { Box::new(RemoveRequest::<Wall>::default()) }),
-            begin_placing_emitter: None,
-            place_mode: PlacementMode::OnPress,
-            remove_mode: PlacementMode::OnPress,
+            placement: PlacementChannel::of::<Wall>().with_modes(PlacementMode::OnPress),
         }
     }
 

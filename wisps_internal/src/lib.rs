@@ -8,7 +8,7 @@ use bevy::sprite_render::Material2dPlugin;
 
 use almanach::{WispInfo, prelude::*};
 use game_core::{motion::MotionSystems, prelude::*};
-use grids::placement::{annotate_non_empty, PlacementEmitter, PlacementMode, PlaceRequest, RemoveRequest};
+use grids::placement::{annotate_non_empty, PlacementChannel, PlacementMode};
 use persistence::prelude::{AppGameLoadSaveExtension, CollectSave};
 use states::prelude::*;
 use visuals::prelude::*;
@@ -64,11 +64,7 @@ impl Plugin for WispsPlugin {
                 grid_imprint: WISP_GRID_IMPRINT,
                 validate: spawning::wisp_validator,
                 annotate: annotate_non_empty,
-                place_emitter: || -> Box<dyn PlacementEmitter> { Box::new(PlaceRequest::<WispType>::default()) },
-                remove_emitter: Some(|| -> Box<dyn PlacementEmitter> { Box::new(RemoveRequest::<WispType>::default()) }),
-                begin_placing_emitter: None,
-                place_mode: PlacementMode::OnPress,
-                remove_mode: PlacementMode::OnPress,
+                placement: PlacementChannel::of::<WispType>().with_modes(PlacementMode::OnPress),
             });
     }
 }

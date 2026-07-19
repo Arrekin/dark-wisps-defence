@@ -24,7 +24,7 @@ use bevy::prelude::*;
 use almanach::prelude::AlmanachAppExt;
 use almanach::{Almanach, QuantumFieldInfo};
 use game_core::prelude::{GridCoords, GridImprint, MapObject, SSS, Z_OBSTACLE};
-use grids::placement::{BeginPlacing, CellHighlight, GridObjectPlacer, GridsCollectionParam, PlacementEmitter, PlacementMode, PlacementValidity, PlaceRequest, RemoveRequest};
+use grids::placement::{BeginPlacing, CellHighlight, GridObjectPlacer, GridsCollectionParam, PlacementChannel, PlacementValidity, PlaceRequest, RemoveRequest};
 use hud::prelude::{DisplayPanelMainContentRoot, FocusedMapObject};
 use logging::prelude::*;
 use map_objects::prelude::*;
@@ -68,11 +68,7 @@ impl Plugin for QuantumFieldPlugin {
             default_size: 3,
             validate: quantum_field_validator,
             annotate: quantum_field_annotator,
-            place_emitter: || -> Box<dyn PlacementEmitter> { Box::new(PlaceRequest::<QuantumField>::default()) },
-            remove_emitter: Some(|| -> Box<dyn PlacementEmitter> { Box::new(RemoveRequest::<QuantumField>::default()) }),
-            begin_placing_emitter: Some(|| -> Box<dyn PlacementEmitter> { Box::new(BeginPlacing::<QuantumField>::default()) }),
-            place_mode: PlacementMode::OnRelease,
-            remove_mode: PlacementMode::OnRelease,
+            placement: PlacementChannel::of::<QuantumField>(),
         })
         ;
     }
@@ -403,7 +399,7 @@ impl GridPlacerUiForQuantumField {
     }
 
     fn on_begin_placing_spawn_grid_placer_ui(
-        _trigger: On<grids::placement::BeginPlacing<QuantumField>>,
+        _trigger: On<BeginPlacing<QuantumField>>,
         mut commands: Commands,
         almanach: Res<Almanach>,
     ) {

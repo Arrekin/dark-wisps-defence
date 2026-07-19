@@ -3,7 +3,7 @@ use bevy::prelude::*;
 
 use alteration::modifiers::prelude::ModifierType;
 use game_core::prelude::{BuildingType, GridImprint, MapObject, ShardType};
-use grids::placement::{ObjectPlacementInfo, PlacementAnnotatorFn, PlacementEmitter, PlacementMode, PlacementValidatorFn};
+use grids::placement::{ObjectPlacementInfo, PlacementAnnotatorFn, PlacementChannel, PlacementValidatorFn};
 use resources::prelude::Cost;
 use states::prelude::MapLoadingStage;
 
@@ -160,11 +160,7 @@ pub struct BuildingInfo {
     pub annotate: PlacementAnnotatorFn,
     pub sprite: Handle<Image>,
     pub top_sprite: Option<Handle<Image>>,
-    pub place_emitter: fn() -> Box<dyn PlacementEmitter>,
-    pub remove_emitter: Option<fn() -> Box<dyn PlacementEmitter>>,
-    pub begin_placing_emitter: Option<fn() -> Box<dyn PlacementEmitter>>,
-    pub place_mode: PlacementMode,
-    pub remove_mode: PlacementMode,
+    pub placement: PlacementChannel,
 }
 
 impl From<&BuildingInfo> for ObjectPlacementInfo {
@@ -173,11 +169,7 @@ impl From<&BuildingInfo> for ObjectPlacementInfo {
             imprint: info.grid_imprint,
             validate: info.validate,
             annotate: info.annotate,
-            place_emitter: (info.place_emitter)(),
-            remove_emitter: info.remove_emitter.map(|f| f()),
-            begin_placing_emitter: info.begin_placing_emitter.map(|f| f()),
-            place_mode: info.place_mode,
-            remove_mode: info.remove_mode,
+            placement: info.placement,
             preview_image: Some(info.sprite.clone()),
         }
     }
@@ -194,11 +186,7 @@ pub struct WallInfo {
     pub sprite: Handle<Image>,
     pub validate: PlacementValidatorFn,
     pub annotate: PlacementAnnotatorFn,
-    pub place_emitter: fn() -> Box<dyn PlacementEmitter>,
-    pub remove_emitter: Option<fn() -> Box<dyn PlacementEmitter>>,
-    pub begin_placing_emitter: Option<fn() -> Box<dyn PlacementEmitter>>,
-    pub place_mode: PlacementMode,
-    pub remove_mode: PlacementMode,
+    pub placement: PlacementChannel,
 }
 
 impl From<&WallInfo> for ObjectPlacementInfo {
@@ -207,11 +195,7 @@ impl From<&WallInfo> for ObjectPlacementInfo {
             imprint: info.grid_imprint,
             validate: info.validate,
             annotate: info.annotate,
-            place_emitter: (info.place_emitter)(),
-            remove_emitter: info.remove_emitter.map(|f| f()),
-            begin_placing_emitter: info.begin_placing_emitter.map(|f| f()),
-            place_mode: info.place_mode,
-            remove_mode: info.remove_mode,
+            placement: info.placement,
             preview_image: Some(info.sprite.clone()),
         }
     }
@@ -229,11 +213,7 @@ pub struct DarkOreInfo {
     pub default_amount: u32,
     pub validate: PlacementValidatorFn,
     pub annotate: PlacementAnnotatorFn,
-    pub place_emitter: fn() -> Box<dyn PlacementEmitter>,
-    pub remove_emitter: Option<fn() -> Box<dyn PlacementEmitter>>,
-    pub begin_placing_emitter: Option<fn() -> Box<dyn PlacementEmitter>>,
-    pub place_mode: PlacementMode,
-    pub remove_mode: PlacementMode,
+    pub placement: PlacementChannel,
 }
 
 impl From<&DarkOreInfo> for ObjectPlacementInfo {
@@ -242,11 +222,7 @@ impl From<&DarkOreInfo> for ObjectPlacementInfo {
             imprint: info.grid_imprint,
             validate: info.validate,
             annotate: info.annotate,
-            place_emitter: (info.place_emitter)(),
-            remove_emitter: info.remove_emitter.map(|f| f()),
-            begin_placing_emitter: info.begin_placing_emitter.map(|f| f()),
-            place_mode: info.place_mode,
-            remove_mode: info.remove_mode,
+            placement: info.placement,
             preview_image: info.sprites.first().cloned(),
         }
     }
@@ -264,11 +240,7 @@ pub struct QuantumFieldInfo {
     pub default_size: i32,
     pub validate: PlacementValidatorFn,
     pub annotate: PlacementAnnotatorFn,
-    pub place_emitter: fn() -> Box<dyn PlacementEmitter>,
-    pub remove_emitter: Option<fn() -> Box<dyn PlacementEmitter>>,
-    pub begin_placing_emitter: Option<fn() -> Box<dyn PlacementEmitter>>,
-    pub place_mode: PlacementMode,
-    pub remove_mode: PlacementMode,
+    pub placement: PlacementChannel,
 }
 
 impl From<&QuantumFieldInfo> for ObjectPlacementInfo {
@@ -277,11 +249,7 @@ impl From<&QuantumFieldInfo> for ObjectPlacementInfo {
             imprint: info.default_imprint(),
             validate: info.validate,
             annotate: info.annotate,
-            place_emitter: (info.place_emitter)(),
-            remove_emitter: info.remove_emitter.map(|f| f()),
-            begin_placing_emitter: info.begin_placing_emitter.map(|f| f()),
-            place_mode: info.place_mode,
-            remove_mode: info.remove_mode,
+            placement: info.placement,
             preview_image: None,
         }
     }
@@ -302,11 +270,7 @@ pub struct WispInfo {
     pub grid_imprint: GridImprint,
     pub validate: PlacementValidatorFn,
     pub annotate: PlacementAnnotatorFn,
-    pub place_emitter: fn() -> Box<dyn PlacementEmitter>,
-    pub remove_emitter: Option<fn() -> Box<dyn PlacementEmitter>>,
-    pub begin_placing_emitter: Option<fn() -> Box<dyn PlacementEmitter>>,
-    pub place_mode: PlacementMode,
-    pub remove_mode: PlacementMode,
+    pub placement: PlacementChannel,
 }
 
 impl From<&WispInfo> for ObjectPlacementInfo {
@@ -315,11 +279,7 @@ impl From<&WispInfo> for ObjectPlacementInfo {
             imprint: info.grid_imprint,
             validate: info.validate,
             annotate: info.annotate,
-            place_emitter: (info.place_emitter)(),
-            remove_emitter: info.remove_emitter.map(|f| f()),
-            begin_placing_emitter: info.begin_placing_emitter.map(|f| f()),
-            place_mode: info.place_mode,
-            remove_mode: info.remove_mode,
+            placement: info.placement,
             preview_image: None,
         }
     }

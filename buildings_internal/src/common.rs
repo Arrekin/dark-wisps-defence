@@ -1,14 +1,9 @@
 use bevy::prelude::*;
 
-use buildings::prelude::Building;
 use game_core::prelude::{BuildingType, DisabledByPlayer, GridCoords, GridImprint, IsOperational, IsPowered, MapObject, TechnicalStateChanged};
 use grids::{
-    placement::{validator_all_empty, GridsCollectionParam, PlaceRequest, PlacementEmitter, PlacementValidity},
+    placement::{validator_all_empty, GridsCollectionParam, PlacementValidity},
 };
-
-pub(crate) fn building_place_emitter() -> Box<dyn PlacementEmitter> {
-    Box::new(PlaceRequest::<Building>::default())
-}
 
 pub(crate) fn building_validator(map_object: MapObject, coords: GridCoords, imprint: GridImprint, map_data: &GridsCollectionParam) -> PlacementValidity {
     let MapObject::Building(building_type) = map_object else {

@@ -13,7 +13,7 @@ use alteration::{
 use almanach::prelude::*;
 use buildings::prelude::*;
 use game_core::prelude::*;
-use grids::placement::{annotate_non_empty, PlacementMode};
+use grids::placement::{annotate_non_empty, PlacementChannel};
 use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
 use logging::prelude::*;
 use persistence::{
@@ -72,11 +72,7 @@ impl BuilderTowerField {
             ]),
             validate: building_validator,
             annotate: annotate_non_empty,
-            place_emitter: building_place_emitter,
-            remove_emitter: None,
-            begin_placing_emitter: None,
-            place_mode: PlacementMode::OnRelease,
-            remove_mode: PlacementMode::OnRelease,
+            placement: PlacementChannel::of::<Building>(),
         }
     }
 

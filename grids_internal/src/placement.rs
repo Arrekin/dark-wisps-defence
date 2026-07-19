@@ -241,12 +241,10 @@ fn begin_placement(
         commands.trigger(StopPlacing);
     }
 
-    let mut placement_info = almanach.get_placement_info_for(map_object);
+    let placement_info = almanach.get_placement_info_for(map_object);
     *grid_imprint = placement_info.imprint;
 
-    if let Some(emitter) = placement_info.begin_placing_emitter.take() {
-        emitter.emit(&mut commands);
-    }
+    (placement_info.placement.begin)(&mut commands);
 
     grid_object_placer.active_placement = Some(ActivePlacement { map_object, placement_info });
 
@@ -264,20 +262,18 @@ fn handle_placement_click(
 
     let Some(ref active_placement) = placer.active_placement else { return };
 
-    let should_place = match active_placement.placement_info.place_mode {
+    let should_place = match active_placement.placement_info.placement.place_mode {
         PlacementMode::OnRelease => mouse.just_released(MouseButton::Left),
         PlacementMode::OnPress => mouse.pressed(MouseButton::Left),
     };
-    let should_remove = match active_placement.placement_info.remove_mode {
+    let should_remove = match active_placement.placement_info.placement.remove_mode {
         PlacementMode::OnRelease => mouse.just_released(MouseButton::Right),
         PlacementMode::OnPress => mouse.pressed(MouseButton::Right),
     };
 
     if should_place {
-        active_placement.placement_info.place_emitter.emit(&mut commands);
+        (active_placement.placement_info.placement.place)(&mut commands);
     } else if should_remove {
-        if let Some(remove_emitter) = &active_placement.placement_info.remove_emitter {
-            remove_emitter.emit(&mut commands);
-        }
+        (active_placement.placement_info.placement.remove)(&mut commands);
     }
 }

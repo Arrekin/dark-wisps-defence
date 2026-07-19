@@ -6,7 +6,7 @@ use nanorand::Rng;
 use almanach::prelude::AlmanachAppExt;
 use almanach::{Almanach, DarkOreInfo};
 use game_core::prelude::{GridCoords, GridImprint, MapObject, SSS, Z_OBSTACLE};
-use grids::placement::{annotate_non_empty, GridObjectPlacer, GridsCollectionParam, PlacementEmitter, PlacementMode, PlacementValidity, PlaceRequest, RemoveRequest, validator_all_empty};
+use grids::placement::{annotate_non_empty, GridObjectPlacer, GridsCollectionParam, PlacementChannel, PlacementMode, PlacementValidity, PlaceRequest, RemoveRequest, validator_all_empty};
 use grids::prelude::ObstacleGrid;
 use logging::prelude::*;
 use map_objects::prelude::*;
@@ -56,11 +56,7 @@ impl BuilderDarkOre {
             default_amount: 1000,
             validate: validator_all_empty,
             annotate: annotate_non_empty,
-            place_emitter: || -> Box<dyn PlacementEmitter> { Box::new(PlaceRequest::<DarkOre>::default()) },
-            remove_emitter: Some(|| -> Box<dyn PlacementEmitter> { Box::new(RemoveRequest::<DarkOre>::default()) }),
-            begin_placing_emitter: None,
-            place_mode: PlacementMode::OnPress,
-            remove_mode: PlacementMode::OnPress,
+            placement: PlacementChannel::of::<DarkOre>().with_modes(PlacementMode::OnPress),
         }
     }
 

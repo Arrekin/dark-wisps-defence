@@ -19,7 +19,7 @@ use alteration::{
 use almanach::prelude::*;
 use buildings::prelude::*;
 use game_core::prelude::*;
-use grids::placement::{annotate_non_empty, PlacementMode};
+use grids::placement::{annotate_non_empty, PlacementChannel};
 use hud::prelude::*;
 use logging::prelude::*;
 use persistence::{
@@ -215,11 +215,7 @@ impl BuilderForge {
             baseline: HashMap::from([(ModifierType::MaxIntegrityPoints, 100.)]),
             validate: building_validator,
             annotate: annotate_non_empty,
-            place_emitter: building_place_emitter,
-            remove_emitter: None,
-            begin_placing_emitter: None,
-            place_mode: PlacementMode::OnRelease,
-            remove_mode: PlacementMode::OnRelease,
+            placement: PlacementChannel::of::<Building>(),
         }
     }
 

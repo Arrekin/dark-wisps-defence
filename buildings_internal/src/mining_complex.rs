@@ -11,7 +11,7 @@ use alteration::{
 use almanach::prelude::*;
 use buildings::prelude::*;
 use game_core::prelude::*;
-use grids::placement::{CellHighlight, GridsCollectionParam, PlacementMode, PlacementValidity};
+use grids::placement::{CellHighlight, GridsCollectionParam, PlacementChannel, PlacementValidity};
 use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
 use logging::prelude::*;
 use map_objects::{
@@ -108,11 +108,7 @@ impl BuilderMiningComplex {
             baseline: HashMap::from([(ModifierType::MaxIntegrityPoints, 100.)]),
             validate: mining_complex_validator,
             annotate: mining_complex_annotator,
-            place_emitter: building_place_emitter,
-            remove_emitter: None,
-            begin_placing_emitter: None,
-            place_mode: PlacementMode::OnRelease,
-            remove_mode: PlacementMode::OnRelease,
+            placement: PlacementChannel::of::<Building>(),
         }
     }
 
