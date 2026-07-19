@@ -111,11 +111,10 @@ fn tab_shards(ui: &mut egui::Ui, inventory: &mut ResMut<ShardInventory>) {
                 ui.horizontal(|ui| {
                     ui.label(format!("{}: {}", shard_type, count));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("−").clicked() {
-                            if inventory.has(shard_type) {
+                        if ui.button("−").clicked()
+                            && inventory.has(shard_type) {
                                 inventory.remove(shard_type);
                             }
-                        }
                         if ui.button("+").clicked() {
                             inventory.add(shard_type, 1);
                         }

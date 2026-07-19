@@ -114,7 +114,7 @@ impl BuilderTowerBlaster {
                 builder.grid_position,
                 grid_imprint,
                 TowerTopRotation { speed: 10.0, current_angle: 0. },
-                NeedsPower::default(),
+                NeedsPower,
                 ShardSlots::new(3),
                 related![Indicators[
                     IndicatorType::NoPower,
@@ -245,7 +245,7 @@ fn shooting_system(
         );
         let spawn_position = transform.translation.xy() + offset;
 
-        commands.spawn(BuilderLaserDart::new(spawn_position, target_wisp, (wisp_position - spawn_position).normalize(), attack_damage.clone()));
+        commands.spawn(BuilderLaserDart::new(spawn_position, target_wisp, (wisp_position - spawn_position).normalize(), *attack_damage));
         timer.0.reset();
     }
 }

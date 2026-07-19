@@ -248,12 +248,11 @@ impl BuilderForge {
         if builder.disabled_by_player {
             entity_commands.insert(DisabledByPlayer);
         }
-        if let Some((shard_type, remaining_secs)) = builder.forging {
-            if let Some(recipe) = &almanach.get_shard_info(shard_type).recipe {
+        if let Some((shard_type, remaining_secs)) = builder.forging
+            && let Some(recipe) = &almanach.get_shard_info(shard_type).recipe {
                 entity_commands.insert(ForgeJob::resumed(shard_type, recipe.duration, remaining_secs));
                 Log::debug().dev().tag(Tag::Forge).message(format!("Forge {entity} resumed forging {shard_type} ({remaining_secs:.1}s left)"));
             }
-        }
 
         entity_commands
             .remove::<BuilderForge>()
@@ -266,7 +265,7 @@ impl BuilderForge {
                 },
                 builder.grid_position,
                 grid_imprint,
-                NeedsPower::default(),
+                NeedsPower,
                 related![Indicators[
                     IndicatorType::NoPower,
                     IndicatorType::DisabledByPlayer,
@@ -341,11 +340,10 @@ fn load_forges(ctx: &mut LoadContext) -> rusqlite::Result<()> {
         if disabled_by_player {
             builder = builder.with_disabled_by_player();
         }
-        if let (Some(shard_str), Some(remaining_secs)) = (forging_shard_type, forging_remaining_secs) {
-            if let Ok(shard_type) = shard_str.parse::<ShardType>() {
+        if let (Some(shard_str), Some(remaining_secs)) = (forging_shard_type, forging_remaining_secs)
+            && let Ok(shard_type) = shard_str.parse::<ShardType>() {
                 builder = builder.with_forging(shard_type, remaining_secs);
             }
-        }
         ctx.insert(entity, builder);
     }
     Ok(())

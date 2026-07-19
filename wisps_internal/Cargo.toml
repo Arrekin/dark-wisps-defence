@@ -19,3 +19,6 @@ persistence = { workspace = true }
 resources = { workspace = true }
 buildings = { workspace = true }
 serde_json = { workspace = true }
+
+[lints]
+workspace = true

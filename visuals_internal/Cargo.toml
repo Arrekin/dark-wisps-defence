@@ -9,3 +9,6 @@ visuals = { workspace = true }
 game_core = { workspace = true }
 states = { workspace = true }
 viewport = { workspace = true }
+
+[lints]
+workspace = true

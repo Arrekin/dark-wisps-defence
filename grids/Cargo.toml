@@ -7,3 +7,6 @@ edition.workspace = true
 bevy = { workspace = true }
 game_core = { workspace = true }
 alteration = { workspace = true }
+
+[lints]
+workspace = true

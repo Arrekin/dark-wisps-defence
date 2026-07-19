@@ -13,3 +13,6 @@ persistence = { workspace = true }
 states = { workspace = true }
 almanach = { workspace = true }
 viewport = { workspace = true }
+
+[lints]
+workspace = true

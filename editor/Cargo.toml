@@ -13,3 +13,6 @@ narrative = { workspace = true }
 wisps = { workspace = true }
 shards = { workspace = true }
 game_core = { workspace = true }
+
+[lints]
+workspace = true

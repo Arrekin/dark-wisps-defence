@@ -66,18 +66,18 @@ impl Stock {
     pub fn try_remove(&mut self, resource_type: ResourceType, amount: i32) -> bool {
         let info = self.get_info_mut(resource_type);
         if info.amount < amount { return false; }
-        info.amount = info.amount - amount;
+        info.amount -= amount;
         self.add_delta(resource_type, -amount);
         true
     }
     fn get_info(&self, resource_type: ResourceType) -> &StockInfo {
-        self.current.get(&resource_type).expect(format!("Resource type {resource_type:?} not found in stock").as_str())
+        self.current.get(&resource_type).unwrap_or_else(|| panic!("Resource type {resource_type:?} not found in stock"))
     }
     fn get_info_mut(&mut self, resource_type: ResourceType) -> &mut StockInfo {
-        self.current.get_mut(&resource_type).expect(format!("Resource type {resource_type:?} not found in stock").as_str())
+        self.current.get_mut(&resource_type).unwrap_or_else(|| panic!("Resource type {resource_type:?} not found in stock"))
     }
     fn add_delta(&mut self, resource_type: ResourceType, amount: i32) {
-        *self.delta.get_mut(&resource_type).expect(format!("Resource type {resource_type:?} not found in delta").as_str()) += amount;
+        *self.delta.get_mut(&resource_type).unwrap_or_else(|| panic!("Resource type {resource_type:?} not found in delta")) += amount;
     }
     pub fn take_pending_deltas(&mut self) -> Vec<(ResourceType, i32)> {
         let pending: Vec<_> = self.delta.iter().filter(|(_, d)| **d != 0).map(|(rt, d)| (*rt, *d)).collect();

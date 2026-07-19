@@ -51,7 +51,7 @@ pub struct PostProcessCamera;
 
 fn camera_startup(mut commands: Commands) {
     commands.spawn((
-        Camera2d::default(),
+        Camera2d,
         Transform::from_xyz(500., 500., 0.),
         // HDR framebuffer for bloom and the screen-space post-process passes.
         // Bloom also requires it, but it is set explicitly so the camera's HDR mode
@@ -125,7 +125,7 @@ fn camera_movement(
 }
 
 ////////////////////////////////////////////
-////     Camera Ownership Relationship  ////
+//     Camera Ownership Relationship
 ////////////////////////////////////////////
 
 /// Relationship component: marks a camera as belonging to another entity.
@@ -250,7 +250,7 @@ impl BuilderPreviewCamera {
         entity_commands
             .remove::<BuilderPreviewCamera>()
             .insert((
-                Camera2d::default(),
+                Camera2d,
                 Camera {
                     order: -1, // Render before main camera
                     ..default()
@@ -292,7 +292,7 @@ impl CameraAutoFollowEntity {
 }
 
 ////////////////////////////////////////////
-////              Mouse                 ////
+//              Mouse
 ////////////////////////////////////////////
 
 #[derive(Resource, Default)]

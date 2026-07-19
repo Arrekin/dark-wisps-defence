@@ -114,7 +114,7 @@ impl BuilderTowerRocketLauncher {
                 builder.grid_position,
                 grid_imprint,
                 TowerTopRotation { speed: 1.0, current_angle: 0. },
-                NeedsPower::default(),
+                NeedsPower,
                 ShardSlots::new(3),
                 related![Indicators[
                     IndicatorType::NoPower,
@@ -247,7 +247,7 @@ fn shooting_system(
         let spawn_position = transform.translation.xy() + offset;
 
         let rocket_angle = Quat::from_rotation_z(top_rotation.current_angle);
-        commands.spawn(BuilderRocket::new(spawn_position, rocket_angle, target_wisp, attack_damage.clone()));
+        commands.spawn(BuilderRocket::new(spawn_position, rocket_angle, target_wisp, *attack_damage));
         timer.0.reset();
     }
 }

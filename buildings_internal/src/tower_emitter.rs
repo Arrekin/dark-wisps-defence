@@ -112,7 +112,7 @@ impl BuilderTowerEmitter {
                 },
                 builder.grid_position,
                 grid_imprint,
-                NeedsPower::default(),
+                NeedsPower,
                 ShardSlots::new(3),
                 related![Indicators[
                     IndicatorType::NoPower,

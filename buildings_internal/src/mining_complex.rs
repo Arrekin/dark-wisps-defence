@@ -28,7 +28,7 @@ use states::prelude::*;
 use crate::common::*;
 
 fn mining_complex_validator(_: MapObject, coords: GridCoords, imprint: GridImprint, map_data: &GridsCollectionParam) -> PlacementValidity {
-    if !coords.is_imprint_in_bounds(&imprint, map_data.obstacle_grid.bounds()) {
+    if !coords.is_imprint_in_bounds(imprint, map_data.obstacle_grid.bounds()) {
         return PlacementValidity::Invalid;
     }
     if map_data.reserved_coords.any_reserved(coords, imprint) {
@@ -155,7 +155,7 @@ impl BuilderMiningComplex {
                 },
                 builder.grid_position,
                 grid_imprint,
-                NeedsPower::default(),
+                NeedsPower,
                 DarkOreAreaScanner{range_imprint: grid_imprint},
                 MiningComplexDeliveryTimer(Timer::from_seconds(1.0, TimerMode::Repeating)),
                 related![Indicators[

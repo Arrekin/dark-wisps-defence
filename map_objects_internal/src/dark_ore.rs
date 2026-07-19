@@ -227,11 +227,10 @@ pub(crate) mod dark_ore_area_scanner {
         for (scanner_entity, scanner, mut dark_ore_in_range, scanner_grid_coords) in scanners.iter_mut() {
             // TODO: This won't work when we want to implement Mining Complex range expansion, as the GridCoords won't match ScannerImprint coords
             // Ie, the expected mining range coords will shift in relation to the MiningComplex own's coords as they start in bottom left corner.
-            if scanner.range_imprint.covers_coords(*scanner_grid_coords, *dark_ore_grid_coords) {
-                if let Some(index) = dark_ore_in_range.0.iter().position(|&x| x == entity) {
+            if scanner.range_imprint.covers_coords(*scanner_grid_coords, *dark_ore_grid_coords)
+                && let Some(index) = dark_ore_in_range.0.iter().position(|&x| x == entity) {
                     dark_ore_in_range.0.swap_remove(index);
                 }
-            }
             if dark_ore_in_range.0.is_empty() {
                 commands.entity(scanner_entity).insert(NoOreInScannerRange).remove::<HasOreInScannerRange>();
             }
@@ -248,15 +247,14 @@ pub(crate) mod dark_ore_area_scanner {
         let Ok(dark_ore_grid_coords) = dark_ores.get(entity) else { return; };
 
         for (scanner_entity, scanner, mut dark_ore_in_range, scanner_grid_coords) in scanners.iter_mut() {
-            if scanner.range_imprint.covers_coords(*scanner_grid_coords, *dark_ore_grid_coords) {
-                if !dark_ore_in_range.0.contains(&entity) {
+            if scanner.range_imprint.covers_coords(*scanner_grid_coords, *dark_ore_grid_coords)
+                && !dark_ore_in_range.0.contains(&entity) {
                     let was_empty = dark_ore_in_range.0.is_empty();
                     dark_ore_in_range.0.push(entity);
                     if was_empty {
                         commands.entity(scanner_entity).insert(HasOreInScannerRange).remove::<NoOreInScannerRange>();
                     }
                 }
-            }
         }
     }
 }

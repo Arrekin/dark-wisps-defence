@@ -9,3 +9,6 @@ serde = { workspace = true }
 nanorand = { workspace = true, features = ["tls"] }
 strum = { workspace = true }
 lib-derive = { workspace = true }
+
+[lints]
+workspace = true

@@ -129,7 +129,7 @@ fn on_builder_add_spawn_rocket(
             },
             Rocket,
             RocketTarget(builder.target_wisp),
-            builder.damage.clone(),
+            builder.damage,
             // Exhaust
             children![(
                 Sprite {
@@ -198,7 +198,7 @@ fn rocket_hit_system(
     wisps_transforms: Query<&Transform, (With<Wisp>, Without<Rocket>)>,
 ) {
     for (entity, rocket_transform, target, attack_damage) in rockets.iter() {
-        let rocket_coords = GridCoords::from_transform(&rocket_transform);
+        let rocket_coords = GridCoords::from_transform(rocket_transform);
         if !rocket_coords.is_in_bounds(wisps_grid.bounds()) {
             commands.entity(entity).despawn();
             continue;
@@ -207,7 +207,7 @@ fn rocket_hit_system(
         let Ok(wisp_transform) = wisps_transforms.get(target.0) else { continue };
         if rocket_transform.translation.xy().distance(wisp_transform.translation.xy()) > 6. { continue; }
 
-        let coords = GridCoords::from_transform(&rocket_transform);
+        let coords = GridCoords::from_transform(rocket_transform);
         for (dx, dy) in ALL_DIRECTIONS.iter().chain(&[(0, 0)]) {
             let blast_zone_coords = coords.shifted((*dx, *dy));
             if !blast_zone_coords.is_in_bounds(wisps_grid.bounds()) { continue; }

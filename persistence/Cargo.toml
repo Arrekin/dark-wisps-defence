@@ -11,3 +11,6 @@ game_core = { workspace = true }
 states = { workspace = true }
 logging = { workspace = true }
 crossbeam-channel = { workspace = true }
+
+[lints]
+workspace = true

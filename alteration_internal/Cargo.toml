@@ -11,3 +11,6 @@ persistence = { workspace = true }
 session = { workspace = true }
 alteration = { workspace = true }
 logging = { workspace = true }
+
+[lints]
+workspace = true

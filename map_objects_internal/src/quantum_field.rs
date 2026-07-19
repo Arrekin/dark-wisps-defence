@@ -172,11 +172,10 @@ impl BuilderQuantumField {
             quantum_field.current_layer_progress = current_layer_progress;
         }
 
-        if builder.current_layer.is_some() || builder.current_layer_progress.is_some() {
-            if quantum_field.is_solved() {
+        if (builder.current_layer.is_some() || builder.current_layer_progress.is_some())
+            && quantum_field.is_solved() {
                 commands.entity(entity).insert(Solved);
             }
-        }
 
         commands.entity(entity)
             .remove::<BuilderQuantumField>()
@@ -487,7 +486,7 @@ impl ArrowButton {
 }
 
 ////////////////////////////////////////////
-////        Display Info Panel          ////
+//        Display Info Panel
 ////////////////////////////////////////////
 #[derive(Component)]
 struct QuantumFieldPanel;

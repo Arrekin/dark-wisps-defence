@@ -8,3 +8,6 @@ bevy = { workspace = true }
 strum = { workspace = true }
 nanorand = { workspace = true }
 game_core = { workspace = true }
+
+[lints]
+workspace = true

@@ -19,3 +19,6 @@ resources = { workspace = true }
 states = { workspace = true }
 persistence = { workspace = true }
 viewport = { workspace = true }
+
+[lints]
+workspace = true

@@ -52,17 +52,13 @@ struct GridPlacerUniform {
 }
 
 #[derive(Asset, AsBindGroup, TypePath, Debug, Clone)]
+#[derive(Default)]
 pub(crate) struct GridPlacerMaterial {
     #[uniform(0)]
     uniform: GridPlacerUniform,
     #[texture(1)]
     #[sampler(2)]
     preview_texture: Option<Handle<Image>>,
-}
-impl Default for GridPlacerMaterial {
-    fn default() -> Self {
-        Self { uniform: GridPlacerUniform::default(), preview_texture: None }
-    }
 }
 impl Material2d for GridPlacerMaterial {
     fn fragment_shader() -> ShaderRef {

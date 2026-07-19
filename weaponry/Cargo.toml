@@ -8,3 +8,6 @@ bevy = { workspace = true }
 nanorand = { workspace = true }
 game_core = { workspace = true }
 alteration = { workspace = true }
+
+[lints]
+workspace = true

@@ -141,7 +141,7 @@ fn ripple_hit_system(
 ) {
     for (ripple_entity, ripple, ripple_transform, sourced_effects) in ripples.iter() {
         // Check all fields covered by the ripple for wisp collisions
-        let starting_grid_coords = GridCoords::from_transform(&ripple_transform);
+        let starting_grid_coords = GridCoords::from_transform(ripple_transform);
         let bounds_range = (ripple.current_radius / CELL_SIZE) as i32;
         // Make bounds +/-1 since the ripple starts from in-between the grid fields
         let lower_bound_x = std::cmp::max(0, starting_grid_coords.x - bounds_range - 1);

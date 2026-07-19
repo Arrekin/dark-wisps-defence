@@ -24,3 +24,6 @@ almanach = { workspace = true }
 states = { workspace = true }
 persistence = { workspace = true }
 shards = { workspace = true }
+
+[lints]
+workspace = true

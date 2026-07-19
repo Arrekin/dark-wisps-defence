@@ -117,7 +117,7 @@ impl BuilderTowerCannon {
                 },
                 builder.grid_position,
                 grid_imprint,
-                NeedsPower::default(),
+                NeedsPower,
                 ShardSlots::new(3),
                 related![Indicators[
                     IndicatorType::NoPower,
@@ -229,7 +229,7 @@ fn shooting_system(
             |coords| coords.to_world_position_centered(WISP_GRID_IMPRINT)
         );
 
-        commands.spawn(BuilderCannonball::new(transform.translation.xy(), target_world_position, attack_damage.clone()));
+        commands.spawn(BuilderCannonball::new(transform.translation.xy(), target_world_position, *attack_damage));
         timer.0.reset();
     }
 }

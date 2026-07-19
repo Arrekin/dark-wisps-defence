@@ -152,7 +152,7 @@ impl GameDbHelpers for rusqlite::Connection {
         let mut stmt = self.prepare("SELECT current FROM integrity_points WHERE entity_id = ?1")?;
         let mut rows = stmt.query([entity_id])?;
         let row = rows.next()?.ok_or(rusqlite::Error::QueryReturnedNoRows)?;
-        Ok(row.get(0)?)
+        row.get(0)
     }
 
     fn get_disabled_by_player(&self, entity_id: i64) -> rusqlite::Result<bool> {
@@ -165,14 +165,14 @@ impl GameDbHelpers for rusqlite::Connection {
         let mut stmt = self.prepare("SELECT stat_value FROM stats WHERE stat_name = ?1")?;
         let mut rows = stmt.query([stat_name])?;
         let row = rows.next()?.ok_or(rusqlite::Error::QueryReturnedNoRows)?;
-        Ok(row.get(0)?)
+        row.get(0)
     }
 
     fn get_stock_resource(&self, resource_name: &str) -> rusqlite::Result<i32> {
         let mut stmt = self.prepare("SELECT amount FROM stock WHERE resource_name = ?1")?;
         let mut rows = stmt.query([resource_name])?;
         let row = rows.next()?.ok_or(rusqlite::Error::QueryReturnedNoRows)?;
-        Ok(row.get(0)?)
+        row.get(0)
     }
 
     fn get_grid_coords(&self, entity_id: i64) -> rusqlite::Result<GridCoords> {

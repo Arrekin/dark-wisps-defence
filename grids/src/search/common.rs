@@ -21,14 +21,16 @@ pub struct State<T> where T: PartialOrd {
     pub distance: usize,
     pub coords: GridCoords,
 }
-impl<T> PartialOrd for State<T> where T: PartialOrd {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        other.cost.partial_cmp(&self.cost)
-    }
-}
 impl<T> Ord for State<T> where T: PartialOrd {
     fn cmp(&self, other: &Self) -> Ordering {
-        other.partial_cmp(&self).unwrap()
+        // Reversed: lower cost sorts as "greater" so BinaryHeap (a max-heap)
+        // surfaces the lowest-cost state at the top.
+        other.cost.partial_cmp(&self.cost).unwrap_or(Ordering::Equal)
+    }
+}
+impl<T> PartialOrd for State<T> where T: PartialOrd {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 impl<T> Eq for State<T> where T: PartialOrd {}

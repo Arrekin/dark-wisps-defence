@@ -138,7 +138,7 @@ impl RipplePostProcess {
 
         let count = entries.0.len() as u32;
         for (mut post_process, transform, projection) in cameras.iter_mut() {
-            let Projection::Orthographic(ortho) = &*projection else { continue; };
+            let Projection::Orthographic(ortho) = projection else { continue; };
             post_process.camera_world_pos = transform.translation.xy();
             post_process.viewport_world_size = Vec2::new(
                 ortho.area.width(),

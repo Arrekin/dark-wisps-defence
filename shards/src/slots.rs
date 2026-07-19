@@ -42,6 +42,10 @@ impl ShardSlots {
         self.slots.iter().filter(|s| s.is_some()).count()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub fn is_full(&self) -> bool {
         self.slots.iter().all(|s| s.is_some())
     }

@@ -119,7 +119,7 @@ fn on_builder_add_spawn_laser_dart(
             },
             LaserDart,
             LaserDartTarget{ target_wisp: builder.target_wisp, target_vector: builder.target_vector },
-            builder.damage.clone(),
+            builder.damage,
         ));
 }
 
@@ -149,7 +149,7 @@ fn laser_dart_hit_system(
     wisps: Query<&Transform, With<Wisp>>,
 ) {
     for (entity, laser_dart_transform, damage) in laser_darts.iter() {
-        let coords = GridCoords::from_transform(&laser_dart_transform);
+        let coords = GridCoords::from_transform(laser_dart_transform);
         if !coords.is_in_bounds(wisps_grid.bounds()) {
             commands.entity(entity).despawn();
             continue;

@@ -7,3 +7,6 @@ edition.workspace = true
 bevy = { workspace = true, features = ["ui"] }
 bevy_egui = { workspace = true }
 game_core = { workspace = true }
+
+[lints]
+workspace = true

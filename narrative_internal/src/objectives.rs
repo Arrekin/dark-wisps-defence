@@ -269,7 +269,7 @@ fn on_add_clear_all_quantum_fields_init_text(
     let Ok(objective) = objectives.get(entity) else { return; };
 
     if let Ok(mut text) = texts.get_mut(objective.text) {
-        text.0 = format!("Clear All Quantum Fields: 0/?");
+        text.0 = "Clear All Quantum Fields: 0/?".to_string();
     }
 }
 // TODO: make it trigger only on quantum fields change event

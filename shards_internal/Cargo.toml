@@ -12,3 +12,6 @@ logging = { workspace = true }
 shards = { workspace = true }
 almanach = { workspace = true }
 resources = { workspace = true }
+
+[lints]
+workspace = true

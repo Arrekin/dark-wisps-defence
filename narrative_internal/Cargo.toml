@@ -12,3 +12,6 @@ session = { workspace = true }
 game_core = { workspace = true }
 persistence = { workspace = true }
 states = { workspace = true }
+
+[lints]
+workspace = true

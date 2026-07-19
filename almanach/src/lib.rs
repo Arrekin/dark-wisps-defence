@@ -113,24 +113,24 @@ impl Almanach {
 
     pub fn get_building_info(&self, building_type: BuildingType) -> &BuildingInfo {
         self.buildings.get(&building_type)
-            .expect(&format!("Building {building_type:?} not found in almanach"))
+            .unwrap_or_else(|| panic!("Building {building_type:?} not found in almanach"))
     }
 
     pub fn get_building_info_mut(&mut self, building_type: BuildingType) -> &mut BuildingInfo {
         self.buildings.get_mut(&building_type)
-            .expect(&format!("Building {building_type:?} not found in almanach"))
+            .unwrap_or_else(|| panic!("Building {building_type:?} not found in almanach"))
     }
 
     // === Shards ===
 
     pub fn get_shard_info(&self, shard_type: ShardType) -> &ShardInfo {
         self.shards.get(&shard_type)
-            .expect(&format!("Shard {shard_type:?} not found in almanach"))
+            .unwrap_or_else(|| panic!("Shard {shard_type:?} not found in almanach"))
     }
 
     pub fn get_shard_info_mut(&mut self, shard_type: ShardType) -> &mut ShardInfo {
         self.shards.get_mut(&shard_type)
-            .expect(&format!("Shard {shard_type:?} not found in almanach"))
+            .unwrap_or_else(|| panic!("Shard {shard_type:?} not found in almanach"))
     }
 
     /// Extracts generic ObjectPlacementInfo for any MapObject.

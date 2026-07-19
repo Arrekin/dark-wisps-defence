@@ -15,8 +15,7 @@ pub fn tab_summonings(
 ) {
     ui.horizontal(|ui| {
         if ui.button("+ Add Summoning").clicked() {
-            let mut new_summoning = Summoning::default();
-            new_summoning.id_name = format!("summoning_{}", summonings.iter().count() + 1);
+            let new_summoning = Summoning { id_name: format!("summoning_{}", summonings.iter().count() + 1), ..Default::default() };
             let entity: Entity = commands.spawn(BuilderSummoning::new(new_summoning)).id();
             state.selected_summoning = Some(entity);
         }
@@ -136,11 +135,11 @@ fn ui_spawn_area(ui: &mut egui::Ui, area: &mut SpawnArea) {
             let mut to_remove = None;
             let can_remove = coords.len() > 1;
             egui::ScrollArea::vertical().max_height(100.0).show(ui, |ui| {
-                for i in 0..coords.len() {
+                for (i, coord) in coords.iter_mut().enumerate() {
                     ui.horizontal(|ui| {
                         ui.label(format!("{}:", i));
-                        ui.add(egui::DragValue::new(&mut coords[i].x).prefix("x:"));
-                        ui.add(egui::DragValue::new(&mut coords[i].y).prefix("y:"));
+                        ui.add(egui::DragValue::new(&mut coord.x).prefix("x:"));
+                        ui.add(egui::DragValue::new(&mut coord.y).prefix("y:"));
                         if can_remove && ui.button("🗑").clicked() {
                             to_remove = Some(i);
                         }

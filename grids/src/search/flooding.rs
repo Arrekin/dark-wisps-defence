@@ -68,7 +68,7 @@ fn apply_emissions_details(
             growth * distance as f32
         },
         FloodEmissionsEvaluator::ExponentialDecay{start_value, decay} => {
-            start_value * (-1. * decay * distance as f32).exp()
+            start_value * (-decay * distance as f32).exp()
         },
     } * if matches!(details.mode, FloodEmissionsMode::Increase) { 1. } else { -1. };
     match details.emissions_type {

@@ -199,7 +199,7 @@ pub fn validator_all_empty(
     imprint: GridImprint,
     grids: &GridsCollectionParam,
 ) -> PlacementValidity {
-    if !coords.is_imprint_in_bounds(&imprint, grids.obstacle_grid.bounds()) {
+    if !coords.is_imprint_in_bounds(imprint, grids.obstacle_grid.bounds()) {
         return PlacementValidity::Invalid;
     }
     if grids.reserved_coords.any_reserved(coords, imprint) {

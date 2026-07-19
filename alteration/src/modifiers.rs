@@ -14,7 +14,7 @@ pub mod prelude {
 }
 
 ////////////////////////
-////  MODIFIER TYPE ////
+//  MODIFIER TYPE
 ////////////////////////
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

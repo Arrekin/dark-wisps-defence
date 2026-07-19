@@ -116,7 +116,7 @@ impl BuilderTowerField {
                 },
                 builder.grid_position,
                 building_info.grid_imprint,
-                NeedsPower::default(),
+                NeedsPower,
                 ShardSlots::new(2),
                 related![Indicators[
                     IndicatorType::NoPower,

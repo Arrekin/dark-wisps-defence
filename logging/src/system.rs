@@ -180,11 +180,10 @@ impl Log {
 }
 impl Drop for Log {
     fn drop(&mut self) {
-        if let Some(entry) = self.inner.take() {
-            if let Some(sender) = LOG_SENDER.get() {
+        if let Some(entry) = self.inner.take()
+            && let Some(sender) = LOG_SENDER.get() {
                 sender.send(entry).ok();
             }
-        }
     }
 }
 

@@ -123,7 +123,7 @@ fn on_builder_add_spawn_cannonball(
                 initial_distance: builder.initial_distance,
                 target_position: builder.target_position,
             },
-            builder.damage.clone(),
+            builder.damage,
         ));
 }
 
@@ -163,7 +163,7 @@ fn cannonball_hit_system(
     for (entity, cannonball_transform, target, attack_damage) in cannonballs.iter() {
         if cannonball_transform.translation.xy().distance(target.target_position) > 4. { continue; } // TODO: 1. and 2. are causing cannonballs jitters at landing. Investigate.
 
-        let coords = GridCoords::from_transform(&cannonball_transform);
+        let coords = GridCoords::from_transform(cannonball_transform);
         for (dx, dy) in ALL_DIRECTIONS.iter().chain(&[(0, 0)]) {
             let blast_zone_coords = coords.shifted((*dx, *dy));
             if !blast_zone_coords.is_in_bounds(wisps_grid.bounds()) { continue; }

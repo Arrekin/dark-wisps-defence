@@ -33,7 +33,7 @@ pub(crate) fn load_stock(ctx: &mut LoadContext) -> rusqlite::Result<()> {
     // Load Essences
     for essence_type in EssenceType::iter() {
         let resource_key = essence_type.as_ref();
-        let amount = ctx.conn.get_stock_resource(&resource_key).unwrap_or(0);
+        let amount = ctx.conn.get_stock_resource(resource_key).unwrap_or(0);
         stock.set(ResourceType::Essence(essence_type), amount);
     }
 

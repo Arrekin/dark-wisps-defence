@@ -99,7 +99,7 @@ impl ButtonConstructMenu {
     ) -> Result<()> {
         let entity = trigger.entity;
         let (mut ui_image, children) = menu_buttons.get_mut(entity)?;
-        let list_picker_entity = children.get(0).ok_or("List picker not found")?;
+        let list_picker_entity = children.first().ok_or("List picker not found")?;
         let mut list_picker_visibility = list_pickers.get_mut(*list_picker_entity)?;
         ui_image.color.set_alpha(1.);
         *list_picker_visibility = Visibility::Inherited;
@@ -113,7 +113,7 @@ impl ButtonConstructMenu {
     ) -> Result<()> {
         let entity = trigger.entity;
         let (mut ui_image, children) = menu_buttons.get_mut(entity)?;
-        let list_picker_entity = children.get(0).ok_or("List picker not found")?;
+        let list_picker_entity = children.first().ok_or("List picker not found")?;
         let mut list_picker_visibility = list_pickers.get_mut(*list_picker_entity)?;
         ui_image.color.set_alpha(NOT_HOVERED_ALPHA);
         *list_picker_visibility = Visibility::Hidden;

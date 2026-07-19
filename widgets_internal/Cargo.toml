@@ -7,3 +7,6 @@ edition.workspace = true
 bevy = { workspace = true, features = ["ui"] }
 widgets = { workspace = true }
 resources = { workspace = true }
+
+[lints]
+workspace = true

@@ -110,7 +110,7 @@ impl BuilderEnergyRelay {
                 },
                 builder.grid_position,
                 building_info.grid_imprint,
-                NeedsPower::default(),
+                NeedsPower,
                 EmitterEnergy(FloodEmissionsDetails {
                     emissions_type: EmissionsType::Energy,
                     range: usize::MAX,

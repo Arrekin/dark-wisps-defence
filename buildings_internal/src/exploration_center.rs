@@ -168,7 +168,7 @@ impl BuilderExplorationCenter {
                 },
                 builder.grid_position,
                 grid_imprint,
-                NeedsPower::default(),
+                NeedsPower,
                 related![Indicators[
                     IndicatorType::NoPower,
                     IndicatorType::DisabledByPlayer,
@@ -240,7 +240,7 @@ fn load_exploration_centers(ctx: &mut LoadContext) -> rusqlite::Result<()> {
 }
 
 ////////////////////////////////////////////
-////        Display Info Panel          ////
+//        Display Info Panel
 ////////////////////////////////////////////
 
 const SLOT_SIZE: f32 = 64.0;
@@ -875,7 +875,7 @@ impl BuyDroneSlot {
 }
 
 ////////////////////////////////////////////
-////     Target Selection Panel         ////
+//     Target Selection Panel
 ////////////////////////////////////////////
 
 /// Event triggered when a target is selected for a drone

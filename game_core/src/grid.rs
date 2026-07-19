@@ -29,7 +29,7 @@ impl GridCoords {
     }
     pub fn is_imprint_in_bounds(&self, imprint: impl Borrow<GridImprint>, (width, height): (i32, i32)) -> bool {
         let imprint_world_size = imprint.borrow().bounds();
-        self.x >= 0 && self.x + imprint_world_size.0 as i32 <= width && self.y >= 0 && self.y + imprint_world_size.1 as i32 <= height
+        self.x >= 0 && self.x + imprint_world_size.0 <= width && self.y >= 0 && self.y + imprint_world_size.1 <= height
     }
     pub fn to_world_position(&self) -> Vec2 {
         Vec2::new(self.x as f32 * CELL_SIZE, self.y as f32 * CELL_SIZE)
