@@ -3,10 +3,7 @@ use bevy::prelude::*;
 use game_core::prelude::SSS;
 
 use super::ExpiresAt;
-use super::visual::EffectVisualContribution;
-
-const BRITTLE_BIT: u32 = 1 << 0;
-const BRITTLE_SLOT: usize = 0;
+use super::visual::{EffectVisualContribution, BRITTLE_BIT, BRITTLE_SLOT};
 
 /// Marker for the Brittle debuff. Applied to wisps hit by an emitter tower ripple.
 /// Causes them to take increased incoming damage for a duration set by the source.

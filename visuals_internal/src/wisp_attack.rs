@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use game_core::prelude::{MapBound, Z_GROUND_EFFECT};
+use game_core::prelude::{MapBound, ZDepth};
 use viewport::MouseInfo;
 use visuals::prelude::BuilderWispAttackEffect;
 
@@ -46,7 +46,7 @@ impl FromWorld for WispAttackEffectAtlas {
 }
 
 #[derive(Component)]
-#[require(MapBound)]
+#[require(MapBound, ZDepth::GROUND_EFFECT)]
 pub(crate) struct WispAttackEffect;
 
 fn on_builder_add_spawn_wisp_attack_effect(
@@ -71,7 +71,7 @@ fn on_builder_add_spawn_wisp_attack_effect(
                 ..default()
             },
             Transform {
-                translation: builder.0.extend(Z_GROUND_EFFECT),
+                translation: builder.0.extend(0.),
                 scale: Vec3::new(0.5, 0.5, 1.0),
                 ..Default::default()
             },

@@ -1,7 +1,7 @@
 use bevy::ecs::entity_disabling::Disabled;
 use bevy::prelude::*;
 
-use game_core::prelude::{ZDepth, Z_MAP_UI};
+use game_core::prelude::ZDepth;
 
 // Marks the root of the space allowed for external content.
 #[derive(Component)]
@@ -28,7 +28,7 @@ impl Indicators {
 }
 
 #[derive(Component)]
-#[require(Transform, Visibility, Sprite, ZDepth = Z_MAP_UI)]
+#[require(Transform, Visibility, Sprite, ZDepth::MAP_UI)]
 pub struct IndicatorDisplay {
     pub active_index: usize,
     pub cycle_time: f32,

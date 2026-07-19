@@ -5,6 +5,11 @@ use bevy::prelude::*;
 // slots index its parameter bank. Each value has a matching constant in the consuming shaders.
 pub const EFFECT_VISUAL_SLOTS: usize = 8;
 
+// ── Effect bit/slot assignments ─────────────────────────────────────────────
+// One place to see which bits and slots are taken. Add new effects here.
+pub const BRITTLE_BIT: u32 = 1 << 0;
+pub const BRITTLE_SLOT: usize = 0;
+
 /// Visual footprint an effect instance contributes to its target.
 ///
 /// Inserted alongside the effect's gameplay components, often via `#[require]` on the effect

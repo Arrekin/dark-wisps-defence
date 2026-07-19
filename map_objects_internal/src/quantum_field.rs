@@ -23,7 +23,7 @@ use bevy::prelude::*;
 
 use almanach::prelude::AlmanachAppExt;
 use almanach::{Almanach, QuantumFieldInfo};
-use game_core::prelude::{GridCoords, GridImprint, MapObject, SSS, Z_OBSTACLE};
+use game_core::prelude::{GridCoords, GridImprint, MapObject, SSS};
 use grids::placement::{BeginPlacing, CellHighlight, GridObjectPlacer, GridsCollectionParam, PlacementChannel, PlacementValidity, PlaceRequest, RemoveRequest};
 use hud::prelude::{DisplayPanelMainContentRoot, FocusedMapObject};
 use logging::prelude::*;
@@ -185,7 +185,7 @@ impl BuilderQuantumField {
                 // `quantum_field_post_process` screen-space pass, which locates the field
                 // via its Transform + GridImprint. Transform is still required for the
                 // effect and for the info-panel preview camera to follow.
-                Transform::from_translation(builder.grid_position.to_world_position_centered(builder.grid_imprint).extend(Z_OBSTACLE)),
+                Transform::from_translation(builder.grid_position.to_world_position_centered(builder.grid_imprint).extend(0.)),
                 builder.grid_position,
                 builder.grid_imprint,
                 quantum_field,

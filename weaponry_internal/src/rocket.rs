@@ -4,7 +4,7 @@ use bevy::{
 };
 
 use alteration::modifiers::prelude::AttackDamage;
-use game_core::prelude::{DamageMessage, GridCoords, Property, Z_PROJECTILE};
+use game_core::prelude::{DamageMessage, GridCoords, Property};
 use grids::{
     search::common::ALL_DIRECTIONS,
     wisps::WispsGrid,
@@ -123,7 +123,7 @@ fn on_builder_add_spawn_rocket(
                 ..Default::default()
             },
             Transform {
-                translation: builder.world_position.extend(Z_PROJECTILE),
+                translation: builder.world_position.extend(0.),
                 rotation: builder.rotation,
                 ..default()
             },

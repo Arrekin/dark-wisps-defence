@@ -13,7 +13,7 @@ use bevy::{
 
 use almanach::prelude::Almanach;
 use alteration::modifiers::prelude::ModifierType;
-use game_core::prelude::{BuildingType, GridCoords, GridImprint, MapObject, ZDepth, Z_OVERLAY_ENERGY_SUPPLY};
+use game_core::prelude::{BuildingType, GridCoords, GridImprint, MapObject, ZDepth};
 use grids::{
     energy_supply::EnergySupplyGrid,
     placement::{GridObjectPlacer, GridPlacerChanged},
@@ -122,6 +122,7 @@ impl Material2d for EnergySupplyHeatmapMaterial {
 }
 
 #[derive(Component)]
+#[require(ZDepth::OVERLAY_ENERGY_SUPPLY)]
 pub struct EnergySupplyOverlay;
 impl EnergySupplyOverlay {
     fn create(
@@ -138,7 +139,6 @@ impl EnergySupplyOverlay {
         commands.spawn((
             super::overlay_bundle(&mut meshes, &mut materials, &map_info),
             EnergySupplyOverlay,
-            ZDepth(Z_OVERLAY_ENERGY_SUPPLY),
         ));
     }
 }

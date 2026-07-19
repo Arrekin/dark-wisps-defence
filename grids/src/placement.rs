@@ -169,7 +169,7 @@ pub struct ActivePlacement {
 }
 
 #[derive(Component, Default)]
-#[require(GridImprint, GridCoords, ZDepth = ZDepth(10.), crate::AutoGridTransformSync)]
+#[require(GridImprint, GridCoords, ZDepth(10.), crate::AutoGridTransformSync)]
 pub struct GridObjectPlacer {
     pub active_placement: Option<ActivePlacement>,
 }

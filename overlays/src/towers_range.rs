@@ -13,7 +13,7 @@ use bevy::{
 use almanach::prelude::Almanach;
 use alteration::modifiers::prelude::ModifierType;
 use buildings::prelude::Tower;
-use game_core::prelude::{BuildingType, GridCoords, GridImprint, MapObject, ZDepth, Z_OVERLAY_TOWER_RANGES};
+use game_core::prelude::{BuildingType, GridCoords, GridImprint, MapObject, ZDepth};
 use grids::{
     placement::{GridObjectPlacer, GridPlacerChanged},
     prelude::{GridVersion, MapInfo},
@@ -130,6 +130,7 @@ impl Material2d for TowersRangeMaterial {
 }
 
 #[derive(Component)]
+#[require(ZDepth::OVERLAY_TOWER_RANGES)]
 pub struct TowersRangeOverlay;
 impl TowersRangeOverlay {
     fn create(
@@ -146,7 +147,6 @@ impl TowersRangeOverlay {
         commands.spawn((
             super::overlay_bundle(&mut meshes, &mut materials, &map_info),
             TowersRangeOverlay,
-            ZDepth(Z_OVERLAY_TOWER_RANGES),
         ));
     }
 }

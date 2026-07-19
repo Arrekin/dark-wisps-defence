@@ -1,15 +1,15 @@
 use bevy::prelude::*;
 
 use alteration::modifiers::prelude::AttackDamage;
-use game_core::prelude::{SSS, Z_PROJECTILE_UNDER};
+use game_core::prelude::{SSS, ZDepth};
 
 use super::components::Projectile;
 
 #[derive(Component)]
-#[require(AttackDamage, Projectile)]
+#[require(AttackDamage, Projectile, ZDepth::PROJECTILE)]
 pub struct Rocket;
 #[derive(Component)]
-#[require(game_core::prelude::ZDepth = Z_PROJECTILE_UNDER)]
+#[require(ZDepth::PROJECTILE_UNDER)]
 pub struct RocketExhaust;
 
 // Rocket follows Wisp, and if the wisp no longer exists, looks for another target

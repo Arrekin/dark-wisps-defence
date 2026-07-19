@@ -5,7 +5,7 @@ use nanorand::Rng;
 
 use almanach::prelude::AlmanachAppExt;
 use almanach::{Almanach, DarkOreInfo};
-use game_core::prelude::{GridCoords, GridImprint, MapObject, SSS, Z_OBSTACLE};
+use game_core::prelude::{GridCoords, GridImprint, MapObject, SSS};
 use grids::placement::{annotate_non_empty, GridObjectPlacer, GridsCollectionParam, PlacementChannel, PlacementMode, PlacementValidity, PlaceRequest, RemoveRequest, validator_all_empty};
 use grids::prelude::ObstacleGrid;
 use logging::prelude::*;
@@ -83,7 +83,7 @@ impl BuilderDarkOre {
                 ..Default::default()
             },
             Transform {
-                translation: builder.grid_position.to_world_position_centered(DARK_ORE_GRID_IMPRINT).extend(Z_OBSTACLE),
+                translation: builder.grid_position.to_world_position_centered(DARK_ORE_GRID_IMPRINT).extend(0.),
                 // select one of: Left, Up, Right, Down
                 rotation: Quat::from_rotation_z([0., PI / 2., PI, 3. * PI / 2.][rng.generate_range(0usize..4usize)] as f32),
                 ..default()

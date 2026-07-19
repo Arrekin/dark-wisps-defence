@@ -1,23 +1,23 @@
 use bevy::prelude::*;
 
-use game_core::prelude::{GridCoords, GridImprint, MapBound};
+use game_core::prelude::{GridCoords, GridImprint, MapBound, ZDepth};
 use grids::{prelude::ObstacleGridObject, EmissionsGridSpreadAffector};
 
 #[derive(Component)]
-#[require(MapBound, ObstacleGridObject = ObstacleGridObject::DarkOre)]
+#[require(MapBound, ObstacleGridObject = ObstacleGridObject::DarkOre, ZDepth::OBSTACLE)]
 pub struct DarkOre {
     pub amount: i32,
 }
 
 
 #[derive(Component)]
-#[require(MapBound, ObstacleGridObject = ObstacleGridObject::Wall, EmissionsGridSpreadAffector)]
+#[require(MapBound, ObstacleGridObject = ObstacleGridObject::Wall, EmissionsGridSpreadAffector, ZDepth::OBSTACLE)]
 pub struct Wall;
 
 /// Progressive obstacle requiring drone scanning to solve.
 /// Layers are defined at spawn time; current_layer indexes into the layers vec.
 #[derive(Component, Default)]
-#[require(MapBound, ObstacleGridObject = ObstacleGridObject::QuantumField)]
+#[require(MapBound, ObstacleGridObject = ObstacleGridObject::QuantumField, ZDepth::OBSTACLE)]
 pub struct QuantumField;
 
 /// Marks an entity as a valid target for expedition drones.

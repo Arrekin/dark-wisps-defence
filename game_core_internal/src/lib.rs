@@ -9,6 +9,10 @@ impl Plugin for GameCorePlugin {
     fn build(&self, app: &mut App) {
         app
             .add_observer(on_insert_zdepth_apply_zdepth)
+            .add_systems(
+                PostUpdate,
+                enforce_zdepth_world_z.after(TransformSystems::Propagate),
+            )
             // Technical-state global observers: fold primitive component
             // events into one shared `TechnicalStateChanged` event. They fire
             // for every entity; the event is a no-op unless the target entity
@@ -39,6 +43,19 @@ fn on_insert_zdepth_apply_zdepth(
     let entity = trigger.entity;
     let Ok((mut transform, z_depth)) = transforms.get_mut(entity) else { return; };
     transform.translation.z = z_depth.0;
+}
+
+/// See `ZDepth` docs. Runs after propagation so it sees final world transforms;
+/// the equality guard keeps unchanged entities from dirtying `GlobalTransform`
+/// (and re-triggering render extraction) every frame.
+fn enforce_zdepth_world_z(mut query: Query<(&mut GlobalTransform, &ZDepth)>) {
+    for (mut global_transform, z_depth) in query.iter_mut() {
+        let mut affine = global_transform.affine();
+        if affine.translation.z != z_depth.0 {
+            affine.translation.z = z_depth.0;
+            *global_transform = GlobalTransform::from(affine);
+        }
+    }
 }
 
 fn track_locomotion(

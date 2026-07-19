@@ -2,7 +2,7 @@ use bevy::prelude::*;
 
 use alteration::effects::prelude::EffectVisualState;
 use alteration::modifiers::prelude::{AttackRange, IncomingDamageMultiplier, MaxIntegrityPoints, ModifierBank, MovementSpeed};
-use game_core::prelude::{FieldAffectable, GridImprint, Locomotion, MapBound};
+use game_core::prelude::{FieldAffectable, GridImprint, Locomotion, MapBound, ZDepth};
 use grids::prelude::{GridPath, GridVersion};
 
 pub mod summoning;
@@ -20,7 +20,7 @@ pub struct WispElectricType;
 #[require(
     WispState, WispChargeAttack, GridPath, ModifierBank, MapBound,
     MovementSpeed, AttackRange, MaxIntegrityPoints, IncomingDamageMultiplier,
-    FieldAffectable, EffectVisualState, Locomotion
+    FieldAffectable, EffectVisualState, Locomotion, ZDepth::WISP
 )]
 pub struct Wisp;
 

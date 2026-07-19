@@ -1,14 +1,14 @@
 use bevy::prelude::*;
 
 use alteration::modifiers::prelude::{AttackDamage, AttackRange, AttackSpeed, MaxIntegrityPoints, ModifierBank};
-use game_core::prelude::{BuildingType, MapBound, TowerType, Z_BUILDING, ZDepth};
+use game_core::prelude::{BuildingType, MapBound, TowerType, ZDepth};
 use grids::{AutoGridTransformSync, prelude::{GridVersion, ObstacleGridObject}};
 
 #[derive(Component, Default)]
 pub struct Tower;
 
 #[derive(Component, Clone, Debug, Default)]
-#[require(AutoGridTransformSync, ZDepth = Z_BUILDING, MaxIntegrityPoints, MapBound, ObstacleGridObject = ObstacleGridObject::Building, ModifierBank)]
+#[require(AutoGridTransformSync, ZDepth::BUILDING, MaxIntegrityPoints, MapBound, ObstacleGridObject = ObstacleGridObject::Building, ModifierBank)]
 pub struct Building;
 
 #[derive(Component)]

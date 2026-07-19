@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
 use alteration::modifiers::prelude::AttackDamage;
-use game_core::prelude::{DamageMessage, GridCoords, Property, Z_PROJECTILE};
+use game_core::prelude::{DamageMessage, GridCoords, Property};
 use grids::wisps::WispsGrid;
 use logging::prelude::*;
 use persistence::{
@@ -113,7 +113,7 @@ fn on_builder_add_spawn_laser_dart(
                 ..Default::default()
             },
             Transform {
-                translation: builder.world_position.extend(Z_PROJECTILE),
+                translation: builder.world_position.extend(0.),
                 rotation: Quat::from_rotation_z(builder.target_vector.y.atan2(builder.target_vector.x)),
                 ..Default::default()
             },

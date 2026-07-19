@@ -60,9 +60,9 @@ impl BuilderWisp {
         }
 
         let translation = if let Some(pos) = builder.world_position {
-            pos.extend(Z_WISP)
+            pos.extend(0.)
         } else {
-            builder.grid_coords.to_world_position_centered(WISP_GRID_IMPRINT).extend(Z_WISP)
+            builder.grid_coords.to_world_position_centered(WISP_GRID_IMPRINT).extend(0.)
         };
 
         let wisp_type_bundle = match builder.wisp_type {

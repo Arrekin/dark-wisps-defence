@@ -16,7 +16,7 @@ use alteration::{
     },
     modifiers::prelude::MovementSpeed,
 };
-use game_core::prelude::{CELL_SIZE, GridCoords, Property, Z_ABOVE_ALL};
+use game_core::prelude::{CELL_SIZE, GridCoords, Property};
 use grids::wisps::WispsGrid;
 use logging::prelude::*;
 use persistence::{
@@ -112,7 +112,7 @@ fn on_builder_add_spawn_ripple(
     commands.entity(entity)
         .remove::<BuilderRipple>()
         .insert((
-            Transform::from_translation(builder.world_position.extend(Z_ABOVE_ALL)),
+            Transform::from_translation(builder.world_position.extend(0.)),
             Ripple { max_radius: builder.radius, current_radius: builder.current_radius },
             MovementSpeed::new(50.0),
         ));

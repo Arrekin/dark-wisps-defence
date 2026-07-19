@@ -21,5 +21,5 @@ pub mod prelude {
     pub use crate::motion::Locomotion;
     pub use crate::traits::{Property, SSS};
     pub use crate::types::{BuildingType, MapObject, ShardType, TowerType, WispType};
-    pub use crate::z_depth::*;          // ZDepth + Z_* constants
+    pub use crate::z_depth::*;          // ZDepth + associated layer constants
 }

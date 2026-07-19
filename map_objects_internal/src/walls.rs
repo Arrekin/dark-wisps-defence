@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
 use almanach::{Almanach, AlmanachAppExt, WallInfo};
-use game_core::prelude::{GridCoords, GridImprint, MapObject, SSS, Z_OBSTACLE};
+use game_core::prelude::{GridCoords, GridImprint, MapObject, SSS};
 use grids::obstacles::GridStructureType;
 use grids::placement::{annotate_non_empty, GridObjectPlacer, GridsCollectionParam, PlacementChannel, PlacementMode, PlacementValidity, PlaceRequest, RemoveRequest, validator_all_empty};
 use logging::prelude::*;
@@ -68,7 +68,7 @@ impl BuilderWall {
                 custom_size: Some(WALL_GRID_IMPRINT.world_size()),
                 ..default()
             },
-            Transform::from_translation(builder.grid_position.to_world_position_centered(WALL_GRID_IMPRINT).extend(Z_OBSTACLE)),
+            Transform::from_translation(builder.grid_position.to_world_position_centered(WALL_GRID_IMPRINT).extend(0.)),
             builder.grid_position,
             WALL_GRID_IMPRINT,
             Wall,

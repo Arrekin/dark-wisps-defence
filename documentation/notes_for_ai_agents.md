@@ -166,6 +166,7 @@ Generic/reusable UI lives in `widgets` / `widgets_internal`.
 ## Agent Guidelines
 - **Think before implementing.** When asked to fix a bug or add a feature, first consider whether the change reveals a deeper architectural issue. Prefer fixing the root cause over patching symptoms.
 - **Avoid tunnel vision.** Don't just implement the literal request — evaluate whether it fits the existing patterns. If it doesn't, flag it and suggest an approach that does.
+- **Run `cargo clippy` before completing any delivery.** The workspace has a `[workspace.lints.clippy]` config in the root `Cargo.toml` that suppresses lints that don't fit a Bevy codebase. Any warnings that remain are genuine and must be fixed before the work is considered done.
 
 ## Code Style
 - Query variables use plural form (e.g., `tabs`, `segments`), not `_q` suffix(singular when using Single<>)

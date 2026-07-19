@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use game_core::prelude::{MapBound, SSS};
+use game_core::prelude::{MapBound, SSS, ZDepth};
 
 /// Drone cost in dark ore - kept as constant for easy balancing
 pub const DRONE_COST_ORE: u32 = 100;
@@ -52,7 +52,7 @@ pub enum DroneState {
 }
 
 #[derive(Component)]
-#[require(MapBound)]
+#[require(MapBound, ZDepth::AERIAL_UNIT)]
 pub struct ExpeditionDrone {
     pub mission_target: Option<Entity>, // current mission target (ExpeditionZone)
     pub heading: f32,             // current facing direction in radians
@@ -75,14 +75,14 @@ impl ExpeditionDrone {
 }
 
 #[derive(Component)]
-#[require(MapBound)]
+#[require(MapBound, ZDepth::GROUND_EFFECT)]
 pub struct ScanningBeam {
     pub drone: Entity,
     pub spot: Entity,  // the scan spot entity
 }
 
 #[derive(Component)]
-#[require(MapBound)]
+#[require(MapBound, ZDepth::GROUND_EFFECT)]
 pub struct ScanSpot {
     pub destination: Vec2, // where moving toward (world coords)
 }

@@ -137,7 +137,6 @@ impl BuilderTowerBlaster {
                 custom_size: Some(Vec2::new(world_size.x * 1.52 * 0.5, world_size.y * 0.5)),
                 ..Default::default()
             },
-            ZDepth(Z_TOWER_TOP),
             MarkerTowerRotationalTop(tower_base_entity),
         )).id();
         commands.entity(entity).add_child(tower_top);

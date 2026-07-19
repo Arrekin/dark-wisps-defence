@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use game_core::prelude::{BuildingType, DisabledByPlayer, GridCoords, GridImprint, IsOperational, IsPowered, MapObject, TechnicalStateChanged};
+use game_core::prelude::*;
 use grids::{
     placement::{validator_all_empty, GridsCollectionParam, PlacementValidity},
 };
@@ -43,6 +43,7 @@ pub(crate) fn on_technical_state_changed_recompute_operational(
 
 // Building sub-parts markers
 #[derive(Component)]
+#[require(ZDepth::TOWER_TOP)]
 pub(crate) struct MarkerTowerRotationalTop(pub Entity);
 
 

@@ -65,7 +65,7 @@ use bevy::{
 use buildings::prelude::ExplorationCenter;
 use game_core::{
     math::angle_difference,
-    prelude::{GridCoords, GridImprint, IsOperational, Z_AERIAL_UNIT, Z_GROUND_EFFECT},
+    prelude::{GridCoords, GridImprint, IsOperational},
 };
 use logging::prelude::*;
 use map_objects::prelude::ExpeditionZone;
@@ -166,7 +166,8 @@ fn on_deployment_request_drone_do_so(
     
     let home_pos = home_transform.translation.xy();
     
-    transform.translation = home_pos.extend(transform.translation.z);
+    transform.translation.x = home_pos.x;
+    transform.translation.y = home_pos.y;
     
     // Point toward target
     let to_target = target_transform.translation.xy() - home_pos;
@@ -421,7 +422,8 @@ fn scanning_beam_update(
         let beam_angle = beam_vec.y.atan2(beam_vec.x);
         
         let beam_center = (beam_start + target_point) / 2.0;
-        beam_transform.translation = beam_center.extend(Z_GROUND_EFFECT);
+        beam_transform.translation.x = beam_center.x;
+        beam_transform.translation.y = beam_center.y;
         beam_transform.rotation = Quat::from_rotation_z(beam_angle);
         
         let spot_diameter = SPOT_RADIUS * 2.0;
@@ -471,7 +473,8 @@ fn scan_spot_update(
             if dist_to_target_center > max_target_dist {
                 let new_pos = target_coords.to_world_position() + target_imprint.random_local_offset();
                 spot.destination = new_pos;
-                spot_transform.translation = new_pos.extend(spot_transform.translation.z);
+                spot_transform.translation.x = new_pos.x;
+                spot_transform.translation.y = new_pos.y;
                 new_pos
             } else {
                 spot_world_pos
@@ -491,7 +494,8 @@ fn scan_spot_update(
             } else {
                 spot_world_pos + to_destination.normalize() * move_amount
             };
-            spot_transform.translation = new_world_pos.extend(spot_transform.translation.z);
+            spot_transform.translation.x = new_world_pos.x;
+            spot_transform.translation.y = new_world_pos.y;
         }
         
         // Elongate spot based on distance to drone (perspective effect)
@@ -693,7 +697,7 @@ fn on_builder_add_spawn_expedition_drone(
         Mesh2d(spot_mesh),
         MeshMaterial2d(spot_material),
         Transform {
-            translation: final_position.extend(Z_GROUND_EFFECT),
+            translation: final_position.extend(0.),
             scale: Vec3::ZERO, // Start hidden
             ..default()
         },
@@ -701,18 +705,17 @@ fn on_builder_add_spawn_expedition_drone(
             destination: final_position,
         },
     )).id();
-    
+
     // Spawn beam
     commands.spawn((
         Mesh2d(beam_mesh),
         MeshMaterial2d(beam_material),
-        Transform::from_translation(Vec3::new(0.0, 0.0, Z_GROUND_EFFECT)),
         ScanningBeam {
             drone: entity,
             spot: spot_entity,
         },
     ));
-    
+
     commands.entity(entity)
         .remove::<BuilderExpeditionDrone>()
         .insert((
@@ -721,7 +724,7 @@ fn on_builder_add_spawn_expedition_drone(
                 ..default()
             },
             Transform {
-                translation: final_position.extend(Z_AERIAL_UNIT),
+                translation: final_position.extend(0.),
                 scale: Vec3::new(1.5, 1.5, 1.0),
                 rotation: Quat::from_rotation_z(heading),
             },

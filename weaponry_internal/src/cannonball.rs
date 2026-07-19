@@ -3,7 +3,7 @@ use std::f32::consts::PI;
 use bevy::prelude::*;
 
 use alteration::modifiers::prelude::AttackDamage;
-use game_core::prelude::{CELL_SIZE, DamageMessage, GridCoords, Property, Z_PROJECTILE};
+use game_core::prelude::{CELL_SIZE, DamageMessage, GridCoords, Property};
 use grids::{
     search::common::ALL_DIRECTIONS,
     wisps::WispsGrid,
@@ -117,7 +117,7 @@ fn on_builder_add_spawn_cannonball(
                 custom_size: Some(Vec2::new(CELL_SIZE / 2., CELL_SIZE / 2.)),
                 ..default()
             },
-            Transform::from_translation(builder.world_position.extend(Z_PROJECTILE)),
+            Transform::from_translation(builder.world_position.extend(0.)),
             Cannonball,
             CannonballTarget {
                 initial_distance: builder.initial_distance,

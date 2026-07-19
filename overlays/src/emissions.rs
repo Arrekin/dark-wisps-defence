@@ -10,7 +10,7 @@ use bevy::{
     sprite_render::{AlphaMode2d, Material2d, Material2dPlugin, MeshMaterial2d},
 };
 
-use game_core::prelude::{ZDepth, Z_OVERLAY_EMISSIONS};
+use game_core::prelude::ZDepth;
 use grids::{
     emissions::{EmissionsGrid, EmissionsType},
     prelude::{GridVersion, MapInfo},
@@ -103,6 +103,7 @@ struct EmissionsCell {
 }
 
 #[derive(Component)]
+#[require(ZDepth::OVERLAY_EMISSIONS)]
 pub struct EmissionsOverlay;
 impl EmissionsOverlay {
     fn create(
@@ -119,7 +120,6 @@ impl EmissionsOverlay {
         commands.spawn((
             super::overlay_bundle(&mut meshes, &mut materials, &map_info),
             EmissionsOverlay,
-            ZDepth(Z_OVERLAY_EMISSIONS),
         ));
     }
 }
