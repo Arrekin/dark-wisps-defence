@@ -243,20 +243,54 @@ CREATE TABLE IF NOT EXISTS expedition_drones (
 -- Objectives
 -- ========================
 
+-- Objective roots. `activated_by` is the trigger entity that activates this
+-- objective (nullable: terminal objectives don't need one).
 CREATE TABLE IF NOT EXISTS objectives (
     id INTEGER PRIMARY KEY,
     id_name TEXT NOT NULL,
-    objective_type TEXT NOT NULL,
-    activation_event TEXT NOT NULL,
     state TEXT NOT NULL,
+    activated_by INTEGER,
     FOREIGN KEY(id) REFERENCES entities(id)
 );
 
-CREATE TABLE IF NOT EXISTS objective_kill_wisps (
+-- Kill-wisps goals. `current` is the kill count since activation (always present).
+CREATE TABLE IF NOT EXISTS goal_kill_wisps (
     id INTEGER PRIMARY KEY,
-    target_amount INTEGER NOT NULL,
-    started_amount INTEGER NOT NULL,
-    FOREIGN KEY(id) REFERENCES objectives(id)
+    objective_id INTEGER NOT NULL,
+    state TEXT NOT NULL,
+    target INTEGER NOT NULL,
+    current INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY(id) REFERENCES entities(id),
+    FOREIGN KEY(objective_id) REFERENCES entities(id)
+);
+
+-- Clear-quantum-fields goals. Counter is derived at runtime from the live world
+-- (count of QuantumField entities with QuantumFieldSolved) — not persisted.
+CREATE TABLE IF NOT EXISTS goal_clear_quantum_fields (
+    id INTEGER PRIMARY KEY,
+    objective_id INTEGER NOT NULL,
+    state TEXT NOT NULL,
+    FOREIGN KEY(id) REFERENCES entities(id),
+    FOREIGN KEY(objective_id) REFERENCES entities(id)
+);
+
+-- Time allowance restrictions (maintenance polarity: satisfied at activation,
+-- failed on expiry). `elapsed` is always present (0.0 until activated).
+CREATE TABLE IF NOT EXISTS restriction_time_allowance (
+    id INTEGER PRIMARY KEY,
+    objective_id INTEGER NOT NULL,
+    state TEXT NOT NULL,
+    seconds REAL NOT NULL,
+    elapsed REAL NOT NULL DEFAULT 0.0,
+    FOREIGN KEY(id) REFERENCES entities(id),
+    FOREIGN KEY(objective_id) REFERENCES entities(id)
+);
+
+-- StartGame trigger — singleton. `fired` prevents re-firing on mid-game reload.
+CREATE TABLE IF NOT EXISTS trigger_start_game (
+    id INTEGER PRIMARY KEY,
+    fired INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY(id) REFERENCES entities(id)
 );
 
 CREATE TABLE IF NOT EXISTS summonings (

@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 
+use alteration::modifiers::prelude::EnergySupplyRange;
 use bevy::prelude::Entity;
 
 use game_core::prelude::{GridCoords, Property};
@@ -83,7 +84,7 @@ pub fn flood_energy_supply(
     energy_supply_grid: &mut EnergySupplyGrid,
     start_coords: impl IntoIterator<Item = GridCoords>,
     mode: FloodEnergySupplyMode,
-    range: alteration::modifiers::prelude::EnergySupplyRange,
+    range: EnergySupplyRange,
     supplier: Entity,
 ) {
     VISITED_GRID.with_borrow_mut(|visited_grid| {

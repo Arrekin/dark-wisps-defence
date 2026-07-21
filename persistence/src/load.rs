@@ -17,7 +17,6 @@ use states::{AdminMode, prelude::*};
 
 use crate::{
     common::{db_migrations, with_db_connection},
-    save::ActiveSaveFile,
 };
 
 pub struct MapLoadPlugin;
@@ -394,7 +393,20 @@ pub struct GameMapList {
 }
 impl Default for GameMapList {
     fn default() -> Self {
-        let names = std::fs::read_dir("maps")
+        let mut list = Self { names: vec![] };
+        list.refresh();
+        list
+    }
+}
+impl GameMapList {
+    pub fn paths(&self) -> Vec<String> {
+        self.names.iter().map(|name| format!("maps/{}.dwd", name)).collect()
+    }
+
+    /// Re-scans the `maps/` directory. Called by the finalize system after a
+    /// scenario save so the new map appears in the menu without restarting.
+    pub fn refresh(&mut self) {
+        self.names = std::fs::read_dir("maps")
             .ok()
             .into_iter()
             .flat_map(|rd| rd.filter_map(|e| e.ok()))
@@ -407,12 +419,6 @@ impl Default for GameMapList {
                 }
             })
             .collect();
-        Self { names }
-    }
-}
-impl GameMapList {
-    pub fn paths(&self) -> Vec<String> {
-        self.names.iter().map(|name| format!("maps/{}.dwd", name)).collect()
     }
 }
 
@@ -442,14 +448,12 @@ impl LoadGameSignal {
     fn on_trigger(
         trigger: On<LoadGameSignal>,
         mut commands: Commands,
-        mut active_save_file: ResMut<ActiveSaveFile>,
         mut next_game_state: ResMut<NextState<GameState>>,
         mut next_map_loading_stage: ResMut<NextState<MapLoadingStage>>,
         mut next_ui_state: ResMut<NextState<UiInteraction>>,
         map_bound_entities: Query<Entity, With<MapBound>>,
     ) {
         let config = trigger.event().0.clone();
-        active_save_file.0 = config.map_path.clone();
         Log::info().dev().tag(Tag::GameLoad).message(format!("Loading '{}'", config.map_path));
 
         // Run migrations synchronously on main thread before parallel loading starts

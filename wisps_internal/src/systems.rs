@@ -5,7 +5,6 @@ use buildings::prelude::*;
 use game_core::prelude::*;
 use grids::{emissions::EmissionsGrid, energy_supply::EnergySupplyGrid, obstacles::GridStructureType, prelude::*, search::pathfinding::path_find_energy_beckon, wisps::WispsGrid};
 use resources::prelude::*;
-use session::StatsWispsKilled;
 use visuals::prelude::*;
 use wisps::prelude::*;
 
@@ -164,7 +163,6 @@ pub(crate) fn target_wisps(
 
 pub(crate) fn remove_dead_wisps(
     mut commands: Commands,
-    mut stats_wisps_killed: ResMut<StatsWispsKilled>,
     mut stock: ResMut<Stock>,
     mut wisps_grid: ResMut<WispsGrid>,
     wisps: Query<(Entity, &IntegrityPoints, &GridCoords, &EssencesContainer), With<Wisp>>,
@@ -173,12 +171,11 @@ pub(crate) fn remove_dead_wisps(
         if integrity_points.is_dead() {
             wisps_grid.wisp_remove(*coords, wisp_entity);
             commands.entity(wisp_entity).despawn();
+            commands.trigger(WispDied(wisp_entity));
             // Grant essence
             for essence in essences.0.iter() {
                 stock.add(essence.essence_type.into(), essence.amount);
             }
-            // Update stats
-            stats_wisps_killed.0 += 1;
         }
     }
 }

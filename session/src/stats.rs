@@ -5,12 +5,14 @@ use persistence::{
     rusqlite,
 };
 use states::MapLoadingStage;
+use wisps::prelude::WispDied;
 
 pub struct StatsPlugin;
 impl Plugin for StatsPlugin {
     fn build(&self, app: &mut App) {
         app
             .add_systems(OnEnter(MapLoadingStage::Init), |mut commands: Commands| { commands.insert_resource(StatsWispsKilled::default()); })
+            .add_observer(on_wisp_died_increment_stats)
             .add_systems(CollectSave, collect_stats)
             .register_loader(MapLoadingStage::LoadResources, "stats_wisps_killed", load_stats)
             ;
@@ -19,6 +21,13 @@ impl Plugin for StatsPlugin {
 
 #[derive(Resource, Default)]
 pub struct StatsWispsKilled(pub usize);
+
+fn on_wisp_died_increment_stats(
+    _trigger: On<WispDied>,
+    mut stats_wisps_killed: ResMut<StatsWispsKilled>,
+) {
+    stats_wisps_killed.0 += 1;
+}
 
 fn collect_stats(
     stats_wisps_killed: Res<StatsWispsKilled>,

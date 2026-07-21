@@ -8,11 +8,12 @@ pub use rusqlite;
 
 pub use crate::common::run_migrations_on_paths;
 pub use crate::load::{GameMapList, LoadGameSignal, LoadMapConfig};
+pub use crate::save::{SaveContext, SaveGameSignal, SaveTarget};
 
 pub mod prelude {
     pub use crate::common::{AppGameLoadSaveExtension, GameDbHelpers};
     pub use crate::load::{EntityIdMap, LoadContext, LoadProgress, LoaderFn};
-    pub use crate::save::{ActiveSaveFile, CollectSave, SaveWriter};
+    pub use crate::save::{CollectSave, SaveContext, SaveWriter};
 }
 
 pub struct PersistencePlugin;

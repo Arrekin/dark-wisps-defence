@@ -43,7 +43,7 @@ impl ExpeditionZone {
 
 /// Marker for fully-solved QuantumFields. Removes ExpeditionZone to prevent further scanning.
 #[derive(Component)]
-pub struct Solved;
+pub struct QuantumFieldSolved;
 
 #[derive(Component, Default)]
 pub struct HasOreInScannerRange;
@@ -67,7 +67,7 @@ pub mod prelude {
         HasOreInScannerRange,
         NoOreInScannerRange,
         QuantumField,
-        Solved,
+        QuantumFieldSolved,
         Wall,
     };
 }

@@ -10,7 +10,7 @@
 //! 2. **Pay phase** - Once scanned, player pays resource costs to finalize the layer
 //! 3. **Repeat** - Next layer begins until all layers solved
 //!
-//! When all layers are solved, the field gains `Solved` marker and loses its ExpeditionZone.
+//! When all layers are solved, the field gains `QuantumFieldSolved` marker and loses its ExpeditionZone.
 //!
 //! ## Integration with Drones
 //!
@@ -174,7 +174,7 @@ impl BuilderQuantumField {
 
         if (builder.current_layer.is_some() || builder.current_layer_progress.is_some())
             && quantum_field.is_solved() {
-                commands.entity(entity).insert(Solved);
+                commands.entity(entity).insert(QuantumFieldSolved);
             }
 
         commands.entity(entity)
@@ -315,13 +315,13 @@ fn on_quantum_field_remove_request_do_so(
 
 fn process_expeditions_system(
     mut commands: Commands,
-    mut quantum_fields: Query<(Entity, &mut QuantumFieldLayers, &mut ExpeditionZone), (Changed<ExpeditionZone>, Without<Solved>)>,
+    mut quantum_fields: Query<(Entity, &mut QuantumFieldLayers, &mut ExpeditionZone), (Changed<ExpeditionZone>, Without<QuantumFieldSolved>)>,
 ) {
     for (entity, mut quantum_field, mut expedition_zone) in quantum_fields.iter_mut() {
         if expedition_zone.accumulated_scan_progress > 0. {
             quantum_field.progress_layer(expedition_zone.take_accumulated_scan_progress());
             if quantum_field.is_solved() {
-                commands.entity(entity).insert(Solved).remove::<ExpeditionZone>();
+                commands.entity(entity).insert(QuantumFieldSolved).remove::<ExpeditionZone>();
             }
         }
     }

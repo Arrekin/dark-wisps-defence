@@ -43,11 +43,17 @@ pub enum WispChargeAttack {
 
 pub const WISP_GRID_IMPRINT: GridImprint = GridImprint::Rectangle { width: 1, height: 1 };
 
+/// Fired when a wisp dies (integrity reaches zero). The wisp entity is
+/// despawned in the same command queue batch — observers must not read it.
+#[derive(EntityEvent, Clone, Copy)]
+pub struct WispDied(pub Entity);
+
 pub mod prelude {
     pub use super::{
         WISP_GRID_IMPRINT,
         Wisp,
         WispChargeAttack,
+        WispDied,
         WispState,
     };
 }

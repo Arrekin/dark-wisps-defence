@@ -12,6 +12,7 @@ use bevy::{
 use logging::prelude::*;
 
 use crate::common::{db_migrations, with_db_connection};
+use crate::load::GameMapList;
 
 pub struct MapSavePlugin;
 impl Plugin for MapSavePlugin {
@@ -21,15 +22,10 @@ impl Plugin for MapSavePlugin {
             // `world.run_schedule(CollectSave)` panics.
             .init_schedule(CollectSave)
             .init_resource::<PendingSaveJobs>()
-            .init_resource::<ActiveSaveFile>()
-            .init_resource::<SaveInFlight>()
-            .add_message::<SaveGameSignal>()
-            .add_systems(Update, (
-                SaveGameSignal::emit.run_if(input_just_released(KeyCode::KeyZ)),
-            ))
-            .add_systems(Last, (
-                drive_save.run_if(on_message::<SaveGameSignal>),
-            ))
+            .add_systems(Update, SaveGameSignal::emit_quick.run_if(input_just_released(KeyCode::KeyZ)))
+            .add_systems(Update, finalize_save.run_if(resource_exists::<SaveContext>))
+            .add_systems(Last, drive_save.run_if(resource_added::<SaveContext>))
+            .add_observer(on_save_game_signal)
             ;
     }
 }
@@ -74,51 +70,80 @@ impl Command for QueueSaveJob {
     }
 }
 
-/// Path of the .dwd file the running session saves to / was loaded from.
-/// Overwritten by the load observer (map_path) and by the dev save keybind.
-/// Default exists so `drive_save` can never panic.
-#[derive(Resource)]
-pub struct ActiveSaveFile(pub String);
-impl Default for ActiveSaveFile {
-    fn default() -> Self {
-        Self("test_save.dwd".into())
-    }
+// ============================================================================
+// SAVE SIGNAL + CONTEXT
+// ============================================================================
+
+#[derive(Debug, Clone)]
+pub enum SaveTarget {
+    /// `test_save.dwd` (dev keybind; future: named slots as File(path))
+    Quick,
+    /// `maps/<name>.dwd` + scenario mode (reset playthrough metadata on write)
+    Scenario(String),
 }
 
-/// True while the IO task is writing. Driver skips (with a player-visible warn log)
-/// if a save is already in flight.
-#[derive(Resource, Default)]
-pub(crate) struct SaveInFlight(pub Arc<AtomicBool>);
+#[derive(Event, Debug, Clone)]
+pub struct SaveGameSignal {
+    pub target: SaveTarget,
+}
 
-#[derive(Message)]
-pub(crate) struct SaveGameSignal;
 impl SaveGameSignal {
     /// Z always saves to `test_save.dwd`, even after loading `maps/<name>.dwd`.
-    fn emit(mut writer: MessageWriter<SaveGameSignal>, mut path: ResMut<ActiveSaveFile>) {
-        path.0 = "test_save.dwd".into();
-        writer.write(SaveGameSignal);
+    fn emit_quick(mut commands: Commands) {
+        commands.trigger(SaveGameSignal { target: SaveTarget::Quick });
     }
 }
 
-// --- Driver ------------------------------------------------------------------
+/// The save lifecycle: guard + mode carrier + completion signal in one.
+/// Inserted by the repack observer, removed by the finalize system.
+#[derive(Resource)]
+pub struct SaveContext {
+    pub path: String,
+    pub save_as_scenario: bool, // Whether to reset metadata, for example whether game_start was emitted.
+    pub done: Arc<AtomicBool>,
+    pub error: Arc<AtomicBool>,
+}
 
-/// Exclusive save driver. Runs in `Last` only when a `SaveGameSignal` was emitted
-/// this frame. Collects jobs from the `CollectSave` schedule, hands them to one
-/// detached IO task that writes `<path>.tmp` and atomically renames over `<path>`.
-fn drive_save(world: &mut World) {
-    // 1. In-flight guard.
-    if world.resource::<SaveInFlight>().0.load(Ordering::Relaxed) {
+/// One global observer: `SaveContext` exists → log + exit (in-flight block).
+/// Else repack: resolve path from target, insert `SaveContext` — the one place
+/// requests become plans.
+fn on_save_game_signal(
+    trigger: On<SaveGameSignal>,
+    mut commands: Commands,
+    save_ctx: Option<Res<SaveContext>>,
+) {
+    if save_ctx.is_some() {
         Log::warn()
             .player()
             .tag(Tag::GameSave)
             .message("Save already in flight — skipping");
         return;
     }
+    let target = trigger.event().target.clone();
+    let (path, save_as_scenario) = match target {
+        SaveTarget::Quick => ("test_save.dwd".to_string(), false),
+        SaveTarget::Scenario(name) => (format!("maps/{}.dwd", name), true),
+    };
+    commands.insert_resource(SaveContext {
+        path,
+        save_as_scenario,
+        done: Arc::new(AtomicBool::new(false)),
+        error: Arc::new(AtomicBool::new(false)),
+    });
+}
 
-    // 2. Run the collector schedule.
+// ============================================================================
+// DRIVER
+// ============================================================================
+
+/// Exclusive save driver. Runs in `Last` only when `SaveContext` was added
+/// this frame. Collects jobs from the `CollectSave` schedule, hands them to
+/// one detached IO task that writes `<path>.tmp` and atomically renames.
+fn drive_save(world: &mut World) {
+    // 1. Run the collector schedule (collectors read SaveContext for scenario mode).
     world.run_schedule(CollectSave);
 
-    // 3. Take the job buffer. The emptiness check is on this taken vec, AFTER
+    // 2. Take the job buffer. The emptiness check is on this taken vec, AFTER
     //    run_schedule — never a pre-check before it.
     let jobs = std::mem::take(&mut world.resource_mut::<PendingSaveJobs>().0);
     if jobs.is_empty() {
@@ -126,13 +151,16 @@ fn drive_save(world: &mut World) {
             .dev()
             .tag(Tag::GameSave)
             .message("SaveGameSignal fired but no jobs were collected — nothing to write");
+        // Remove the context — nothing to wait for.
+        world.remove_resource::<SaveContext>();
         return;
     }
 
-    // 4. Hand off to a detached IO task.
-    let path = world.resource::<ActiveSaveFile>().0.clone();
-    let in_flight = world.resource::<SaveInFlight>().0.clone();
-    in_flight.store(true, Ordering::Relaxed);
+    // 3. Hand off to a detached IO task.
+    let save_ctx = world.resource::<SaveContext>();
+    let path = save_ctx.path.clone();
+    let done = save_ctx.done.clone();
+    let error = save_ctx.error.clone();
     Log::info()
         .dev()
         .tag(Tag::GameSave)
@@ -140,29 +168,25 @@ fn drive_save(world: &mut World) {
 
     IoTaskPool::get()
         .spawn(async move {
-            write_save(path, jobs, in_flight);
+            let result = write_save_inner(&path, jobs);
+            match result {
+                Ok(()) => {
+                    Log::info()
+                        .player()
+                        .tag(Tag::GameSave)
+                        .message(format!("Game saved to '{path}'"));
+                }
+                Err(e) => {
+                    Log::error()
+                        .dev()
+                        .tag(Tag::GameSave)
+                        .message(format!("Save failed: {e}"));
+                    error.store(true, Ordering::Relaxed);
+                }
+            }
+            done.store(true, Ordering::Relaxed);
         })
         .detach();
-}
-
-fn write_save(path: String, jobs: Vec<SaveJob>, in_flight: Arc<AtomicBool>) {
-    let result = write_save_inner(&path, jobs);
-    match result {
-        Ok(()) => {
-            Log::info()
-                .player()
-                .tag(Tag::GameSave)
-                .message(format!("Game saved to '{path}'"));
-        }
-        Err(e) => {
-            Log::error()
-                .dev()
-                .tag(Tag::GameSave)
-                .message(format!("Save failed: {e}"));
-        }
-    }
-    // ALWAYS clear the in-flight flag, also on error.
-    in_flight.store(false, Ordering::Relaxed);
 }
 
 fn write_save_inner(path: &str, jobs: Vec<SaveJob>) -> Result<(), Box<dyn std::error::Error>> {
@@ -186,4 +210,29 @@ fn write_save_inner(path: &str, jobs: Vec<SaveJob>) -> Result<(), Box<dyn std::e
 
     std::fs::rename(&tmp, path)?;
     Ok(())
+}
+
+// ============================================================================
+// FINALIZE
+// ============================================================================
+
+/// Polls `SaveContext.done` every frame. On completion (success or error),
+/// removes `SaveContext` (reopening the guard). On scenario save, rescans
+/// `GameMapList` so the new map appears in the menu without restarting.
+fn finalize_save(
+    mut commands: Commands,
+    save_ctx: Res<SaveContext>,
+    mut map_list: ResMut<GameMapList>,
+) {
+    if !save_ctx.done.load(Ordering::Relaxed) { return; }
+    if save_ctx.error.load(Ordering::Relaxed) {
+        Log::warn()
+            .player()
+            .tag(Tag::GameSave)
+            .message("Save failed — context cleared");
+    }
+    if save_ctx.save_as_scenario {
+        map_list.refresh();
+    }
+    commands.remove_resource::<SaveContext>();
 }

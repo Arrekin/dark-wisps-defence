@@ -27,19 +27,28 @@ api crates carry none of it.
 ## Save Flow
 
 ```
-SaveGameSignal (message; dev keybind Z)
+SaveGameSignal { target: SaveTarget } (Event; dev keybind Z → Quick, editor → Scenario)
     │
-    ▼  Last: drive_save (exclusive system)
+    ▼  repack observer (On<SaveGameSignal>)
+    │  SaveContext exists → log + return (in-flight block)
+    │  else: resolve path from target, insert SaveContext { path, save_as_scenario, done, error }
+    │
+    ▼  Last: drive_save (exclusive system, run_if resource_added::<SaveContext>)
 world.run_schedule(CollectSave)          ← runs ONCE; never part of the main loop
-    │       domain collector systems query ECS, SaveWriter::submit(closure)
+    │       domain collector systems query ECS, read SaveContext for scenario mode,
+    │       SaveWriter::submit(closure)
     ▼
 PendingSaveJobs (Vec<SaveJob>) taken by driver
     │
     ▼  detached IoTaskPool task
 write <path>.tmp: migrations → one transaction → all jobs → commit
     │
-    ▼
+    ▼  done.store(true)  (error.store(true) on failure)
 drop connection → fs::rename(tmp, path)   ← atomic replace
+    │
+    ▼  Update: finalize_save (run_if resource_exists::<SaveContext>)
+    │  poll done atomic → on completion (success OR error): remove SaveContext
+    │  if save_as_scenario: GameMapList::refresh() (new map appears in menu)
 ```
 
 **Why a custom schedule?** `CollectSave` only executes when the driver calls `run_schedule` — zero
@@ -51,9 +60,13 @@ executor.
 target file. The SQLite connection is dropped before the rename (Windows file-handle semantics —
 see `with_db_connection`'s doc comment).
 
-**Overlap guard:** `SaveInFlight` (an `Arc<AtomicBool>`) makes the driver skip (with a warn) if a
-save is still writing. `ActiveSaveFile` holds the target path — set by the load observer, forced
-to `test_save.dwd` by the dev keybind.
+**SaveContext lifecycle:** `SaveContext`'s *existence* is the save lifecycle — guard + mode
+carrier + completion signal in one. The repack observer inserts it (one place requests become
+plans); the finalize system removes it on IO completion (success or error — else one bad write
+blocks saving forever). Collectors read `save_as_scenario` to choose between real state and
+scenario defaults (see Save as Scenario below). `SaveTarget::{ Quick, Scenario(String) }` makes
+destination + scenario-ness one decision — a bool+path pair would allow scenario-saving to
+`test_save.dwd`.
 
 ### Writing a collector
 
@@ -84,11 +97,37 @@ fn collect_my_entities(
 (`Sync` because the buffer resource requires it). They run on the IO thread inside the single
 save transaction; the first `Err` aborts the save.
 
+### Scenario-aware collectors
+
+Collectors that care about scenario mode (playthrough metadata) read
+`Option<Res<SaveContext>>` and write either real state or scenario defaults. The decision lives
+in the one function that already knows the columns — no separate normalize jobs, no
+collector/normalizer drift. Collectors that don't care never mention `SaveContext`.
+
+```rust
+fn collect_my_entities(
+    q: Query<(Entity, &MyData), With<MyEntity>>,
+    save_ctx: Option<Res<SaveContext>>,
+    mut save: SaveWriter,
+) {
+    if q.is_empty() { return; }
+    let save_as_scenario = save_ctx.map(|c| c.save_as_scenario).unwrap_or(false);
+    let rows: Vec<(i64, f32)> = q.iter()
+        .map(|(e, d)| (e.index_u32() as i64, if save_as_scenario { 0.0 } else { d.value }))
+        .collect();
+    // ... same submit pattern
+}
+```
+
+Scenario mode resets: objectives state → `Inactive`, runtime columns → their `DEFAULT 0`/`0.0`
+(`current`, `elapsed`), StartGame `fired` → `false`. `activated_by` is NOT reset (it's
+authoring, not playthrough).
+
 ## Load Flow
 
 ```
 LoadGameSignal (observer; dev keybind A)
-    │  migrations (sync) · ActiveSaveFile ← map_path · LoadRunner + fresh LoadProgress
+    │  migrations (sync) · LoadRunner + fresh LoadProgress
     │  despawn MapBound · GameState::Loading · MapLoadingStage::Init
     ▼
 MapLoadingStage state machine (stages are ordering barriers)
@@ -262,7 +301,8 @@ Since all saves already have the final schema, re-running V1 with `IF NOT EXISTS
 
 ## File Locations
 
-- `persistence/src/save.rs` — `CollectSave`, `SaveWriter`, driver, atomic write
+- `persistence/src/save.rs` — `CollectSave`, `SaveWriter`, `SaveContext`, `SaveGameSignal`,
+  `SaveTarget`, repack observer, driver, finalize, atomic write
 - `persistence/src/load.rs` — `LoadContext`, registry, runner systems, `LoadProgress`,
   `LoadGameSignal` observer
 - `persistence/src/common.rs` — `with_db_connection`, `GameDbHelpers`, `register_loader`

@@ -2462,6 +2462,8 @@ dependencies = [
  "game_core",
  "logging",
  "narrative",
+ "persistence",
+ "session",
  "shards",
  "states",
  "strum",
@@ -3768,6 +3770,7 @@ name = "narrative"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "bevy_egui",
  "game_core",
  "strum",
 ]
@@ -3777,13 +3780,14 @@ name = "narrative_internal"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "bevy_egui",
  "game_core",
  "logging",
  "map_objects",
  "narrative",
  "persistence",
- "session",
  "states",
+ "wisps",
 ]
 
 [[package]]
@@ -5004,8 +5008,10 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "game_core",
+ "logging",
  "persistence",
  "states",
+ "wisps",
 ]
 
 [[package]]

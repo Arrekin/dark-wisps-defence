@@ -5,10 +5,11 @@ edition.workspace = true
 
 [dependencies]
 bevy = { workspace = true }
+bevy_egui = { workspace = true }
 logging = { workspace = true }
 narrative = { workspace = true }
 map_objects = { workspace = true }
-session = { workspace = true }
+wisps = { workspace = true }
 game_core = { workspace = true }
 persistence = { workspace = true }
 states = { workspace = true }
