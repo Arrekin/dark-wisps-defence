@@ -16,11 +16,6 @@ impl Plugin for IndicatorsPlugin {
     }
 }
 
-/// When attaching triggers to the parent for change detection, we need to know which Identicator entity is interested in that action
-/// Should be attached to the observer entity.
-#[derive(Component)]
-pub(crate) struct IndicatorObserverForChanges(Entity);
-
 const PERIOD_SECONDS: f32 = 3.;
 const MIN_ALPHA: f32 = 0.;
 const MAX_ALPHA: f32 = 1.;
@@ -43,114 +38,88 @@ fn on_insert_update_sprite_handle(
     };
     sprite_handle.0 = asset_server.load(path);
 
+    let parent = indicator_of.0;
     match indicator_type {
         IndicatorType::NoPower => {
-            // Add Power State observers to the parent
-            commands.spawn((Observer::new(on_parent_gains_power_update_indicator).with_entity(indicator_of.0), IndicatorObserverForChanges(entity)));
-            commands.spawn((Observer::new(on_parent_looses_power_update_indicator).with_entity(indicator_of.0), IndicatorObserverForChanges(entity)));
-            // Configure initial state
-            if parents_with_no_power.contains(indicator_of.0) {
+            commands.entity(parent)
+                .observe(disable_on_power_gained(entity))
+                .observe(enable_on_power_lost(entity));
+            if parents_with_no_power.contains(parent) {
                 commands.entity(entity).remove::<Disabled>();
             }
         }
         IndicatorType::OreDepleted => {
-            // Add Ore State observers to the parent
-            commands.spawn((Observer::new(on_parent_gains_ore_update_indicator).with_entity(indicator_of.0), IndicatorObserverForChanges(entity)));
-            commands.spawn((Observer::new(on_parent_looses_ore_update_indicator).with_entity(indicator_of.0), IndicatorObserverForChanges(entity)));
-            // Configure initial state - check if parent has no ore in scanner range
-            if parents_with_no_ore.contains(indicator_of.0) {
+            commands.entity(parent)
+                .observe(disable_on_ore_gained(entity))
+                .observe(enable_on_ore_lost(entity));
+            if parents_with_no_ore.contains(parent) {
                 commands.entity(entity).remove::<Disabled>();
             }
         }
         IndicatorType::DisabledByPlayer => {
-            // Add DisabledByPlayer observers to the parent
-            commands.spawn((Observer::new(on_parent_disabled_by_player_update_indicator).with_entity(indicator_of.0), IndicatorObserverForChanges(entity)));
-            commands.spawn((Observer::new(on_parent_enabled_by_player_update_indicator).with_entity(indicator_of.0), IndicatorObserverForChanges(entity)));
-            // Configure initial state - check if parent is disabled by player
-            if parents_disabled_by_player.contains(indicator_of.0) {
+            commands.entity(parent)
+                .observe(enable_on_disabled_by_player(entity))
+                .observe(disable_on_enabled_by_player(entity));
+            if parents_disabled_by_player.contains(parent) {
                 commands.entity(entity).remove::<Disabled>();
             }
         }
     }
 }
 
-// TODO: Condolidate when Bevy supports multiple different triggers in one expression
-fn on_parent_looses_power_update_indicator(
-    trigger: On<Remove, IsPowered>,
-    mut commands: Commands,
-    observers_for_changes: Query<&IndicatorObserverForChanges>,
-    indicators: Query<(&IndicatorType, Has<Disabled>)>,
-) {
-    let observer_entity = trigger.observer();
-    let Ok(indicator_entity) = observers_for_changes.get(observer_entity) else { return; };
-    let Ok((indicator_type, _)) = indicators.get(indicator_entity.0) else { return; };
-    if !matches!(indicator_type, IndicatorType::NoPower) { return; };
-    commands.entity(indicator_entity.0).try_remove::<Disabled>();
+fn disable_on_power_gained(entity: Entity) -> impl Fn(On<Insert, IsPowered>, Commands, Query<&IndicatorType>) {
+    move |trigger, mut commands, indicators| {
+        if trigger.trigger().new_archetype.is_some() && indicators.get(entity).is_err() {
+            commands.entity(trigger.observer()).try_despawn();
+            return;
+        }
+        commands.entity(entity).try_insert(Disabled);
+    }
 }
-
-fn on_parent_gains_power_update_indicator(
-    trigger: On<Insert, IsPowered>,
-    mut commands: Commands,
-    observers_for_changes: Query<&IndicatorObserverForChanges>,
-    indicators: Query<&IndicatorType>,
-) {
-    let observer_entity = trigger.observer();
-    let Ok(indicator_entity) = observers_for_changes.get(observer_entity) else { return; };
-    let Ok(indicator_type) = indicators.get(indicator_entity.0) else { return; };
-    if !matches!(indicator_type, IndicatorType::NoPower) { return; };
-    commands.entity(indicator_entity.0).try_insert(Disabled);
+fn enable_on_power_lost(entity: Entity) -> impl Fn(On<Remove, IsPowered>, Commands, Query<&IndicatorType>) {
+    move |trigger, mut commands, indicators| {
+        if trigger.trigger().new_archetype.is_some() && indicators.get(entity).is_err() {
+            commands.entity(trigger.observer()).try_despawn();
+            return;
+        }
+        commands.entity(entity).try_remove::<Disabled>();
+    }
 }
-
-fn on_parent_looses_ore_update_indicator(
-    trigger: On<Insert, NoOreInScannerRange>,
-    mut commands: Commands,
-    observers_for_changes: Query<&IndicatorObserverForChanges>,
-    indicators: Query<(&IndicatorType, Has<Disabled>)>,
-) {
-    let observer_entity = trigger.observer();
-    let Ok(indicator_entity) = observers_for_changes.get(observer_entity) else { return; };
-    let Ok((indicator_type, _)) = indicators.get(indicator_entity.0) else { return; };
-    if !matches!(indicator_type, IndicatorType::OreDepleted) { return; };
-    commands.entity(indicator_entity.0).try_remove::<Disabled>();
+fn disable_on_ore_gained(entity: Entity) -> impl Fn(On<Insert, HasOreInScannerRange>, Commands, Query<&IndicatorType>) {
+    move |trigger, mut commands, indicators| {
+        if trigger.trigger().new_archetype.is_some() && indicators.get(entity).is_err() {
+            commands.entity(trigger.observer()).try_despawn();
+            return;
+        }
+        commands.entity(entity).try_insert(Disabled);
+    }
 }
-
-fn on_parent_gains_ore_update_indicator(
-    trigger: On<Insert, HasOreInScannerRange>,
-    mut commands: Commands,
-    observers_for_changes: Query<&IndicatorObserverForChanges>,
-    indicators: Query<&IndicatorType>,
-) {
-    let observer_entity = trigger.observer();
-    let Ok(indicator_entity) = observers_for_changes.get(observer_entity) else { return; };
-    let Ok(indicator_type) = indicators.get(indicator_entity.0) else { return; };
-    if !matches!(indicator_type, IndicatorType::OreDepleted) { return; };
-    commands.entity(indicator_entity.0).try_insert(Disabled);
+fn enable_on_ore_lost(entity: Entity) -> impl Fn(On<Insert, NoOreInScannerRange>, Commands, Query<&IndicatorType>) {
+    move |trigger, mut commands, indicators| {
+        if trigger.trigger().new_archetype.is_some() && indicators.get(entity).is_err() {
+            commands.entity(trigger.observer()).try_despawn();
+            return;
+        }
+        commands.entity(entity).try_remove::<Disabled>();
+    }
 }
-
-fn on_parent_disabled_by_player_update_indicator(
-    trigger: On<Insert, DisabledByPlayer>,
-    mut commands: Commands,
-    observers_for_changes: Query<&IndicatorObserverForChanges>,
-    indicators: Query<&IndicatorType, With<Disabled>>,
-) {
-    let observer_entity = trigger.observer();
-    let Ok(indicator_entity) = observers_for_changes.get(observer_entity) else { return; };
-    let Ok(indicator_type) = indicators.get(indicator_entity.0) else { return; };
-    if !matches!(indicator_type, IndicatorType::DisabledByPlayer) { return; };
-    commands.entity(indicator_entity.0).try_remove::<Disabled>();
+fn enable_on_disabled_by_player(entity: Entity) -> impl Fn(On<Insert, DisabledByPlayer>, Commands, Query<&IndicatorType>) {
+    move |trigger, mut commands, indicators| {
+        if trigger.trigger().new_archetype.is_some() && indicators.get(entity).is_err() {
+            commands.entity(trigger.observer()).try_despawn();
+            return;
+        }
+        commands.entity(entity).try_remove::<Disabled>();
+    }
 }
-
-fn on_parent_enabled_by_player_update_indicator(
-    trigger: On<Remove, DisabledByPlayer>,
-    mut commands: Commands,
-    observers_for_changes: Query<&IndicatorObserverForChanges>,
-    indicators: Query<&IndicatorType>,
-) {
-    let observer_entity = trigger.observer();
-    let Ok(indicator_entity) = observers_for_changes.get(observer_entity) else { return; };
-    let Ok(indicator_type) = indicators.get(indicator_entity.0) else { return; };
-    if !matches!(indicator_type, IndicatorType::DisabledByPlayer) { return; };
-    commands.entity(indicator_entity.0).try_insert(Disabled);
+fn disable_on_enabled_by_player(entity: Entity) -> impl Fn(On<Remove, DisabledByPlayer>, Commands, Query<&IndicatorType>) {
+    move |trigger, mut commands, indicators| {
+        if trigger.trigger().new_archetype.is_some() && indicators.get(entity).is_err() {
+            commands.entity(trigger.observer()).try_despawn();
+            return;
+        }
+        commands.entity(entity).try_insert(Disabled);
+    }
 }
 
 // Cycle through indicators and animate fade in/out.

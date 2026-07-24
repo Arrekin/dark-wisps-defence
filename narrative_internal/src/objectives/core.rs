@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use game_core::prelude::TriggerFired;
+use game_core::prelude::{MomentHappened, MomentOfInterest};
 use logging::prelude::*;
 use narrative::prelude::*;
 use persistence::prelude::{GameDbHelpers, LoadContext, SaveContext, SaveWriter};
@@ -23,8 +23,8 @@ pub(crate) fn on_builder_add_spawn_objective(
             ObjectiveDetails { id_name: builder.id_name.clone() },
             builder.state,
         ));
-    if let Some(trigger_entity) = builder.activated_by {
-        ec.insert(ObjectiveActivatedBy(trigger_entity));
+    if let Some(moment_entity) = builder.activated_by {
+        ec.insert(MomentOfInterest(moment_entity));
     }
 }
 
@@ -74,14 +74,14 @@ pub(crate) fn on_objective_activate(
         None => {
             commands.entity(entity)
                 .insert(ObjectiveState::Satisfied)
-                .trigger(|e| ObjectiveSatisfiedEvent { entity: e });
+                .trigger(ObjectiveSatisfiedEvent::from);
         }
         Some(goals) => {
             commands.entity(entity).insert(ObjectiveState::InProgress);
             for goal in goals.iter() {
                 commands.entity(goal)
                     .insert(ObjectiveState::InProgress)
-                    .trigger(|e| ObjectiveActivate { entity: e });
+                    .trigger(ObjectiveActivate::from);
             }
         }
     }
@@ -122,58 +122,40 @@ pub(crate) fn on_goal_state_changed_aggregate(
     if any_failed {
         commands.entity(root)
             .insert(ObjectiveState::Failed)
-            .trigger(|e| ObjectiveFailedEvent { entity: e });
+            .trigger(ObjectiveFailedEvent::from);
     } else if all_satisfied {
         commands.entity(root)
             .insert(ObjectiveState::Satisfied)
-            .trigger(|e| ObjectiveSatisfiedEvent { entity: e });
+            .trigger(ObjectiveSatisfiedEvent::from);
     }
 }
 
 // ============================================================================
-// ACTIVATION & TRIGGERS
+// MOMENT-WATCHING REACTOR
 // ============================================================================
 
-/// On `TriggerFired` at source S, activate all `Inactive` objectives with
-/// `ObjectiveActivatedBy(S)`. Reads `ObjectiveActivationTargets` on the source
-/// (the target side of the relationship — a `Vec<Entity>` of dependents).
-/// `TriggerFired` is a live event (fired via `commands.trigger` only from
-/// `fire_start_game_once` and chaining) — never fires during load.
-pub(crate) fn on_trigger_fired_activate(
-    trigger: On<TriggerFired>,
+/// On `MomentHappened` at an objective root: if the objective is `Inactive`,
+/// activate it.
+pub(crate) fn on_moment_happened_activate(
+    trigger: On<MomentHappened>,
+    mut commands: Commands,
     objectives: Query<(), (With<ObjectiveDetails>, With<ObjectiveInactive>)>,
-    sources: Query<&ObjectiveActivationTargets>,
-    mut commands: Commands,
 ) {
-    let source = trigger.entity;
-    let Ok(targets) = sources.get(source) else { return };
-    for objective_entity in targets.iter() {
-        if !objectives.contains(objective_entity) { continue; }
-        commands.trigger(ObjectiveActivate { entity: objective_entity });
-    }
+    let entity = trigger.entity;
+    if !objectives.contains(entity) { return; }
+    commands.trigger(ObjectiveActivate { entity });
 }
 
-/// When an objective root enters `Satisfied` (via `ObjectiveSatisfiedEvent`),
-/// fire `TriggerFired` on it so dependent objectives activate via chaining.
-/// Listens to the event (not `On<Insert, ObjectiveState>`) so loaded
-/// `Satisfied` objectives don't re-fire chains.
-pub(crate) fn on_objective_satisfied_fire_trigger(
-    trigger: On<ObjectiveSatisfiedEvent>,
-    mut commands: Commands,
-) {
-    commands.trigger(TriggerFired { entity: trigger.entity });
-}
-
-/// Lost-activation rule: when `ObjectiveActivatedBy` is removed from an
-/// objective (trigger despawned, or the objective itself is despawning during
+/// Lost-watcher rule: when `MomentOfInterest` is removed from an objective
+/// (the watched moment despawned, or the objective itself is despawning during
 /// map change), if the objective is still `Inactive`, set it to `Failed` and
 /// fire `ObjectiveFailedEvent`. Uses `try_insert` — the observer also fires
 /// while the objective itself is being despawned (components still readable),
 /// and the queued insert must no-op on a gone entity.
-pub(crate) fn on_remove_activated_by_fail_inactive(
-    trigger: On<Remove, ObjectiveActivatedBy>,
-    objectives: Query<(), (With<ObjectiveDetails>, With<ObjectiveInactive>)>,
+pub(crate) fn on_remove_moment_of_interest_fail_inactive(
+    trigger: On<Remove, MomentOfInterest>,
     mut commands: Commands,
+    objectives: Query<(), (With<ObjectiveDetails>, With<ObjectiveInactive>)>,
 ) {
     let entity = trigger.entity;
     if !objectives.contains(entity) { return; }
@@ -188,14 +170,13 @@ pub(crate) fn on_remove_activated_by_fail_inactive(
 pub(crate) fn collect_objectives(
     save_ctx: Res<SaveContext>,
     mut save: SaveWriter,
-    objectives: Query<(Entity, &ObjectiveDetails, &ObjectiveState, Option<&ObjectiveActivatedBy>)>,
+    objectives: Query<(Entity, &ObjectiveDetails, &ObjectiveState, Option<&MomentOfInterest>)>,
 ) {
     if objectives.is_empty() { return; }
-    let save_as_scenario = save_ctx.save_as_scenario;
     let rows: Vec<(i64, String, String, Option<i64>)> = objectives
         .iter()
         .map(|(entity, details, state, activated_by)| {
-            let state_str = if save_as_scenario {
+            let state_str = if save_ctx.save_as_scenario {
                 ObjectiveState::Inactive.as_ref().to_string()
             } else {
                 state.as_ref().to_string()
@@ -239,13 +220,13 @@ pub(crate) fn load_objectives(ctx: &mut LoadContext) -> rusqlite::Result<()> {
             continue;
         };
 
-        // Lost-activation load rule: an Inactive objective whose trigger failed
+        // Lost-activation load rule: an Inactive objective whose activation moment failed
         // remap can never activate — load as Failed. Non-Inactive objectives
-        // (Satisfied/InProgress) already activated or completed; their trigger
-        // is irrelevant, so preserve the saved state.
+        // (Satisfied/InProgress) already activated or completed; their
+        // activation moment is irrelevant, so preserve the saved state.
         let (state, activated_by) = if let Some(ab_old_id) = activated_by {
             match ctx.entity(ab_old_id) {
-                Some(trigger_entity) => (state, Some(trigger_entity)),
+                Some(moment_entity) => (state, Some(moment_entity)),
                 None => {
                     if state == ObjectiveState::Inactive {
                         Log::error().dev().tag(Tag::GameLoad).message(format!(
@@ -265,8 +246,8 @@ pub(crate) fn load_objectives(ctx: &mut LoadContext) -> rusqlite::Result<()> {
         };
 
         let mut builder = BuilderObjective::new(id_name).with_state(state);
-        if let Some(trigger_entity) = activated_by {
-            builder = builder.with_activated_by(trigger_entity);
+        if let Some(moment_entity) = activated_by {
+            builder = builder.with_activated_by(moment_entity);
         }
         ctx.insert(entity, builder);
     }

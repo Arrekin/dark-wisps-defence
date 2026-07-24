@@ -1,12 +1,10 @@
 use bevy::prelude::*;
 use bevy_egui::egui;
+use strum::IntoEnumIterator;
 
-use game_core::prelude::TriggerSource;
-use narrative::prelude::{
-    BuilderObjective, ObjectiveActivatedBy, ObjectiveDetails, ObjectiveEditorUi, ObjectiveGoalGroup,
-    ObjectiveGoals, ObjectiveGoalRegistry,
-};
-use session::TriggerStartGame;
+use game_core::prelude::{Moment, MomentOf, MomentOfInterest, HasMoments};
+use narrative::prelude::*;
+use session::MomentGameStart;
 
 use super::EditorState;
 
@@ -18,7 +16,7 @@ pub fn tab_objectives(ui: &mut egui::Ui, world: &mut World) {
                 query.iter(world).count() + 1
             };
             let start_game = {
-                let mut query = world.query_filtered::<Entity, With<TriggerStartGame>>();
+                let mut query = world.query_filtered::<Entity, With<MomentGameStart>>();
                 query.single(world).ok()
             };
             let mut builder = BuilderObjective::new(format!("objective_{}", count));
@@ -70,13 +68,24 @@ fn ui_objective_editor(ui: &mut egui::Ui, world: &mut World, objective: Entity) 
     // Common fields: id_name
     ui.horizontal(|ui| {
         ui.label("ID:");
-        if let Some(mut det) = world.entity_mut(objective).get_mut::<ObjectiveDetails>() {
-            ui.text_edit_singleline(&mut det.id_name);
+        let current = world.entity(objective).get::<ObjectiveDetails>().map(|d| d.id_name.clone());
+        if let Some(mut id_name) = current {
+            ui.text_edit_singleline(&mut id_name);
+            if let Some(mut det) = world.entity_mut(objective).get_mut::<ObjectiveDetails>()
+                && det.id_name != id_name
+            {
+                det.id_name = id_name;
+            }
         }
     });
 
     // Activation entity picker
     ui_activation_picker(ui, world, objective);
+
+    ui.separator();
+
+    // Moments section
+    ui_moments_section(ui, world, objective);
 
     ui.separator();
 
@@ -93,60 +102,90 @@ fn ui_objective_editor(ui: &mut egui::Ui, world: &mut World, objective: Entity) 
 }
 
 fn ui_activation_picker(ui: &mut egui::Ui, world: &mut World, objective: Entity) {
-    // Snapshot trigger sources — two passes to avoid double-borrowing world.
-    let raw: Vec<(Entity, Option<String>)> = {
-        let mut query =
-            world.query_filtered::<(Entity, Option<&ObjectiveDetails>), With<TriggerSource>>();
+    // Snapshot all moment entities with their display label. The label composes
+    // from the parent's `id_name` (if the parent is an objective) + the
+    // moment's own `Name`. Standalone moments (e.g. MomentGameStart) show just
+    // their `Name`.
+    let moments: Vec<(Entity, String)> = {
+        let mut query = world.query_filtered::<(Entity, &Name, Option<&MomentOf>), With<Moment>>();
         query
             .iter(world)
-            .map(|(e, d)| (e, d.map(|d| d.id_name.clone())))
+            .map(|(e, name, parent_rel)| {
+                let label = match parent_rel {
+                    Some(rel) => {
+                        let parent = world.entity(rel.0);
+                        match parent.get::<ObjectiveDetails>() {
+                            Some(det) => format!("{}: {}", det.id_name, name.as_str()),
+                            None => name.as_str().to_string(),
+                        }
+                    }
+                    None => name.as_str().to_string(),
+                };
+                (e, label)
+            })
             .collect()
     };
-    let triggers: Vec<(Entity, String)> = raw
-        .into_iter()
-        .map(|(e, name)| {
-            let name = name.unwrap_or_else(|| {
-                if world.entity(e).contains::<TriggerStartGame>() {
-                    "StartGame".to_string()
-                } else {
-                    format!("Trigger #{}", e.index())
-                }
-            });
-            (e, name)
-        })
-        .collect();
 
-    let current_trigger: Option<Entity> = world
+    let current: Option<Entity> = world
         .entity(objective)
-        .get::<ObjectiveActivatedBy>()
+        .get::<MomentOfInterest>()
         .map(|a| a.0);
 
     ui.horizontal(|ui| {
         ui.label("Activated by:");
-        let selected_text = current_trigger
-            .and_then(|e| {
-                triggers
-                    .iter()
-                    .find(|(te, _)| *te == e)
-                    .map(|(_, n)| n.clone())
-            })
+        let selected_text = current
+            .and_then(|e| moments.iter().find(|(te, _)| *te == e).map(|(_, n)| n.clone()))
             .unwrap_or_else(|| "—".to_string());
         egui::ComboBox::from_id_salt("activation_picker")
             .selected_text(selected_text)
             .show_ui(ui, |ui| {
-                for (trigger_entity, name) in &triggers {
-                    let is_selected = current_trigger == Some(*trigger_entity);
-                    if ui.selectable_label(is_selected, name).clicked() {
+                for (moment_entity, label) in &moments {
+                    let is_selected = current == Some(*moment_entity);
+                    if ui.selectable_label(is_selected, label).clicked() {
                         // Insert directly — Bevy replaces the existing relationship
                         // without firing `On<Remove>`, which would trigger the
                         // lost-activation observer and fail Inactive objectives.
                         world
                             .entity_mut(objective)
-                            .insert(ObjectiveActivatedBy(*trigger_entity));
+                            .insert(MomentOfInterest(*moment_entity));
                     }
                 }
             });
     });
+}
+
+fn ui_moments_section(ui: &mut egui::Ui, world: &mut World, objective: Entity) {
+    ui.heading("Moments");
+
+    let mut satisfied = find_moment_child::<MomentObjectiveSatisfied>(world, objective).is_some();
+    let mut failed = find_moment_child::<MomentObjectiveFailed>(world, objective).is_some();
+
+    ui.horizontal(|ui| {
+        if ui.checkbox(&mut satisfied, "Satisfied").changed() {
+            if satisfied {
+                world.spawn((MomentOf(objective), MomentObjectiveSatisfied));
+            } else if let Some(child) = find_moment_child::<MomentObjectiveSatisfied>(world, objective) {
+                world.entity_mut(child).despawn();
+            }
+        }
+        if ui.checkbox(&mut failed, "Failed").changed() {
+            if failed {
+                world.spawn((MomentOf(objective), MomentObjectiveFailed));
+            } else if let Some(child) = find_moment_child::<MomentObjectiveFailed>(world, objective) {
+                world.entity_mut(child).despawn();
+            }
+        }
+    });
+}
+
+/// Find the moment child of `objective` that has marker `T`.
+fn find_moment_child<T: Component>(world: &World, objective: Entity) -> Option<Entity> {
+    world
+        .entity(objective)
+        .get::<HasMoments>()
+        .into_iter()
+        .flat_map(|h| h.iter())
+        .find(|&c| world.entity(c).contains::<T>())
 }
 
 fn ui_goals_section(ui: &mut egui::Ui, world: &mut World, objective: Entity) {
@@ -154,13 +193,11 @@ fn ui_goals_section(ui: &mut egui::Ui, world: &mut World, objective: Entity) {
 
     // Clone the registry to release the world borrow before the menu closure.
     let registry = world.resource::<ObjectiveGoalRegistry>().clone();
-    use strum::IntoEnumIterator;
-    let groups = ObjectiveGoalGroup::iter().collect::<Vec<_>>();
 
     ui.menu_button("+ Add Goal", |ui| {
-        for group in &groups {
+        for group in ObjectiveGoalGroup::iter() {
             ui.label(group.as_ref());
-            for entry in registry.entries.iter().filter(|e| e.group == *group) {
+            for entry in registry.entries.iter().filter(|e| e.group == group) {
                 if ui.button(entry.name).clicked() {
                     (entry.spawn)(&mut world.commands(), objective);
                     ui.close();
@@ -170,7 +207,6 @@ fn ui_goals_section(ui: &mut egui::Ui, world: &mut World, objective: Entity) {
         }
     });
 
-    // Snapshot goal entities
     let goals: Vec<Entity> = world
         .entity(objective)
         .get::<ObjectiveGoals>()

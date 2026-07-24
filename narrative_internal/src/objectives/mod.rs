@@ -1,6 +1,7 @@
 pub(crate) mod core;
 pub(crate) mod goal_clear_quantum_fields;
 pub(crate) mod goal_kill_wisps;
+pub(crate) mod moments;
 pub(crate) mod panel;
 pub(crate) mod restriction_time_allowance;
 
@@ -18,10 +19,9 @@ impl Plugin for ObjectivesPlugin {
             .add_observer(core::on_insert_objective_state_sync_markers)
             .add_observer(core::on_objective_activate)
             .add_observer(core::on_goal_state_changed_aggregate)
-            // Activation & triggers
-            .add_observer(core::on_trigger_fired_activate)
-            .add_observer(core::on_objective_satisfied_fire_trigger)
-            .add_observer(core::on_remove_activated_by_fail_inactive)
+            // Moment-watching reactor + lost-watcher rule
+            .add_observer(core::on_moment_happened_activate)
+            .add_observer(core::on_remove_moment_of_interest_fail_inactive)
             .add_systems(CollectSave, core::collect_objectives)
             .register_loader(MapLoadingStage::SpawnMapElements, "objectives", core::load_objectives)
             .add_plugins((
@@ -29,6 +29,7 @@ impl Plugin for ObjectivesPlugin {
                 goal_clear_quantum_fields::GoalClearQuantumFieldsPlugin,
                 restriction_time_allowance::RestrictionTimeAllowancePlugin,
                 panel::ObjectivesPanelPlugin,
+                moments::ObjectiveMomentsPlugin,
             ))
             ;
     }

@@ -141,7 +141,7 @@ fn on_time_allowance_activated(
     if !goals.contains(goal) { return; }
     commands.entity(goal)
         .insert(ObjectiveState::Satisfied)
-        .trigger(|e| ObjectiveGoalStateChanged { entity: e });
+        .trigger(ObjectiveGoalStateChanged::from);
 }
 
 // ============================================================================
@@ -169,7 +169,7 @@ fn tick_time_allowance(
         if runtime.elapsed >= config.seconds {
             commands.entity(goal)
                 .insert(ObjectiveState::Failed)
-                .trigger(|e| ObjectiveGoalStateChanged { entity: e });
+                .trigger(ObjectiveGoalStateChanged::from);
         }
     }
 }

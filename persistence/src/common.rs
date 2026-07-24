@@ -1,10 +1,12 @@
 use bevy::prelude::*;
 
-use game_core::prelude::{GridCoords, GridImprint};
+use game_core::prelude::{GridCoords, GridImprint, MomentKind};
 use logging::prelude::*;
 use states::MapLoadingStage;
 
 use crate::load::GameLoadRegistry;
+use crate::moments::{load_moments, save_moments};
+use crate::save::CollectSave;
 
 /// Run `f` against a freshly opened SQLite connection to `path`.
 ///
@@ -210,6 +212,11 @@ pub trait AppGameLoadSaveExtension {
         table: &'static str,
         loader: crate::load::LoaderFn,
     ) -> &mut Self;
+
+    /// Register save collector + loader for a moment kind. Combines
+    /// `save_moments::<M>` and `load_moments::<M>` into one call. Loads at
+    /// `SpawnEffectInstances` — late enough that all parent entities exist.
+    fn register_moment_persistence<M: MomentKind>(&mut self) -> &mut Self;
 }
 impl AppGameLoadSaveExtension for App {
     fn register_loader(
@@ -234,5 +241,15 @@ impl AppGameLoadSaveExtension for App {
             });
 
         self
+    }
+
+    fn register_moment_persistence<M: MomentKind>(&mut self) -> &mut Self {
+        // Known issue: all moment kinds share the `moments` table, so the
+        // progress bar row counter (`SELECT COUNT(*) FROM moments`) runs once
+        // per kind, inflating the total. The actual load is correct (each
+        // loader filters by `WHERE kind = ?`). Accepted as a cosmetic
+        // imperfection.
+        self.add_systems(CollectSave, save_moments::<M>)
+            .register_loader(MapLoadingStage::SpawnEffectInstances, "moments", load_moments::<M>)
     }
 }

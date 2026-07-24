@@ -54,15 +54,27 @@ pub fn tab_summonings(ui: &mut egui::Ui, world: &mut World) {
 fn ui_summoning_editor(ui: &mut egui::Ui, world: &mut World, entity: Entity) {
     ui.horizontal(|ui| {
         ui.label("ID:");
-        if let Some(mut summoning) = world.entity_mut(entity).get_mut::<Summoning>() {
-            ui.text_edit_singleline(&mut summoning.id_name);
+        let current = world.entity(entity).get::<Summoning>().map(|s| s.id_name.clone());
+        if let Some(mut id_name) = current {
+            ui.text_edit_singleline(&mut id_name);
+            if let Some(mut summoning) = world.entity_mut(entity).get_mut::<Summoning>()
+                && summoning.id_name != id_name
+            {
+                summoning.id_name = id_name;
+            }
         }
     });
 
     ui.horizontal(|ui| {
         ui.label("Activation Event:");
-        if let Some(mut summoning) = world.entity_mut(entity).get_mut::<Summoning>() {
-            ui.text_edit_singleline(&mut summoning.activation_event);
+        let current = world.entity(entity).get::<Summoning>().map(|s| s.activation_event.clone());
+        if let Some(mut activation_event) = current {
+            ui.text_edit_singleline(&mut activation_event);
+            if let Some(mut summoning) = world.entity_mut(entity).get_mut::<Summoning>()
+                && summoning.activation_event != activation_event
+            {
+                summoning.activation_event = activation_event;
+            }
         }
     });
 
@@ -91,17 +103,23 @@ fn ui_summoning_editor(ui: &mut egui::Ui, world: &mut World, entity: Entity) {
     });
 
     ui.collapsing("Spawn Area", |ui| {
-        let mut area = world.entity(entity).get::<Summoning>().map(|s| s.area.clone()).unwrap_or_default();
+        let original = world.entity(entity).get::<Summoning>().map(|s| s.area.clone()).unwrap_or_default();
+        let mut area = original.clone();
         ui_spawn_area(ui, &mut area);
-        if let Some(mut summoning) = world.entity_mut(entity).get_mut::<Summoning>() {
+        if area != original
+            && let Some(mut summoning) = world.entity_mut(entity).get_mut::<Summoning>()
+        {
             summoning.area = area;
         }
     });
 
     ui.collapsing("Spawn Tempo", |ui| {
-        let mut tempo = world.entity(entity).get::<Summoning>().map(|s| s.tempo).unwrap_or_default();
+        let original = world.entity(entity).get::<Summoning>().map(|s| s.tempo).unwrap_or_default();
+        let mut tempo = original;
         ui_spawn_tempo(ui, &mut tempo);
-        if let Some(mut summoning) = world.entity_mut(entity).get_mut::<Summoning>() {
+        if tempo != original
+            && let Some(mut summoning) = world.entity_mut(entity).get_mut::<Summoning>()
+        {
             summoning.tempo = tempo;
         }
     });

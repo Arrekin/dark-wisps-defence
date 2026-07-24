@@ -34,7 +34,7 @@ impl Summoning {
     }
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize, EnumIter, AsRefStr)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, EnumIter, AsRefStr)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SpawnArea {
     Coords { coords: Vec<GridCoords> },
@@ -99,7 +99,7 @@ pub enum EdgeSide {
     Right,
 }
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SpawnTempo {
     /// Spawn `count` wisps every `seconds` (optional jitter). If `count` omitted -> 1.

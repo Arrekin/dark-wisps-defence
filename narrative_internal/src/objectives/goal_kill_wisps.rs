@@ -127,7 +127,7 @@ fn on_wisp_died_increment_kill_wisps(
         if progress.increment_and_check() {
             commands.entity(goal)
                 .insert(ObjectiveState::Satisfied)
-                .trigger(|e| ObjectiveGoalStateChanged { entity: e });
+                .trigger(ObjectiveGoalStateChanged::from);
         }
         commands.trigger(RefreshKillWispsGoal { goal });
     }

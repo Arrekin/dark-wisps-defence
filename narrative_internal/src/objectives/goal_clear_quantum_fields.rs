@@ -116,7 +116,7 @@ fn on_add_quantum_field_or_solved_request_refresh(
         for goal in goals.iter() {
             commands.entity(goal)
                 .insert(ObjectiveState::Satisfied)
-                .trigger(|e| ObjectiveGoalStateChanged { entity: e });
+                .trigger(ObjectiveGoalStateChanged::from);
         }
     }
     for goal in goals.iter() {
@@ -164,7 +164,7 @@ fn on_clear_quantum_fields_activated(
     if current >= total && total > 0 {
         commands.entity(goal)
             .insert(ObjectiveState::Satisfied)
-            .trigger(|e| ObjectiveGoalStateChanged { entity: e });
+            .trigger(ObjectiveGoalStateChanged::from);
     }
     commands.trigger(RefreshClearQuantumFieldsGoal { goal });
 }

@@ -120,7 +120,7 @@ fn collect_my_entities(
 ```
 
 Scenario mode resets: objectives state → `Inactive`, runtime columns → their `DEFAULT 0`/`0.0`
-(`current`, `elapsed`), StartGame `fired` → `false`. `activated_by` is NOT reset (it's
+(`current`, `elapsed`), moments `fired_count` → `0`. `activated_by` is NOT reset (it's
 authoring, not playthrough).
 
 ## Load Flow
@@ -183,7 +183,9 @@ fn load_my_entities(ctx: &mut LoadContext) -> rusqlite::Result<()> {
 `insert(entity, bundle)`, `insert_resource(res)`, `push(FnOnce(&mut World))` as the escape hatch,
 `cancelled()` for optional early-exit in long loops. The context runs on an IO thread — it never
 touches the World directly; everything is deferred through the channel. The `table` argument of
-`register_loader` feeds the progress totals — use the primary table the loader reads.
+`register_loader` feeds the progress totals — use the primary table the loader reads. For moment
+kinds, use `register_moment_persistence::<M>()` instead, which combines the collector and loader
+in one call (all moments load at `SpawnEffectInstances`).
 
 ## Where Code Lives
 
@@ -306,6 +308,6 @@ Since all saves already have the final schema, re-running V1 with `IF NOT EXISTS
 - `persistence/src/load.rs` — `LoadContext`, registry, runner systems, `LoadProgress`,
   `LoadGameSignal` observer
 - `persistence/src/common.rs` — `with_db_connection`, `GameDbHelpers`, `register_loader`
-  extension, migration helpers
+  + `register_moment_persistence` extension, migration helpers
 - `persistence/migrations/` — SQLite schema
 - `states/src/map_loading_stage.rs` — `MapLoadingStage` definitions

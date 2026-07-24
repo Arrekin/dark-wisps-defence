@@ -2,6 +2,7 @@ use bevy::app::{App, Plugin};
 
 pub mod common;
 pub mod load;
+pub mod moments;
 pub mod save;
 
 pub use rusqlite;

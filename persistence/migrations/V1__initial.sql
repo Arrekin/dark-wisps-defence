@@ -243,7 +243,7 @@ CREATE TABLE IF NOT EXISTS expedition_drones (
 -- Objectives
 -- ========================
 
--- Objective roots. `activated_by` is the trigger entity that activates this
+-- Objective roots. `activated_by` is the moment entity that activates this
 -- objective (nullable: terminal objectives don't need one).
 CREATE TABLE IF NOT EXISTS objectives (
     id INTEGER PRIMARY KEY,
@@ -286,11 +286,18 @@ CREATE TABLE IF NOT EXISTS restriction_time_allowance (
     FOREIGN KEY(objective_id) REFERENCES entities(id)
 );
 
--- StartGame trigger — singleton. `fired` prevents re-firing on mid-game reload.
-CREATE TABLE IF NOT EXISTS trigger_start_game (
+-- Generic moments table. Each row is a moment entity owned by a parent
+-- (self-parented for standalone moments like game start). `kind` is the
+-- MomentKind::KIND string (persistence tag + loader registration).
+-- `fired_count` is universal firing state (0 = not fired, >=1 = fired;
+-- repeatable moments keep incrementing).
+CREATE TABLE IF NOT EXISTS moments (
     id INTEGER PRIMARY KEY,
-    fired INTEGER NOT NULL DEFAULT 0,
-    FOREIGN KEY(id) REFERENCES entities(id)
+    parent_id INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    fired_count INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY(id) REFERENCES entities(id),
+    FOREIGN KEY(parent_id) REFERENCES entities(id)
 );
 
 CREATE TABLE IF NOT EXISTS summonings (

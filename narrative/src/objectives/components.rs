@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use bevy_egui::egui;
-use game_core::prelude::{MapBound, SSS, TriggerSource};
+use game_core::prelude::{MapBound, SSS};
 use strum::{AsRefStr, EnumString};
 
 /// Builder for objective roots. Carries config + restore data.
@@ -28,10 +28,8 @@ impl BuilderObjective {
 }
 
 /// Config component on the objective root. Editor-authored identity/label.
-/// Requires `MapBound` (despawn on map change) and `TriggerSource` (appears
-/// in the editor's activation entity picker for chaining).
 #[derive(Component, Clone, Debug)]
-#[require(MapBound, TriggerSource)]
+#[require(MapBound)]
 pub struct ObjectiveDetails {
     pub id_name: String,
 }

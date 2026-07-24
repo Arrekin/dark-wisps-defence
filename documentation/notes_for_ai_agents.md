@@ -163,6 +163,33 @@ Generic/reusable UI lives in `widgets` / `widgets_internal`.
 - `Single<>` query type — system/observer is skipped entirely when not exactly one match. Good if it should only run when a specific entity exists. For 0 or 1, use `Option<Single<>>`.
 - `EventReader`/`EventWriter` are now `MessageReader`/`MessageWriter` (buffered, frame-delayed). The `Event` trait is now used with `commands.trigger()` for immediate(at flush-point) observer-based dispatch, including recursive event propagation.
 
+### Observer Self-Cleanup Pattern
+
+Observers attached to entity A via `.observe()` that reference entity B (which may be despawned independently) must self-clean to avoid leaking. The closure checks if B still exists; if not, it despawns its own observer via `trigger.observer()` + `try_despawn`.
+
+**Custom events** (don't fire during despawn — no race):
+```rust
+move |trigger: On<E>, mut commands: Commands, moments: Query<&mut Moment>| {
+    let Ok(mut moment) = moments.get_mut(moment_entity) else {
+        commands.entity(trigger.observer()).try_despawn();
+        return;
+    };
+    moment.fire(&mut commands.entity(moment_entity));
+}
+```
+
+**Lifecycle events** (`Remove`/`Discard` fire during despawn — race with Bevy's auto-cleanup): guard with `new_archetype.is_some()` to skip self-despawn during despawn chains:
+```rust
+move |trigger: On<Remove, T>, mut commands: Commands, indicators: Query<&IndicatorType>| {
+    if trigger.trigger().new_archetype.is_some() && indicators.get(entity).is_err() {
+        commands.entity(trigger.observer()).try_despawn();
+        return;
+    }
+    // ... do work
+}
+```
+`new_archetype.is_none()` means the entity is being despawned — Bevy's auto-cleanup will handle the observer.
+
 ## Agent Guidelines
 - **Think before implementing.** When asked to fix a bug or add a feature, first consider whether the change reveals a deeper architectural issue. Prefer fixing the root cause over patching symptoms.
 - **Avoid tunnel vision.** Don't just implement the literal request — evaluate whether it fits the existing patterns. If it doesn't, flag it and suggest an approach that does.

@@ -32,7 +32,28 @@ impl Plugin for GameCorePlugin {
                 process_damage.run_if(on_message::<DamageMessage>),
                 update_power_state.after(EnergySupplySystems),
             ))
-            .add_observer(on_add_needs_power_init_power_state);
+            .add_observer(on_add_needs_power_init_power_state)
+            .add_observer(on_moment_happened_propagate_to_watchers)
+            ;
+    }
+}
+
+// ============================================================================
+// Moment-watching propagator
+// ============================================================================
+
+/// Catches `MomentHappened` on a moment entity, walks `MomentWatchers`, fires
+/// `MomentHappened` on each watcher. Domain-agnostic — what the watcher does in
+/// response is its own domain's business.
+fn on_moment_happened_propagate_to_watchers(
+    trigger: On<MomentHappened>,
+    mut commands: Commands,
+    watchers: Query<&MomentWatchers>,
+) {
+    let moment_entity = trigger.entity;
+    let Ok(watcher_list) = watchers.get(moment_entity) else { return };
+    for watcher in watcher_list.iter() {
+        commands.trigger(MomentHappened { entity: watcher });
     }
 }
 

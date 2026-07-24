@@ -198,7 +198,7 @@ fn write_save_inner(path: &str, jobs: Vec<SaveJob>) -> Result<(), Box<dyn std::e
     // Open, migrate, run all jobs in one transaction, then DROP the connection
     // before the atomic rename (Windows file-handle semantics — see
     // `with_db_connection`'s doc comment).
-    with_db_connection(&tmp, |conn| {
+    if let Err(e) = with_db_connection(&tmp, |conn| {
         db_migrations::migrations::runner().run(conn)?;
         let tx = conn.transaction()?;
         for job in jobs {
@@ -206,7 +206,10 @@ fn write_save_inner(path: &str, jobs: Vec<SaveJob>) -> Result<(), Box<dyn std::e
         }
         tx.commit()?;
         Ok(())
-    })?;
+    }) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
+    }
 
     std::fs::rename(&tmp, path)?;
     Ok(())

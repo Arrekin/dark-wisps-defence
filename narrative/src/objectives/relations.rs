@@ -13,18 +13,3 @@ pub struct ObjectiveGoalOf(pub Entity);
 #[derive(Component)]
 #[relationship_target(relationship = ObjectiveGoalOf, linked_spawn)]
 pub struct ObjectiveGoals(Vec<Entity>);
-
-/// Source side (on the objective): "this objective is activated by trigger T."
-/// Linked despawn OFF — activation is a reference, not ownership. When the
-/// trigger despawns, the relationship is removed (firing `On<Remove>`), but
-/// the objective is NOT despawned (lost-activation rule).
-#[derive(Component)]
-#[relationship(relationship_target = ObjectiveActivationTargets)]
-pub struct ObjectiveActivatedBy(pub Entity);
-
-/// Target side (on the trigger): collection of objectives activated by this
-/// trigger. No `linked_spawn` — despawning the trigger does NOT despawn
-/// objectives.
-#[derive(Component)]
-#[relationship_target(relationship = ObjectiveActivatedBy)]
-pub struct ObjectiveActivationTargets(Vec<Entity>);
