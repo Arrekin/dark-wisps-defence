@@ -87,8 +87,6 @@ needless_update = "allow"       # Leaving `..Default::default()` on a fully-spec
 [workspace.dependencies]
 bevy = { version = "0.19.*", default-features = false, features = ["dynamic_linking", "2d"] }
 bevy_egui = "0.40.*"
-serde = { version = "1.*", features = ["derive"] }
-serde_json = "1.*"
 strum = { version = "0.28.*", features = ["derive"] }
 nanorand = "0.7.*"
 rusqlite = { version = "0.37.*", features = ["bundled"] }

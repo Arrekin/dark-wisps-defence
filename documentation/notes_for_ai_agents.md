@@ -255,7 +255,7 @@ Systems have no single trigger (they run every frame or on schedule), so they us
 
 Five groups, separated by blank lines, alphabetical within each:
 1. `std` / `core` / `alloc`
-2. External crates (`bevy`, `serde`, `strum`, ...)
+2. External crates (`bevy`, `strum`, ...)
 3. Workspace crates (`game_core`, `grids`, ...)
 4. `crate::` paths
 5. `super::` / `self::` paths

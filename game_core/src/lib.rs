@@ -17,7 +17,7 @@ pub mod prelude {
     pub use lib_derive::{FromEntity, MomentKind, Property, SSS};
 
     pub use crate::components::{DisabledByPlayer, FieldAffectable, IntegrityPoints, IsOperational, IsPowered, MapBound, NeedsPower};
-    pub use crate::events::{DamageMessage, DynamicGameEvent, TechnicalChange, TechnicalStateChanged};
+    pub use crate::events::{DamageMessage, TechnicalChange, TechnicalStateChanged};
     pub use crate::grid::{CELL_SIZE, GridCoords, GridImprint};
     pub use crate::moments::{
         fire_moment_on, HasMoments, moment_attach_self_trigger_to_parent, Moment, MomentHappened,

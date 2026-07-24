@@ -1,8 +1,7 @@
 use bevy::prelude::*;
-use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString};
 
-#[derive(Component, Copy, Clone, Debug, Deserialize, Serialize, Eq, PartialEq, Hash)]
+#[derive(Component, Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum BuildingType {
     EnergyRelay,
     MainBase,
@@ -37,7 +36,7 @@ impl BuildingType {
     }
 }
 
-#[derive(Copy, Clone, Debug, Deserialize, Serialize, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum TowerType {
     Blaster,
     Cannon,
@@ -46,7 +45,7 @@ pub enum TowerType {
     Field,
 }
 
-#[derive(Component, Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, EnumString, EnumIter, AsRefStr)]
+#[derive(Component, Copy, Clone, Debug, PartialEq, Eq, Hash, EnumString, EnumIter, AsRefStr)]
 pub enum WispType {
     Fire,
     Water,
@@ -64,7 +63,7 @@ pub enum MapObject {
     Wisp(WispType),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display, EnumString, EnumIter)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display, EnumString, EnumIter)]
 pub enum ShardType {
     Range,
     Damage,

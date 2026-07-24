@@ -1,12 +1,11 @@
 use bevy::prelude::*;
 use nanorand::Rng;
-use serde::{Deserialize, Serialize};
-use strum::{AsRefStr, EnumIter};
+use strum::{AsRefStr, EnumIter, EnumString};
 
-use game_core::prelude::{GridCoords, MapBound, SSS, WispType};
+use game_core::prelude::{FromEntity, GridCoords, MapBound, Moment, MomentKind, SSS, WispType};
 use grids::prelude::ObstacleGrid;
 
-#[derive(Component, Clone, Debug, Serialize, Deserialize)]
+#[derive(Component, Clone, Debug)]
 #[require(MapBound, SummoningRuntime)]
 pub struct Summoning {
     pub id_name: String,
@@ -14,8 +13,33 @@ pub struct Summoning {
     pub area: SpawnArea,
     pub tempo: SpawnTempo,
     pub limit_count: Option<i32>,
-    pub activation_event: String,
 }
+
+// ============================================================================
+// State machine
+//
+// `SummoningState` is the single source of truth — an immutable enum component.
+// The derived marker components (`SummoningInactive`, `SummoningActive`,
+// `SummoningExhausted`) are never inserted directly; a sync observer swaps
+// them on every `Insert<SummoningState>`. Systems query the markers (e.g.
+// `With<SummoningActive>`) rather than matching on the enum value.
+// ============================================================================
+
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq, Default, EnumString, AsRefStr)]
+#[component(immutable)]
+pub enum SummoningState {
+    #[default]
+    Inactive,
+    Active,
+    Exhausted,
+}
+
+#[derive(Component, Default)]
+pub struct SummoningInactive;
+#[derive(Component, Default)]
+pub struct SummoningActive;
+#[derive(Component, Default)]
+pub struct SummoningExhausted;
 impl Default for Summoning {
     fn default() -> Self {
         Self {
@@ -24,7 +48,6 @@ impl Default for Summoning {
             area: SpawnArea::default(),
             tempo: SpawnTempo::default(),
             limit_count: None,
-            activation_event: "game-started".to_string(),
         }
     }
 }
@@ -34,8 +57,7 @@ impl Summoning {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, EnumIter, AsRefStr)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[derive(Clone, Debug, Default, PartialEq, EnumIter, AsRefStr)]
 pub enum SpawnArea {
     Coords { coords: Vec<GridCoords> },
     Rect { origin: GridCoords, width: i32, height: i32 },
@@ -89,8 +111,7 @@ impl SpawnArea {
     }
 }
 
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, EnumIter, AsRefStr)]
-#[serde(rename_all = "snake_case")]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, EnumIter, EnumString, AsRefStr)]
 pub enum EdgeSide {
     #[default]
     Top,
@@ -99,11 +120,10 @@ pub enum EdgeSide {
     Right,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[derive(Copy, Clone, Debug, PartialEq, AsRefStr)]
 pub enum SpawnTempo {
     /// Spawn `count` wisps every `seconds` (optional jitter). If `count` omitted -> 1.
-    Continuous { seconds: f32, #[serde(default)] jitter: f32, #[serde(default = "default_one")] bulk_count: i32 },
+    Continuous { seconds: f32, jitter: f32, bulk_count: i32 },
 }
 
 impl Default for SpawnTempo {
@@ -112,43 +132,77 @@ impl Default for SpawnTempo {
     }
 }
 
-fn default_one() -> i32 { 1 }
-
 // --------------- SUMMONING RUNTIME ---------------
 
-#[derive(Component, Default)]
+#[derive(Component, Copy, Clone, Default)]
 pub struct SummoningRuntime {
     pub produced: i32,
     pub next_spawn_time: f32,
 }
+
+// --------------- ACTIVATION EVENT ---------------
+
+/// A summoning has entered the `Active` state.
+#[derive(Debug, Clone, EntityEvent, FromEntity)]
+pub struct SummoningActivatedEvent {
+    pub entity: Entity,
+}
+
+/// A summoning has entered the `Exhausted` state.
+#[derive(Debug, Clone, EntityEvent, FromEntity)]
+pub struct SummoningExhaustedEvent {
+    pub entity: Entity,
+}
+
+// ============================================================================
+// Summoning moment kinds
+//
+// Each marker is a moment kind owned by the summoning domain. The `MomentKind`
+// derive infers the persistence key from the type name.
+// ============================================================================
+
+/// The parent summoning has started (transitioned to `Active`).
+#[derive(Component, Default, MomentKind)]
+#[require(Moment, Name = Name::new("Summoning Started"))]
+pub struct MomentSummoningStarted;
+
+/// The parent summoning has exhausted (reached its production limit).
+#[derive(Component, Default, MomentKind)]
+#[require(Moment, Name = Name::new("Summoning Exhausted"))]
+pub struct MomentSummoningExhausted;
 
 // --------------- BUILDER PATTERN ---------------
 
 #[derive(Component, SSS)]
 pub struct BuilderSummoning {
     pub summoning: Summoning,
-    /// Runtime state to restore. `None` on fresh spawn (runtime defaults apply);
-    /// `Some` on load (restores mid-wave progress).
-    pub runtime: Option<SummoningRuntimeState>,
-}
-
-/// Snapshot of `SummoningRuntime` + active marker, used to restore a summoning
-/// mid-wave.
-#[derive(Clone, Copy, Debug)]
-pub struct SummoningRuntimeState {
-    pub produced: i32,
-    pub next_spawn_time: f32,
-    pub is_active: bool,
+    pub activated_by: Option<Entity>,
+    pub state: SummoningState,
+    pub runtime: SummoningRuntime,
 }
 
 impl BuilderSummoning {
     pub fn new(summoning: Summoning) -> Self {
-        Self { summoning, runtime: None }
+        Self {
+            summoning,
+            activated_by: None,
+            state: SummoningState::default(),
+            runtime: SummoningRuntime::default(),
+        }
     }
 
-    /// Set runtime state to restore (used by the loader).
-    pub fn with_runtime(mut self, runtime: SummoningRuntimeState) -> Self {
-        self.runtime = Some(runtime);
+    pub fn with_activated_by(mut self, entity: Entity) -> Self {
+        self.activated_by = Some(entity);
+        self
+    }
+
+    pub fn with_state(mut self, state: SummoningState) -> Self {
+        self.state = state;
+        self
+    }
+
+    pub fn with_runtime(mut self, runtime: SummoningRuntime) -> Self {
+        self.runtime = runtime;
         self
     }
 }

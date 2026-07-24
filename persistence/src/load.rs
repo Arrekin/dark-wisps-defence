@@ -485,7 +485,6 @@ fn on_map_load_ready(
     mut next_game_state: ResMut<NextState<GameState>>,
 ) {
     Log::info().player().tag(Tag::GameLoad).message("Game loaded");
-    commands.trigger(DynamicGameEvent::game_started());
     next_game_state.set(load_config.game_start_state);
     (*next_admin_mode).set_if_neq(load_config.admin_mode);
     commands.remove_resource::<LoadMapConfig>();

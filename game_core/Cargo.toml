@@ -5,7 +5,6 @@ edition.workspace = true
 
 [dependencies]
 bevy = { workspace = true, features = ["ui"] }
-serde = { workspace = true }
 nanorand = { workspace = true, features = ["tls"] }
 strum = { workspace = true }
 lib-derive = { workspace = true }

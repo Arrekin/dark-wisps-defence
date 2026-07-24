@@ -300,13 +300,64 @@ CREATE TABLE IF NOT EXISTS moments (
     FOREIGN KEY(parent_id) REFERENCES entities(id)
 );
 
+-- ========================
+-- Summonings
+-- ========================
+
+-- Wisp spawners. Main table holds scalars + enum discriminators.
+-- Variant-specific data lives in per-variant child tables.
 CREATE TABLE IF NOT EXISTS summonings (
     id INTEGER PRIMARY KEY,
-    summoning_json TEXT NOT NULL,
-    produced INTEGER NOT NULL,
-    next_spawn_time REAL NOT NULL,
-    is_active INTEGER NOT NULL,
+    id_name TEXT NOT NULL,
+    state TEXT NOT NULL DEFAULT 'Inactive',
+    activated_by INTEGER,
+    tempo_kind TEXT NOT NULL,
+    limit_count INTEGER,
+    area_kind TEXT NOT NULL,
+    produced INTEGER NOT NULL DEFAULT 0,
+    next_spawn_time REAL NOT NULL DEFAULT 0,
     FOREIGN KEY(id) REFERENCES entities(id)
+);
+
+-- SpawnTempo::Continuous
+CREATE TABLE IF NOT EXISTS summoning_tempo_continuous (
+    summoning_id INTEGER PRIMARY KEY,
+    seconds REAL NOT NULL,
+    jitter REAL NOT NULL DEFAULT 0,
+    bulk_count INTEGER NOT NULL DEFAULT 1,
+    FOREIGN KEY(summoning_id) REFERENCES entities(id)
+);
+
+-- SpawnArea::Coords
+CREATE TABLE IF NOT EXISTS summoning_area_coords (
+    summoning_id INTEGER NOT NULL,
+    x INTEGER NOT NULL,
+    y INTEGER NOT NULL,
+    FOREIGN KEY(summoning_id) REFERENCES entities(id)
+);
+
+-- SpawnArea::Rect
+CREATE TABLE IF NOT EXISTS summoning_area_rect (
+    summoning_id INTEGER PRIMARY KEY,
+    origin_x INTEGER NOT NULL,
+    origin_y INTEGER NOT NULL,
+    width INTEGER NOT NULL,
+    height INTEGER NOT NULL,
+    FOREIGN KEY(summoning_id) REFERENCES entities(id)
+);
+
+-- SpawnArea::Edge
+CREATE TABLE IF NOT EXISTS summoning_area_edge (
+    summoning_id INTEGER PRIMARY KEY,
+    side TEXT NOT NULL,
+    FOREIGN KEY(summoning_id) REFERENCES entities(id)
+);
+
+-- Wisp mix per summoning
+CREATE TABLE IF NOT EXISTS summoning_wisp_types (
+    summoning_id INTEGER NOT NULL,
+    wisp_type TEXT NOT NULL,
+    FOREIGN KEY(summoning_id) REFERENCES entities(id)
 );
 
 -- ========================

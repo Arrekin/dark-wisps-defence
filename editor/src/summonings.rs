@@ -3,9 +3,14 @@ use bevy_egui::egui;
 use strum::IntoEnumIterator;
 
 use game_core::prelude::*;
-use wisps::summoning::{BuilderSummoning, EdgeSide, SpawnArea, SpawnTempo, Summoning};
+use session::MomentGameStart;
+use wisps::summoning::{
+    BuilderSummoning, EdgeSide, MomentSummoningExhausted, MomentSummoningStarted, SpawnArea,
+    SpawnTempo, Summoning,
+};
 
 use super::EditorState;
+use super::moment_picker::{ui_moment_picker, find_moment_child};
 
 pub fn tab_summonings(ui: &mut egui::Ui, world: &mut World) {
     ui.horizontal(|ui| {
@@ -15,7 +20,15 @@ pub fn tab_summonings(ui: &mut egui::Ui, world: &mut World) {
                 query.iter(world).count() + 1
             };
             let new_summoning = Summoning { id_name: format!("summoning_{}", count), ..Default::default() };
-            let entity: Entity = world.spawn(BuilderSummoning::new(new_summoning)).id();
+            let game_start = {
+                let mut query = world.query_filtered::<Entity, With<MomentGameStart>>();
+                query.single(world).ok()
+            };
+            let mut builder = BuilderSummoning::new(new_summoning);
+            if let Some(moment_entity) = game_start {
+                builder = builder.with_activated_by(moment_entity);
+            }
+            let entity: Entity = world.spawn(builder).id();
             world.resource_mut::<EditorState>().selected_summoning = Some(entity);
         }
     });
@@ -65,18 +78,13 @@ fn ui_summoning_editor(ui: &mut egui::Ui, world: &mut World, entity: Entity) {
         }
     });
 
-    ui.horizontal(|ui| {
-        ui.label("Activation Event:");
-        let current = world.entity(entity).get::<Summoning>().map(|s| s.activation_event.clone());
-        if let Some(mut activation_event) = current {
-            ui.text_edit_singleline(&mut activation_event);
-            if let Some(mut summoning) = world.entity_mut(entity).get_mut::<Summoning>()
-                && summoning.activation_event != activation_event
-            {
-                summoning.activation_event = activation_event;
-            }
-        }
-    });
+    // Activation moment picker
+    ui_moment_picker(ui, world, entity, "summoning_activation_picker");
+
+    ui.separator();
+
+    // Moments section
+    ui_moments_section(ui, world, entity);
 
     let wisp_types: Vec<WispType> = {
         if let Some(summoning) = world.entity(entity).get::<Summoning>() {
@@ -144,6 +152,30 @@ fn ui_summoning_editor(ui: &mut egui::Ui, world: &mut World, entity: Entity) {
         world.entity_mut(entity).despawn();
         world.resource_mut::<EditorState>().selected_summoning = None;
     }
+}
+
+fn ui_moments_section(ui: &mut egui::Ui, world: &mut World, entity: Entity) {
+    ui.heading("Moments");
+
+    let mut started = find_moment_child::<MomentSummoningStarted>(world, entity).is_some();
+    let mut exhausted = find_moment_child::<MomentSummoningExhausted>(world, entity).is_some();
+
+    ui.horizontal(|ui| {
+        if ui.checkbox(&mut started, "Started").changed() {
+            if started {
+                world.spawn((MomentOf(entity), MomentSummoningStarted));
+            } else if let Some(child) = find_moment_child::<MomentSummoningStarted>(world, entity) {
+                world.entity_mut(child).despawn();
+            }
+        }
+        if ui.checkbox(&mut exhausted, "Exhausted").changed() {
+            if exhausted {
+                world.spawn((MomentOf(entity), MomentSummoningExhausted));
+            } else if let Some(child) = find_moment_child::<MomentSummoningExhausted>(world, entity) {
+                world.entity_mut(child).despawn();
+            }
+        }
+    });
 }
 
 fn ui_spawn_area(ui: &mut egui::Ui, area: &mut SpawnArea) {

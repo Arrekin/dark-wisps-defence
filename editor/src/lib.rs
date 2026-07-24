@@ -1,4 +1,5 @@
 mod console;
+mod moment_picker;
 mod objectives;
 mod summonings;
 

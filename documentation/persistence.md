@@ -120,8 +120,8 @@ fn collect_my_entities(
 ```
 
 Scenario mode resets: objectives state → `Inactive`, runtime columns → their `DEFAULT 0`/`0.0`
-(`current`, `elapsed`), moments `fired_count` → `0`. `activated_by` is NOT reset (it's
-authoring, not playthrough).
+(`current`, `elapsed`), summonings state → `Inactive` + `produced`/`next_spawn_time` → `0`/`0.0`,
+moments `fired_count` → `0`. `activated_by` is NOT reset (it's authoring, not playthrough).
 
 ## Load Flow
 

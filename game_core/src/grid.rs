@@ -1,12 +1,11 @@
 use std::{borrow::Borrow, fmt::Debug};
 
 use bevy::prelude::*;
-use serde::{Deserialize, Serialize};
 
 pub const CELL_SIZE: f32 = 32.;
 
 // This component should be replaced in full. Mutate in place only if you are sure.
-#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq, Component, Hash)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Component, Hash)]
 pub struct GridCoords {
     pub x: i32,
     pub y: i32,
