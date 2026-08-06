@@ -56,7 +56,7 @@ use units::{
 };
 use viewport::{BuilderPreviewCamera, OwnedCameras};
 use widgets::{
-    prelude::Tooltips,
+    prelude::{BuilderFillBar, FillAxis, FillBar, Tooltips},
     utils::recolor_background_on,
 };
 
@@ -491,27 +491,21 @@ impl BuilderDroneSlot {
                         BorderColor::from(Color::linear_rgba(0.3, 0.6, 0.3, 1.)),
                         DroneSlotIcon,
                     ),
-                    // Fuel bar container (vertical, bottom-aligned fill)
+                    // Fuel bar (vertical, bottom-aligned fill)
                     (
                         Node {
                             width: Val::Px(FUEL_BAR_WIDTH),
                             height: Val::Percent(100.),
-                            flex_direction: FlexDirection::Column,
-                            justify_content: JustifyContent::End,
-                            border: UiRect::all(Val::Px(1.)),
-                            border_radius: BorderRadius::all(Val::Px(2.)),
                             ..default()
                         },
-                        BackgroundColor::from(Color::linear_rgba(0.1, 0.1, 0.1, 0.8)),
-                        BorderColor::from(Color::linear_rgba(0.4, 0.4, 0.2, 1.)),
                         children![(
-                            // Fuel bar fill
-                            Node {
-                                width: Val::Percent(100.),
-                                height: Val::Percent(drone_fuel.fraction() * 100.0),
-                                ..default()
-                            },
-                            BackgroundColor::from(FUEL_BAR_COLOR),
+                            BuilderFillBar::default()
+                                .with_axis(FillAxis::Vertical)
+                                .with_background_color(Color::linear_rgba(0.1, 0.1, 0.1, 0.8))
+                                .with_border(Color::linear_rgba(0.4, 0.4, 0.2, 1.), UiRect::all(Val::Px(1.)))
+                                .with_border_radius(BorderRadius::all(Val::Px(2.)))
+                                .with_fill_color(FUEL_BAR_COLOR)
+                                .with_fill_fraction(drone_fuel.fraction()),
                             DroneSlotFuelFill { drone_entity: builder.drone_entity },
                         )],
                     ),
@@ -530,13 +524,12 @@ struct DroneSlotFuelFill {
 }
 impl DroneSlotFuelFill {
     fn update(
-        drone_fuels: Query<&DroneFuel>,
-        mut fuel_fills: Query<(&mut Node, &DroneSlotFuelFill)>,
+        drone_fuels: Query<&DroneFuel, Changed<DroneFuel>>,
+        mut fuel_fills: Query<(&mut FillBar, &DroneSlotFuelFill)>,
     ) {
-        for (mut fuel_fill_node, fuel_fill) in fuel_fills.iter_mut() {
-            // Update fuel bar fill height
+        for (mut fill_bar, fuel_fill) in fuel_fills.iter_mut() {
             let Ok(drone_fuel) = drone_fuels.get(fuel_fill.drone_entity) else { continue; };
-            fuel_fill_node.height = Val::Percent(drone_fuel.fraction() * 100.0);
+            fill_bar.fill_fraction = drone_fuel.fraction();
         }
     }
 }
@@ -709,7 +702,6 @@ impl BuilderSlotTooltip {
             Node {
                 display: Display::None,
                 position_type: PositionType::Absolute,
-                bottom: Val::Px(SLOT_SIZE + 4.),
                 padding: UiRect::all(Val::Px(4.)),
                 flex_direction: FlexDirection::Column,
                 align_items: AlignItems::Center,

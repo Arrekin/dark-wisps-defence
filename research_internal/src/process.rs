@@ -1,45 +1,95 @@
 use bevy::prelude::*;
 
-use logging::prelude::{Log, Tag};
-use research::prelude::{
-    ActiveResearch, CheckForObsoletion, Completed, FulfillOutcome, Obsolete, OutcomeSatisfied,
-    Research, ResearchCompleted, ResearchOutcomeOf, ResearchOutcomes, ResearchProgress,
-    ResearchSpec, SetActiveResearch, StopResearch,
-};
+use outcomes::prelude::{FulfillOutcome, HasOutcomes};
+use research::prelude::*;
 use resources::prelude::{Cost, Stock};
 
-/// Advances the single active research. Payment and progress move in lockstep: progress is clamped so
-/// it never crosses a resource-unit threshold it cannot pay, which makes the research stall (no error)
-/// when stock runs dry and resume when it returns. Runs only while exactly one research is active.
+/// Start or switch the active research. Parks the incumbent (back to
+/// `Available`, progress retained) and sets the target `Active`. Only an
+/// `Available` research can be started — one with no state cannot be targeted.
+pub(crate) fn on_set_active_research(
+    trigger: On<SetActiveResearch>,
+    mut commands: Commands,
+    current_active: Option<Single<Entity, With<ResearchActive>>>,
+    target: Query<(), With<ResearchAvailable>>,
+) {
+    let target_entity = trigger.event().research;
+    if target.get(target_entity).is_err() { return; }
+
+    if let Some(current) = current_active
+        && *current != target_entity
+    {
+        commands.entity(*current).insert(ResearchState::Available);
+    }
+    commands.entity(target_entity).insert(ResearchState::Active);
+}
+
+/// Park an active research: set it back to `Available`, progress retained.
+/// No-ops on a research which is not active.
+pub(crate) fn on_stop_research(
+    trigger: On<StopResearch>,
+    mut commands: Commands,
+    active: Query<&ResearchState, With<ResearchActive>>,
+) {
+    let target = trigger.event().research;
+    if active.get(target).is_err() { return; }
+    commands.entity(target).insert(ResearchState::Available);
+}
+
+/// Advances the single active research. Payment and progress move in lockstep:
+/// progress is clamped so it never crosses a resource-unit threshold it cannot
+/// pay, which makes the research stall (no error) when stock runs dry and resume
+/// when it returns. Runs only while the game is running and exactly one research
+/// is active.
 pub(crate) fn research_tick(
     mut commands: Commands,
     time: Res<Time>,
     mut stock: ResMut<Stock>,
-    active: Single<(Entity, &Research, &ResearchSpec, &mut ResearchProgress, &ResearchOutcomes), With<ActiveResearch>>,
+    active: Single<(Entity, &Research, &mut ResearchRuntime), With<ResearchActive>>,
 ) {
-    let (entity, research, spec, mut progress, outcomes) = active.into_inner();
+    let (entity, research, mut runtime) = active.into_inner();
+    let duration_secs = research.duration.as_secs_f32();
 
-    let target = advanced_fraction(progress.fraction, spec.duration.as_secs_f32(), time.delta_secs());
-    let target = clamp_to_affordable(progress.fraction, target, &spec.cost, &stock);
-    pay_crossed_units(progress.fraction, target, &spec.cost, &mut stock);
-    progress.fraction = target;
+    // Nothing moves unless the next whole unit of every outstanding cost is
+    // covered. Without this, progress below a unit threshold is free: `paid` is
+    // `floor(fraction * amount)`, so a research with an empty stock creeps up to
+    // just under its first unit boundary before `clamp_to_affordable` sees
+    // anything owed — the bar advances while nothing is consumed.
+    if !can_advance(runtime.progress, &research.cost, &stock) { return }
 
-    if progress.fraction >= 1.0 {
-        let research_type = research.0;
-        for outcome in outcomes.iter() {
-            commands.trigger(FulfillOutcome { outcome });
-        }
+    let target = advanced_fraction(runtime.progress, duration_secs, time.delta_secs());
+    let target = clamp_to_affordable(runtime.progress, target, &research.cost, &stock);
+    pay_crossed_units(runtime.progress, target, &research.cost, &mut stock);
+    runtime.progress = target;
+
+    if runtime.progress >= 1.0 {
         commands.entity(entity)
-            .remove::<ResearchProgress>()
-            .remove::<ActiveResearch>()
-            .insert(Completed);
-        commands.trigger(ResearchCompleted(research_type));
-        Log::info().player().tag(Tag::Research).message(format!("Research complete: {research_type}"));
+            .remove::<ResearchRuntime>()
+            .insert(ResearchState::Completed);
+        commands.trigger(ResearchFinished { research: entity });
     }
 }
 
-/// The fraction reached after `delta_secs` of unobstructed progress. A non-positive duration means
-/// "instant": the fraction jumps to 1.0, with cost still charged through the regular clamp-and-pay flow.
+/// Emitted only by the tick — never on load. Fires `FulfillOutcome` on each
+/// outcome. The research does not know what its outcomes are; each one acts on
+/// itself.
+pub(crate) fn on_research_finished(
+    trigger: On<ResearchFinished>,
+    mut commands: Commands,
+    outcomes: Query<&HasOutcomes, With<Research>>,
+) {
+    let research = trigger.event().research;
+    let Ok(has_outcomes) = outcomes.get(research) else { return; };
+    for outcome in has_outcomes.iter() {
+        commands.trigger(FulfillOutcome { outcome });
+    }
+}
+
+// ---- Pure helpers (ported verbatim from the pre-rebuild implementation) ----
+
+/// The fraction reached after `delta_secs` of unobstructed progress. A non-positive
+/// duration means "instant": the fraction jumps to 1.0, with cost still charged
+/// through the regular clamp-and-pay flow.
 fn advanced_fraction(fraction: f32, duration_secs: f32, delta_secs: f32) -> f32 {
     if duration_secs <= 0.0 {
         1.0
@@ -48,13 +98,29 @@ fn advanced_fraction(fraction: f32, duration_secs: f32, delta_secs: f32) -> f32 
     }
 }
 
+/// Whether progress may advance at all: every cost that still has units
+/// outstanding must have at least one whole unit in stock.
+///
+/// This is the entry condition to `clamp_to_affordable`'s continuous stall. That
+/// function only reacts once a unit boundary is *crossed*, which leaves the
+/// sub-unit stretch before the first boundary unpaid for and therefore free —
+/// harmless at an amount of 100, but a research costing a single unit would run
+/// to 99.9% on an empty stock, since its one unit is not owed until `1.0`.
+fn can_advance(fraction: f32, costs: &[Cost], stock: &Stock) -> bool {
+    costs.iter().all(|cost| {
+        let outstanding = cost.amount - units_paid(fraction, cost);
+        outstanding <= 0 || stock.get(cost.resource_type) >= 1
+    })
+}
+
 /// Whole units of `cost` paid at `fraction` (`paid = floor(fraction * amount)`).
-fn units_paid(fraction: f32, cost: &Cost) -> i32 {
+pub(crate) fn units_paid(fraction: f32, cost: &Cost) -> i32 {
     (fraction * cost.amount as f32).floor() as i32
 }
 
-/// Clamps `target` so no cost crosses a unit threshold the stock cannot cover — the research stalls
-/// just before its first unaffordable unit. Never clamps below `fraction`: earned progress is kept.
+/// Clamps `target` so no cost crosses a unit threshold the stock cannot cover —
+/// the research stalls just before its first unaffordable unit. Never clamps
+/// below `fraction`: earned progress is kept.
 fn clamp_to_affordable(fraction: f32, mut target: f32, costs: &[Cost], stock: &Stock) -> f32 {
     for cost in costs.iter() {
         let paid = units_paid(fraction, cost);
@@ -67,8 +133,8 @@ fn clamp_to_affordable(fraction: f32, mut target: f32, costs: &[Cost], stock: &S
     target.max(fraction)
 }
 
-/// Deducts the whole units of each cost crossed between `fraction` and `target`, which must already
-/// be clamped to affordability.
+/// Deducts the whole units of each cost crossed between `fraction` and `target`,
+/// which must already be clamped to affordability.
 fn pay_crossed_units(fraction: f32, target: f32, costs: &[Cost], stock: &mut Stock) {
     for cost in costs.iter() {
         let units = units_paid(target, cost) - units_paid(fraction, cost);
@@ -79,83 +145,3 @@ fn pay_crossed_units(fraction: f32, target: f32, costs: &[Cost], stock: &mut Sto
     }
 }
 
-/// Starts the requested research or switches the active slot to it, parking the previous one (its
-/// progress is retained). Must run whether or not a research is currently active, so the current
-/// active is an `Option<Single>`.
-pub(crate) fn on_set_active_research_do_so(
-    trigger: On<SetActiveResearch>,
-    mut commands: Commands,
-    current_active: Option<Single<Entity, With<ActiveResearch>>>,
-    in_flight: Query<(), With<ResearchProgress>>,
-    researches: Query<(Entity, &Research), (Without<Completed>, Without<Obsolete>)>,
-) {
-    let target = trigger.event().0;
-    // Completed and obsolete researches are filtered out by the query — those markers are the single
-    // source of truth (maintained reactively), so obsolescence is never recomputed here.
-    let Some((entity, _)) = researches.iter().find(|(_, research)| research.0 == target) else { return };
-
-    if let Some(current) = current_active {
-        let current = *current;
-        if current != entity {
-            commands.entity(current).remove::<ActiveResearch>();
-        }
-    }
-    if in_flight.get(entity).is_err() {
-        commands.entity(entity).insert(ResearchProgress::default());
-    }
-    commands.entity(entity).insert(ActiveResearch);
-    Log::info().player().tag(Tag::Research).message(format!("Research active: {target}"));
-}
-
-/// Parks the active research; its progress is retained. Runs only when a research is active.
-pub(crate) fn on_stop_research_do_so(
-    _trigger: On<StopResearch>,
-    mut commands: Commands,
-    active: Single<Entity, With<ActiveResearch>>,
-) {
-    commands.entity(*active).remove::<ActiveResearch>();
-}
-
-/// Generic obsolescence aggregation: a research is obsolete iff it has outcomes and *all* of them are
-/// satisfied. It reads only the uniform `OutcomeSatisfied` marker, never an outcome kind. Idempotent
-/// and reversible — clearing `Obsolete` when no longer all-satisfied is the un-obsolete path (e.g. a
-/// future revocation), so a never-completed research can reappear.
-pub(crate) fn on_check_for_obsoletion_do_so(
-    trigger: On<CheckForObsoletion>,
-    mut commands: Commands,
-    satisfied: Query<(), With<OutcomeSatisfied>>,
-    researches: Query<(&ResearchOutcomes, Has<Obsolete>), Without<Completed>>,
-) {
-    let research = trigger.research;
-    let Ok((outcomes, is_obsolete)) = researches.get(research) else { return };
-    let all_satisfied = !outcomes.is_empty()
-        && outcomes.iter().all(|outcome| satisfied.get(outcome).is_ok());
-
-    if all_satisfied && !is_obsolete {
-        commands.entity(research).insert(Obsolete).remove::<ActiveResearch>();
-    } else if !all_satisfied && is_obsolete {
-        commands.entity(research).remove::<Obsolete>();
-    }
-}
-
-/// Re-checks a research's obsolescence whenever one of its outcomes gains satisfaction.
-pub(crate) fn on_insert_outcome_satisfied_recheck_obsoletion(
-    trigger: On<Insert, OutcomeSatisfied>,
-    mut commands: Commands,
-    outcomes: Query<&ResearchOutcomeOf>,
-) {
-    if let Ok(outcome_of) = outcomes.get(trigger.entity) {
-        commands.trigger(CheckForObsoletion { research: outcome_of.0 });
-    }
-}
-
-/// Re-checks a research's obsolescence whenever one of its outcomes loses satisfaction (un-obsolete).
-pub(crate) fn on_remove_outcome_satisfied_recheck_obsoletion(
-    trigger: On<Remove, OutcomeSatisfied>,
-    mut commands: Commands,
-    outcomes: Query<&ResearchOutcomeOf>,
-) {
-    if let Ok(outcome_of) = outcomes.get(trigger.entity) {
-        commands.trigger(CheckForObsoletion { research: outcome_of.0 });
-    }
-}

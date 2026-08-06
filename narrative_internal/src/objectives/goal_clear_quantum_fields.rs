@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use bevy_egui::egui;
 
-use game_core::prelude::SSS;
+use game_core::prelude::{DisplayName, SSS};
 use logging::prelude::*;
 use map_objects::prelude::{QuantumField, QuantumFieldSolved};
 use narrative::prelude::*;
@@ -74,7 +74,7 @@ impl BuilderGoalClearQuantumFields {
                 GoalClearQuantumFields,
                 builder.state,
                 ObjectiveCounterProgress::default(),
-                ObjectiveDisplayLine::default(),
+                DisplayName::default(),
                 ObjectiveEditorUi(ui_clear_quantum_fields),
             ));
         // Recompute counter from the live world. Quantum fields load in
@@ -130,7 +130,7 @@ fn on_add_quantum_field_or_solved_request_refresh(
 /// progress-change site (trigger observer) and activation observer.
 fn on_refresh_clear_quantum_fields_goal(
     trigger: On<RefreshClearQuantumFieldsGoal>,
-    mut goals: Query<(&mut ObjectiveCounterProgress, &mut ObjectiveDisplayLine), With<GoalClearQuantumFields>>,
+    mut goals: Query<(&mut ObjectiveCounterProgress, &mut DisplayName), With<GoalClearQuantumFields>>,
     quantum_fields: Query<Entity, With<QuantumField>>,
     solved_fields: Query<Entity, (With<QuantumField>, With<QuantumFieldSolved>)>,
 ) {

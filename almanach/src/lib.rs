@@ -2,13 +2,13 @@ use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
 
 use alteration::modifiers::prelude::ModifierType;
-use game_core::prelude::{BuildingType, GridImprint, MapObject, ShardType};
+use game_core::prelude::{BuildingType, ContentId, GridImprint, MapObject, ShardType};
 use grids::placement::{ObjectPlacementInfo, PlacementAnnotatorFn, PlacementChannel, PlacementValidatorFn};
 use resources::prelude::Cost;
 use states::prelude::MapLoadingStage;
 
 pub mod prelude {
-    pub use super::{Almanach, AlmanachAppExt, BuildingInfo, ShardInfo, ShardRecipe};
+    pub use super::{Almanach, AlmanachAppExt, BuildingInfo, ResearchSpawnFn, ShardInfo, ShardRecipe};
 }
 
 pub struct AlmanachPlugin;
@@ -28,6 +28,7 @@ impl Plugin for AlmanachPlugin {
 pub struct AlmanachRegistrations {
     pub buildings: HashMap<BuildingType, BuildingInfo>,
     pub shards: HashMap<ShardType, ShardInfo>,
+    pub researches: HashMap<ContentId, ResearchSpawnFn>,
     pub walls: Option<WallInfo>,
     pub dark_ore: Option<DarkOreInfo>,
     pub quantum_fields: Option<QuantumFieldInfo>,
@@ -37,6 +38,7 @@ pub struct AlmanachRegistrations {
 pub trait AlmanachAppExt {
     fn register_building(&mut self, building_type: BuildingType, info: BuildingInfo) -> &mut Self;
     fn register_shard(&mut self, shard_type: ShardType, info: ShardInfo) -> &mut Self;
+    fn register_research(&mut self, content_id: impl Into<ContentId>, spawn_fn: ResearchSpawnFn) -> &mut Self;
     fn register_walls(&mut self, info: WallInfo) -> &mut Self;
     fn register_dark_ore(&mut self, info: DarkOreInfo) -> &mut Self;
     fn register_quantum_field(&mut self, info: QuantumFieldInfo) -> &mut Self;
@@ -55,6 +57,13 @@ impl AlmanachAppExt for App {
         self.init_resource::<AlmanachRegistrations>();
         self.world_mut().resource_mut::<AlmanachRegistrations>()
             .shards.insert(shard_type, info);
+        self
+    }
+
+    fn register_research(&mut self, content_id: impl Into<ContentId>, spawn_fn: ResearchSpawnFn) -> &mut Self {
+        self.init_resource::<AlmanachRegistrations>();
+        self.world_mut().resource_mut::<AlmanachRegistrations>()
+            .researches.insert(content_id.into(), spawn_fn);
         self
     }
 
@@ -87,10 +96,15 @@ impl AlmanachAppExt for App {
 // ALMANACH - Central metadata store for all game objects
 // ============================================================================
 
+/// Spawn function for a research definition. Takes the `ContentId` to insert
+/// on the entity. The editor calls this to seed or re-seed a research.
+pub type ResearchSpawnFn = fn(&mut Commands, &ContentId);
+
 #[derive(Resource)]
 pub struct Almanach {
     buildings: HashMap<BuildingType, BuildingInfo>,
     shards: HashMap<ShardType, ShardInfo>,
+    pub researches: HashMap<ContentId, ResearchSpawnFn>,
     pub walls: WallInfo,
     pub dark_ore: DarkOreInfo,
     pub quantum_fields: QuantumFieldInfo,
@@ -102,6 +116,7 @@ impl Almanach {
         commands.insert_resource(Almanach {
             buildings: registrations.buildings.clone(),
             shards: registrations.shards.clone(),
+            researches: registrations.researches.clone(),
             walls: registrations.walls.clone().expect("WallInfo not registered in AlmanachRegistrations"),
             dark_ore: registrations.dark_ore.clone().expect("DarkOreInfo not registered in AlmanachRegistrations"),
             quantum_fields: registrations.quantum_fields.clone().expect("QuantumFieldInfo not registered in AlmanachRegistrations"),
@@ -132,6 +147,8 @@ impl Almanach {
         self.shards.get_mut(&shard_type)
             .unwrap_or_else(|| panic!("Shard {shard_type:?} not found in almanach"))
     }
+
+    // === Researches ===
 
     /// Extracts generic ObjectPlacementInfo for any MapObject.
     pub fn get_placement_info_for(&self, map_object: MapObject) -> ObjectPlacementInfo {

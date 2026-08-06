@@ -1,14 +1,11 @@
-pub mod model;
-pub mod outcomes;
-pub mod process_events;
+pub mod components;
+pub mod events;
+pub mod research_bar;
 
 pub mod prelude {
-    pub use crate::model::{
-        ActiveResearch, BuilderResearch, CheckForObsoletion, Completed, Obsolete, OutcomeDisplay,
-        OutcomeSatisfied, OutcomeSeed, Research, ResearchCardDisplay, ResearchCatalog,
-        ResearchInstantiated, ResearchOutcomeOf, ResearchOutcomes, ResearchProgress, ResearchSpec,
-        ResearchType,
+    pub use crate::components::{
+        Research, ResearchActive, ResearchAvailable, ResearchCompleted, ResearchRuntime,
+        ResearchState, ResearchUISelected,
     };
-    pub use crate::outcomes::{FulfillOutcome, GrantShardBlueprint};
-    pub use crate::process_events::{ResearchCompleted, SetActiveResearch, StopResearch};
+    pub use crate::events::{ResearchDisplayDataUpdated, ResearchFinished, SetActiveResearch, StopResearch};
 }

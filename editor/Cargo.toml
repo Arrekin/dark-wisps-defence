@@ -15,6 +15,10 @@ shards = { workspace = true }
 game_core = { workspace = true }
 session = { workspace = true }
 persistence = { workspace = true }
+research = { workspace = true }
+almanach = { workspace = true }
+outcomes = { workspace = true }
+resources = { workspace = true }
 
 [lints]
 workspace = true

@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use bevy_egui::egui;
 
-use game_core::prelude::SSS;
+use game_core::prelude::{DisplayName, SSS};
 use logging::prelude::*;
 use narrative::prelude::*;
 use persistence::prelude::*;
@@ -89,7 +89,7 @@ impl BuilderRestrictionTimeAllowance {
                 RestrictionTimeAllowance { seconds: builder.seconds },
                 builder.state,
                 TimeAllowanceRuntime { elapsed: builder.elapsed },
-                ObjectiveDisplayLine::default(),
+                DisplayName::default(),
                 ObjectiveEditorUi(ui_time_allowance),
             ));
         commands.trigger(RefreshTimeAllowance { goal: entity });
@@ -109,7 +109,7 @@ struct RefreshTimeAllowance {
 
 fn on_refresh_time_allowance(
     trigger: On<RefreshTimeAllowance>,
-    mut goals: Query<(&RestrictionTimeAllowance, &TimeAllowanceRuntime, &mut ObjectiveDisplayLine)>,
+    mut goals: Query<(&RestrictionTimeAllowance, &TimeAllowanceRuntime, &mut DisplayName)>,
 ) {
     let goal = trigger.goal;
     let Ok((config, runtime, mut display)) = goals.get_mut(goal) else { return };

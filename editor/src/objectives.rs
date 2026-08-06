@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use bevy_egui::egui;
 use strum::IntoEnumIterator;
 
-use game_core::prelude::MomentOf;
+use game_core::prelude::{DisplayName, MomentOf};
 use narrative::prelude::*;
 use session::MomentGameStart;
 
@@ -129,21 +129,24 @@ fn ui_moments_section(ui: &mut egui::Ui, world: &mut World, objective: Entity) {
 fn ui_goals_section(ui: &mut egui::Ui, world: &mut World, objective: Entity) {
     ui.heading("Goals");
 
-    // Clone the registry to release the world borrow before the menu closure.
-    let registry = world.resource::<ObjectiveGoalRegistry>().clone();
-
+    let mut clicked = None;
     ui.menu_button("+ Add Goal", |ui| {
+        let registry = world.resource::<ObjectiveGoalRegistry>();
         for group in ObjectiveGoalGroup::iter() {
             ui.label(group.as_ref());
-            for entry in registry.entries.iter().filter(|e| e.group == group) {
+            for (index, entry) in registry.entries.iter().enumerate().filter(|(_, e)| e.group == group) {
                 if ui.button(entry.name).clicked() {
-                    (entry.spawn)(&mut world.commands(), objective);
+                    clicked = Some(index);
                     ui.close();
                 }
             }
             ui.separator();
         }
     });
+    if let Some(index) = clicked {
+        let registry = world.resource::<ObjectiveGoalRegistry>();
+        (registry.entries[index].spawn)(&mut world.commands(), objective);
+    }
 
     let goals: Vec<Entity> = world
         .entity(objective)
@@ -161,21 +164,25 @@ fn ui_goals_section(ui: &mut egui::Ui, world: &mut World, objective: Entity) {
 }
 
 fn ui_goal_editor(ui: &mut egui::Ui, world: &mut World, goal_entity: Entity) {
-    let goal_name = format!("Goal #{}", goal_entity.index());
+    let goal_name = world
+        .entity(goal_entity)
+        .get::<DisplayName>()
+        .map(|name| name.0.clone())
+        .unwrap_or_else(|| format!("Goal #{}", goal_entity.index()));
 
-    ui.collapsing(goal_name, |ui| {
-        // Call the goal's ObjectiveEditorUi fn pointer
-        let fn_ptr = world
-            .entity(goal_entity)
-            .get::<ObjectiveEditorUi>()
-            .map(|e| e.0);
-        if let Some(fn_ptr) = fn_ptr {
-            fn_ptr(ui, &mut world.entity_mut(goal_entity));
-        }
+    egui::CollapsingHeader::new(goal_name)
+        .id_salt(goal_entity)
+        .show(ui, |ui| {
+            let fn_ptr = world
+                .entity(goal_entity)
+                .get::<ObjectiveEditorUi>()
+                .map(|e| e.0);
+            if let Some(fn_ptr) = fn_ptr {
+                fn_ptr(ui, &mut world.entity_mut(goal_entity));
+            }
 
-        // Remove button
-        if ui.button("🗑 Remove Goal").clicked() {
-            world.entity_mut(goal_entity).despawn();
-        }
-    });
+            if ui.button("🗑 Remove Goal").clicked() {
+                world.entity_mut(goal_entity).despawn();
+            }
+        });
 }

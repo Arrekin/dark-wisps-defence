@@ -2457,12 +2457,16 @@ dependencies = [
 name = "editor"
 version = "0.1.0"
 dependencies = [
+ "almanach",
  "bevy",
  "bevy_egui",
  "game_core",
  "logging",
  "narrative",
+ "outcomes",
  "persistence",
+ "research",
+ "resources",
  "session",
  "shards",
  "states",
@@ -4235,6 +4239,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "outcomes"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "bevy_egui",
+ "game_core",
+]
+
+[[package]]
 name = "overlays"
 version = "0.1.0"
 dependencies = [
@@ -4348,6 +4361,7 @@ dependencies = [
  "game_core",
  "logging",
  "refinery",
+ "resources",
  "rusqlite",
  "states",
 ]
@@ -4769,6 +4783,7 @@ dependencies = [
  "game_core",
  "resources",
  "strum",
+ "widgets",
 ]
 
 [[package]]
@@ -4779,12 +4794,14 @@ dependencies = [
  "bevy",
  "game_core",
  "logging",
+ "outcomes",
  "persistence",
  "research",
  "resources",
  "shards",
  "states",
  "strum",
+ "widgets",
 ]
 
 [[package]]
@@ -5018,12 +5035,15 @@ version = "0.1.0"
 dependencies = [
  "almanach",
  "bevy",
+ "bevy_egui",
  "game_core",
  "logging",
+ "outcomes",
  "persistence",
  "resources",
  "shards",
  "states",
+ "strum",
 ]
 
 [[package]]
@@ -6294,6 +6314,7 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "resources",
+ "states",
 ]
 
 [[package]]
@@ -6301,6 +6322,7 @@ name = "widgets_internal"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "game_core",
  "resources",
  "widgets",
 ]

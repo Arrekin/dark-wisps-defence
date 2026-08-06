@@ -8,6 +8,7 @@ bevy = { workspace = true }
 strum = { workspace = true }
 game_core = { workspace = true }
 resources = { workspace = true }
+widgets = { workspace = true }
 
 [lints]
 workspace = true

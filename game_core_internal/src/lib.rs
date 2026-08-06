@@ -34,6 +34,7 @@ impl Plugin for GameCorePlugin {
             ))
             .add_observer(on_add_needs_power_init_power_state)
             .add_observer(on_moment_happened_propagate_to_watchers)
+            .add_observer(on_add_display_icon_switcher_load_display_icon)
             ;
     }
 }
@@ -64,6 +65,17 @@ fn on_insert_zdepth_apply_zdepth(
     let entity = trigger.entity;
     let Ok((mut transform, z_depth)) = transforms.get_mut(entity) else { return; };
     transform.translation.z = z_depth.0;
+}
+
+fn on_add_display_icon_switcher_load_display_icon(
+    trigger: On<Add, DisplayIconSwitcher>,
+    switchers: Query<&DisplayIconSwitcher>,
+    asset_server: Res<AssetServer>,
+    mut commands: Commands,
+) {
+    let entity = trigger.entity;
+    let Ok(switcher) = switchers.get(entity) else { return };
+    commands.entity(entity).insert(DisplayIcon(asset_server.load(&switcher.0)));
 }
 
 /// See `ZDepth` docs. Runs after propagation so it sees final world transforms;

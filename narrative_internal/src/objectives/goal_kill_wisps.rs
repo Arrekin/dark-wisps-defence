@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use bevy_egui::egui;
 
-use game_core::prelude::SSS;
+use game_core::prelude::{DisplayName, SSS};
 use logging::prelude::*;
 use narrative::prelude::*;
 use persistence::prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveContext, SaveWriter};
@@ -81,7 +81,7 @@ impl BuilderGoalKillWisps {
                 GoalKillWisps { target: builder.target },
                 builder.state,
                 ObjectiveCounterProgress { current: builder.current, total: builder.target },
-                ObjectiveDisplayLine::default(),
+                DisplayName::default(),
                 ObjectiveEditorUi(ui_kill_wisps),
             ));
         commands.trigger(RefreshKillWispsGoal { goal: entity });
@@ -101,7 +101,7 @@ struct RefreshKillWispsGoal {
 
 fn on_refresh_kill_wisps_goal(
     trigger: On<RefreshKillWispsGoal>,
-    mut goals: Query<(&GoalKillWisps, &ObjectiveCounterProgress, &mut ObjectiveDisplayLine)>,
+    mut goals: Query<(&GoalKillWisps, &ObjectiveCounterProgress, &mut DisplayName)>,
 ) {
     let goal = trigger.goal;
     let Ok((config, progress, mut display)) = goals.get_mut(goal) else { return };

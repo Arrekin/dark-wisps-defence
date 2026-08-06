@@ -619,13 +619,18 @@ fn on_focused_map_object_insert_update_quantum_field_panel(
     let mut costs_container_commands = commands.entity(costs_container.into_inner());
     for cost in quantum_field.get_current_layer_costs() {
         costs_container_commands.with_children(|parent| {
+            // The chip owns its own `Node`, so the spacing lives on a wrapper
+            // rather than alongside the builder where it would be overwritten.
             parent.spawn((
                 Node {
                     margin: UiRect{ top: Val::Px(4.), bottom: Val::Px(4.), ..default() },
                     ..default()
                 },
-                CostIndicator::from(*cost),
                 QuantumFieldLayerCostPanel,
+                children![(
+                    BuilderCostChip::from(*cost),
+                    CostChipVisualFullPrice,
+                )],
             ));
         });
     }
@@ -721,11 +726,11 @@ fn initialize_quantum_field_panel_content_system(
                                     height: Val::Px(20.),
                                     ..default()
                                 },
-                                Healthbar {
-                                    color: AQUA.into(),
-                                    ..default()
-                                },
-                                QuantumFieldLayerHealthbar,
+                                children![(
+                                    BuilderHealthbar::default()
+                                        .with_color(AQUA),
+                                    QuantumFieldLayerHealthbar,
+                                )],
                             ),
                             // Costs Panel - content is dynamic and managed from a dedicated system
                             (

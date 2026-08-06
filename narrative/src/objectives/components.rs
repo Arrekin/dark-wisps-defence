@@ -38,6 +38,7 @@ pub struct ObjectiveDetails {
 /// `On<Insert, ObjectiveState>` which swaps markers. Persisted as a string
 /// (strum derives for DB serialization).
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq, Default, EnumString, AsRefStr)]
+#[component(immutable)]
 pub enum ObjectiveState {
     #[default]
     Inactive,
@@ -56,10 +57,6 @@ pub struct ObjectiveInProgress;
 pub struct ObjectiveSatisfied;
 #[derive(Component, Default)]
 pub struct ObjectiveFailed;
-
-/// Written by goal logic, read by HUD. On the goal entity.
-#[derive(Component, Clone, Debug, Default)]
-pub struct ObjectiveDisplayLine(pub String);
 
 /// Generic N-of-M counter shape on goals. Goal observers drive `current` via
 /// `increment_and_check()` and transition to `Satisfied` when it returns `true`.

@@ -364,32 +364,46 @@ CREATE TABLE IF NOT EXISTS summoning_wisp_types (
 -- Research
 -- ========================
 
--- One row per research instance present on the map.
+-- One row per research instance present on the map. `content_id` is the authored
+-- identity. `progress` and `state` are nullable: present for an enabled research
+-- (one with `ResearchRuntime`), NULL for a disabled one. The pair encodes
+-- enablement together — a row cannot express a half-state.
 CREATE TABLE IF NOT EXISTS researches (
     id INTEGER PRIMARY KEY,
-    research_type TEXT NOT NULL,
+    content_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL,
+    icon_path TEXT NOT NULL,
     duration_secs REAL NOT NULL,
-    -- NULL when not in flight (not started or completed); a fraction in [0,1] while in progress.
     progress REAL,
-    is_active INTEGER NOT NULL DEFAULT 0,
-    is_completed INTEGER NOT NULL DEFAULT 0,
+    state TEXT,
     FOREIGN KEY(id) REFERENCES entities(id)
 );
 
--- A research's (editable) cost, one row per resource. `essence_type` is set only for essence costs.
-CREATE TABLE IF NOT EXISTS research_costs (
-    research_id INTEGER NOT NULL,
+-- Generic cost storage, one row per `Cost` entry. Any entity may use it.
+-- `position` preserves `Vec` order within a group; `essence_type` is set
+-- only for essence costs.
+-- `custom_key` is for saver internal use — e.g. an entity with multiple
+-- groups of costs (quantum field layers) uses it to distinguish them.
+-- Defaults to 0; single-group savers ignore it.
+CREATE TABLE IF NOT EXISTS costs (
+    entity_id INTEGER NOT NULL,
+    custom_key INTEGER NOT NULL DEFAULT 0,
+    position INTEGER NOT NULL,
     resource_kind TEXT NOT NULL,
     essence_type TEXT,
     amount INTEGER NOT NULL,
-    FOREIGN KEY(research_id) REFERENCES researches(id)
+    FOREIGN KEY(entity_id) REFERENCES entities(id)
 );
 
--- Outcome kind: grant a shard blueprint. One table per outcome kind; `research_id` links to its
--- research via the entity map.
-CREATE TABLE IF NOT EXISTS research_outcome_shard_blueprints (
+-- One row per UnlockShardBlueprint outcome instance present on the map.
+-- `parent_id` is the outcome's parent entity (e.g. the research that carries
+-- it), carried through save/load for `OutcomeOf` remap. Display data is not
+-- persisted — it is derived from `ShardType` via the Almanach on load.
+CREATE TABLE IF NOT EXISTS unlock_shard_blueprint_outcomes (
     id INTEGER PRIMARY KEY,
-    research_id INTEGER NOT NULL,
+    parent_id INTEGER NOT NULL,
     shard_type TEXT NOT NULL,
-    FOREIGN KEY(id) REFERENCES entities(id)
+    FOREIGN KEY(id) REFERENCES entities(id),
+    FOREIGN KEY(parent_id) REFERENCES entities(id)
 );

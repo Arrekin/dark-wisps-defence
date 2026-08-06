@@ -30,7 +30,10 @@ use resources::prelude::*;
 use shards::prelude::*;
 use states::prelude::*;
 use widgets::{
-    prelude::{CostIndicator, TooltipOf},
+    prelude::{
+        BuilderChipStrip, BuilderCostChip, BuilderFillBar, CostChipVisualFullPrice, FillBar,
+        TooltipBundle, TooltipOf,
+    },
     utils::recolor_background_on,
 };
 
@@ -466,24 +469,20 @@ impl ForgeInfoPanel {
                             TextFont::from_font_size(12.),
                             TextLayout::no_wrap(),
                         ),
-                        // Progress bar background
+                        // Progress bar
                         (
                             Node {
                                 width: Val::Px(120.),
                                 height: Val::Px(12.),
-                                border: UiRect::all(Val::Px(1.)),
-                                border_radius: BorderRadius::all(Val::Px(2.)),
                                 ..default()
                             },
-                            BackgroundColor::from(Color::linear_rgba(0.1, 0.1, 0.1, 0.8)),
-                            BorderColor::from(Color::linear_rgba(0.4, 0.4, 0.3, 1.)),
                             children![(
-                                Node {
-                                    width: Val::Percent(fraction * 100.0),
-                                    height: Val::Percent(100.),
-                                    ..default()
-                                },
-                                BackgroundColor::from(Color::linear_rgba(0.8, 0.6, 0.1, 1.0)),
+                                BuilderFillBar::default()
+                                    .with_background_color(Color::linear_rgba(0.1, 0.1, 0.1, 0.8))
+                                    .with_border(Color::linear_rgba(0.4, 0.4, 0.3, 1.), UiRect::all(Val::Px(1.)))
+                                    .with_border_radius(BorderRadius::all(Val::Px(2.)))
+                                    .with_fill_color(Color::linear_rgba(0.8, 0.6, 0.1, 1.0))
+                                    .with_fill_fraction(fraction),
                                 ForgeProgressFill,
                             )],
                         ),
@@ -526,22 +525,15 @@ impl ForgeInfoPanel {
         }
     }
 
-    /// Per-frame system: updates the progress bar fill width and countdown text
-    /// while a forge is actively running.
+    /// Per-frame system: updates the progress bar fill fraction and countdown
+    /// text while a forge is actively running.
     fn update_progress(
         focused_job: Single<&ForgeJob, With<FocusedMapObject>>,
-        mut progress_fills: Query<&mut Node, With<ForgeProgressFill>>,
-        mut countdown_texts: Query<&mut Text, With<ForgeCountdownText>>,
+        mut progress_fill: Single<&mut FillBar, With<ForgeProgressFill>>,
+        mut countdown_text: Single<&mut Text, With<ForgeCountdownText>>,
     ) {
-        let fraction = focused_job.fraction();
-        let remaining = focused_job.remaining_secs();
-
-        for mut node in progress_fills.iter_mut() {
-            node.width = Val::Percent(fraction * 100.0);
-        }
-        for mut text in countdown_texts.iter_mut() {
-            text.0 = format!("{:.1}s", remaining);
-        }
+        progress_fill.fill_fraction = focused_job.fraction();
+        countdown_text.0 = format!("{:.1}s", focused_job.remaining_secs());
     }
 }
 
@@ -549,7 +541,7 @@ impl ForgeInfoPanel {
 #[derive(Component)]
 struct ForgeContentContainer;
 
-/// Marks the fill node inside the forging-view progress bar.
+/// Marks the `FillBar` in the forging-view progress bar.
 #[derive(Component)]
 struct ForgeProgressFill;
 
@@ -640,13 +632,13 @@ impl ForgeShardButton {
                 .observe(Self::on_click_request_start_forge);
         }
 
-        // Hover tooltip. `TooltipOf` parents it to the button and wires the show/hide-on-hover observers.
-        commands.spawn((
-            TooltipOf(entity),
-            Node {
+        // Hover tooltip. `TooltipBundle` groups the required components;
+        // the positioning system in `widgets_internal` places it above the slot.
+        commands.spawn(TooltipBundle {
+            tooltip_of: TooltipOf(entity),
+            node: Node {
                 display: Display::None,
                 position_type: PositionType::Absolute,
-                bottom: Val::Px(FORGE_SLOT_SIZE + 4.),
                 padding: UiRect::all(Val::Px(6.)),
                 flex_direction: FlexDirection::Column,
                 align_items: AlignItems::Start,
@@ -655,8 +647,8 @@ impl ForgeShardButton {
                 min_width: Val::Px(140.),
                 ..default()
             },
-            BackgroundColor::from(Color::linear_rgba(0.1, 0.1, 0.2, 0.95)),
-        ))
+            background_color: BackgroundColor::from(Color::linear_rgba(0.1, 0.1, 0.2, 0.95)),
+        })
         .with_children(|tooltip| {
             tooltip.spawn((
                 Text::new(info.name.clone()),
@@ -675,17 +667,15 @@ impl ForgeShardButton {
                 TextColor::from(Color::linear_rgba(0.7, 0.8, 0.7, 1.)),
                 TextLayout::no_wrap(),
             ));
-            // One CostIndicator per resource in the recipe.
-            tooltip.spawn(Node {
-                flex_direction: FlexDirection::Row,
-                column_gap: Val::Px(4.),
-                ..default()
-            })
-            .with_children(|cost_row| {
-                for cost in recipe.cost.iter().copied() {
-                    cost_row.spawn(CostIndicator::from(cost));
-                }
-            });
+            tooltip.spawn(BuilderChipStrip)
+                .with_children(|cost_row| {
+                    for cost in recipe.cost.iter().copied() {
+                        cost_row.spawn((
+                            BuilderCostChip::from(cost),
+                            CostChipVisualFullPrice,
+                        ));
+                    }
+                });
         });
     }
 

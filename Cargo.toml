@@ -56,6 +56,7 @@ members = [
   "almanach",
   "research",
   "research_internal",
+  "outcomes",
   "persistence",
   "session",
   "viewport",
@@ -122,6 +123,7 @@ editor = { path = "editor" }
 almanach = { path = "almanach" }
 research = { path = "research" }
 research_internal = { path = "research_internal" }
+outcomes = { path = "outcomes" }
 persistence = { path = "persistence" }
 session = { path = "session" }
 viewport = { path = "viewport" }

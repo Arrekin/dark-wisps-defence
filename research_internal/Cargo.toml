@@ -14,6 +14,8 @@ resources = { workspace = true }
 persistence = { workspace = true }
 states = { workspace = true }
 logging = { workspace = true }
+outcomes = { workspace = true }
+widgets = { workspace = true }
 
 [lints]
 workspace = true

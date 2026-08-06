@@ -4,6 +4,7 @@ pub(crate) mod slots;
 pub(crate) mod inventory;
 pub(crate) mod blueprints;
 pub(crate) mod shard_catalog;
+pub(crate) mod outcomes;
 
 pub struct ShardsPlugin;
 impl Plugin for ShardsPlugin {
@@ -13,6 +14,7 @@ impl Plugin for ShardsPlugin {
             inventory::ShardInventoryPlugin,
             blueprints::ShardBlueprintsPlugin,
             shard_catalog::ShardCatalogPlugin,
+            outcomes::ShardOutcomesPlugin,
         ));
     }
 }

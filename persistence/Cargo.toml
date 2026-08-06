@@ -8,6 +8,7 @@ bevy = { workspace = true }
 rusqlite = { workspace = true }
 refinery = { workspace = true }
 game_core = { workspace = true }
+resources = { workspace = true }
 states = { workspace = true }
 logging = { workspace = true }
 crossbeam-channel = { workspace = true }

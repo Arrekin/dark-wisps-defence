@@ -2,6 +2,7 @@ use bevy::prelude::*;
 
 use game_core::prelude::{GridCoords, GridImprint, MomentKind};
 use logging::prelude::*;
+use resources::prelude::{Cost, EssenceType, ResourceType};
 use states::MapLoadingStage;
 
 use crate::load::GameLoadRegistry;
@@ -64,6 +65,7 @@ pub trait GameDbHelpers {
     fn save_stock_resource(&self, resource_name: &str, amount: i32) -> rusqlite::Result<usize>;
     fn save_grid_coords(&self, entity_id: i64, pos: GridCoords) -> rusqlite::Result<usize>;
     fn save_grid_imprint(&self, entity_id: i64, imprint: GridImprint) -> rusqlite::Result<usize>;
+    fn save_costs(&self, entity_id: i64, costs: &[Cost]) -> rusqlite::Result<()>;
 
     fn get_world_position(&self, entity_id: i64) -> rusqlite::Result<Vec2>;
     fn get_integrity_points(&self, entity_id: i64) -> rusqlite::Result<f32>;
@@ -72,6 +74,7 @@ pub trait GameDbHelpers {
     fn get_stock_resource(&self, resource_name: &str) -> rusqlite::Result<i32>;
     fn get_grid_coords(&self, entity_id: i64) -> rusqlite::Result<GridCoords>;
     fn get_grid_imprint(&self, entity_id: i64) -> rusqlite::Result<GridImprint>;
+    fn get_costs(&self, entity_id: i64) -> rusqlite::Result<Vec<Cost>>;
 }
 impl GameDbHelpers for rusqlite::Connection {
     fn register_entity(&self, entity_id: i64) -> rusqlite::Result<usize> {
@@ -143,6 +146,20 @@ impl GameDbHelpers for rusqlite::Connection {
         )
     }
 
+    fn save_costs(&self, entity_id: i64, costs: &[Cost]) -> rusqlite::Result<()> {
+        for (position, cost) in costs.iter().enumerate() {
+            let (resource_kind, essence_type): (&str, Option<String>) = match cost.resource_type {
+                ResourceType::DarkOre => ("DarkOre", None),
+                ResourceType::Essence(essence) => ("Essence", Some(essence.as_ref().to_string())),
+            };
+            self.execute(
+                "INSERT OR REPLACE INTO costs (entity_id, position, resource_kind, essence_type, amount) VALUES (?1, ?2, ?3, ?4, ?5)",
+                rusqlite::params![entity_id, position as i64, resource_kind, essence_type, cost.amount],
+            )?;
+        }
+        Ok(())
+    }
+
     fn get_world_position(&self, entity_id: i64) -> rusqlite::Result<Vec2> {
         let mut stmt = self.prepare("SELECT x, y FROM world_positions WHERE entity_id = ?1")?;
         let mut rows = stmt.query([entity_id])?;
@@ -202,6 +219,41 @@ impl GameDbHelpers for rusqlite::Connection {
             }
             _ => Err(rusqlite::Error::InvalidColumnType(0, "Unknown shape type".into(), rusqlite::types::Type::Text)),
         }
+    }
+
+    fn get_costs(&self, entity_id: i64) -> rusqlite::Result<Vec<Cost>> {
+        let mut stmt = self.prepare(
+            "SELECT resource_kind, essence_type, amount FROM costs WHERE entity_id = ?1 AND custom_key = 0 ORDER BY position",
+        )?;
+        let mut rows = stmt.query([entity_id])?;
+        let mut costs = Vec::new();
+        while let Some(row) = rows.next()? {
+            let resource_kind: String = row.get(0)?;
+            let essence_type: Option<String> = row.get(1)?;
+            let amount: i32 = row.get(2)?;
+            let resource_type = match resource_kind.as_str() {
+                "DarkOre" => ResourceType::DarkOre,
+                "Essence" => {
+                    let Some(essence_str) = essence_type else {
+                        Log::warn().dev().tag(Tag::GameLoad).message(format!("Essence cost for entity {entity_id} has no essence_type — skipping cost"));
+                        continue;
+                    };
+                    match essence_str.parse::<EssenceType>() {
+                        Ok(essence) => ResourceType::Essence(essence),
+                        Err(_) => {
+                            Log::warn().dev().tag(Tag::GameLoad).message(format!("Unknown essence type in save: {essence_str}"));
+                            continue;
+                        }
+                    }
+                }
+                other => {
+                    Log::warn().dev().tag(Tag::GameLoad).message(format!("Unknown resource kind in save: {other}"));
+                    continue;
+                }
+            };
+            costs.push(Cost { resource_type, amount });
+        }
+        Ok(costs)
     }
 }
 

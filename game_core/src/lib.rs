@@ -1,5 +1,6 @@
 pub mod traits;
 pub mod components;
+pub mod display;
 pub mod z_depth;
 pub mod events;
 pub mod math;
@@ -16,7 +17,8 @@ pub mod prelude {
     // `#[derive(MomentKind)]` work wherever the traits are in scope.
     pub use lib_derive::{FromEntity, MomentKind, Property, SSS};
 
-    pub use crate::components::{DisabledByPlayer, FieldAffectable, IntegrityPoints, IsOperational, IsPowered, MapBound, NeedsPower};
+    pub use crate::components::{ContentId, DisabledByPlayer, FieldAffectable, IntegrityPoints, IsOperational, IsPowered, MapBound, NeedsPower};
+    pub use crate::display::{DisplayDescription, DisplayIcon, DisplayIconSwitcher, DisplayName, DisplayOrder};
     pub use crate::events::{DamageMessage, TechnicalChange, TechnicalStateChanged};
     pub use crate::grid::{CELL_SIZE, GridCoords, GridImprint};
     pub use crate::moments::{

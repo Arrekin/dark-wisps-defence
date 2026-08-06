@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 bevy = { workspace = true, features = ["ui"] }
 resources = { workspace = true }
+states = { workspace = true }
 
 [lints]
 workspace = true

@@ -1,6 +1,8 @@
 mod console;
+mod cost_editor;
 mod moment_picker;
 mod objectives;
+mod research;
 mod summonings;
 
 use bevy::prelude::*;
@@ -37,6 +39,7 @@ pub struct EditorState {
     pub active_tab: EditorTab,
     pub selected_summoning: Option<Entity>,
     pub selected_objective: Option<Entity>,
+    pub selected_research: Option<Entity>,
     pub scenario_filename: Option<String>,
     pub pending_overwrite_confirm: Option<String>,
 }
@@ -47,6 +50,7 @@ pub enum EditorTab {
     General,
     Summonings,
     Objectives,
+    Research,
     Shards,
 }
 
@@ -76,6 +80,7 @@ fn editor_ui(world: &mut World) {
                 EditorTab::General => tab_general(ui, world),
                 EditorTab::Summonings => summonings::tab_summonings(ui, world),
                 EditorTab::Objectives => objectives::tab_objectives(ui, world),
+                EditorTab::Research => research::tab_research(ui, world),
                 EditorTab::Shards => tab_shards(ui, world),
             }
         });

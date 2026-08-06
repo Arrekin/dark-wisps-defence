@@ -6,6 +6,20 @@ use crate::grid::{GridCoords, GridImprint};
 #[derive(Component, Default)]
 pub struct MapBound;
 
+/// Authored identity for a piece of map content. Unique within a map; the
+/// editor validates. Exists to match content and to be shown/edited — nothing
+/// may branch on its value.
+#[derive(Component, Clone, Debug, Default, Hash, PartialEq, Eq)]
+pub struct ContentId(pub String);
+
+impl From<String> for ContentId {
+    fn from(s: String) -> Self { Self(s) }
+}
+
+impl From<&str> for ContentId {
+    fn from(s: &str) -> Self { Self(s.to_string()) }
+}
+
 #[derive(Component)]
 pub struct IntegrityPoints {
     pub current: f32,

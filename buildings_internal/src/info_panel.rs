@@ -11,7 +11,7 @@ use hud::prelude::*;
 use shards::prelude::*;
 use states::prelude::*;
 use widgets::{
-    prelude::Healthbar,
+    prelude::{BuilderHealthbar, Healthbar},
     utils::recolor_background_on,
 };
 
@@ -164,8 +164,10 @@ fn initialize_building_panel_content_system(
                                 height: Val::Percent(100.),
                                 ..default()
                             },
-                            Healthbar::default(),
-                            BuildingInfoPanelHealthbar,
+                            children![(
+                                BuilderHealthbar::default(),
+                                BuildingInfoPanelHealthbar,
+                            )],
                         ),
                         // Disable/Enable button
                         (

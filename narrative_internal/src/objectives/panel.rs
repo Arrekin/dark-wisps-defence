@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use bevy::ui::{widget::NodeImageMode, VisualBox};
 
+use game_core::prelude::DisplayName;
 use narrative::prelude::*;
 
 pub(crate) struct ObjectivesPanelPlugin;
@@ -313,7 +314,7 @@ fn rebuild_panel(
     _trigger: On<RebuildObjectivesPanel>,
     rows: Query<(Entity, &ObjectiveRow, &Children)>,
     objectives: Query<(&ObjectiveState, Option<&ObjectiveGoals>), With<ObjectiveDetails>>,
-    display_lines: Query<&ObjectiveDisplayLine>,
+    display_lines: Query<&DisplayName>,
     mut checkmarks: Query<&mut ImageNode, With<ObjectiveCheckmark>>,
     mut row_colors: Query<(&mut BackgroundColor, &mut BorderColor), With<ObjectiveRow>>,
     row_contents: Query<&ObjectiveRowContent>,
@@ -397,11 +398,11 @@ fn rebuild_panel(
 }
 
 // ============================================================================
-// DISPLAY-LINE UPDATE (progress ticks — Changed<ObjectiveDisplayLine>)
+// DISPLAY-LINE UPDATE (progress ticks — Changed<DisplayName>)
 // ============================================================================
 
 fn update_display_lines(
-    changed: Query<&ObjectiveDisplayLine, Changed<ObjectiveDisplayLine>>,
+    changed: Query<&DisplayName, Changed<DisplayName>>,
     mut texts: Query<(&ObjectiveDisplayLineText, &mut Text)>,
 ) {
     if changed.is_empty() { return; }
