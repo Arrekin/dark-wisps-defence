@@ -72,39 +72,42 @@ impl SpawnArea {
         obstacle_grid: &ObstacleGrid,
         rng: &mut nanorand::tls::TlsWyRand,
     ) -> GridCoords {
-        // Nano-rand is off by 1 in i32!
         match self {
             SpawnArea::Coords { coords } => {
                 let idx = rng.generate_range(0..coords.len());
                 coords[idx]
             }
             SpawnArea::Rect { origin, width, height } => {
-                let x = origin.x + rng.generate_range(1..=*width);
-                let y = origin.y + rng.generate_range(1..=*height);
+                let x = origin.x + rng.generate_range(0..*width);
+                let y = origin.y + rng.generate_range(0..*height);
                 GridCoords { x, y }
             }
             SpawnArea::Edge { side } => {
                 let (width, height) = obstacle_grid.bounds();
                 match side {
-                    EdgeSide::Top => GridCoords { x: rng.generate_range(1..=width), y: height - 1 },
-                    EdgeSide::Bottom => GridCoords { x: rng.generate_range(1..=width), y: 0 },
-                    EdgeSide::Left => GridCoords { x: 0, y: rng.generate_range(1..=height) },
-                    EdgeSide::Right => GridCoords { x: width - 1, y: rng.generate_range(1..=height) },
+                    EdgeSide::Top => GridCoords { x: rng.generate_range(0..width), y: height - 1 },
+                    EdgeSide::Bottom => GridCoords { x: rng.generate_range(0..width), y: 0 },
+                    EdgeSide::Left => GridCoords { x: 0, y: rng.generate_range(0..height) },
+                    EdgeSide::Right => GridCoords { x: width - 1, y: rng.generate_range(0..height) },
                 }
             }
             SpawnArea::EdgesAll => {
                 let (width, height) = obstacle_grid.bounds();
+                // Perimeter cells, indexed by walking the border in one pass:
+                // bottom row, then right column, then top row, then left column.
+                // Corners belong to the rows, so each column contributes
+                // `height - 2` cells and the total is `2 * (width + height - 2)`.
                 let edge_count = 2 * (width + height - 2);
-                let edge_idx = rng.generate_range(1..=edge_count);
+                let edge_idx = rng.generate_range(0..edge_count);
 
                 if edge_idx < width {
                     GridCoords { x: edge_idx, y: 0 }
-                } else if edge_idx < width + height - 1 {
+                } else if edge_idx < width + height - 2 {
                     GridCoords { x: width - 1, y: edge_idx - width + 1 }
                 } else if edge_idx < 2 * width + height - 2 {
-                    GridCoords { x: width - 1 - (edge_idx - width - height + 1), y: height - 1 }
+                    GridCoords { x: width - 1 - (edge_idx - width - height + 2), y: height - 1 }
                 } else {
-                    GridCoords { x: 0, y: height - 1 - (edge_idx - 2 * width - height + 2) }
+                    GridCoords { x: 0, y: height - 2 - (edge_idx - 2 * width - height + 2) }
                 }
             }
         }

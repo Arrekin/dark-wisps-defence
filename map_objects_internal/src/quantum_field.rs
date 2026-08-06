@@ -199,7 +199,7 @@ fn collect_quantum_fields(
     mut save: SaveWriter,
 ) {
     if quantum_fields.is_empty() { return; }
-    let rows: Vec<(i64, i32, i32, GridImprint, usize, f32)> = quantum_fields
+    let rows: Vec<(i64, i32, i32, GridImprint, i64, f32)> = quantum_fields
         .iter()
         .map(|(entity, coords, imprint, quantum_field)| {
             (
@@ -207,7 +207,7 @@ fn collect_quantum_fields(
                 coords.x,
                 coords.y,
                 *imprint,
-                quantum_field.current_layer,
+                quantum_field.current_layer as i64,
                 quantum_field.current_layer_progress,
             )
         })
@@ -232,7 +232,7 @@ fn load_quantum_fields(ctx: &mut LoadContext) -> rusqlite::Result<()> {
     let mut rows = stmt.query([])?;
     while let Some(row) = rows.next()? {
         let old_id: i64 = row.get(0)?;
-        let current_layer: usize = row.get(1)?;
+        let current_layer: usize = row.get::<_, i64>(1)? as usize;
         let current_layer_progress: f32 = row.get(2)?;
 
         let grid_position = ctx.conn.get_grid_coords(old_id)?;

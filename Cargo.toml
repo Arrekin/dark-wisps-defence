@@ -89,12 +89,12 @@ needless_update = "allow"       # Leaving `..Default::default()` on a fully-spec
 bevy = { version = "0.19.*", default-features = false, features = ["dynamic_linking", "2d"] }
 bevy_egui = "0.40.*"
 strum = { version = "0.28.*", features = ["derive"] }
-nanorand = "0.7.*"
-rusqlite = { version = "0.37.*", features = ["bundled"] }
+nanorand = "0.8"
+rusqlite = { version = "0.39.*", features = ["bundled"] }
 refinery = { version = "0.9.*", features = ["rusqlite"] }
 crossbeam-channel = "0.5.*"
 bytemuck = "1.*"
-syn = { version = "2.0", features = ["full"] }
+syn = { version = "3.0.*", features = ["full"] }
 quote = "1.0"
 proc-macro2 = "1.0"
 

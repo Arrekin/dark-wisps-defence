@@ -161,7 +161,7 @@ fn collect_kill_wisps(
 ) {
     if goals.is_empty() { return; }
     let save_as_scenario = save_ctx.save_as_scenario;
-    let rows: Vec<(i64, i64, String, usize, usize)> = goals
+    let rows: Vec<(i64, i64, String, i64, i64)> = goals
         .iter()
         .map(|(entity, goal, state, progress, goal_of)| {
             let state_str = if save_as_scenario {
@@ -174,8 +174,8 @@ fn collect_kill_wisps(
                 entity.index_u32() as i64,
                 goal_of.0.index_u32() as i64,
                 state_str,
-                goal.target,
-                current,
+                goal.target as i64,
+                current as i64,
             )
         })
         .collect();
