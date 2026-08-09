@@ -84,6 +84,17 @@ pub struct ChipChildren {
     pub text: Option<Entity>,
 }
 
+/// Fades the icon and label of every chip under this entity to `0.0`..=`1.0` of full
+/// brightness. Put it on a [`BuilderChipStrip`] to fade a whole row, or on a single chip.
+/// Remove it to go back to full brightness.
+///
+/// A chip's white icon and label are the brightest thing in it, so a strip of them will
+/// stand out against a panel whose other content has been dimmed. The chip background and
+/// border are left alone: the border is how a cost chip shows whether you can afford it,
+/// and fading it here would overwrite that.
+#[derive(Component, Clone, Copy, Debug)]
+pub struct ChipsFaded(pub f32);
+
 impl BuilderChip {
     pub fn new(icon: Handle<Image>) -> Self {
         Self { icon, text: None }

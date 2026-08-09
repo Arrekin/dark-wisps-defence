@@ -34,7 +34,7 @@ use widgets::{
         BuilderChipStrip, BuilderCostChip, BuilderFillBar, CostChipVisualFullPrice, FillBar,
         TooltipBundle, TooltipOf,
     },
-    utils::recolor_background_on,
+    common::utils::recolor_background_on,
 };
 
 use crate::{

@@ -5,7 +5,7 @@ use widgets::prelude::{
     BuilderChip, BuilderDisplayChip, ChipChildren, DisplayChipChildren, DisplayChipOf, DisplayChips,
     TooltipBundle,
 };
-use widgets::utils::set_text_if_changed;
+use widgets::common::utils::set_text_if_changed;
 
 use super::chip::CHIP_FONT_SIZE;
 

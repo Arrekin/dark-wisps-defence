@@ -4,7 +4,7 @@ use strum::IntoEnumIterator;
 
 use resources::prelude::*;
 use states::prelude::GameState;
-use widgets::utils::recolor_background_on;
+use widgets::common::utils::recolor_background_on;
 
 pub struct BadgesPlugin;
 impl Plugin for BadgesPlugin {

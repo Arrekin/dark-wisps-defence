@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use widgets::prelude::{BuilderChip, Chip, ChipChildren};
+use widgets::prelude::{BuilderChip, Chip, ChipChildren, ChipsFaded};
 
 // Chip body
 const CHIP_HEIGHT: f32 = 24.0;
@@ -17,7 +17,10 @@ pub(super) const CHIP_FONT_SIZE: f32 = 12.0;
 pub struct ChipPlugin;
 impl Plugin for ChipPlugin {
     fn build(&self, app: &mut App) {
-        app.add_observer(on_builder_add_spawn_chip);
+        app
+            .add_observer(on_builder_add_spawn_chip)
+            .add_observer(on_add_chips_faded_dim_chips)
+            .add_observer(on_remove_chips_faded_restore_chips);
     }
 }
 
@@ -72,5 +75,68 @@ fn on_builder_add_spawn_chip(
 
     if let Some(text) = text {
         commands.entity(chip_entity).add_child(text);
+    }
+}
+
+// ============================================================================
+// FADING — ChipsFaded dims the icon and label of the chips beneath it
+// ============================================================================
+
+fn on_add_chips_faded_dim_chips(
+    trigger: On<Add, ChipsFaded>,
+    mut commands: Commands,
+    faded: Query<&ChipsFaded>,
+    chips: Query<&ChipChildren>,
+    children: Query<&Children>,
+    mut image_nodes: Query<&mut ImageNode>,
+) {
+    let Ok(faded) = faded.get(trigger.entity) else { return };
+    let brightness = faded.0.clamp(0., 1.);
+    paint_chips(
+        trigger.entity,
+        Color::srgb(brightness, brightness, brightness),
+        &chips,
+        &children,
+        &mut image_nodes,
+        &mut commands,
+    );
+}
+
+fn on_remove_chips_faded_restore_chips(
+    trigger: On<Remove, ChipsFaded>,
+    mut commands: Commands,
+    chips: Query<&ChipChildren>,
+    children: Query<&Children>,
+    mut image_nodes: Query<&mut ImageNode>,
+) {
+    paint_chips(
+        trigger.entity,
+        Color::WHITE,
+        &chips,
+        &children,
+        &mut image_nodes,
+        &mut commands,
+    );
+}
+
+/// Paints the icon and label of every chip in `entity`'s subtree, `entity` included, so the
+/// component works on a strip and on a lone chip alike. Entities that are not chips are
+/// skipped, which is what lets it run over a subtree it knows nothing about.
+fn paint_chips(
+    entity: Entity,
+    color: Color,
+    chips: &Query<&ChipChildren>,
+    children: &Query<&Children>,
+    image_nodes: &mut Query<&mut ImageNode>,
+    commands: &mut Commands,
+) {
+    for chip_entity in core::iter::once(entity).chain(children.iter_descendants(entity)) {
+        let Ok(chip) = chips.get(chip_entity) else { continue };
+        if let Ok(mut icon) = image_nodes.get_mut(chip.icon) {
+            icon.color = color;
+        }
+        if let Some(text) = chip.text {
+            commands.entity(text).insert(TextColor::from(color));
+        }
     }
 }

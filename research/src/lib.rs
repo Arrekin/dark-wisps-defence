@@ -7,5 +7,7 @@ pub mod prelude {
         Research, ResearchActive, ResearchAvailable, ResearchCompleted, ResearchRuntime,
         ResearchState, ResearchUISelected,
     };
-    pub use crate::events::{ResearchDisplayDataUpdated, ResearchFinished, SetActiveResearch, StopResearch};
+    pub use crate::events::{
+        ResearchDisplayDataUpdated, ResearchFinished, ResearchUnitPaid, SetActiveResearch, StopResearch,
+    };
 }

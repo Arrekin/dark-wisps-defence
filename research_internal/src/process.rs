@@ -59,7 +59,7 @@ pub(crate) fn research_tick(
 
     let target = advanced_fraction(runtime.progress, duration_secs, time.delta_secs());
     let target = clamp_to_affordable(runtime.progress, target, &research.cost, &stock);
-    pay_crossed_units(runtime.progress, target, &research.cost, &mut stock);
+    pay_crossed_units(&mut commands, entity, runtime.progress, target, &research.cost, &mut stock);
     runtime.progress = target;
 
     if runtime.progress >= 1.0 {
@@ -118,6 +118,20 @@ pub(crate) fn units_paid(fraction: f32, cost: &Cost) -> i32 {
     (fraction * cost.amount as f32).floor() as i32
 }
 
+/// The furthest fraction this research can reach with the stock currently held. 1.0
+/// when nothing will run out. Each cost can advance to `(paid + available) / amount`;
+/// the research is limited by whichever runs out first.
+pub(crate) fn reachable_fraction(fraction: f32, costs: &[Cost], stock: &Stock) -> f32 {
+    costs.iter()
+        .map(|cost| {
+            let paid = units_paid(fraction, cost);
+            let available = stock.get(cost.resource_type);
+            (paid + available) as f32 / cost.amount as f32
+        })
+        .fold(1.0, f32::min)
+        .clamp(0., 1.)
+}
+
 /// Clamps `target` so no cost crosses a unit threshold the stock cannot cover —
 /// the research stalls just before its first unaffordable unit. Never clamps
 /// below `fraction`: earned progress is kept.
@@ -134,13 +148,25 @@ fn clamp_to_affordable(fraction: f32, mut target: f32, costs: &[Cost], stock: &S
 }
 
 /// Deducts the whole units of each cost crossed between `fraction` and `target`,
-/// which must already be clamped to affordability.
-fn pay_crossed_units(fraction: f32, target: f32, costs: &[Cost], stock: &mut Stock) {
+/// which must already be clamped to affordability. Fires `ResearchUnitPaid`
+/// once for every unit deducted, so a step crossing several thresholds at once
+/// still yields one event per unit.
+fn pay_crossed_units(
+    commands: &mut Commands,
+    research: Entity,
+    fraction: f32,
+    target: f32,
+    costs: &[Cost],
+    stock: &mut Stock,
+) {
     for cost in costs.iter() {
         let units = units_paid(target, cost) - units_paid(fraction, cost);
         if units > 0 {
             let removed = stock.try_remove(cost.resource_type, units);
             debug_assert!(removed, "clamp_to_affordable must keep crossed units payable");
+            for _ in 0..units {
+                commands.trigger(ResearchUnitPaid { research, resource_type: cost.resource_type });
+            }
         }
     }
 }

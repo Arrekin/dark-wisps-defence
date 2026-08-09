@@ -1,5 +1,7 @@
 use bevy::prelude::*;
 
+use resources::prelude::ResourceType;
+
 /// Start or switch the active research. Parks the incumbent (back to
 /// `Available`, progress retained) and sets the target `Active`. Only an
 /// `Available` research can be started — one with no state cannot be targeted.
@@ -34,4 +36,15 @@ pub struct ResearchFinished {
 pub struct ResearchDisplayDataUpdated {
     #[event_target]
     pub research: Entity,
+}
+
+/// Fired once per whole unit of a resource consumed by a research in
+/// progress. The tick fires one of these per unit crossed, so a step that
+/// crosses several thresholds at once — a large frame delta, or several costs
+/// maturing together — fires once for each.
+#[derive(EntityEvent, Clone, Copy, Debug)]
+pub struct ResearchUnitPaid {
+    #[event_target]
+    pub research: Entity,
+    pub resource_type: ResourceType,
 }

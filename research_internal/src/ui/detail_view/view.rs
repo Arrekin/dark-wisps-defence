@@ -1,9 +1,9 @@
-//! # Research Detail View
+//! # Detail View Shell
 //!
 //! The expanded card showing one research in full: icon, name, description,
 //! progress bar, live status, remaining cost, grants, and the action button.
-//! The compact grid entry is [`super::tile`]; this is what the band above it
-//! shows.
+//! The compact grid entry is [`crate::ui::tile`]; this is what the band above it
+//! shows. What the card following the running research adds is in [`super::active`].
 //!
 //! ## A view never picks its own subject
 //!
@@ -42,16 +42,19 @@ use research::{
 use resources::prelude::Cost;
 use states::prelude::{GameState, UiInteraction};
 use widgets::{
-    prelude::{BuilderChipStrip, BuilderCostChip, BuilderDisplayChip, CostChip, CostChipVisualUnitAvailable},
-    utils::set_text_if_changed,
+    common::utils::set_text_if_changed,
+    prelude::{
+        BuilderChipStrip, BuilderCostChip, BuilderDisplayChip, BuilderVoidPanel, CostChip,
+        CostChipVisualUnitAvailable, TextRole,
+    },
 };
 
 use crate::process::units_paid;
 
-use super::action_button::ResearchActionButton;
+use super::super::action_button::ResearchActionButton;
 
-pub(crate) struct ResearchDetailViewPlugin;
-impl Plugin for ResearchDetailViewPlugin {
+pub(crate) struct DetailViewShellPlugin;
+impl Plugin for DetailViewShellPlugin {
     fn build(&self, app: &mut App) {
         app
             .add_observer(on_builder_add_spawn_research_detail_view)
@@ -68,10 +71,9 @@ impl Plugin for ResearchDetailViewPlugin {
     }
 }
 
-impl ResearchDetailViewPlugin {
-    /// Everything a source costs. The three observers cover the ways the view
-    /// bound to `Marker` can go stale: the marker moved onto a research, off a
-    /// research, or the research it is on changed what it displays.
+impl DetailViewShellPlugin {
+    /// Registers observers that synchronize views bound to `Marker` when the marker is added,
+    /// removed, or its research's display data changes.
     fn add_source_observers<Marker: Component>(app: &mut App) {
         app
             .add_observer(on_insert_research_marker_show_in_detail_view::<Marker>)
@@ -87,8 +89,9 @@ impl ResearchDetailViewPlugin {
 // View shell
 const VIEW_PADDING: f32 = 16.0;
 const VIEW_ROW_GAP: f32 = 4.0;
-const VIEW_BORDER_RADIUS: f32 = 4.0;
-const VIEW_BACKGROUND: Color = Color::linear_rgba(0.12, 0.12, 0.18, 1.);
+/// Larger than a tile's 12px — the card is a much bigger surface and the cut should read
+/// as the same gesture at a larger scale.
+const VIEW_CORNER_CUT: f32 = 22.0;
 const VIEW_TITLE_FONT_SIZE: f32 = 14.0;
 
 /// Shared by the title, the stall line and the empty state — the three labels
@@ -108,6 +111,9 @@ const DESCRIPTION_COLOR: Color = Color::linear_rgba(0.75, 0.75, 0.8, 1.);
 
 // Progress and status
 const PROGRESS_ROW_HEIGHT: f32 = 36.0;
+/// Height of the bar itself within its row — an instrument reads better trim than the
+/// row, which is tall enough to give it breathing room above and below.
+const PROGRESS_BAR_HEIGHT: f32 = 16.0;
 const STATUS_ROW_HEIGHT: f32 = 18.0;
 const STATUS_FONT_SIZE: f32 = 12.0;
 const STALL_ROW_HEIGHT: f32 = 18.0;
@@ -115,7 +121,10 @@ const STALL_ROW_HEIGHT: f32 = 18.0;
 // Bottom row
 const BOTTOM_ROW_COLUMN_GAP: f32 = 12.0;
 const STRIP_LABEL_FONT_SIZE: f32 = 12.0;
-const ACTION_BUTTON_HORIZONTAL_PADDING: f32 = 6.0;
+/// The detail view has room the tile does not, so it gives its action button a container
+/// of its own rather than letting it fill a cramped row.
+const ACTION_BUTTON_WIDTH: f32 = 96.0;
+const ACTION_BUTTON_HEIGHT: f32 = 28.0;
 
 // Empty state
 const EMPTY_TEXT_FONT_SIZE: f32 = 14.0;
@@ -141,8 +150,8 @@ pub(crate) struct BuilderResearchDetailView {
 /// Runtime component for a built view. `content` is the child the subject tree
 /// hangs from, kept so a rebuild can clear it without disturbing the title.
 #[derive(Component, Clone, Copy)]
-struct ResearchDetailView {
-    content: Entity,
+pub(super) struct ResearchDetailView {
+    pub(super) content: Entity,
     empty_text: &'static str,
 }
 
@@ -164,10 +173,13 @@ struct BuilderResearchDetailViewContent {
 /// place. Present only on a populated tree, so a view showing nothing has no
 /// status nodes to be wrong about.
 #[derive(Component, Clone, Copy)]
-struct ResearchDetailViewContent {
-    research: Entity,
+pub(super) struct ResearchDetailViewContent {
+    pub(super) research: Entity,
     percent_text: Entity,
     remaining_time_text: Entity,
+    /// The bar's container node — same rect as the bar widget itself, since it
+    /// fills the container at 100% with no padding.
+    pub(super) progress_bar: Entity,
 }
 
 /// Carries the original spec cost so the chip's displayed amount can be
@@ -276,7 +288,7 @@ fn on_builder_add_spawn_research_detail_view(
 
     let title_node = commands.spawn((
         Text::new(title),
-        TextFont::from_font_size(VIEW_TITLE_FONT_SIZE),
+        TextRole::Heading.font(VIEW_TITLE_FONT_SIZE),
         TextColor::from(MUTED_TEXT_COLOR),
         TextLayout::no_wrap(),
     )).id();
@@ -305,10 +317,9 @@ fn on_builder_add_spawn_research_detail_view(
                 flex_direction: FlexDirection::Column,
                 padding: UiRect::all(Val::Px(VIEW_PADDING)),
                 row_gap: Val::Px(VIEW_ROW_GAP),
-                border_radius: BorderRadius::all(Val::Px(VIEW_BORDER_RADIUS)),
                 ..default()
             },
-            BackgroundColor::from(VIEW_BACKGROUND),
+            BuilderVoidPanel::default().with_corner_cut(VIEW_CORNER_CUT),
         ))
         .add_children(&[title_node, content]);
 }
@@ -355,14 +366,14 @@ fn on_builder_insert_rebuild_research_detail_view_content(
 
     let identity_row = spawn_identity_row(&mut commands, &name.0, icon.0.clone());
     let description_row = spawn_description_row(&mut commands, &description.0);
-    let progress_row = spawn_progress_row(&mut commands, research);
+    let (progress_row, progress_bar) = spawn_progress_row(&mut commands, research);
     let (status_row, percent_text, remaining_time_text) = spawn_status_row(&mut commands);
     let stall_row = spawn_stall_row(&mut commands);
     let spacer = spawn_bottom_spacer(&mut commands);
     let bottom_row = spawn_bottom_row(&mut commands, research, &research_data.cost, has_outcomes);
 
     commands.entity(content_entity)
-        .insert(ResearchDetailViewContent { research, percent_text, remaining_time_text })
+        .insert(ResearchDetailViewContent { research, percent_text, remaining_time_text, progress_bar })
         .add_children(&[
             identity_row,
             description_row,
@@ -394,7 +405,7 @@ fn spawn_identity_row(commands: &mut Commands, name: &str, icon: Handle<Image>) 
             ),
             (
                 Text::new(name),
-                TextFont::from_font_size(NAME_FONT_SIZE),
+                TextRole::Body.font(NAME_FONT_SIZE),
                 TextColor::from(Color::WHITE),
                 TextLayout::no_wrap(),
             ),
@@ -411,18 +422,29 @@ fn spawn_description_row(commands: &mut Commands, description: &str) -> Entity {
         },
         children![(
             Text::new(description),
-            TextFont::from_font_size(DESCRIPTION_FONT_SIZE),
+            TextRole::Body.font(DESCRIPTION_FONT_SIZE),
             TextColor::from(DESCRIPTION_COLOR),
         )],
     )).id()
 }
 
-fn spawn_progress_row(commands: &mut Commands, research: Entity) -> Entity {
-    commands.spawn(Node {
+/// Returns the row and the bar's container node — the latter is what
+/// `ResearchDetailViewContent::progress_bar` records.
+fn spawn_progress_row(commands: &mut Commands, research: Entity) -> (Entity, Entity) {
+    let mut bar_container = Entity::PLACEHOLDER;
+    let row = commands.spawn(Node {
         height: Val::Px(PROGRESS_ROW_HEIGHT),
         align_items: AlignItems::Center,
         ..default()
-    }).with_child(BuilderResearchBar::new(research)).id()
+    }).with_children(|row| {
+        bar_container = row.spawn(Node {
+            width: Val::Percent(100.),
+            height: Val::Px(PROGRESS_BAR_HEIGHT),
+            ..default()
+        }).with_child(BuilderResearchBar::new(research)).id();
+    }).id();
+
+    (row, bar_container)
 }
 
 /// Returns the row and the two labels `update_research_detail_view_status`
@@ -430,11 +452,11 @@ fn spawn_progress_row(commands: &mut Commands, research: Entity) -> Entity {
 fn spawn_status_row(commands: &mut Commands) -> (Entity, Entity, Entity) {
     let percent_text = commands.spawn((
         Text::new("--"),
-        TextFont::from_font_size(STATUS_FONT_SIZE),
+        TextRole::Data.font(STATUS_FONT_SIZE),
     )).id();
     let remaining_time_text = commands.spawn((
         Text::new("--"),
-        TextFont::from_font_size(STATUS_FONT_SIZE),
+        TextRole::Data.font(STATUS_FONT_SIZE),
     )).id();
 
     let row = commands.spawn(Node {
@@ -457,7 +479,7 @@ fn spawn_stall_row(commands: &mut Commands) -> Entity {
             height: Val::Px(STALL_ROW_HEIGHT),
             ..default()
         },
-        TextFont::from_font_size(STATUS_FONT_SIZE),
+        TextRole::Data.font(STATUS_FONT_SIZE),
         TextColor::from(MUTED_TEXT_COLOR),
     )).id()
 }
@@ -505,13 +527,11 @@ fn spawn_bottom_row(
         ..default()
     }).add_children(&[remaining_strip, grants_strip]).id();
 
-    let action_button = commands.spawn((
-        ResearchActionButton::new(research),
-        Node {
-            padding: UiRect::horizontal(Val::Px(ACTION_BUTTON_HORIZONTAL_PADDING)),
-            ..default()
-        },
-    )).id();
+    let action_button = commands.spawn(Node {
+        width: Val::Px(ACTION_BUTTON_WIDTH),
+        height: Val::Px(ACTION_BUTTON_HEIGHT),
+        ..default()
+    }).with_child(ResearchActionButton::new(research)).id();
 
     commands.spawn(Node {
         flex_direction: FlexDirection::Row,
@@ -526,7 +546,7 @@ fn spawn_bottom_row(
 fn spawn_labelled_strip(commands: &mut Commands, label: &str, strip: Entity) -> Entity {
     let caption = commands.spawn((
         Text::new(label),
-        TextFont::from_font_size(STRIP_LABEL_FONT_SIZE),
+        TextRole::Heading.font(STRIP_LABEL_FONT_SIZE),
     )).id();
 
     commands.spawn(Node {
@@ -547,7 +567,7 @@ fn spawn_empty_state(commands: &mut Commands, text: &str) -> Entity {
         },
         children![(
             Text::new(text),
-            TextFont::from_font_size(EMPTY_TEXT_FONT_SIZE),
+            TextRole::Body.font(EMPTY_TEXT_FONT_SIZE),
             TextColor::from(MUTED_TEXT_COLOR),
             TextLayout::no_wrap(),
         )],
@@ -601,7 +621,7 @@ fn update_research_cost_chips(
     mut chips: Query<(&ResearchCostChip, &mut CostChip)>,
 ) {
     for (research_cost_chip, mut chip) in chips.iter_mut() {
-        // No runtime yet — the research was never started, full price is owed.
+        // No runtime yet — the chip retains its spawn-time full price.
         let Ok(runtime) = runtimes.get(research_cost_chip.research) else { continue };
 
         let cost = &research_cost_chip.cost;

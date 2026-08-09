@@ -1,9 +1,12 @@
 use bevy::prelude::*;
 
-use research::prelude::ResearchRuntime;
+use research::prelude::{Research, ResearchRuntime};
 use research::research_bar::{BuilderResearchBar, ResearchBar};
+use resources::prelude::Stock;
 use states::prelude::{GameState, UiInteraction};
-use widgets::prelude::FillBar;
+use widgets::prelude::ProgressBar;
+
+use crate::process::reachable_fraction;
 
 pub(crate) struct ResearchBarPlugin;
 impl Plugin for ResearchBarPlugin {
@@ -16,9 +19,9 @@ impl Plugin for ResearchBarPlugin {
     }
 }
 
-/// Expands the `BuilderResearchBar` into the underlying `BuilderFillBar`
-/// plus the runtime `ResearchBar` binding. The FillBar expansion observer
-/// handles building the track + fill tree.
+/// Expands the `BuilderResearchBar` into the underlying `BuilderProgressBar`
+/// plus the runtime `ResearchBar` binding. The ProgressBar expansion observer
+/// handles creating the material asset.
 fn on_builder_add_spawn_research_bar(
     trigger: On<Add, BuilderResearchBar>,
     mut commands: Commands,
@@ -30,25 +33,40 @@ fn on_builder_add_spawn_research_bar(
     commands.entity(entity)
         .remove::<BuilderResearchBar>()
         .insert((
-            builder.builder_fill_bar,
+            builder.builder_progress_bar,
             builder.research_bar,
+            Node {
+                width: Val::Percent(100.),
+                height: Val::Percent(100.),
+                ..default()
+            },
         ));
 }
 
-/// Writes `ResearchRuntime.progress` into each bar's `fill_fraction`. Gated
-/// to the open panel — a bar never has to be correct while closed.
+/// Writes each bar's fraction, reachable mark and stall state from the research
+/// it is bound to. Gated to the open panel — a bar never has to be correct
+/// while closed.
 ///
 /// No `Changed<ResearchRuntime>` filter: progress accumulates while the
 /// panel is closed, and a `Changed` filter would miss it because the change
 /// fired on a frame the system didn't run.
 fn sync_research_bars(
-    runtimes: Query<&ResearchRuntime>,
-    mut bars: Query<(&mut FillBar, &ResearchBar)>,
+    researches: Query<(&Research, &ResearchRuntime)>,
+    stock: Res<Stock>,
+    mut bars: Query<(&mut ProgressBar, &ResearchBar)>,
 ) {
-    for (mut fill_bar, research_bar) in bars.iter_mut() {
-        let Ok(runtime) = runtimes.get(research_bar.research) else { continue };
-        if fill_bar.fill_fraction != runtime.progress {
-            fill_bar.fill_fraction = runtime.progress;
+    for (mut progress_bar, research_bar) in bars.iter_mut() {
+        let Ok((research, runtime)) = researches.get(research_bar.research) else { continue };
+
+        let reachable = reachable_fraction(runtime.progress, &research.cost, &stock);
+
+        // Written through `bypass_change_detection` and marked by hand: this runs every
+        // frame the panel is open, and only the active research's bar has anything new.
+        // Marking all of them would rewrite every bar's material asset every frame.
+        let bar = progress_bar.bypass_change_detection();
+        let moved = bar.set_fraction(runtime.progress) | bar.set_reachable(reachable);
+        if moved {
+            progress_bar.set_changed();
         }
     }
 }

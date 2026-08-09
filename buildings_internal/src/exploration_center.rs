@@ -56,8 +56,8 @@ use units::{
 };
 use viewport::{BuilderPreviewCamera, OwnedCameras};
 use widgets::{
+    common::utils::recolor_background_on,
     prelude::{BuilderFillBar, FillAxis, FillBar, Tooltips},
-    utils::recolor_background_on,
 };
 
 use crate::{

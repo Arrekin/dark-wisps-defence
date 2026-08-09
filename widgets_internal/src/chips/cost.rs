@@ -6,7 +6,7 @@ use widgets::prelude::{
     BuilderChip, BuilderCostChip, ChipChildren, CostChip, CostChipVisualFullPrice,
     CostChipVisualUnitAvailable, TooltipBundle,
 };
-use widgets::utils::set_text_if_changed;
+use widgets::common::utils::set_text_if_changed;
 
 use super::chip::CHIP_FONT_SIZE;
 

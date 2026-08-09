@@ -15,11 +15,14 @@ use bevy::prelude::*;
 use game_core::prelude::DisplayName;
 use research::prelude::{ResearchActive, ResearchUISelected};
 use states::prelude::UiInteraction;
-use widgets::utils::set_ui_free_on;
+use widgets::{
+    common::utils::set_ui_free_on,
+    prelude::{BuilderCloseButton, TextRole},
+};
 
 use super::{
     detail_view::{BuilderResearchDetailView, ResearchDetailViewSource},
-    tile::{ResearchTile, ResearchTileOf, ResearchTileSelected, ResearchTilesNeedOrdering},
+    tile::{ResearchTileOf, ResearchTilesNeedOrdering},
 };
 
 pub(crate) struct ResearchPanelPlugin;
@@ -29,7 +32,6 @@ impl Plugin for ResearchPanelPlugin {
             .add_systems(Startup, spawn_research_panel)
             .add_systems(OnEnter(UiInteraction::ResearchPanel), show_panel)
             .add_systems(OnExit(UiInteraction::ResearchPanel), hide_panel)
-            .add_observer(on_research_tile_selected_move_selection)
             .add_observer(on_research_tiles_need_ordering);
     }
 }
@@ -39,7 +41,6 @@ impl Plugin for ResearchPanelPlugin {
 // ============================================================================
 
 const PANEL_PADDING: f32 = 24.0;
-const PANEL_BACKGROUND: Color = Color::linear_rgba(0.08, 0.08, 0.12, 1.);
 const PANEL_Z_INDEX: i32 = 100;
 
 const HEADER_HEIGHT: f32 = 48.0;
@@ -47,8 +48,6 @@ const HEADER_FONT_SIZE: f32 = 28.0;
 const HEADER_COLOR: Color = Color::linear_rgba(0.9, 0.9, 0.9, 1.);
 
 const CLOSE_BUTTON_SIZE: f32 = 28.0;
-const CLOSE_BUTTON_FONT_SIZE: f32 = 16.0;
-const CLOSE_BUTTON_BACKGROUND: Color = Color::linear_rgba(0.3, 0.3, 0.3, 1.);
 
 const BAND_HEIGHT: f32 = 260.0;
 const BAND_COLUMN_GAP: f32 = 16.0;
@@ -59,6 +58,14 @@ const ACTIVE_VIEW_TITLE: &str = "Active research";
 const ACTIVE_VIEW_EMPTY_TEXT: &str = "Nothing is being researched.";
 const SELECTED_VIEW_TITLE: &str = "Selected";
 const SELECTED_VIEW_EMPTY_TEXT: &str = "Select a research tile to inspect it.";
+
+/// Root of the panel's value ladder: almost black, so the card and tiles raised on top of
+/// it read as steps up rather than a flat wash. `Srgba::rgb_u8` is not `const`, so this is
+/// a function rather than joining the constants above.
+fn panel_background() -> Color {
+    // #03040A abyss background
+    Color::Srgba(Srgba::rgb_u8(0x03, 0x04, 0x0A))
+}
 
 // ============================================================================
 // COMPONENTS
@@ -78,7 +85,6 @@ pub(crate) struct ResearchTileGrid;
 
 /// Marker on the close button.
 #[derive(Component)]
-#[require(Button, Pickable)]
 struct ResearchPanelCloseButton;
 
 // ============================================================================
@@ -102,7 +108,7 @@ fn spawn_research_panel(mut commands: Commands) {
             display: Display::None,
             ..default()
         },
-        BackgroundColor::from(PANEL_BACKGROUND),
+        BackgroundColor::from(panel_background()),
         GlobalZIndex(PANEL_Z_INDEX),
     )).add_children(&[header, band, grid]);
 }
@@ -110,26 +116,18 @@ fn spawn_research_panel(mut commands: Commands) {
 fn spawn_header(commands: &mut Commands) -> Entity {
     let title = commands.spawn((
         Text::new("Research"),
-        TextFont::from_font_size(HEADER_FONT_SIZE),
+        TextRole::Heading.font(HEADER_FONT_SIZE),
         TextColor::from(HEADER_COLOR),
     )).id();
 
     let close_button = commands.spawn((
         ResearchPanelCloseButton,
+        BuilderCloseButton::default(),
         Node {
             width: Val::Px(CLOSE_BUTTON_SIZE),
             height: Val::Px(CLOSE_BUTTON_SIZE),
-            align_items: AlignItems::Center,
-            justify_content: JustifyContent::Center,
             ..default()
         },
-        BackgroundColor::from(CLOSE_BUTTON_BACKGROUND),
-        children![(
-            Text::new("X"),
-            TextFont::from_font_size(CLOSE_BUTTON_FONT_SIZE),
-            TextColor::from(Color::WHITE),
-            TextLayout::no_wrap(),
-        )],
     )).observe(set_ui_free_on::<Pointer<Click>>).id();
 
     commands.spawn(Node {
@@ -180,33 +178,6 @@ fn spawn_tile_grid(commands: &mut Commands) -> Entity {
             ..default()
         },
     )).id()
-}
-
-// ============================================================================
-// SELECTION
-// ============================================================================
-
-/// Moves `ResearchUISelected` to the clicked tile's research. The removal is
-/// queued before the insert, so the view bound to the marker clears and then
-/// repopulates in that order.
-///
-/// Re-clicking the selected tile returns early: moving the marker onto the
-/// research already holding it would still fire both lifecycle events and cost
-/// a full content rebuild for no visible change.
-fn on_research_tile_selected_move_selection(
-    trigger: On<ResearchTileSelected>,
-    mut commands: Commands,
-    tiles: Query<&ResearchTile>,
-    current: Option<Single<Entity, With<ResearchUISelected>>>,
-) {
-    let Ok(tile) = tiles.get(trigger.tile) else { return };
-
-    if let Some(current) = current {
-        let current = current.into_inner();
-        if current == tile.research { return }
-        commands.entity(current).remove::<ResearchUISelected>();
-    }
-    commands.entity(tile.research).insert(ResearchUISelected);
 }
 
 // ============================================================================

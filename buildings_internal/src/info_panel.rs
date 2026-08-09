@@ -11,8 +11,8 @@ use hud::prelude::*;
 use shards::prelude::*;
 use states::prelude::*;
 use widgets::{
+    common::utils::recolor_background_on,
     prelude::{BuilderHealthbar, Healthbar},
-    utils::recolor_background_on,
 };
 
 use crate::common::*;

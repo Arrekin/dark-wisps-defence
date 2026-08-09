@@ -46,6 +46,12 @@ pub enum ResearchState {
     Completed,
 }
 
+impl ResearchState {
+    pub fn is_completed(self) -> bool {
+        matches!(self, Self::Completed)
+    }
+}
+
 // ---- Marker components (query-filter surface; never inserted directly) ----
 
 /// Inserted by the marker-swap observer when `ResearchState::Available` is
