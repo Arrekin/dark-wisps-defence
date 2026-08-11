@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use almanach::prelude::{AlmanachAppExt, ResearchSpawnFn};
-use persistence::prelude::{AppGameLoadSaveExtension, CollectSave};
+use persistence::{creating_new_map, prelude::{AppGameLoadSaveExtension, CollectSave}};
+use research::prelude::SeedResearches;
 use states::prelude::{GameState, MapLoadingStage};
 
 use definitions::shards::*;
@@ -28,12 +29,15 @@ impl Plugin for ResearchPlugin {
             .add_observer(core::on_add_research_state_spawn_tile)
             .add_observer(core::on_insert_research_state_sync_markers)
             .add_observer(core::on_insert_display_icon_fire_research_display_data_updated)
+            .add_observer(core::on_seed_researches_spawn_missing)
             .add_observer(process::on_set_active_research)
             .add_observer(process::on_stop_research)
             .add_observer(process::on_research_finished)
             .add_systems(Update, process::research_tick.run_if(in_state(GameState::Running)))
             .add_systems(CollectSave, save_load::collect_researches)
             .register_loader(MapLoadingStage::SpawnMapElements, "researches", save_load::load_researches)
+            // New maps need every catalog research available for scenario authoring.
+            .add_systems(OnEnter(MapLoadingStage::SpawnMapElements), (|mut commands: Commands| { commands.trigger(SeedResearches); }).run_if(creating_new_map))
             .add_plugins(ui::ResearchUiPlugin);
     }
 }

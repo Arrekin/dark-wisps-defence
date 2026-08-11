@@ -8,7 +8,7 @@ pub mod save;
 pub use rusqlite;
 
 pub use crate::common::run_migrations_on_paths;
-pub use crate::load::{GameMapList, LoadGameSignal, LoadMapConfig};
+pub use crate::load::{GameMapList, LoadGameSignal, LoadMapConfig, MapSource, creating_new_map};
 pub use crate::save::{SaveContext, SaveGameSignal, SaveTarget};
 
 pub mod prelude {

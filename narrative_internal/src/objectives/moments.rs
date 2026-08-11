@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use game_core::prelude::moment_attach_self_trigger_to_parent;
+use game_core::moments::moment_attach_self_trigger_to_parent;
 use narrative::prelude::{
     MomentObjectiveFailed, MomentObjectiveSatisfied, ObjectiveFailedEvent,
     ObjectiveSatisfiedEvent,

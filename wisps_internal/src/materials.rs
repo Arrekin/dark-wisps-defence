@@ -6,7 +6,7 @@ use bevy::{
 };
 use nanorand::Rng;
 
-use game_core::prelude::*;
+use game_core::motion::Locomotion;
 use visuals::prelude::*;
 
 pub(crate) trait WispMaterial: Material2d {

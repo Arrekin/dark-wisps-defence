@@ -8,7 +8,7 @@ use bevy::{
     sprite_render::{Material2d, MeshMaterial2d},
 };
 
-use grids::prelude::MapInfo;
+use game_core::prelude::MapInfo;
 
 pub struct OverlaysPlugin;
 impl Plugin for OverlaysPlugin {

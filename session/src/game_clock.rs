@@ -12,6 +12,7 @@ impl Plugin for GameClockPlugin {
     fn build(&self, app: &mut App) {
         app
             .init_resource::<GameClock>()
+            .add_systems(OnEnter(MapLoadingStage::Init), |mut commands: Commands| { commands.insert_resource(GameClock::default()); })
             .add_systems(PreUpdate, GameClock::advance.run_if(in_state(GameState::Running)))
             .add_systems(CollectSave, collect_game_clock)
             .register_loader(MapLoadingStage::LoadResources, "game_clock", load_game_clock)

@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 
-use grids::{force_fields::ForceFieldGrid, prelude::*};
+use game_core::prelude::MapInfo;
+use grids::force_fields::ForceFieldGrid;
 use states::prelude::MapLoadingStage;
 
 pub struct ForceFieldGridPlugin;

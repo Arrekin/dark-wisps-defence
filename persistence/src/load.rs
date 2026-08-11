@@ -221,7 +221,21 @@ impl Command for InitLoadRunner {
 /// and would be invisible to `spawn_stage_loaders` running `.after()` it in the
 /// same schedule.
 pub(crate) fn build_entity_id_map(world: &mut World) {
-    let map_path = world.resource::<LoadMapConfig>().map_path.clone();
+    let config = world.resource::<LoadMapConfig>().clone();
+
+    let map_path = match &config.source {
+        // New map: no DB, no entities, no rows.
+        MapSource::New(_) => {
+            world.insert_resource(EntityIdMap(Arc::new(HashMap::new())));
+            world.resource_mut::<LoadProgress>().total_rows = 0;
+            Log::debug()
+                .dev()
+                .tag(Tag::GameLoad)
+                .message("EntityIdMap population skipped");
+            return;
+        }
+        MapSource::File(map_path) => map_path.clone(),
+    };
     let registry = world.resource::<GameLoadRegistry>();
 
     // Compute progress totals by summing COUNT(*) over every registered table
@@ -280,6 +294,13 @@ pub(crate) fn spawn_stage_loaders(
     load_config: Res<LoadMapConfig>,
     progress: Res<LoadProgress>,
 ) {
+    let map_path = match &load_config.source {
+        // New map: no loaders to spawn. The stage machine advances on its own
+        // (zero tasks ⇒ one stage per frame).
+        MapSource::New(_) => return,
+        MapSource::File(map_path) => map_path.clone(),
+    };
+
     let target_stage = stage.get();
     let Some(descriptors) = registry.loaders.get(target_stage) else {
         return;
@@ -288,7 +309,6 @@ pub(crate) fn spawn_stage_loaders(
         return;
     }
 
-    let map_path = load_config.map_path.clone();
     let entity_map = entity_id_map.0.clone();
     let sender = runner.sender.clone();
     let done_rows = progress.done_rows.clone();
@@ -422,20 +442,49 @@ impl GameMapList {
     }
 }
 
+/// Where the map being loaded comes from.
+///
+/// `File` loads an existing `.dwd` file.
+/// `New` builds a blank map from `MapInfo` without reading or creating a file.
+#[derive(Clone)]
+pub enum MapSource {
+    File(String),
+    New(MapInfo),
+}
+
 #[derive(Resource, Clone)]
 pub struct LoadMapConfig {
-    pub map_path: String,
+    pub source: MapSource,
     pub game_start_state: GameState,
     pub admin_mode: AdminMode,
 }
 impl LoadMapConfig {
-    pub fn new(map_path: impl Into<String>) -> Self {
+    /// Load an existing `.dwd` file. Running + admin disabled — the normal play path.
+    pub fn file(map_path: impl Into<String>) -> Self {
         Self {
-            map_path: map_path.into(),
+            source: MapSource::File(map_path.into()),
             game_start_state: GameState::Running,
             admin_mode: AdminMode::Disabled,
         }
     }
+
+    /// Build a blank map in memory. Paused + admin enabled — ready to author.
+    pub fn new_map(map_info: MapInfo) -> Self {
+        Self {
+            source: MapSource::New(map_info),
+            game_start_state: GameState::Paused,
+            admin_mode: AdminMode::Enabled,
+        }
+    }
+}
+
+/// True while the in-flight map build is a fresh map rather than a file load.
+///
+/// Only valid inside the map build window — `OnEnter(Init)` through
+/// `OnEnter(Ready)` inclusive. `LoadMapConfig` does not exist outside it, so
+/// registering this condition outside that window panics when it runs.
+pub fn creating_new_map(config: Res<LoadMapConfig>) -> bool {
+    matches!(config.source, MapSource::New(_))
 }
 
 #[derive(Event)]
@@ -443,7 +492,7 @@ pub struct LoadGameSignal(pub LoadMapConfig);
 impl LoadGameSignal {
     fn emit(mut commands: Commands) {
         Log::debug().dev().tag(Tag::GameLoad).message("Triggering load signal");
-        commands.trigger(LoadGameSignal(LoadMapConfig::new("test_save.dwd")));
+        commands.trigger(LoadGameSignal(LoadMapConfig::file("test_save.dwd")));
     }
     fn on_trigger(
         trigger: On<LoadGameSignal>,
@@ -454,14 +503,23 @@ impl LoadGameSignal {
         map_bound_entities: Query<Entity, With<MapBound>>,
     ) {
         let config = trigger.event().0.clone();
-        Log::info().dev().tag(Tag::GameLoad).message(format!("Loading '{}'", config.map_path));
 
-        // Run migrations synchronously on main thread before parallel loading starts
-        with_db_connection(&config.map_path, |conn| {
-            //conn.execute("DELETE FROM refinery_schema_history;", [])?; // Used to clear refinery migrations history, uncomment when in need.
-            db_migrations::migrations::runner().run(conn)?;
-            Ok(())
-        }).expect("Failed to run migrations on load");
+        match &config.source {
+            MapSource::File(map_path) => {
+                Log::info().dev().tag(Tag::GameLoad).message(format!("Loading '{map_path}'"));
+                // Run migrations synchronously on main thread before parallel loading starts.
+                // Skipped for New: rusqlite::Connection::open *creates* the file, which would
+                // litter maps/<name>.dwd on disk before the user has saved anything.
+                with_db_connection(map_path, |conn| {
+                    //conn.execute("DELETE FROM refinery_schema_history;", [])?; // Used to clear refinery migrations history, uncomment when in need.
+                    db_migrations::migrations::runner().run(conn)?;
+                    Ok(())
+                }).expect("Failed to run migrations on load");
+            }
+            MapSource::New(map_info) => {
+                Log::info().dev().tag(Tag::GameLoad).message(format!("Creating new map '{}'", map_info.name));
+            }
+        }
 
         // Set up the load runner (channel, LoadRunner, fresh LoadProgress)
         // before state transitions. Runs at the observer's sync point — before

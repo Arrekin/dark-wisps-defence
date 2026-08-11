@@ -9,7 +9,8 @@ use bevy::prelude::*;
 use bevy_egui::{EguiPrimaryContextPass, egui};
 use strum::{AsRefStr, EnumIter, IntoEnumIterator};
 
-use game_core::prelude::ShardType;
+use game_core::prelude::{MapInfo, ShardType};
+use persistence::{LoadGameSignal, LoadMapConfig};
 use shards::prelude::*;
 use states::AdminMode;
 
@@ -42,7 +43,36 @@ pub struct EditorState {
     pub selected_research: Option<Entity>,
     pub scenario_filename: Option<String>,
     pub pending_overwrite_confirm: Option<String>,
+    pub new_map_form: NewMapForm,
 }
+impl EditorState {
+    /// Reset editor state for a freshly loaded map.
+    fn reset_for_new_map(&mut self, name: &str) {
+        self.selected_summoning = None;
+        self.selected_objective = None;
+        self.selected_research = None;
+        self.scenario_filename = Some(name.to_string());
+        self.pending_overwrite_confirm = None;
+        self.new_map_form.pending_confirm = false;
+    }
+}
+
+pub struct NewMapForm {
+    pub name: String,
+    pub width: i32,
+    pub height: i32,
+    pub pending_confirm: bool,
+}
+impl Default for NewMapForm {
+    fn default() -> Self {
+        Self { name: String::new(), width: MAP_WIDTH_DEFAULT, height: MAP_HEIGHT_DEFAULT, pending_confirm: false }
+    }
+}
+
+const MAP_SIZE_MIN: i32 = 20;
+const MAP_SIZE_MAX: i32 = 300;
+const MAP_WIDTH_DEFAULT: i32 = 150;
+const MAP_HEIGHT_DEFAULT: i32 = 100;
 
 #[derive(Default, Clone, Copy, PartialEq, Eq, EnumIter, AsRefStr)]
 pub enum EditorTab {
@@ -86,8 +116,16 @@ fn editor_ui(world: &mut World) {
         });
 }
 
+fn create_new_map(world: &mut World, name: &str, width: i32, height: i32) {
+    let map_info = MapInfo::new(name, width, height);
+    world.commands().trigger(LoadGameSignal(LoadMapConfig::new_map(map_info)));
+    world.resource_mut::<EditorState>().reset_for_new_map(name);
+}
+
 fn tab_general(ui: &mut egui::Ui, world: &mut World) {
-    ui.label("General settings");
+    // Read-only map info header
+    let info = world.resource::<MapInfo>();
+    ui.label(format!("Map: {}  ({} × {})", info.name, info.grid_width, info.grid_height));
 
     ui.separator();
 
@@ -137,6 +175,50 @@ fn tab_general(ui: &mut egui::Ui, world: &mut World) {
             }
             if ui.button("Cancel").clicked() {
                 world.resource_mut::<EditorState>().pending_overwrite_confirm = None;
+            }
+        });
+    }
+
+    ui.separator();
+
+    ui.heading("New Map");
+
+    let pending_confirm = world.resource::<EditorState>().new_map_form.pending_confirm;
+    let (name, width, height) = {
+        let mut editor = world.resource_mut::<EditorState>();
+        let form = &mut editor.new_map_form;
+        ui.horizontal(|ui| {
+            ui.label("Name:");
+            ui.add_enabled_ui(!pending_confirm, |ui| {
+                ui.text_edit_singleline(&mut form.name);
+            });
+        });
+        ui.horizontal(|ui| {
+            ui.label("Size:");
+            ui.add_enabled_ui(!pending_confirm, |ui| {
+                ui.add(egui::DragValue::new(&mut form.width).range(MAP_SIZE_MIN..=MAP_SIZE_MAX).prefix("W "));
+                ui.add(egui::DragValue::new(&mut form.height).range(MAP_SIZE_MIN..=MAP_SIZE_MAX).prefix("H "));
+            });
+        });
+        (form.name.clone(), form.width, form.height)
+    };
+    let name_valid = !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
+
+    if pending_confirm {
+        let current_name = world.resource::<MapInfo>().name.clone();
+        ui.horizontal(|ui| {
+            ui.colored_label(egui::Color32::RED, format!("Abandon '{}' and create a new map?", current_name));
+            if ui.button("Yes").clicked() {
+                create_new_map(world, &name, width, height);
+            }
+            if ui.button("Cancel").clicked() {
+                world.resource_mut::<EditorState>().new_map_form.pending_confirm = false;
+            }
+        });
+    } else {
+        ui.add_enabled_ui(name_valid, |ui| {
+            if ui.button("Create New Map").clicked() {
+                world.resource_mut::<EditorState>().new_map_form.pending_confirm = true;
             }
         });
     }

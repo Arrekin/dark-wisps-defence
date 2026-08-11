@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
-use game_core::prelude::{GridCoords, GridImprint, IsOperational};
-use grids::{emissions::{EmissionsEnergyRecalculateAll, EmissionsGrid, EmitterChangedEvent, EmitterEnergy}, obstacles::ObstacleGrid, prelude::MapInfo, search::flooding::flood_emissions, EmissionsGridSpreadAffector};
+use game_core::prelude::{GridCoords, GridImprint, IsOperational, MapInfo};
+use grids::{emissions::{EmissionsEnergyRecalculateAll, EmissionsGrid, EmitterChangedEvent, EmitterEnergy}, obstacles::ObstacleGrid, search::flooding::flood_emissions, EmissionsGridSpreadAffector};
 use states::prelude::MapLoadingStage;
 
 fn on_add_emitter_energy_register_emitter(

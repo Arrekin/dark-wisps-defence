@@ -13,10 +13,10 @@ use bevy::{
 use almanach::prelude::Almanach;
 use alteration::modifiers::prelude::ModifierType;
 use buildings::prelude::Tower;
-use game_core::prelude::{BuildingType, GridCoords, GridImprint, MapObject, ZDepth};
+use game_core::prelude::{BuildingType, GridCoords, GridImprint, MapInfo, MapObject, ZDepth};
 use grids::{
     placement::{GridObjectPlacer, GridPlacerChanged},
-    prelude::{GridVersion, MapInfo},
+    prelude::GridVersion,
     search::common::{CARDINAL_DIRECTIONS, VISITED_GRID},
     tower_ranges::TowerRangesGrid,
 };

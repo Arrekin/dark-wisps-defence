@@ -9,7 +9,6 @@ pub(crate) mod wisps;
 pub(crate) mod force_fields;
 pub(crate) mod emissions;
 pub(crate) mod transform_sync;
-pub(crate) mod map_info;
 pub(crate) mod placement;
 
 pub struct GridsPlugin;
@@ -23,7 +22,6 @@ impl Plugin for GridsPlugin {
             tower_ranges::TowerRangesPlugin,
             force_fields::ForceFieldGridPlugin,
             transform_sync::GridTransformSyncPlugin,
-            map_info::MapInfoPlugin,
             placement::GridObjectPlacerPlugin,
         ));
     }

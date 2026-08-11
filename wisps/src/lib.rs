@@ -2,7 +2,7 @@ use bevy::prelude::*;
 
 use alteration::effects::prelude::EffectVisualState;
 use alteration::modifiers::prelude::{AttackRange, IncomingDamageMultiplier, MaxIntegrityPoints, ModifierBank, MovementSpeed};
-use game_core::prelude::{FieldAffectable, GridImprint, Locomotion, MapBound, ZDepth};
+use game_core::{motion::Locomotion, prelude::{FieldAffectable, GridImprint, MapBound, ZDepth}};
 use grids::prelude::{GridPath, GridVersion};
 
 pub mod summoning;

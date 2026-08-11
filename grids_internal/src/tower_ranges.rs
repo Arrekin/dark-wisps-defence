@@ -2,10 +2,9 @@ use bevy::prelude::*;
 
 use alteration::modifiers::prelude::AttackRange;
 use buildings::prelude::Tower;
-use game_core::prelude::{GridCoords, GridImprint, Property};
+use game_core::prelude::{GridCoords, GridImprint, MapInfo, Property};
 use grids::{
     emissions::FloodTowerRangeMode,
-    prelude::*,
     search::flooding::flood_tower_range,
     tower_ranges::TowerRangesGrid,
 };

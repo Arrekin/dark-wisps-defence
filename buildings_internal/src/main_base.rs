@@ -17,10 +17,12 @@ use grids::{
 };
 use logging::prelude::*;
 use persistence::{
+    creating_new_map,
     prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveWriter},
     rusqlite,
 };
 use states::prelude::*;
+use viewport::MainCamera;
 
 use crate::common::*;
 
@@ -33,9 +35,39 @@ impl Plugin for MainBasePlugin {
             .add_observer(BuilderMainBase::on_builder_add_spawn_main_base)
             .add_systems(CollectSave, collect_main_bases)
             .register_loader(MapLoadingStage::SpawnMapElements, "main_bases", load_main_bases)
+            .add_systems(OnEnter(MapLoadingStage::SpawnMapElements), seed_main_base.run_if(creating_new_map))
+            .add_systems(OnEnter(MapLoadingStage::Ready), center_camera_on_main_base)
             .register_building(BuildingType::MainBase, almanach_info)
             ;
     }
+}
+
+/// Spawn one `BuilderMainBase` at map center on a new map.
+fn seed_main_base(mut commands: Commands, map_info: Res<MapInfo>) {
+    let center = GridCoords {
+        x: map_info.grid_width / 2,
+        y: map_info.grid_height / 2,
+    };
+    commands.spawn(BuilderMainBase::new(center));
+}
+
+/// Center the main camera on the `MainBase` at the end of every map build,
+/// falling back to map center when there is no main base.
+fn center_camera_on_main_base(
+    map_info: Res<MapInfo>,
+    main_base: Option<Single<&GlobalTransform, With<MainBase>>>,
+    camera: Single<&mut Transform, With<MainCamera>>,
+) {
+    let (x, y) = match main_base {
+        Some(base) => {
+            let translation = base.into_inner().translation();
+            (translation.x, translation.y)
+        }
+        None => (map_info.world_width / 2.0, map_info.world_height / 2.0),
+    };
+    let translation = &mut camera.into_inner().translation;
+    translation.x = x;
+    translation.y = y;
 }
 
 

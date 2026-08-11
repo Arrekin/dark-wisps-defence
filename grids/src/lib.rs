@@ -14,7 +14,6 @@ pub mod wisps;
 pub mod force_fields;
 pub mod visited;
 pub mod emissions;
-pub mod map_info;
 pub mod placement;
 pub mod search;
 
@@ -79,6 +78,5 @@ pub mod prelude {
         GridVersion,
         ObstacleGridObject,
     };
-    pub use super::map_info::MapInfo;
     pub use super::obstacles::{Field, ObstacleGrid, ReservedCoords};
 }

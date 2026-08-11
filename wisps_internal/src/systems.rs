@@ -2,7 +2,7 @@ use bevy::prelude::*;
 
 use alteration::modifiers::prelude::*;
 use buildings::prelude::*;
-use game_core::prelude::*;
+use game_core::{motion::Locomotion, prelude::*};
 use grids::{emissions::EmissionsGrid, energy_supply::EnergySupplyGrid, obstacles::GridStructureType, prelude::*, search::pathfinding::path_find_energy_beckon, wisps::WispsGrid};
 use resources::prelude::*;
 use visuals::prelude::*;

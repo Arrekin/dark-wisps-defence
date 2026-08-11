@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use game_core::prelude::{BuildingType, GridCoords, GridImprint};
+use game_core::prelude::{BuildingType, GridCoords, GridImprint, MapInfo};
 use grids::{obstacles::GridStructureType, prelude::*};
 use states::prelude::MapLoadingStage;
 

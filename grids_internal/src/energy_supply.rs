@@ -1,10 +1,9 @@
 use bevy::prelude::*;
 
 use alteration::modifiers::prelude::EnergySupplyRange;
-use game_core::prelude::{DisabledByPlayer, GridCoords, GridImprint};
+use game_core::prelude::{DisabledByPlayer, GridCoords, GridImprint, MapInfo};
 use grids::{
     energy_supply::{EnergySupplyGrid, FloodEnergySupplyMode, GeneratorEnergy, SupplierChange, SupplierChangedEvent, SupplierEnergy},
-    prelude::*,
     search::flooding::{flood_energy_supply, flood_power_coverage},
     EnergySupplySystems,
 };

@@ -10,10 +10,10 @@ use bevy::{
     sprite_render::{AlphaMode2d, Material2d, Material2dPlugin, MeshMaterial2d},
 };
 
-use game_core::prelude::ZDepth;
+use game_core::prelude::{MapInfo, ZDepth};
 use grids::{
     emissions::{EmissionsGrid, EmissionsType},
-    prelude::{GridVersion, MapInfo},
+    prelude::GridVersion,
 };
 use states::prelude::MapLoadingStage;
 

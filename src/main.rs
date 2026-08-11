@@ -1,6 +1,6 @@
 use bevy::{ecs::message::Messages, prelude::*};
 
-use persistence::{GameMapList, LoadGameSignal, LoadMapConfig, run_migrations_on_paths};
+use persistence::{GameMapList, LoadGameSignal, LoadMapConfig, MapSource, run_migrations_on_paths};
 use states::{AdminMode, prelude::*};
 
 fn main() {
@@ -53,7 +53,7 @@ enum LaunchAction {
 impl Default for LaunchAction {
     fn default() -> Self {
         LaunchAction::StartMap(LoadMapConfig {
-            map_path: "maps/test_map.dwd".into(),
+            source: MapSource::File("maps/test_map.dwd".into()),
             game_start_state: GameState::Running,
             admin_mode: AdminMode::Disabled,
         })

@@ -159,6 +159,21 @@ mutation. `fraction()` drives a determinate progress bar (approximate by design)
 **Cancellation:** a new `LoadGameSignal` during an in-flight load flags the old runner's cancel
 `AtomicBool` and replaces it; in-flight loaders drain harmlessly (`push` no-ops when cancelled).
 
+### New Map Source
+
+`LoadMapConfig` carries a `MapSource` enum: `File(String)` (load from `.dwd`) or `New(MapInfo)`
+(build a blank map in memory). The new-map path reuses the same pipeline — same stages, same
+`LoadGameSignal`, same `on_map_load_ready` — with three guards that skip disk I/O:
+
+1. **`LoadGameSignal::on_trigger`** skips synchronous migrations for `New`. `rusqlite::Connection::open`
+   creates the file; running migrations against a path that doesn't exist yet would litter
+   `maps/<name>.dwd` on disk before the user has saved anything.
+
+2. **`build_entity_id_map`** inserts an empty `EntityIdMap` and sets `LoadProgress.total_rows = 0`,
+   then returns. No `entities` table to read, no rows to pre-allocate.
+
+3. **`spawn_stage_loaders`** early-returns. No loaders to spawn, no IO tasks, no channel traffic.
+
 ### Writing a loader
 
 ```rust
@@ -295,9 +310,9 @@ saves are corrupted by this — for released builds, don't.
    dropped columns simply absent).
 2. Use `CREATE TABLE IF NOT EXISTS` everywhere so V1 is idempotent on existing databases.
 3. Delete the later migration files.
-4. Clear refinery metadata per save so V1 re-runs (`DELETE FROM refinery_schema_history;` — a
-   commented helper exists in `LoadGameSignal::on_trigger`, and `run_migrations_on_paths` supports
-   a rebuild mode).
+4. Set `LaunchAction::RebuildSQLMigrationsMetadata` as the default launch action in `src/main.rs`.
+   It clears `refinery_schema_history` and re-runs V1 on every `.dwd` file, then exits. Run the
+   app once, then switch back to `LaunchAction::StartMap`.
 
 Since all saves already have the final schema, re-running V1 with `IF NOT EXISTS` is a data no-op.
 

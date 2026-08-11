@@ -1,20 +1,19 @@
-use std::collections::HashSet;
 use std::time::Duration;
 
 use bevy::prelude::*;
 use bevy_egui::egui;
 
-use almanach::prelude::{Almanach, ResearchSpawnFn};
+use almanach::prelude::Almanach;
 use game_core::prelude::{ContentId, DisplayDescription, DisplayIconSwitcher, DisplayName};
 use outcomes::prelude::*;
-use research::prelude::{Research, ResearchState};
+use research::prelude::{Research, ResearchState, SeedResearches};
 
 use super::EditorState;
 
 pub fn tab_research(ui: &mut egui::Ui, world: &mut World) {
     ui.horizontal(|ui| {
         if ui.button("Seed Missing").clicked() {
-            seed_missing(world);
+            world.commands().trigger(SeedResearches);
         }
     });
 
@@ -181,26 +180,6 @@ fn ui_outcomes_section(ui: &mut egui::Ui, world: &mut World, research: Entity) {
     if let Some(index) = clicked {
         let registry = world.resource::<OutcomeKindRegistry>();
         (registry.entries[index].spawn)(&mut world.commands(), research);
-    }
-}
-
-/// Spawns disabled defaults for every catalog research the map lacks.
-fn seed_missing(world: &mut World) {
-    let existing: HashSet<ContentId> = {
-        let mut query = world.query_filtered::<&ContentId, With<Research>>();
-        query.iter(world).cloned().collect()
-    };
-    let to_spawn: Vec<(ContentId, ResearchSpawnFn)> = {
-        let almanach = world.resource::<Almanach>();
-        almanach
-            .researches
-            .iter()
-            .filter(|(id, _)| !existing.contains(*id))
-            .map(|(id, fn_ptr)| (id.clone(), *fn_ptr))
-            .collect()
-    };
-    for (id, spawn_fn) in to_spawn {
-        spawn_fn(&mut world.commands(), &id);
     }
 }
 

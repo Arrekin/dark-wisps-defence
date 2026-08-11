@@ -2,6 +2,11 @@ use bevy::prelude::*;
 
 use resources::prelude::ResourceType;
 
+/// Trigger seeding of every catalog research not yet on the map. Used by the
+/// new-map build path and the editor's "Seed Missing" button.
+#[derive(Event, Clone, Copy, Debug)]
+pub struct SeedResearches;
+
 /// Start or switch the active research. Parks the incumbent (back to
 /// `Available`, progress retained) and sets the target `Active`. Only an
 /// `Available` research can be started — one with no state cannot be targeted.

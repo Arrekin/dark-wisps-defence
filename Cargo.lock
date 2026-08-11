@@ -2850,6 +2850,8 @@ dependencies = [
  "bevy",
  "game_core",
  "grids",
+ "persistence",
+ "states",
 ]
 
 [[package]]

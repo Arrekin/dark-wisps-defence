@@ -142,7 +142,7 @@ impl MapEntryButton {
         let entity = trigger.entity;
         let Ok(entry) = entries.get(entity) else { return; };
         Log::debug().dev().tag(Tag::Ui).message(format!("Map selected: {}", entry.name));
-        commands.trigger(LoadGameSignal(LoadMapConfig::new(format!("maps/{}.dwd", entry.name))));
+        commands.trigger(LoadGameSignal(LoadMapConfig::file(format!("maps/{}.dwd", entry.name))));
     }
 }
 

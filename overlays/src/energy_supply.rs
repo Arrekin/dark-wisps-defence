@@ -13,11 +13,11 @@ use bevy::{
 
 use almanach::prelude::Almanach;
 use alteration::modifiers::prelude::ModifierType;
-use game_core::prelude::{BuildingType, GridCoords, GridImprint, MapObject, ZDepth};
+use game_core::prelude::{BuildingType, GridCoords, GridImprint, MapInfo, MapObject, ZDepth};
 use grids::{
     energy_supply::EnergySupplyGrid,
     placement::{GridObjectPlacer, GridPlacerChanged},
-    prelude::{GridVersion, MapInfo},
+    prelude::GridVersion,
     search::common::{CARDINAL_DIRECTIONS, VISITED_GRID},
 };
 use hud::prelude::FocusedMapObject;

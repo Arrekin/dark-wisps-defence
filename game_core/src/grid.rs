@@ -1,8 +1,31 @@
-use std::{borrow::Borrow, fmt::Debug};
+use std::{borrow::Borrow};
 
 use bevy::prelude::*;
 
+use crate::prelude::SSS;
+
 pub const CELL_SIZE: f32 = 32.;
+
+/// Shared map identity and dimensions, used to size grids and position the camera.
+#[derive(Resource, Default, Clone, SSS)]
+pub struct MapInfo {
+    pub grid_width: i32,
+    pub grid_height: i32,
+    pub world_width: f32,
+    pub world_height: f32,
+    pub name: String,
+}
+impl MapInfo {
+    pub fn new(name: impl Into<String>, grid_width: i32, grid_height: i32) -> Self {
+        Self {
+            grid_width,
+            grid_height,
+            world_width: grid_width as f32 * CELL_SIZE,
+            world_height: grid_height as f32 * CELL_SIZE,
+            name: name.into(),
+        }
+    }
+}
 
 // This component should be replaced in full. Mutate in place only if you are sure.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Component, Hash)]

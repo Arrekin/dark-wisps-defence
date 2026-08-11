@@ -1,6 +1,7 @@
-use bevy::prelude::*;
+use bevy::{platform::collections::HashSet, prelude::*};
 
-use game_core::prelude::DisplayIcon;
+use almanach::prelude::Almanach;
+use game_core::prelude::{ContentId, DisplayIcon};
 use research::prelude::*;
 
 use crate::ui::tile::ResearchTileOf;
@@ -45,5 +46,21 @@ pub(crate) fn on_insert_display_icon_fire_research_display_data_updated(
     let entity = trigger.entity;
     if researches.get(entity).is_ok() {
         commands.trigger(ResearchDisplayDataUpdated { research: entity });
+    }
+}
+
+/// Spawn every catalog research not yet on the map, out of scenario (no
+/// `ResearchState`). Triggered by the `SeedResearches` event.
+pub(crate) fn on_seed_researches_spawn_missing(
+    _trigger: On<SeedResearches>,
+    mut commands: Commands,
+    existing: Query<&ContentId, With<Research>>,
+    almanach: Res<Almanach>,
+) {
+    let existing: HashSet<&ContentId> = existing.iter().collect();
+    for (id, spawn_fn) in almanach.researches.iter() {
+        if !existing.contains(id) {
+            spawn_fn(&mut commands, id);
+        }
     }
 }

@@ -2,6 +2,7 @@ use bevy::prelude::*;
 
 use game_core::prelude::ShardType;
 use persistence::{
+    creating_new_map,
     prelude::{AppGameLoadSaveExtension, CollectSave, LoadContext, SaveWriter},
     rusqlite,
 };
@@ -13,9 +14,10 @@ impl Plugin for ShardBlueprintsPlugin {
     fn build(&self, app: &mut App) {
         app
             .init_resource::<ShardBlueprints>()
+            .add_systems(OnEnter(MapLoadingStage::Init), |mut commands: Commands| { commands.insert_resource(ShardBlueprints::default()); })
             .add_systems(CollectSave, collect_shard_blueprints)
             .register_loader(MapLoadingStage::LoadResources, "shard_blueprints", load_shard_blueprints)
-            .add_systems(OnEnter(MapLoadingStage::Ready), seed_starting_blueprints)
+            .add_systems(OnEnter(MapLoadingStage::LoadResources), seed_starting_blueprints.run_if(creating_new_map))
             ;
     }
 }

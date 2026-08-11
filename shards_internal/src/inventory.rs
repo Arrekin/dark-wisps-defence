@@ -2,6 +2,7 @@ use bevy::prelude::*;
 
 use game_core::prelude::ShardType;
 use persistence::{
+    creating_new_map,
     prelude::{AppGameLoadSaveExtension, CollectSave, LoadContext, SaveWriter},
     rusqlite,
 };
@@ -13,9 +14,10 @@ impl Plugin for ShardInventoryPlugin {
     fn build(&self, app: &mut App) {
         app
             .init_resource::<ShardInventory>()
+            .add_systems(OnEnter(MapLoadingStage::Init), |mut commands: Commands| { commands.insert_resource(ShardInventory::default()); })
             .add_systems(CollectSave, collect_shard_inventory)
             .register_loader(MapLoadingStage::LoadResources, "shard_inventory", load_shard_inventory)
-            .add_systems(OnEnter(MapLoadingStage::Ready), seed_starting_shards)
+            .add_systems(OnEnter(MapLoadingStage::LoadResources), seed_starting_shards.run_if(creating_new_map))
             ;
     }
 }

@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use nanorand::Rng;
 
-use game_core::prelude::*;
+use game_core::{moments::moment_attach_self_trigger_to_parent, prelude::*};
 use grids::prelude::ObstacleGrid;
 use logging::prelude::*;
 use persistence::{
