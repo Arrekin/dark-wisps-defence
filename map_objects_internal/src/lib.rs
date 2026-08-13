@@ -2,6 +2,7 @@ pub(crate) mod walls;
 pub(crate) mod dark_ore;
 pub(crate) mod quantum_field;
 pub(crate) mod quantum_field_post_process;
+pub(crate) mod wall_canvas;
 
 use bevy::prelude::*;
 
@@ -14,6 +15,7 @@ impl Plugin for MapObjectsPlugin {
                 dark_ore::DarkOrePlugin,
                 quantum_field::QuantumFieldPlugin,
                 quantum_field_post_process::QuantumFieldPostProcessPlugin,
+                wall_canvas::WallCanvasPlugin,
                 walls::WallPlugin,
             ));
     }

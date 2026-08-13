@@ -12,6 +12,7 @@ pub(crate) struct MapInfoPlugin;
 impl Plugin for MapInfoPlugin {
     fn build(&self, app: &mut App) {
         app
+            .init_resource::<MapInfo>()
             .add_systems(CollectSave, collect_map_info)
             .register_loader(MapLoadingStage::LoadMapInfo, "map_info", load_map_info)
             .add_systems(OnEnter(MapLoadingStage::LoadMapInfo), insert_new_map_info.run_if(creating_new_map))

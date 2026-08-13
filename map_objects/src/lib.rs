@@ -3,6 +3,8 @@ use bevy::prelude::*;
 use game_core::prelude::{GridCoords, GridImprint, MapBound, ZDepth};
 use grids::{prelude::ObstacleGridObject, EmissionsGridSpreadAffector};
 
+pub mod wall_style;
+
 #[derive(Component)]
 #[require(MapBound, ObstacleGridObject = ObstacleGridObject::DarkOre, ZDepth::OBSTACLE)]
 pub struct DarkOre {
@@ -70,4 +72,5 @@ pub mod prelude {
         QuantumFieldSolved,
         Wall,
     };
+    pub use super::wall_style::{WallStyleKey, WallStyles};
 }

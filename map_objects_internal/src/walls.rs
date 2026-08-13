@@ -5,7 +5,7 @@ use game_core::prelude::{GridCoords, GridImprint, MapObject, SSS};
 use grids::obstacles::GridStructureType;
 use grids::placement::{annotate_non_empty, GridObjectPlacer, GridsCollectionParam, PlacementChannel, PlacementMode, PlacementValidity, PlaceRequest, RemoveRequest, validator_all_empty};
 use logging::prelude::*;
-use map_objects::Wall;
+use map_objects::prelude::{Wall, WallStyleKey, WallStyles};
 use persistence::{
     prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveWriter},
     rusqlite,
@@ -17,7 +17,6 @@ impl Plugin for WallPlugin {
     fn build(&self, app: &mut App) {
         let almanach_info = BuilderWall::almanach_info(app.world().resource::<AssetServer>());
         app
-            .add_systems(Update, pulsate_brightness)
             .add_systems(CollectSave, collect_walls)
             .register_loader(MapLoadingStage::SpawnMapElements, "walls", load_walls)
             .add_observer(BuilderWall::on_builder_add_spawn_wall)
@@ -53,7 +52,7 @@ impl BuilderWall {
     fn on_builder_add_spawn_wall(
         trigger: On<Add, BuilderWall>,
         mut commands: Commands,
-        almanach: Res<Almanach>,
+        styles: Res<WallStyles>,
         builders: Query<&BuilderWall>,
     ) {
         let entity = trigger.entity;
@@ -62,16 +61,11 @@ impl BuilderWall {
         commands.entity(entity)
             .remove::<BuilderWall>()
             .insert((
-            Sprite {
-                image: almanach.walls.sprite.clone(),
-                color: Color::hsla(0., 0., 1.5, 0.9), //for hdr brightness pulsation
-                custom_size: Some(WALL_GRID_IMPRINT.world_size()),
-                ..default()
-            },
             Transform::from_translation(builder.grid_position.to_world_position_centered(WALL_GRID_IMPRINT).extend(0.)),
             builder.grid_position,
             WALL_GRID_IMPRINT,
             Wall,
+            WallStyleKey(styles.default_index()),
         ));
     }
 }
@@ -115,27 +109,6 @@ fn load_walls(ctx: &mut LoadContext) -> rusqlite::Result<()> {
         ctx.insert(entity, BuilderWall::new(grid_position));
     }
     Ok(())
-}
-
-fn pulsate_brightness(
-    time: Res<Time>,
-    mut walls: Query<&mut Sprite, With<Wall>>,
-    mut lightness_rising: Local<bool>,
-    mut shared_lightness: Local<f32>,
-) {
-    let lightness_delta = time.delta_secs() / 10.;
-    *shared_lightness += if *lightness_rising { lightness_delta } else { -lightness_delta };
-    if *shared_lightness > 1.5 {
-        *lightness_rising = false;
-    } else if *shared_lightness < 1. {
-        *lightness_rising = true;
-        *shared_lightness = 1.;
-    }
-    for mut sprite in walls.iter_mut() {
-        if let Color::Hsla(Hsla{lightness, ..}) = &mut sprite.color {
-            *lightness = *shared_lightness;
-        }
-    }
 }
 
 fn on_wall_place_request_do_so(
