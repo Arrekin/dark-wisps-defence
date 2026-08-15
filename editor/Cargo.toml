@@ -19,6 +19,8 @@ research = { workspace = true }
 almanach = { workspace = true }
 outcomes = { workspace = true }
 resources = { workspace = true }
+hud = { workspace = true }
+map_objects = { workspace = true }
 
 [lints]
 workspace = true

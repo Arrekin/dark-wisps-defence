@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use almanach::{Almanach, AlmanachAppExt, WallInfo};
 use game_core::prelude::{GridCoords, GridImprint, MapObject, SSS};
 use grids::obstacles::GridStructureType;
-use grids::placement::{annotate_non_empty, GridObjectPlacer, GridsCollectionParam, PlacementChannel, PlacementMode, PlacementValidity, PlaceRequest, RemoveRequest, validator_all_empty};
+use grids::placement::{annotate_non_empty, GridObjectPlacer, GridsCollectionParam, PlacementChannel, PlacementMode, PlacementStyle, PlacementValidity, PlaceRequest, RemoveRequest, validator_all_empty};
 use logging::prelude::*;
 use map_objects::prelude::{Wall, WallStyleKey, WallStyles};
 use persistence::{
@@ -29,9 +29,28 @@ impl Plugin for WallPlugin {
 
 const WALL_GRID_IMPRINT: GridImprint = GridImprint::Rectangle { width: 1, height: 1 };
 
+/// How a wall's style arrives. The placer knows the position it picked in the style table; a save
+/// file knows the name that position had when it was written. Both resolve to the same
+/// [`WallStyleKey`] when the wall spawns.
+pub(crate) enum WallStyleSource {
+    Key(WallStyleKey),
+    Name(String),
+}
+impl From<PlacementStyle> for WallStyleSource {
+    fn from(style: PlacementStyle) -> Self {
+        Self::Key(style.into())
+    }
+}
+impl From<String> for WallStyleSource {
+    fn from(name: String) -> Self {
+        Self::Name(name)
+    }
+}
+
 #[derive(Component, SSS)]
 pub(crate) struct BuilderWall {
     pub grid_position: GridCoords,
+    pub style: WallStyleSource,
 }
 impl BuilderWall {
     pub fn almanach_info(asset_server: &AssetServer) -> WallInfo {
@@ -45,18 +64,26 @@ impl BuilderWall {
         }
     }
 
-    pub fn new(grid_position: GridCoords) -> Self {
-        Self { grid_position }
+    pub fn new(grid_position: GridCoords, style: impl Into<WallStyleSource>) -> Self {
+        Self { grid_position, style: style.into() }
     }
 
     fn on_builder_add_spawn_wall(
         trigger: On<Add, BuilderWall>,
         mut commands: Commands,
-        styles: Res<WallStyles>,
         builders: Query<&BuilderWall>,
+        styles: Res<WallStyles>,
     ) {
         let entity = trigger.entity;
         let Ok(builder) = builders.get(entity) else { return; };
+
+        let style = match &builder.style {
+            WallStyleSource::Key(key) => *key,
+            WallStyleSource::Name(name) => styles.key_of(name).unwrap_or_else(|| {
+                Log::warn().dev().tag(Tag::GameLoad).message(format!("Wall style '{name}' is not in this map's table; drawing it with the default"));
+                WallStyleKey::default()
+            }),
+        };
 
         commands.entity(entity)
             .remove::<BuilderWall>()
@@ -65,30 +92,38 @@ impl BuilderWall {
             builder.grid_position,
             WALL_GRID_IMPRINT,
             Wall,
-            WallStyleKey(styles.default_index()),
+            style,
         ));
     }
 }
 
 fn collect_walls(
-    walls: Query<(Entity, &GridCoords), With<Wall>>,
+    walls: Query<(Entity, &GridCoords, &WallStyleKey), With<Wall>>,
+    styles: Res<WallStyles>,
     mut save: SaveWriter,
 ) {
     if walls.is_empty() { return; }
-    let rows: Vec<(i64, i32, i32)> = walls
+    let rows: Vec<(i64, i32, i32, String)> = walls
         .iter()
-        .map(|(entity, coords)| {
+        .map(|(entity, coords, key)| {
             (
                 entity.index_u32() as i64,
                 coords.x,
                 coords.y,
+                // An out-of-range key means the style table shrank under a live wall. The empty
+                // name loads back as the default, with a warn.
+                styles.name_of(*key).unwrap_or_default().to_string(),
             )
         })
         .collect();
     Log::debug().dev().tag(Tag::GameSave).message(format!("Saving {} walls", rows.len()));
     save.submit(move |tx| {
-        for (id, gx, gy) in rows {
-            tx.save_marker("walls", id)?;
+        for (id, gx, gy, style) in rows {
+            tx.register_entity(id)?;
+            tx.execute(
+                "INSERT OR REPLACE INTO walls (id, style) VALUES (?1, ?2)",
+                rusqlite::params![id, style],
+            )?;
             tx.save_grid_coords(id, GridCoords { x: gx, y: gy })?;
         }
         Ok(())
@@ -96,17 +131,18 @@ fn collect_walls(
 }
 
 fn load_walls(ctx: &mut LoadContext) -> rusqlite::Result<()> {
-    let mut stmt = ctx.conn.prepare("SELECT id FROM walls")?;
+    let mut stmt = ctx.conn.prepare("SELECT id, style FROM walls")?;
     let mut rows = stmt.query([])?;
     while let Some(row) = rows.next()? {
         let old_id: i64 = row.get(0)?;
+        let style: String = row.get(1)?;
         let grid_position = ctx.conn.get_grid_coords(old_id)?;
 
         let Some(entity) = ctx.entity(old_id) else {
             Log::warn().dev().tag(Tag::GameLoad).message(format!("Wall with old ID {old_id} has no corresponding new entity"));
             continue;
         };
-        ctx.insert(entity, BuilderWall::new(grid_position));
+        ctx.insert(entity, BuilderWall::new(grid_position, style));
     }
     Ok(())
 }
@@ -116,12 +152,12 @@ fn on_wall_place_request_do_so(
     mut commands: Commands,
     almanach: Res<Almanach>,
     mut grids: GridsCollectionParam,
-    placer: Single<(&GridCoords, &GridImprint), With<GridObjectPlacer>>,
+    placer: Single<(&GridCoords, &GridImprint, &PlacementStyle), With<GridObjectPlacer>>,
 ) {
-    let (coords, grid_imprint) = placer.into_inner();
+    let (coords, grid_imprint, placement_style) = placer.into_inner();
     let validity = (almanach.walls.validate)(MapObject::Wall, *coords, *grid_imprint, &grids);
     if validity == PlacementValidity::Invalid { return; }
-    commands.spawn(BuilderWall::new(*coords));
+    commands.spawn(BuilderWall::new(*coords, *placement_style));
     grids.reserved_coords.reserve(*coords, *grid_imprint);
 }
 

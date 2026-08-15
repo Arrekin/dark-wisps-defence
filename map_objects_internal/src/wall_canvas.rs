@@ -13,14 +13,15 @@ use bevy::{
 };
 
 use game_core::prelude::{GridCoords, MapInfo, ZDepth};
-use map_objects::prelude::{Wall, WallStyleKey, WallStyles};
-use map_objects::wall_style::{WallCanvasDebug, WallStyle};
+use map_objects::{prelude::Wall, wall_style::{WallCanvasDebug, WallStyle, WallStyleKey, WallStyles}};
 use states::prelude::MapLoadingStage;
+use visuals::prelude::ShaderLibraryAppExt;
 
 pub(crate) struct WallCanvasPlugin;
 impl Plugin for WallCanvasPlugin {
     fn build(&self, app: &mut App) {
         app
+            .register_shader_library("shaders/wall_style.wgsl")
             .add_plugins(Material2dPlugin::<WallCanvasMaterial>::default())
             .init_resource::<WallCanvasRebuildRequested>()
             .init_resource::<WallCanvasDebug>()
@@ -109,7 +110,9 @@ impl WallCanvas {
     }
 }
 
-/// Sticky rebuild signal. Multiple source can set it per frame, but it results in single rebuild
+/// Raised whenever something that changes the picture happens, and lowered by the rebuild that
+/// answers it. Several changes in one frame cost one rebuild, and the signal keeps waiting on a
+/// frame where the rebuild cannot run.
 #[derive(Resource, Default)]
 pub(crate) struct WallCanvasRebuildRequested(bool);
 impl WallCanvasRebuildRequested {

@@ -9,6 +9,8 @@ pub(crate) mod indicators;
 
 use bevy::prelude::*;
 
+use hud::prelude::ShowGrid;
+
 pub struct HudPlugin;
 impl Plugin for HudPlugin {
     fn build(&self, app: &mut App) {
@@ -21,16 +23,7 @@ impl Plugin for HudPlugin {
                 main_menu::MainMenuPlugin,
                 pause_indicator::PauseIndicatorPlugin,
             ))
-            .insert_resource(UiConfig::default())
-            .add_systems(Update, (
-                grid_display::show_hide_grid_system,
-                grid_display::draw_grid_system,
-            ));
+            .add_systems(Update, grid_display::draw_grid_system.run_if(resource_exists::<ShowGrid>));
 
     }
-}
-
-#[derive(Resource, Default)]
-pub(crate) struct UiConfig {
-    pub show_grid: bool,
 }

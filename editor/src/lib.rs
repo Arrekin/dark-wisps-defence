@@ -1,5 +1,6 @@
 mod console;
 mod cost_editor;
+mod debug;
 mod moment_picker;
 mod objectives;
 mod research;
@@ -82,6 +83,7 @@ pub enum EditorTab {
     Objectives,
     Research,
     Shards,
+    Debug,
 }
 
 fn editor_ui(world: &mut World) {
@@ -112,6 +114,7 @@ fn editor_ui(world: &mut World) {
                 EditorTab::Objectives => objectives::tab_objectives(ui, world),
                 EditorTab::Research => research::tab_research(ui, world),
                 EditorTab::Shards => tab_shards(ui, world),
+                EditorTab::Debug => debug::tab_debug(ui, world),
             }
         });
 }

@@ -44,7 +44,8 @@ Generic events and data structures:
 - **`StopPlacing`** - Trigger event when placement exits or switches type (used for domain cleanup)
 - **`PlacementChannel`** - Bundles the three placement-channel events (`place` / `remove` / `begin` as `fn(&mut Commands)` pointers) plus `place_mode` / `remove_mode` for one marker type `T`. Built via `PlacementChannel::of::<T>()` (modes default to `OnRelease`); call `.with_modes(PlacementMode::OnPress)` for burst/drag placement. All three events are always wired — triggering an event with no observers is a no-op, so whether a type supports removal / begin-placing is determined by whether the domain registers an observer for `RemoveRequest<T>` / `BeginPlacing<T>`.
 - **`GridPlacerChanged`** - Event to trigger revalidation
-- **`GridPlacerOverridePropertyRequest`** - Event to modify placer properties at runtime (e.g., quantum field size)
+- **`GridPlacerOverridePropertyRequest`** - Event to modify placer properties at runtime: `OverrideImprint` changes the footprint (e.g., quantum field size); `OverrideStyle` changes the opaque variant index carried by the placer.
+- **`PlacementStyle`** - Opaque variant index for the active placement. The placer does not interpret it; the domain converts it into its own variant (e.g., a wall style). It resets to `0` when a placement session begins.
 - **`PlacementValidatorFn`** - Static function pointer for validation: `fn(MapObject, GridCoords, GridImprint, &GridsCollectionParam) -> PlacementValidity`
 - **`GridsCollectionParam`** - Read-only grid data bundle for validators (ObstacleGrid, EnergySupplyGrid, ReservedCoords)
 - **`PlacementMode`** - OnRelease (single click) vs OnPress (burst/drag mode)
@@ -63,6 +64,7 @@ UI controller:
 - **`GridObjectPlacer`** - Singleton component that:
   - Tracks cursor position (GridCoords)
   - Stores current footprint (GridImprint)
+  - Carries the active domain-owned variant (`PlacementStyle`)
   - Shows validation feedback via sprite color
   - Emits place/remove requests based on the channel's `place_mode` / `remove_mode`
 
@@ -138,9 +140,14 @@ UI controller:
 
 ## Runtime Property Override
 
-Some placeable types need runtime configuration (e.g., QuantumField size selector). Use:
+Some placeable types need runtime configuration. Use `OverrideImprint` for a footprint change (e.g., the QuantumField size selector):
 ```rust
 commands.trigger(GridPlacerOverridePropertyRequest::OverrideImprint(new_imprint));
 ```
 
-This triggers `GridObjectPlacer::on_modify_apply_placer_override` which updates the placer and fires `GridPlacerChanged` for revalidation.
+Use `OverrideStyle` for a domain-owned variant. The generic placer stores only the index; the domain converts it when it handles placement (e.g., a wall turns it into a `WallStyleKey`):
+```rust
+commands.trigger(GridPlacerOverridePropertyRequest::OverrideStyle(style_index));
+```
+
+Both variants trigger `GridPlacerChanged`, allowing consumers to revalidate or redraw the placement UI.

@@ -75,6 +75,7 @@ CREATE TABLE IF NOT EXISTS disabled_by_player (
 
 CREATE TABLE IF NOT EXISTS walls (
     id INTEGER PRIMARY KEY,
+    style TEXT NOT NULL,
     FOREIGN KEY(id) REFERENCES entities(id)
 );
 

@@ -10,7 +10,8 @@ use almanach::prelude::Almanach;
 use game_core::prelude::{BuildingType, CELL_SIZE, GridCoords, GridImprint, MapObject, TowerType};
 use grids::placement::{
     ActivePlacement, CellHighlight, GridObjectPlacer, GridObjectPlacerRequest, GridPlacerChanged,
-    GridPlacerOverridePropertyRequest, GridsCollectionParam, PlacementMode, PlacementValidity, StopPlacing,
+    GridPlacerOverridePropertyRequest, GridsCollectionParam, PlacementMode, PlacementStyle,
+    PlacementValidity, StopPlacing,
 };
 use states::prelude::UiInteraction;
 use viewport::MouseInfo;
@@ -119,12 +120,15 @@ fn follow_mouse_system(
 fn on_modify_apply_placer_override(
     trigger: On<GridPlacerOverridePropertyRequest>,
     mut commands: Commands,
-    placer: Single<&mut GridImprint, With<GridObjectPlacer>>,
+    placer: Single<(&mut GridImprint, &mut PlacementStyle), With<GridObjectPlacer>>,
 ) {
-    let mut grid_imprint = placer.into_inner();
+    let (mut grid_imprint, mut placement_style) = placer.into_inner();
     match *trigger.event() {
         GridPlacerOverridePropertyRequest::OverrideImprint(imprint) => {
             *grid_imprint = imprint;
+        }
+        GridPlacerOverridePropertyRequest::OverrideStyle(style) => {
+            placement_style.0 = style;
         }
     }
     commands.trigger(GridPlacerChanged);
@@ -228,10 +232,10 @@ fn begin_placement(
     almanach: Res<Almanach>,
     mut placer_request: ResMut<GridObjectPlacerRequest>,
     mut ui_interaction_state: ResMut<NextState<UiInteraction>>,
-    placer: Single<(&mut GridObjectPlacer, &mut GridImprint)>,
+    placer: Single<(&mut GridObjectPlacer, &mut GridImprint, &mut PlacementStyle)>,
 ) {
     let Some(map_object) = placer_request.take() else { return; };
-    let (mut grid_object_placer, mut grid_imprint) = placer.into_inner();
+    let (mut grid_object_placer, mut grid_imprint, mut placement_style) = placer.into_inner();
 
     if grid_object_placer.active_placement.is_some() {
         commands.trigger(StopPlacing);
@@ -239,6 +243,7 @@ fn begin_placement(
 
     let placement_info = almanach.get_placement_info_for(map_object);
     *grid_imprint = placement_info.imprint;
+    *placement_style = PlacementStyle::default();
 
     (placement_info.placement.begin)(&mut commands);
 

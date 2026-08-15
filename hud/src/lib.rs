@@ -54,9 +54,13 @@ pub enum IndicatorType {
     DisabledByPlayer,
 }
 
+/// Present while the grid overlay should be drawn.
+#[derive(Resource)]
+pub struct ShowGrid;
+
 pub mod prelude {
     pub use super::{
         DisplayPanelMainContentRoot, FocusedMapObject, IndicatorDisplay, IndicatorOf,
-        IndicatorSpriteHandle, IndicatorType, Indicators,
+        IndicatorSpriteHandle, IndicatorType, Indicators, ShowGrid,
     };
 }

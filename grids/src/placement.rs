@@ -21,6 +21,9 @@ pub struct StopPlacing;
 #[derive(Event, Clone, Copy, Debug)]
 pub enum GridPlacerOverridePropertyRequest {
     OverrideImprint(GridImprint),
+    /// Index into whatever variant table the placed object's domain keeps.
+    /// See [`PlacementStyle`].
+    OverrideStyle(u32),
 }
 
 /// Generic placement request event. Domain observers listen for their specific T.
@@ -168,8 +171,14 @@ pub struct ActivePlacement {
     pub placement_info: ObjectPlacementInfo,
 }
 
+/// Which variant of the object is being placed. The placer carries the number and never
+/// interprets it; the domain that owns the object decides what it selects. Reset when a
+/// placement session begins, so a choice made for one object does not carry to the next.
+#[derive(Component, Clone, Copy, Default)]
+pub struct PlacementStyle(pub u32);
+
 #[derive(Component, Default)]
-#[require(GridImprint, GridCoords, ZDepth(10.), crate::AutoGridTransformSync)]
+#[require(GridImprint, GridCoords, PlacementStyle, ZDepth(10.), crate::AutoGridTransformSync)]
 pub struct GridObjectPlacer {
     pub active_placement: Option<ActivePlacement>,
 }
