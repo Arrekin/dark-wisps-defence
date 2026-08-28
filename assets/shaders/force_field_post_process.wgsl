@@ -1,4 +1,5 @@
 #import bevy_core_pipeline::fullscreen_vertex_shader::FullscreenVertexOutput
+#import dwd::value_noise::{dwd_value_fbm_2d, dwd_value_noise_2d, dwd_value_noise_curl_2d}
 
 @group(0) @binding(0) var screen_texture: texture_2d<f32>;
 @group(0) @binding(1) var screen_sampler: sampler;
@@ -79,49 +80,17 @@ fn world_to_uv(world: vec2<f32>) -> vec2<f32> {
 
 // ── Noise ────────────────────────────────────────────────────────────────────
 
-fn hash(p: vec2<f32>) -> f32 {
-    let h = dot(p, vec2<f32>(127.1, 311.7));
-    return fract(sin(h) * 43758.5453123);
-}
-
-fn noise(p: vec2<f32>) -> f32 {
-    let i = floor(p);
-    let f = fract(p);
-    let a = hash(i);
-    let b = hash(i + vec2<f32>(1.0, 0.0));
-    let c = hash(i + vec2<f32>(0.0, 1.0));
-    let d = hash(i + vec2<f32>(1.0, 1.0));
-    let u = f * f * (3.0 - 2.0 * f);
-    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
-}
-
-// Two-octave noise for richer fluctuation
-fn fbm(p: vec2<f32>) -> f32 {
-    return noise(p) * 0.6 + noise(p * 2.1 + vec2<f32>(4.3, 1.7)) * 0.4;
-}
-
 // Crushes low noise values to zero and sharpens peaks into distinct wisps.
 // Anything below the low threshold disappears; above high threshold → full bright.
 fn wisp(raw: f32) -> f32 {
     return pow(smoothstep(0.40, 0.80, raw), 2.0);
 }
 
-// Divergence-free 2D curl of a noise potential field.
-// The result is a flow velocity in ~[-1, 1] that has no sources or sinks —
-// parcels of cloud roll along streamlines instead of randomly drifting.
-fn curl(p: vec2<f32>) -> vec2<f32> {
-    let e = 0.5;
-    return vec2<f32>(
-         noise(p + vec2<f32>(0.0,  e)) - noise(p - vec2<f32>(0.0,  e)),
-        -(noise(p + vec2<f32>(e, 0.0)) - noise(p - vec2<f32>(e, 0.0)))
-    );
-}
-
 // Ridged noise: bright sharp tendrils along the 0.5-iso-contours of the base
 // noise field. Soft blobs become luminous filaments and wisps.
 fn ridged_fbm(p: vec2<f32>) -> f32 {
-    let n0 = 1.0 - abs(noise(p)                              * 2.0 - 1.0);
-    let n1 = 1.0 - abs(noise(p * 2.1 + vec2<f32>(4.3, 1.7)) * 2.0 - 1.0);
+    let n0 = 1.0 - abs(dwd_value_noise_2d(p)                              * 2.0 - 1.0);
+    let n1 = 1.0 - abs(dwd_value_noise_2d(p * 2.1 + vec2<f32>(4.3, 1.7)) * 2.0 - 1.0);
     return n0 * 0.6 + n1 * 0.4;
 }
 
@@ -196,9 +165,9 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     // crisp outer tendrils roll dynamically over a slow-moving soft inner glow,
     // not the other way around.
     let warp_uv = base_uv * 0.5;
-    let flow0 = curl(warp_uv + vec2<f32>(t2,        0.5));  // s0 outer  — fastest
-    let flow1 = curl(warp_uv + vec2<f32>(t1 + 1.3,  2.1));  // s1 mid    — medium
-    let flow2 = curl(warp_uv + vec2<f32>(t  + 2.7,  4.8));  // s2 inner  — slowest
+    let flow0 = dwd_value_noise_curl_2d(warp_uv + vec2<f32>(t2,        0.5));  // s0 outer  — fastest
+    let flow1 = dwd_value_noise_curl_2d(warp_uv + vec2<f32>(t1 + 1.3,  2.1));  // s1 mid    — medium
+    let flow2 = dwd_value_noise_curl_2d(warp_uv + vec2<f32>(t  + 2.7,  4.8));  // s2 inner  — slowest
 
     // Each layer samples at its own noise frequency: outer (s0) crispiest,
     // inner (s3) softest. Mirrors the LAYER_SPEED_MULT progression.
@@ -229,8 +198,8 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     // rather than duplicating another slice's pattern.
     let s0 = wisp(ridged_fbm(noise_uv));
     let s1 = wisp(ridged_fbm(noise_uv1                       + depth_dir * 0.33));
-    let s2 = wisp(fbm(noise_uv2                              + depth_dir * 0.67));
-    let s3 = wisp(fbm(to_pixel * (NOISE_SCALE / LAYER_NOISE_SCALE_MULT) + flow0 * (1.2 * LAYER_NOISE_SCALE_MULT) + vec2<f32>(23.1, 9.4) + depth_dir));
+    let s2 = wisp(dwd_value_fbm_2d(noise_uv2                              + depth_dir * 0.67));
+    let s3 = wisp(dwd_value_fbm_2d(to_pixel * (NOISE_SCALE / LAYER_NOISE_SCALE_MULT) + flow0 * (1.2 * LAYER_NOISE_SCALE_MULT) + vec2<f32>(23.1, 9.4) + depth_dir));
     let fluctuation = (s0 * 0.45 + s1 * 0.28 + s2 * 0.17 + s3 * 0.10) * 0.50;
 
     // ── Seam line where two bubbles press together ───────────────────────────
@@ -266,7 +235,7 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
         // concentrations drifting like soap-bubble iridescence. Uses world_pos
         // at a much lower frequency than the dome noise so it stays smooth.
         let seam_coord = world_pos * (NOISE_SCALE * 0.5) + camera.global_time * 0.015;
-        let seam_glow  = fbm(seam_coord);
+        let seam_glow  = dwd_value_fbm_2d(seam_coord);
         seam *= 0.45 + seam_glow * 0.55;
     }
     // Extra brightness while a field is still growing (fight-boost)
@@ -332,7 +301,7 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let spark_falloff = pow(1.0 - smoothstep(0.0, SPARK_RADIUS, norm_dist), 2.0);
     // High-frequency noise sampled at the fastest time scale → crackling shimmer.
     let spark_uv  = to_pixel * NOISE_SCALE * 25.0 + vec2<f32>(t2 * 3.5, t2 * 2.1);
-    let shimmer   = fbm(spark_uv);
+    let shimmer   = dwd_value_fbm_2d(spark_uv);
     let spark     = spark_falloff * (0.35 + shimmer * 0.65) * field.progress;
 
     // ── Compose field colour ─────────────────────────────────────────────────
@@ -351,7 +320,7 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     // so in reality this is the brightest, most energetic part of the shell.
     // A noise-modulated bright rim makes it read as physical rather than geometric.
     let ground_ring  = smoothstep(0.86, 0.97, norm_dist) * smoothstep(1.0, 0.91, norm_dist);
-    let ground_noise = fbm(noise_uv2 + vec2<f32>(5.1, 2.3));
+    let ground_noise = dwd_value_fbm_2d(noise_uv2 + vec2<f32>(5.1, 2.3));
     let ground_alpha = ground_ring * GROUND_RING_OPACITY * (0.44 + ground_noise * 0.56) * field.progress;
     let ground_color = vec3<f32>(0.45, 0.82, 1.0);
 

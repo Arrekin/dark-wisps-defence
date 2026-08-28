@@ -1,5 +1,7 @@
 #import bevy_sprite::mesh2d_vertex_output::VertexOutput
 #import bevy_sprite::mesh2d_view_bindings::globals
+#import dwd::core::TAU
+#import dwd::voronoi_border::{dwd_voronoi_border_2d, dwd_voronoi_hash_2d}
 
 // Pure-procedural light wisp: a radiant prism-star.
 //
@@ -29,7 +31,6 @@ struct WispEffects {
 var<uniform> effects: WispEffects;
 
 const BRITTLE: u32 = 1u;
-const TAU: f32 = 6.28318530718;
 
 // ── Radiance tuning ──────────────────────────────────────────────────────────
 const RAYS_PRIMARY: f32 = 7.0;    // long beam count
@@ -60,47 +61,12 @@ const CRACK_DENSITY: f32 = 12.0;  // crackle cell count (higher = finer cracks)
 const CRACK_W: f32 = 0.50;        // crack line half-width, in cell units
 const CAGE_R: f32 = 0.28;         // cage disc radius (r = length(p)*2 space, covers the core)
 
-fn crack_hash2(p: vec2<f32>) -> vec2<f32> {
-    let k = vec2<f32>(
-        dot(p, vec2<f32>(127.1, 311.7)),
-        dot(p, vec2<f32>(269.5, 183.3)),
-    );
-    return fract(sin(k) * 43758.5453123);
-}
-// Distance to the nearest Voronoi cell border (Quilez): ~0 on a crack, larger inside a cell.
-fn crack_net(uv: vec2<f32>) -> f32 {
-    let n = floor(uv);
-    let f = fract(uv);
-    var mr = vec2<f32>(0.0);
-    var md = 8.0;
-    for (var j = -1; j <= 1; j = j + 1) {
-        for (var i = -1; i <= 1; i = i + 1) {
-            let g = vec2<f32>(f32(i), f32(j));
-            let r = g + crack_hash2(n + g) - f;
-            let d = dot(r, r);
-            if (d < md) { md = d; mr = r; }
-        }
-    }
-    md = 8.0;
-    for (var j = -1; j <= 1; j = j + 1) {
-        for (var i = -1; i <= 1; i = i + 1) {
-            let g = vec2<f32>(f32(i), f32(j));
-            let r = g + crack_hash2(n + g) - f;
-            let diff = r - mr;
-            if (dot(diff, diff) > 1e-5) {
-                md = min(md, dot(0.5 * (mr + r), normalize(diff)));
-            }
-        }
-    }
-    return md;
-}
-
 fn brittle(color: vec4<f32>, p: vec2<f32>) -> vec4<f32> {
     let cage_col = vec3<f32>(0.0, 0.0, 0.0); // black cage — reads against the white glare
 
     let r = length(p) * 2.0;
     let band = 1.0 - smoothstep(CAGE_R * 0.8, CAGE_R, r); // filled disc over the core
-    let md = crack_net(p * CRACK_DENSITY + vec2<f32>(uniforms.seed));
+    let md = dwd_voronoi_border_2d(p * CRACK_DENSITY + vec2<f32>(uniforms.seed));
     let crack = (1.0 - smoothstep(0.0, CRACK_W, md)) * band;
 
     let rgb = mix(color.rgb, cage_col, crack);
@@ -149,7 +115,7 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
     var motes = 0.0;                // scalar coverage (drives alpha/energy)
     var motes_rgb = vec3<f32>(0.0); // each mote carries its own spectral tint
     for (var i = 0; i < NUM_MOTES; i = i + 1) {
-        let rnd = crack_hash2(vec2<f32>(f32(i), uniforms.seed)); // per-mote randoms
+        let rnd = dwd_voronoi_hash_2d(vec2<f32>(f32(i), uniforms.seed)); // per-mote randoms
         let life = fract(globals.time * MOTE_RATE + rnd.x);     // staggered 0..1 lifetime
         let spread = (rnd.y - 0.5) * MOTE_SPREAD * life;        // fan out as it ages
         let pos = wake * (life * MOTE_REACH) + wake_perp * spread;

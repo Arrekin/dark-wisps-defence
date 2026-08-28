@@ -1,5 +1,6 @@
 #import bevy_sprite::mesh2d_vertex_output::VertexOutput
 #import bevy_sprite::mesh2d_view_bindings::globals
+#import dwd::voronoi_border::dwd_voronoi_border_2d
 
 // Pure-procedural water wisp: a living droplet of liquid.
 //
@@ -43,43 +44,6 @@ const BRITTLE: u32 = 1u;
 // the droplet's real size while leaving margin for it to wobble/lunge. Keep equal.
 const QUAD_SCALE: f32 = 2.4;
 
-// Hash for the brittle crack network: cell → jittered feature point in [0,1]^2.
-fn hash2(p: vec2<f32>) -> vec2<f32> {
-    let k = vec2<f32>(
-        dot(p, vec2<f32>(127.1, 311.7)),
-        dot(p, vec2<f32>(269.5, 183.3)),
-    );
-    return fract(sin(k) * 43758.5453123);
-}
-
-// Distance to the nearest Voronoi cell border (Quilez): ~0 on a crack, larger inside a cell.
-fn crack_net(uv: vec2<f32>) -> f32 {
-    let n = floor(uv);
-    let f = fract(uv);
-    var mr = vec2<f32>(0.0);
-    var md = 8.0;
-    for (var j = -1; j <= 1; j = j + 1) {
-        for (var i = -1; i <= 1; i = i + 1) {
-            let g = vec2<f32>(f32(i), f32(j));
-            let r = g + hash2(n + g) - f;
-            let d = dot(r, r);
-            if (d < md) { md = d; mr = r; }
-        }
-    }
-    md = 8.0;
-    for (var j = -1; j <= 1; j = j + 1) {
-        for (var i = -1; i <= 1; i = i + 1) {
-            let g = vec2<f32>(f32(i), f32(j));
-            let r = g + hash2(n + g) - f;
-            let diff = r - mr;
-            if (dot(diff, diff) > 1e-5) {
-                md = min(md, dot(0.5 * (mr + r), normalize(diff)));
-            }
-        }
-    }
-    return md;
-}
-
 // ── Brittle: the droplet is big enough to carry detail, so it crazes over — a fine
 // grid of golden cracks (a Voronoi network) across the whole body, like a frozen,
 // fracturing shell. Gold is the complement of the blue, so the network pops; opaque so
@@ -90,7 +54,7 @@ const CRACK_W: f32 = 0.28;        // crack line half-width, in cell units
 fn brittle(color: vec4<f32>, q: vec2<f32>, body: f32) -> vec4<f32> {
     let gold = vec3<f32>(1.00, 0.78, 0.25); // golden crack — complement of the blue body
 
-    let md = crack_net(q * CRACK_DENSITY + vec2<f32>(uniforms.seed));
+    let md = dwd_voronoi_border_2d(q * CRACK_DENSITY + vec2<f32>(uniforms.seed));
     let crack = (1.0 - smoothstep(0.0, CRACK_W, md)) * body;
 
     let rgb = mix(color.rgb, gold, crack);

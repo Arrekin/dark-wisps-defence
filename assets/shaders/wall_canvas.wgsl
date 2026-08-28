@@ -1,34 +1,23 @@
 #import bevy_sprite::mesh2d_vertex_output::VertexOutput
+#import dwd::core::CELL_SIZE
+#import dwd::map_light::MAP_SUN_GROUND_DIRECTION
 #import dwd::wall_style::{WallStyle, LIGHT_PROBE, eroded_distance, plate_noise, wall_shading}
 
-// Wall canvas
+// Draws all walls in one pass over a quad covering the map grid. Each cell stores zero for open
+// ground or a one-based index into the style buffer.
 //
-// Draws every wall on the map in one pass over a quad covering the whole grid. There is no
-// tileset and no per-cell bitmask: the shader reads the eight neighbours of the cell a pixel
-// falls in and builds a signed distance to the wall region from them. Every layer is a
-// function of that one distance, and the layers themselves live in `dwd::wall_style` so the
-// map canvas and a UI swatch cannot drift apart.
+// The eight neighboring cells define a signed distance to the nearest region boundary. Occupied
+// fragments use their own style; open fragments use the nearest neighboring wall style so contact
+// shadows can extend beyond wall cells. Different wall styles form hard boundaries.
 //
-// Each of the eight neighbours whose style differs from ours contributes one candidate
-// distance and the field is their minimum. A cardinal neighbour's nearest point is the shared
-// cell edge; a diagonal neighbour's is the grid corner the two cells share.
-//
-//     \  |  /        Each neighbour is compared against this cell's own style, which lets one
-//    ----+----       function serve both sides: inside a wall it measures to the nearest open
-//     /  |  \        ground, on open ground it measures to the nearest wall.
-//
-// A neighbour of a different style counts as open ground, so two styles meet at a hard border.
-//
-// The field has square corners and carries no surface normal. The shading layers take their
-// facing from the probe in `fragment`, which stays continuous where a candidate direction
-// would not.
+// The distance field has no stored normal, so lighting estimates edge facing with a finite
+// difference along the shared map-sun direction. Surface layers are defined in `dwd::wall_style`.
 
+// Field order and types mirror `WallCanvasSettings` in wall_canvas.rs.
 struct WallCanvasSettings {
     grid_width: u32,
     grid_height: u32,
-    // Which term to draw instead of the finished wall. Mirrors `WallCanvasDebug` in
-    // map_objects/src/wall_style.rs; the two must stay in step.
-    debug_mode: u32,
+    debug_mode: u32, // `WallCanvasDebug` discriminant.
 }
 
 // One style index per cell, row major, 0 for open ground.
@@ -37,14 +26,11 @@ struct WallCanvasSettings {
 @group(2) @binding(1) var<storage, read> styles: array<WallStyle>;
 @group(2) @binding(2) var<uniform> settings: WallCanvasSettings;
 
-const CELL_SIZE: f32 = 32.0;
-// Cell units. Nothing reads the field deeper than the bevel, so the interior is flat.
+// Maximum distance in cell coordinates (0.5 is half a cell width). Deeper interior is flat.
 const DISTANCE_CAP: f32 = 0.5;
 const SHADOW_STRENGTH: f32 = 0.85;
 
-// Diagnostics. Each replaces the output with a single term, so an artefact can be attributed
-// to one layer. Driven by `WallCanvasDebug` in map_objects/src/wall_style.rs; these values are
-// that enum's discriminants and must stay in step with it.
+// Diagnostic output modes; values mirror the `WallCanvasDebug` discriminants in wall_style.rs.
 const DEBUG_OFF: u32 = 0u;
 const DEBUG_DISTANCE: u32 = 1u;
 const DEBUG_FACING: u32 = 2u;
@@ -70,11 +56,10 @@ fn closer(a: WallSurface, b: WallSurface) -> WallSurface {
     return a;
 }
 
-// `p` is the position inside the cell, in [-0.5, 0.5] on both axes.
+// Returns signed boundary distance in cell coordinates and the nearest neighboring wall style.
+// `p` is relative to the cell center in [-0.5, 0.5] on each axis.
 fn wall_surface(coords: vec2<i32>, p: vec2<f32>) -> WallSurface {
     let region = cell_style(coords);
-
-    // Distance from p to each of the four cell edges.
     let toward_positive = vec2<f32>(0.5) - p;
     let toward_negative = vec2<f32>(0.5) + p;
 
@@ -96,7 +81,6 @@ fn wall_surface(coords: vec2<i32>, p: vec2<f32>) -> WallSurface {
         let offset = diagonals[i];
         let neighbour = cell_style(coords + offset);
         if neighbour == region { continue; }
-        // Nearest point of a diagonal neighbour is the grid corner the two cells share.
         let edge = select(toward_negative, toward_positive, offset > vec2<i32>(0));
         best = closer(best, WallSurface(max(length(edge), 1e-5), neighbour));
     }
@@ -119,9 +103,7 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
     let coords = vec2<i32>(base);
     let world = f * CELL_SIZE;
 
-    // World pixels covered by one screen pixel. Derivatives must be taken in uniform control
-    // flow, so this stays above every early return. It is derived from the position, so the
-    // erosion noise added to `d` cannot feed back into the antialiasing width.
+    // World-coordinate span of one screen pixel; evaluated before divergent control flow.
     let texel = max(max(fwidth(world.x), fwidth(world.y)), 0.0001);
 
     let region = cell_style(coords);
@@ -138,8 +120,8 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
 
     let coverage = smoothstep(-texel, texel, d);
 
-    // Contact shadow, sampled at an offset along the light so the slab reads as lifted.
-    let shadow_offset = style.surface.light_direction * style.surface.shadow_length * 0.7;
+    // Sample the wall field toward the sun to produce an offset contact shadow.
+    let shadow_offset = MAP_SUN_GROUND_DIRECTION * style.surface.shadow_length * 0.7;
     let shadow_distance = distance_at(world - shadow_offset);
     let shadow = pow(saturate(1.0 + shadow_distance / max(style.surface.shadow_length, 0.0001)), 1.5)
         * SHADOW_STRENGTH * (1.0 - coverage);
@@ -147,12 +129,10 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
     let alpha = coverage + shadow * (1.0 - coverage);
     if alpha < 0.002 { return vec4<f32>(0.0); }
 
-    // How much the field falls away along the light: dot(outward normal, light) wherever the
-    // field is smooth, and an average of the two faces across a mitre. Probing at least one
-    // screen pixel keeps it from aliasing when zoomed out. Taken from the uneroded distance, so
-    // the grain does not shake the light.
+    // Estimate sun-facing from the uneroded distance field. A probe of at least one screen pixel
+    // smooths mitres and avoids zoomed-out aliasing.
     let probe = max(LIGHT_PROBE, texel);
-    let lit = -(distance_at(world + style.surface.light_direction * probe) - raw_distance) / probe;
+    let lit = -(distance_at(world + MAP_SUN_GROUND_DIRECTION * probe) - raw_distance) / probe;
 
     let plate = plate_noise(world, style);
     let colour = wall_shading(d, lit, plate, texel, style);

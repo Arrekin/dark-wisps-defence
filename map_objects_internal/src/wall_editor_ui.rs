@@ -29,9 +29,7 @@ impl Plugin for WallEditorUiPlugin {
     }
 }
 
-////////////////////////////////////////////
-//        Swatch
-////////////////////////////////////////////
+// Swatch
 
 /// The swatch shader gets its layers from `dwd::wall_style`, which reads no bindings, so the
 /// only thing bound here is the style being previewed.
@@ -75,11 +73,9 @@ impl WallSwatch {
     }
 }
 
-////////////////////////////////////////////
-//        Style Picker
-////////////////////////////////////////////
+// Style picker
 
-/// Frame around a swatch, marking which style the placer will build with.
+// Swatch-frame colors for selected and idle styles.
 const SWATCH_FRAME_SELECTED: Color = Color::srgb(0.16, 0.78, 1.00);
 const SWATCH_FRAME_IDLE: Color = Color::srgb(0.15, 0.15, 0.18);
 

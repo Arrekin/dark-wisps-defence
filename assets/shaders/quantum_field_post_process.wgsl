@@ -1,4 +1,6 @@
 #import bevy_core_pipeline::fullscreen_vertex_shader::FullscreenVertexOutput
+#import dwd::core::TAU
+#import dwd::value_noise::{dwd_value_fbm_2d, dwd_value_noise_curl_2d}
 
 // Quantum field anomaly. Screen-space pass over the already-rendered frame, so it can
 // distort / ghost the walls, wisps and towers sitting on top of a field's rectangle.
@@ -84,7 +86,6 @@ const PHASE_FLICKER_DEPTH:  f32 = 0.6;   // how strongly the rim dims (0..1)
 const SCAN_COLLAPSE_RADIUS: f32 = 40.0;  // world-unit radius of the calmed region per scan spot
 const SCAN_GLOW:           f32 = 0.5;    // brightness of the soft "observed" rim
 
-const TAU: f32 = 6.28318530718;
 
 // ── Coordinate helpers (match the other post-process passes) ──────────────────
 fn uv_to_world(uv: vec2<f32>) -> vec2<f32> {
@@ -100,33 +101,6 @@ fn sample_rgb(uv: vec2<f32>) -> vec3<f32> {
     return textureSampleLevel(screen_texture, screen_sampler, uv, 0.0).rgb;
 }
 
-// ── Noise (borrowed from force_field_post_process.wgsl) ───────────────────────
-fn hash(p: vec2<f32>) -> f32 {
-    let h = dot(p, vec2<f32>(127.1, 311.7));
-    return fract(sin(h) * 43758.5453123);
-}
-fn noise(p: vec2<f32>) -> f32 {
-    let i = floor(p);
-    let f = fract(p);
-    let a = hash(i);
-    let b = hash(i + vec2<f32>(1.0, 0.0));
-    let c = hash(i + vec2<f32>(0.0, 1.0));
-    let d = hash(i + vec2<f32>(1.0, 1.0));
-    let u = f * f * (3.0 - 2.0 * f);
-    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
-}
-fn fbm(p: vec2<f32>) -> f32 {
-    return noise(p) * 0.6 + noise(p * 2.1 + vec2<f32>(4.3, 1.7)) * 0.4;
-}
-// Divergence-free 2D curl of a noise potential — a flow velocity (~[-1,1]) that rolls along
-// streamlines instead of drifting, so the chaos churns like turbulence. (From the force field.)
-fn curl(p: vec2<f32>) -> vec2<f32> {
-    let e = 0.5;
-    return vec2<f32>(
-         noise(p + vec2<f32>(0.0,  e)) - noise(p - vec2<f32>(0.0,  e)),
-        -(noise(p + vec2<f32>(e, 0.0)) - noise(p - vec2<f32>(e, 0.0)))
-    );
-}
 // ── Geometry helpers ──────────────────────────────────────────────────────────
 // Signed distance to an axis-aligned box. Negative inside, 0 on the edge, positive outside.
 fn box_sdf(p: vec2<f32>, half: vec2<f32>) -> f32 {
@@ -168,7 +142,7 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     // Uncertain boundary: wobble the effective edge used for masking.
     var edge_sdf = best_sdf;
     if ENABLE_BOUNDARY_UNCERTAINTY {
-        let jitter = fbm(world_pos * BOUNDARY_UNCERT_FREQ + vec2<f32>(field.seed, t * 0.3)) - 0.5;
+        let jitter = dwd_value_fbm_2d(world_pos * BOUNDARY_UNCERT_FREQ + vec2<f32>(field.seed, t * 0.3)) - 0.5;
         edge_sdf += jitter * 2.0 * BOUNDARY_UNCERT_AMP;
     }
 
@@ -202,8 +176,8 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     var sample_world = world_pos;
 
     if ENABLE_SCHLIEREN {
-        let nx = fbm(world_pos * SCHLIEREN_SCALE + vec2<f32>(t * 0.20 + field.seed, 0.0));
-        let ny = fbm(world_pos * SCHLIEREN_SCALE + vec2<f32>(0.0, t * 0.17 + field.seed));
+        let nx = dwd_value_fbm_2d(world_pos * SCHLIEREN_SCALE + vec2<f32>(t * 0.20 + field.seed, 0.0));
+        let ny = dwd_value_fbm_2d(world_pos * SCHLIEREN_SCALE + vec2<f32>(0.0, t * 0.17 + field.seed));
         sample_world += (vec2<f32>(nx, ny) - 0.5) * 2.0 * SCHLIEREN_STRENGTH * weirdness * interior;
     }
     // Inside a collapse disc, pin sampling back to the true position — schlieren and any other
@@ -237,7 +211,7 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
 
     // ── Phase flicker near the rim (screen-space approximation of tunneling) ───
     if ENABLE_PHASE_FLICKER {
-        let f = fbm(world_pos * 0.2 + vec2<f32>(t * PHASE_FLICKER_SPEED, field.seed));
+        let f = dwd_value_fbm_2d(world_pos * 0.2 + vec2<f32>(t * PHASE_FLICKER_SPEED, field.seed));
         rgb *= 1.0 - PHASE_FLICKER_DEPTH * rim_zone * weirdness * step(0.5, f) * (1.0 - collapse);
     }
 
@@ -257,7 +231,7 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     // Warped moiré lattice: two beating grids, gently warped by a curl flow so the mesh writhes.
     var lattice = 0.0;
     if ENABLE_MOIRE {
-        let warp = curl(to_center * MOIRE_WARP_SCALE + vec2<f32>(t * MOIRE_WARP_SPEED + field.seed, 0.0)) * MOIRE_WARP_STRENGTH;
+        let warp = dwd_value_noise_curl_2d(to_center * MOIRE_WARP_SCALE + vec2<f32>(t * MOIRE_WARP_SPEED + field.seed, 0.0)) * MOIRE_WARP_STRENGTH;
         let la = grid_wave(to_center * MOIRE_SCALE_A + warp + vec2<f32>(t * 0.05, 0.0));
         let lb = grid_wave(rotate(to_center, MOIRE_ROT) * MOIRE_SCALE_B + warp);
         lattice = la * lb;

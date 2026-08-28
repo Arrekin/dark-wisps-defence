@@ -88,7 +88,6 @@ impl BuilderWall {
         commands.entity(entity)
             .remove::<BuilderWall>()
             .insert((
-            Transform::from_translation(builder.grid_position.to_world_position_centered(WALL_GRID_IMPRINT).extend(0.)),
             builder.grid_position,
             WALL_GRID_IMPRINT,
             Wall,

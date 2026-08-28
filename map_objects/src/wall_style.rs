@@ -5,7 +5,7 @@ use strum::{AsRefStr, EnumIter};
 
 use grids::placement::PlacementStyle;
 
-/// Silhouette geometry shared by every cell drawn with a given style.
+/// World-pixel silhouette geometry shared by every cell drawn with a style.
 #[derive(ShaderType, Clone, Copy, Debug)]
 pub struct WallStyleGeometry {
     pub bevel_width: f32,
@@ -14,19 +14,16 @@ pub struct WallStyleGeometry {
     pub erosion_amount: f32,
 }
 
-/// Surface shading shared by every cell drawn with a given style.
+/// World-pixel surface-noise scale and contact-shadow length for a style.
 #[derive(ShaderType, Clone, Copy, Debug)]
 pub struct WallStyleSurface {
     pub plate_noise_scale: f32,
     pub shadow_length: f32,
-    pub light_direction: Vec2,
 }
 
 /// GPU-side parameter set for wall shaders. Field order and types mirror the
-/// `WallStyle` struct in `assets/shaders/wall_style.wgsl` exactly.
-///
-/// Every member is exactly 16 bytes and must stay that way: a member narrower than 16
-/// bytes shifts every member after it and panics when the buffer is prepared.
+/// `WallStyle` struct in `assets/shaders/wall_style.wgsl` exactly; [`ShaderType`] supplies
+/// the matching storage-buffer layout.
 #[derive(ShaderType, Clone, Copy, Debug)]
 pub struct WallStyle {
     pub body_low: LinearRgba,
@@ -51,8 +48,7 @@ pub struct WallStyleEntry {
 #[component(immutable)]
 pub struct WallStyleKey(pub u32);
 
-/// The placer carries an opaque variant index for whatever is being placed. This is where a
-/// wall decides that index names one of its styles.
+/// Converts the placer's opaque style index to a wall style key.
 impl From<PlacementStyle> for WallStyleKey {
     fn from(style: PlacementStyle) -> Self {
         Self(style.0)
@@ -69,7 +65,6 @@ pub struct WallStyles {
 impl WallStyles {
     /// The styles a map starts with. Colours are authored as sRGB; widths are world pixels.
     pub fn presets() -> Self {
-        let light_direction = Vec2::new(-0.4472, 0.8944);
         let plate_noise_scale = 26.0;
         let shadow_length = 5.0;
 
@@ -89,7 +84,7 @@ impl WallStyles {
                             hairline_width: 1.0,
                             erosion_amount: 0.0,
                         },
-                        surface: WallStyleSurface { plate_noise_scale, shadow_length, light_direction },
+                        surface: WallStyleSurface { plate_noise_scale, shadow_length },
                     },
                 },
                 WallStyleEntry {
@@ -106,7 +101,7 @@ impl WallStyles {
                             hairline_width: 1.0,
                             erosion_amount: 4.0,
                         },
-                        surface: WallStyleSurface { plate_noise_scale, shadow_length, light_direction },
+                        surface: WallStyleSurface { plate_noise_scale, shadow_length },
                     },
                 },
                 WallStyleEntry {
@@ -123,7 +118,7 @@ impl WallStyles {
                             hairline_width: 1.0,
                             erosion_amount: 1.6,
                         },
-                        surface: WallStyleSurface { plate_noise_scale, shadow_length, light_direction },
+                        surface: WallStyleSurface { plate_noise_scale, shadow_length },
                     },
                 },
             ],

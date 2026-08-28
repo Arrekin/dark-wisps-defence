@@ -1,5 +1,8 @@
 #import bevy_sprite::mesh2d_vertex_output::VertexOutput
 #import bevy_sprite::mesh2d_view_bindings::globals
+#import dwd::core::{PI, TAU}
+#import dwd::value_noise::{dwd_value_hash_2d, dwd_value_noise_2d}
+#import dwd::voronoi_border::dwd_voronoi_border_2d
 
 // Pure-procedural electric wisp: a contained plasma globe.
 //
@@ -27,8 +30,6 @@ struct WispEffects {
 var<uniform> effects: WispEffects;
 
 const BRITTLE: u32 = 1u;
-const TAU: f32 = 6.28318530718;
-const PI: f32 = 3.14159265359;
 
 // ── Striking & arcs ──────────────────────────────────────────────────────────
 const STRIKE_RATE: f32 = 8.0; // strikes per second per arc
@@ -42,20 +43,6 @@ const ARC_GLOW: f32 = 0.42;   // soft halo half-width
 fn hash11(x: f32) -> f32 {
     return fract(sin(x * 127.1) * 43758.5453123);
 }
-fn hash21(p: vec2<f32>) -> f32 {
-    return fract(sin(dot(p, vec2<f32>(127.1, 311.7))) * 43758.5453123);
-}
-fn vnoise(p: vec2<f32>) -> f32 {
-    let i = floor(p);
-    let f = fract(p);
-    let a = hash21(i);
-    let b = hash21(i + vec2<f32>(1.0, 0.0));
-    let c = hash21(i + vec2<f32>(0.0, 1.0));
-    let d = hash21(i + vec2<f32>(1.0, 1.0));
-    let u = f * f * (3.0 - 2.0 * f);
-    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
-}
-
 // Smallest signed angle a - b, wrapped to (-PI, PI].
 fn angle_diff(a: f32, b: f32) -> f32 {
     let d = a - b;
@@ -65,8 +52,8 @@ fn angle_diff(a: f32, b: f32) -> f32 {
 // One jagged arc from the core toward the rim. `base` is its striking angle;
 // the centreline wanders in angle as it climbs outward, giving the kinked path.
 fn arc(r: f32, ang: f32, base: f32, seed: f32, t: f32) -> f32 {
-    let wander = (vnoise(vec2<f32>(r * 5.0 + seed, t)) - 0.5) * (ARC_WANDER * 2.0)
-               + (vnoise(vec2<f32>(r * 13.0 + seed * 2.0, t * 1.7)) - 0.5) * ARC_WANDER;
+    let wander = (dwd_value_noise_2d(vec2<f32>(r * 5.0 + seed, t)) - 0.5) * (ARC_WANDER * 2.0)
+               + (dwd_value_noise_2d(vec2<f32>(r * 13.0 + seed * 2.0, t * 1.7)) - 0.5) * ARC_WANDER;
     let centre = base + wander;
     let d = abs(angle_diff(ang, centre)) * r; // angular gap → screen-space thinness
     let core = 1.0 - smoothstep(0.0, ARC_CORE, d);
@@ -82,44 +69,12 @@ const CRACK_DENSITY: f32 = 12.0;  // crackle cell count (higher = finer cracks)
 const CRACK_W: f32 = 0.30;        // crack line half-width, in cell units
 const CAGE_R: f32 = 0.34;         // cage disc radius (r = length(p)*2 space, covers the core)
 
-fn vcell(p: vec2<f32>) -> vec2<f32> {
-    return fract(sin(vec2<f32>(dot(p, vec2<f32>(127.1, 311.7)), dot(p, vec2<f32>(269.5, 183.3)))) * 43758.5453);
-}
-
-// Distance to the nearest Voronoi cell border (Quilez): ~0 on a crack, larger inside a cell.
-fn crack_net(uv: vec2<f32>) -> f32 {
-    let n = floor(uv);
-    let f = fract(uv);
-    var mr = vec2<f32>(0.0);
-    var md = 8.0;
-    for (var j = -1; j <= 1; j = j + 1) {
-        for (var i = -1; i <= 1; i = i + 1) {
-            let g = vec2<f32>(f32(i), f32(j));
-            let r = g + vcell(n + g) - f;
-            let d = dot(r, r);
-            if (d < md) { md = d; mr = r; }
-        }
-    }
-    md = 8.0;
-    for (var j = -1; j <= 1; j = j + 1) {
-        for (var i = -1; i <= 1; i = i + 1) {
-            let g = vec2<f32>(f32(i), f32(j));
-            let r = g + vcell(n + g) - f;
-            let diff = r - mr;
-            if (dot(diff, diff) > 1e-5) {
-                md = min(md, dot(0.5 * (mr + r), normalize(diff)));
-            }
-        }
-    }
-    return md;
-}
-
 fn brittle(color: vec4<f32>, p: vec2<f32>) -> vec4<f32> {
     let gold = vec3<f32>(1.00, 0.78, 0.25);
 
     let r = length(p) * 2.0;
     let band = 1.0 - smoothstep(CAGE_R * 0.8, CAGE_R, r); // filled disc over the core
-    let md = crack_net(p * CRACK_DENSITY + vec2<f32>(uniforms.seed));
+    let md = dwd_voronoi_border_2d(p * CRACK_DENSITY + vec2<f32>(uniforms.seed));
     let crack = (1.0 - smoothstep(0.0, CRACK_W, md)) * band;
 
     let rgb = mix(color.rgb, gold, crack);
@@ -161,7 +116,7 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
     let dir = p / max(length(p), 1e-4);
     let back = max(0.0, -dot(dir, heading)); // 1 directly behind travel, 0 ahead
     let sp = p * 9.0;
-    let twinkle = step(0.92, fract(hash21(floor(sp)) + globals.time * 3.0));
+    let twinkle = step(0.92, fract(dwd_value_hash_2d(floor(sp)) + globals.time * 3.0));
     let spark_shape = (1.0 - smoothstep(0.0, 0.25, length(fract(sp) - 0.5))) * smoothstep(0.3, 0.95, r);
     let spark = twinkle * spark_shape * (0.5 + 1.2 * back * uniforms.vigor);
 

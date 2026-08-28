@@ -6,11 +6,18 @@ pub(crate) mod wisp_attack;
 
 use bevy::prelude::*;
 use states::prelude::GameState;
+use visuals::prelude::ShaderLibraryAppExt;
 
 pub struct VisualsPlugin;
 impl Plugin for VisualsPlugin {
     fn build(&self, app: &mut App) {
         app
+            .register_shader_library("shaders/core.wgsl")
+            .register_shader_library("shaders/map_light.wgsl")
+            .register_shader_library("shaders/hash.wgsl")
+            .register_shader_library("shaders/gradient_noise.wgsl")
+            .register_shader_library("shaders/value_noise.wgsl")
+            .register_shader_library("shaders/voronoi_border.wgsl")
             .add_systems(Update, (
                 color_pulsation::pulsate_sprites_system,
             ))

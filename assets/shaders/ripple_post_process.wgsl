@@ -1,4 +1,5 @@
 #import bevy_core_pipeline::fullscreen_vertex_shader::FullscreenVertexOutput
+#import dwd::core::PI
 
 @group(0) @binding(0) var screen_texture: texture_2d<f32>;
 @group(0) @binding(1) var screen_sampler: sampler;
@@ -26,7 +27,6 @@ const CHROMATIC_ABERRATION: bool = false;
 const WAVE_WIDTH: f32       = 0.15;
 const BOOST_INTENSITY: f32  = 0.22;
 const MAX_DISPLACEMENT: f32 = 15.0;
-const PI: f32               = 3.14159265;
 
 fn uv_to_world(uv: vec2<f32>) -> vec2<f32> {
     let centered = uv - vec2<f32>(0.5, 0.5);

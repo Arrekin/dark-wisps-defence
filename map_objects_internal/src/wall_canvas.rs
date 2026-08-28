@@ -39,9 +39,7 @@ impl Plugin for WallCanvasPlugin {
     }
 }
 
-/// Field order and types mirror `WallCanvasSettings` in `assets/shaders/wall_canvas.wgsl`
-/// exactly. The third `u32` is free because the uniform block is padded to 16 bytes
-/// regardless.
+/// Field order and types mirror `WallCanvasSettings` in `assets/shaders/wall_canvas.wgsl`.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, ShaderType, Default)]
 struct WallCanvasSettings {
@@ -85,8 +83,7 @@ impl WallCanvas {
     ) {
         wall_canvases.iter().for_each(|entity| commands.entity(entity).despawn());
 
-        // Both buffers are filled here: the material has to have something to bind on the
-        // frame it is spawned.
+        // Bind initialized buffers on the material's spawn frame.
         let cell_count = (map_info.grid_width * map_info.grid_height) as usize;
         let cells = buffers.add(ShaderBuffer::from(vec![0u32; cell_count].as_slice()));
         let style_values: Vec<WallStyle> = styles.entries.iter().map(|e| e.style).collect();
@@ -110,9 +107,9 @@ impl WallCanvas {
     }
 }
 
-/// Raised whenever something that changes the picture happens, and lowered by the rebuild that
-/// answers it. Several changes in one frame cost one rebuild, and the signal keeps waiting on a
-/// frame where the rebuild cannot run.
+/// Coalesces changes: any number of requests in one frame produce a single rebuild. The flag
+/// stays raised until a rebuild runs, so a request that arrives while the rebuild is skipped
+/// (e.g. the canvas entity is not yet spawned) is not lost.
 #[derive(Resource, Default)]
 pub(crate) struct WallCanvasRebuildRequested(bool);
 impl WallCanvasRebuildRequested {
@@ -131,17 +128,18 @@ impl WallCanvasRebuildRequested {
 
 fn rebuild_wall_canvas(
     mut buffers: ResMut<Assets<ShaderBuffer>>,
-    mut materials: ResMut<Assets<WallCanvasMaterial>>,
+    materials: Res<Assets<WallCanvasMaterial>>,
     mut rebuild_requested: ResMut<WallCanvasRebuildRequested>,
     map_info: Res<MapInfo>,
     walls: Query<(&GridCoords, &WallStyleKey), With<Wall>>,
     wall_canvas: Single<&MeshMaterial2d<WallCanvasMaterial>, With<WallCanvas>>,
-    // Reused so the rebuild is allocation-free after the first.
+    // Reused so the fill does not reallocate; `set_data` still copies it into a fresh byte buffer.
     mut cell_data: Local<Vec<u32>>,
-) {
+) -> Result<()> {
     rebuild_requested.clear();
 
-    let Some(mut material) = materials.get_mut(wall_canvas.into_inner()) else { return; };
+    let material = materials.get(wall_canvas.into_inner())
+        .ok_or("WallCanvas material asset missing")?;
 
     cell_data.clear();
     cell_data.resize((map_info.grid_width * map_info.grid_height) as usize, 0);
@@ -153,32 +151,36 @@ fn rebuild_wall_canvas(
         cell_data[index] = key.0 + 1;
     }
 
-    let Some(mut buffer) = buffers.get_mut(&material.cells) else { return; };
+    let mut buffer = buffers.get_mut(&material.cells)
+        .ok_or("WallCanvas cells buffer asset missing")?;
     buffer.set_data(&*cell_data);
-
-    material.settings.grid_width = map_info.grid_width as u32;
-    material.settings.grid_height = map_info.grid_height as u32;
+    Ok(())
 }
 
 fn apply_wall_canvas_styles(
     mut buffers: ResMut<Assets<ShaderBuffer>>,
-    mut materials: ResMut<Assets<WallCanvasMaterial>>,
+    materials: Res<Assets<WallCanvasMaterial>>,
     styles: Res<WallStyles>,
     wall_canvas: Single<&MeshMaterial2d<WallCanvasMaterial>, With<WallCanvas>>,
-) {
-    let Some(material) = materials.get_mut(wall_canvas.into_inner()) else { return; };
+) -> Result<()> {
+    let material = materials.get(wall_canvas.into_inner())
+        .ok_or("WallCanvas material asset missing")?;
     let style_values: Vec<WallStyle> = styles.entries.iter().map(|e| e.style).collect();
-    let Some(mut buffer) = buffers.get_mut(&material.styles) else { return; };
+    let mut buffer = buffers.get_mut(&material.styles)
+        .ok_or("WallCanvas styles buffer asset missing")?;
     buffer.set_data(&style_values);
+    Ok(())
 }
 
 fn apply_wall_canvas_debug(
     mut materials: ResMut<Assets<WallCanvasMaterial>>,
     debug: Res<WallCanvasDebug>,
     wall_canvas: Single<&MeshMaterial2d<WallCanvasMaterial>, With<WallCanvas>>,
-) {
-    let Some(mut material) = materials.get_mut(wall_canvas.into_inner()) else { return; };
+) -> Result<()> {
+    let mut material = materials.get_mut(wall_canvas.into_inner())
+        .ok_or("WallCanvas material asset missing")?;
     material.settings.debug_mode = debug.shader_index();
+    Ok(())
 }
 
 fn on_style_insert_request_wall_canvas_rebuild(

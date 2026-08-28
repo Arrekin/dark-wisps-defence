@@ -44,6 +44,7 @@ macro_rules! define_z_indexes {
 
 define_z_indexes!(
     OVERLAY_EMISSIONS,
+    DARK_ORE,
     OBSTACLE,
     OVERLAY_ENERGY_SUPPLY,
     OVERLAY_TOWER_RANGES,

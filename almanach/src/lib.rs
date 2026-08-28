@@ -226,8 +226,8 @@ impl From<&WallInfo> for ObjectPlacementInfo {
 pub struct DarkOreInfo {
     pub name: String,
     pub grid_imprint: GridImprint,
-    pub sprites: Vec<Handle<Image>>,
-    pub default_amount: u32,
+    pub sprite: Handle<Image>,
+    pub max_field_saturation: u32,
     pub validate: PlacementValidatorFn,
     pub annotate: PlacementAnnotatorFn,
     pub placement: PlacementChannel,
@@ -240,7 +240,7 @@ impl From<&DarkOreInfo> for ObjectPlacementInfo {
             validate: info.validate,
             annotate: info.annotate,
             placement: info.placement,
-            preview_image: info.sprites.first().cloned(),
+            preview_image: Some(info.sprite.clone()),
         }
     }
 }

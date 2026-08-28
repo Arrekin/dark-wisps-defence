@@ -1,7 +1,4 @@
-use std::f32::consts::PI;
-
 use bevy::prelude::*;
-use nanorand::Rng;
 
 use almanach::prelude::AlmanachAppExt;
 use almanach::{Almanach, DarkOreInfo};
@@ -49,11 +46,8 @@ impl BuilderDarkOre {
         DarkOreInfo {
             name: "Dark Ore".to_string(),
             grid_imprint: DARK_ORE_GRID_IMPRINT,
-            sprites: vec![
-                asset_server.load("map_objects/dark_ore_1.png"),
-                asset_server.load("map_objects/dark_ore_2.png"),
-            ],
-            default_amount: 1000,
+            sprite: asset_server.load("map_objects/dark_ore_1.png"),
+            max_field_saturation: 1000,
             validate: validator_all_empty,
             annotate: annotate_non_empty,
             placement: PlacementChannel::of::<DarkOre>().with_modes(PlacementMode::OnPress),
@@ -67,27 +61,14 @@ impl BuilderDarkOre {
     fn on_builder_add_spawn_dark_ore(
         trigger: On<Add, BuilderDarkOre>,
         mut commands: Commands,
-        almanach: Res<Almanach>,
         builders: Query<&BuilderDarkOre>,
     ) {
         let entity = trigger.entity;
         let Ok(builder) = builders.get(entity) else { return; };
 
-        let mut rng = nanorand::tls_rng();
         commands.entity(entity)
             .remove::<BuilderDarkOre>()
             .insert((
-            Sprite {
-                image: almanach.dark_ore.sprites[rng.generate_range(0usize..2usize)].clone(),
-                custom_size: Some(DARK_ORE_GRID_IMPRINT.world_size()),
-                ..Default::default()
-            },
-            Transform {
-                translation: builder.grid_position.to_world_position_centered(DARK_ORE_GRID_IMPRINT).extend(0.),
-                // select one of: Left, Up, Right, Down
-                rotation: Quat::from_rotation_z([0., PI / 2., PI, 3. * PI / 2.][rng.generate_range(0usize..4usize)] as f32),
-                ..default()
-            },
             builder.grid_position,
             DarkOre { amount: builder.amount as i32 },
             DARK_ORE_GRID_IMPRINT,
@@ -166,7 +147,7 @@ fn on_dark_ore_place_request_do_so(
         (almanach.dark_ore.validate)(MapObject::DarkOre, *coords, *grid_imprint, &grids)
     };
     if validity == PlacementValidity::Invalid { return; }
-    commands.spawn(BuilderDarkOre::new(*coords, almanach.dark_ore.default_amount));
+    commands.spawn(BuilderDarkOre::new(*coords, almanach.dark_ore.max_field_saturation));
     grids.reserved_coords.reserve(*coords, *grid_imprint);
 }
 

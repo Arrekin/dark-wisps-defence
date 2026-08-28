@@ -5,15 +5,18 @@ use grids::{prelude::ObstacleGridObject, EmissionsGridSpreadAffector};
 
 pub mod wall_style;
 
+/// Drawn by the dark ore canvas from `GridCoords`.
 #[derive(Component)]
-#[require(MapBound, ObstacleGridObject = ObstacleGridObject::DarkOre, ZDepth::OBSTACLE)]
+#[require(MapBound, ObstacleGridObject = ObstacleGridObject::DarkOre)]
 pub struct DarkOre {
     pub amount: i32,
 }
 
 
+/// Drawn by the wall canvas from `GridCoords`, so the entity itself carries no transform or
+/// render layer.
 #[derive(Component)]
-#[require(MapBound, ObstacleGridObject = ObstacleGridObject::Wall, EmissionsGridSpreadAffector, ZDepth::OBSTACLE)]
+#[require(MapBound, ObstacleGridObject = ObstacleGridObject::Wall, EmissionsGridSpreadAffector)]
 pub struct Wall;
 
 /// Progressive obstacle requiring drone scanning to solve.
