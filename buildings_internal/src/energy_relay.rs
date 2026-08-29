@@ -13,7 +13,7 @@ use game_core::prelude::*;
 use grids::{
     emissions::{EmissionsType, EmitterEnergy, FloodEmissionsDetails, FloodEmissionsEvaluator, FloodEmissionsMode},
     energy_supply::SupplierEnergy,
-    placement::{annotate_non_empty, PlacementChannel},
+    placement::{annotate_non_empty, PlacementChannel, PlaceRequest},
 };
 use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
 use logging::prelude::*;
@@ -33,6 +33,7 @@ impl Plugin for EnergyRelayPlugin {
         let almanach_info = BuilderEnergyRelay::almanach_info(app.world().resource::<AssetServer>());
         app
             .add_observer(BuilderEnergyRelay::on_builder_add_spawn_energy_relay)
+            .add_observer(on_energy_relay_place_request_do_so)
             .add_systems(CollectSave, collect_energy_relays)
             .register_loader(MapLoadingStage::SpawnMapElements, "energy_relays", load_energy_relays)
             .register_building(BuildingType::EnergyRelay, almanach_info)
@@ -63,7 +64,7 @@ impl BuilderEnergyRelay {
             ]),
             validate: building_validator,
             annotate: annotate_non_empty,
-            placement: PlacementChannel::of::<Building>(),
+            placement: PlacementChannel::of::<EnergyRelay>(),
         }
     }
 
@@ -135,6 +136,15 @@ impl BuilderEnergyRelay {
             ;
         commands.trigger(TechnicalStateChanged { entity, kind: TechnicalChange::JustSpawned });
     }
+}
+
+fn on_energy_relay_place_request_do_so(
+    _trigger: On<PlaceRequest<EnergyRelay>>,
+    mut commands: Commands,
+    mut placement: BuildingPlacementManager,
+) {
+    let Some(coords) = placement.claim(BuildingType::EnergyRelay) else { return };
+    commands.spawn(BuilderEnergyRelay::new(coords));
 }
 
 fn collect_energy_relays(

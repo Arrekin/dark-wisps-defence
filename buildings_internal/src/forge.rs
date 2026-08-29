@@ -19,7 +19,7 @@ use alteration::{
 use almanach::prelude::*;
 use buildings::prelude::*;
 use game_core::prelude::*;
-use grids::placement::{annotate_non_empty, PlacementChannel};
+use grids::placement::{annotate_non_empty, PlacementChannel, PlaceRequest};
 use hud::prelude::*;
 use logging::prelude::*;
 use persistence::{
@@ -53,6 +53,7 @@ impl Plugin for ForgePlugin {
                 ForgeInfoPanel::update_progress.run_if(in_state(UiInteraction::DisplayInfoPanel)),
             ))
             .add_observer(BuilderForge::on_builder_add_spawn_forge)
+            .add_observer(on_forge_place_request_do_so)
             .add_observer(on_start_forge_do_so)
             .add_observer(on_cancel_forge_do_so)
             .add_observer(ForgeInfoPanel::on_building_info_panel_enabled_toggle_subpanel_visibility)
@@ -218,7 +219,7 @@ impl BuilderForge {
             baseline: HashMap::from([(ModifierType::MaxIntegrityPoints, 100.)]),
             validate: building_validator,
             annotate: annotate_non_empty,
-            placement: PlacementChannel::of::<Building>(),
+            placement: PlacementChannel::of::<Forge>(),
         }
     }
 
@@ -283,6 +284,15 @@ impl BuilderForge {
             .observe(on_technical_state_changed_recompute_operational);
         commands.trigger(TechnicalStateChanged { entity, kind: TechnicalChange::JustSpawned });
     }
+}
+
+fn on_forge_place_request_do_so(
+    _trigger: On<PlaceRequest<Forge>>,
+    mut commands: Commands,
+    mut placement: BuildingPlacementManager,
+) {
+    let Some(coords) = placement.claim(BuildingType::Forge) else { return };
+    commands.spawn(BuilderForge::new(coords));
 }
 
 fn collect_forges(

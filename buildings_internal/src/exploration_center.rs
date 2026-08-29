@@ -32,7 +32,7 @@ use alteration::{
 use almanach::prelude::*;
 use buildings::prelude::*;
 use game_core::prelude::*;
-use grids::placement::{annotate_non_empty, PlacementChannel};
+use grids::placement::{annotate_non_empty, PlacementChannel, PlaceRequest};
 use hud::prelude::*;
 use logging::prelude::*;
 use map_objects::prelude::*;
@@ -77,6 +77,7 @@ impl Plugin for ExplorationCenterPlugin {
                 DroneSlotFuelFill::update,
             ).run_if(in_state(UiInteraction::DisplayInfoPanel)))
             .add_observer(BuilderExplorationCenter::on_builder_add_spawn_exploration_center)
+            .add_observer(on_exploration_center_place_request_do_so)
             .add_observer(ExplorationCenterInfoPanel::on_building_info_panel_enabled_toggle_subpanel_visibility)
             .add_observer(ExplorationCenterInfoPanel::on_rebuild_drone_slots)
             .add_observer(DroneSlotRow::on_add_construct_drone_slot_row)
@@ -121,7 +122,7 @@ impl BuilderExplorationCenter {
             baseline: HashMap::from([(ModifierType::MaxIntegrityPoints, 100.)]),
             validate: building_validator,
             annotate: annotate_non_empty,
-            placement: PlacementChannel::of::<Building>(),
+            placement: PlacementChannel::of::<ExplorationCenter>(),
         }
     }
 
@@ -183,6 +184,15 @@ impl BuilderExplorationCenter {
             .observe(on_technical_state_changed_recompute_operational);
         commands.trigger(TechnicalStateChanged { entity, kind: TechnicalChange::JustSpawned });
     }
+}
+
+fn on_exploration_center_place_request_do_so(
+    _trigger: On<PlaceRequest<ExplorationCenter>>,
+    mut commands: Commands,
+    mut placement: BuildingPlacementManager,
+) {
+    let Some(coords) = placement.claim(BuildingType::ExplorationCenter) else { return };
+    commands.spawn(BuilderExplorationCenter::new(coords));
 }
 
 fn collect_exploration_centers(

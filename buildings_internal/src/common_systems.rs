@@ -7,30 +7,16 @@ use almanach::prelude::*;
 use buildings::prelude::*;
 use game_core::{math::angle_difference, prelude::*};
 use grids::{
-    placement::{GridObjectPlacer, GridsCollectionParam, PlacementValidity, PlaceRequest},
     prelude::*,
     search::targetfinding::target_find_closest_wisp,
     wisps::WispsGrid,
 };
 use logging::prelude::*;
-use resources::prelude::*;
 use states::prelude::*;
 use visuals::prelude::*;
 use wisps::prelude::*;
 
 use crate::common::*;
-
-use super::{
-    energy_relay::BuilderEnergyRelay,
-    exploration_center::BuilderExplorationCenter,
-    forge::BuilderForge,
-    mining_complex::BuilderMiningComplex,
-    tower_blaster::BuilderTowerBlaster,
-    tower_cannon::BuilderTowerCannon,
-    tower_emitter::BuilderTowerEmitter,
-    tower_field::BuilderTowerField,
-    tower_rocket_launcher::BuilderTowerRocketLauncher,
-};
 
 pub struct CommonSystemsPlugin;
 impl Plugin for CommonSystemsPlugin {
@@ -48,7 +34,6 @@ impl Plugin for CommonSystemsPlugin {
                 ).run_if(in_state(GameState::Running)),
             ))
             .add_observer(on_building_destroy_request_do_so)
-            .add_observer(on_building_place_request_do_so)
             .add_observer(on_insert_attack_speed_sync_shooting_timer)
             ;
     }
@@ -62,65 +47,6 @@ fn on_insert_attack_speed_sync_shooting_timer(
     let Ok((mut timer, attack_speed)) = timers.get_mut(entity) else { return; };
     if attack_speed.get() == 0. { return; }
     timer.0.set_duration(Duration::from_secs_f32(1. / attack_speed.get()));
-}
-
-fn on_building_place_request_do_so(
-    _trigger: On<PlaceRequest<Building>>,
-    mut commands: Commands,
-    almanach: Res<Almanach>,
-    mut grids: GridsCollectionParam,
-    mut stock: ResMut<Stock>,
-    placer: Single<(&GridObjectPlacer, &GridCoords, &GridImprint)>,
-    main_base: Query<Entity, With<MainBase>>,
-) {
-    let (grid_object_placer, coords, grid_imprint) = placer.into_inner();
-    let Some(active_placement) = &grid_object_placer.active_placement else { return };
-    let MapObject::Building(building_type) = active_placement.map_object else { return };
-
-    let validity = (active_placement.placement_info.validate)(active_placement.map_object, *coords, *grid_imprint, &grids);
-    if validity == PlacementValidity::Invalid { return; }
-
-    // Payment
-    let building_costs = &almanach.get_building_info(building_type).cost;
-    if !stock.try_pay_costs(building_costs) { Log::info().player().tag(Tag::Build).message("Not enough resources"); return; }
-
-    // Reserve and spawn
-    grids.reserved_coords.reserve(*coords, *grid_imprint);
-    Log::info().player().tag(Tag::Build).message(format!("'{}' placed at ({}, {})", almanach.get_building_info(building_type).name, coords.x, coords.y));
-    match building_type {
-        BuildingType::EnergyRelay => {
-            commands.spawn(BuilderEnergyRelay::new(*coords));
-        }
-        BuildingType::ExplorationCenter => {
-            commands.spawn(BuilderExplorationCenter::new(*coords));
-        }
-        BuildingType::Tower(TowerType::Blaster) => {
-            commands.spawn(BuilderTowerBlaster::new(*coords));
-        },
-        BuildingType::Tower(TowerType::Cannon) => {
-            commands.spawn(BuilderTowerCannon::new(*coords));
-        },
-        BuildingType::Tower(TowerType::RocketLauncher) => {
-            commands.spawn(BuilderTowerRocketLauncher::new(*coords));
-        },
-        BuildingType::Tower(TowerType::Emitter) => {
-            commands.spawn(BuilderTowerEmitter::new(*coords));
-        },
-        BuildingType::Tower(TowerType::Field) => {
-            commands.spawn(BuilderTowerField::new(*coords));
-        },
-        BuildingType::MainBase => {
-            let Ok(main_base_entity) = main_base.single() else { return; };
-            // Remove/Insert ObstacleGridObject to trigger grid reprint
-            commands.entity(main_base_entity).remove::<ObstacleGridObject>().insert(*coords).insert(ObstacleGridObject::Building);
-        },
-        BuildingType::MiningComplex => {
-            commands.spawn(BuilderMiningComplex::new(*coords));
-        },
-        BuildingType::Forge => {
-            commands.spawn(BuilderForge::new(*coords));
-        },
-    };
 }
 
 fn targeting_system(

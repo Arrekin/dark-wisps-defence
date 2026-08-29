@@ -13,7 +13,7 @@ use alteration::{
 use almanach::prelude::*;
 use buildings::prelude::*;
 use game_core::prelude::*;
-use grids::placement::{annotate_non_empty, PlacementChannel};
+use grids::placement::{annotate_non_empty, PlacementChannel, PlaceRequest};
 use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
 use logging::prelude::*;
 use persistence::{
@@ -37,6 +37,7 @@ impl Plugin for TowerFieldPlugin {
         let almanach_info = BuilderTowerField::almanach_info(app.world().resource::<AssetServer>());
         app
             .add_observer(BuilderTowerField::on_builder_add_spawn_tower_field)
+            .add_observer(on_tower_field_place_request_do_so)
             .add_observer(on_tower_field_despawn_shrink_orphaned_force_field)
             .add_systems(CollectSave, collect_tower_fields)
             .register_loader(MapLoadingStage::SpawnMapElements, "tower_fields", load_tower_fields)
@@ -72,7 +73,7 @@ impl BuilderTowerField {
             ]),
             validate: building_validator,
             annotate: annotate_non_empty,
-            placement: PlacementChannel::of::<Building>(),
+            placement: PlacementChannel::of::<TowerField>(),
         }
     }
 
@@ -163,6 +164,15 @@ impl BuilderTowerField {
         }
     }
 
+}
+
+fn on_tower_field_place_request_do_so(
+    _trigger: On<PlaceRequest<TowerField>>,
+    mut commands: Commands,
+    mut placement: BuildingPlacementManager,
+) {
+    let Some(coords) = placement.claim(BuildingType::Tower(TowerType::Field)) else { return };
+    commands.spawn(BuilderTowerField::new(coords));
 }
 
 fn collect_tower_fields(

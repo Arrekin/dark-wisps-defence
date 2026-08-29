@@ -11,7 +11,7 @@ use almanach::prelude::*;
 use buildings::prelude::*;
 use game_core::prelude::*;
 use grids::{
-    placement::{annotate_non_empty, PlacementChannel},
+    placement::{annotate_non_empty, PlacementChannel, PlaceRequest},
     prelude::*,
 };
 use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
@@ -37,6 +37,7 @@ impl Plugin for TowerCannonPlugin {
                 shooting_system.run_if(in_state(GameState::Running)),
             ))
             .add_observer(BuilderTowerCannon::on_builder_add_spawn_tower_cannon)
+            .add_observer(on_tower_cannon_place_request_do_so)
             .add_systems(CollectSave, collect_tower_cannons)
             .register_loader(MapLoadingStage::SpawnMapElements, "tower_cannons", load_tower_cannons)
             .register_building(BuildingType::Tower(TowerType::Cannon), almanach_info)
@@ -70,7 +71,7 @@ impl BuilderTowerCannon {
             ]),
             validate: building_validator,
             annotate: annotate_non_empty,
-            placement: PlacementChannel::of::<Building>(),
+            placement: PlacementChannel::of::<TowerCannon>(),
         }
     }
 
@@ -152,6 +153,15 @@ impl BuilderTowerCannon {
             ShardType::Fire | ShardType::Water | ShardType::Light | ShardType::Electric => {}
         }
     }
+}
+
+fn on_tower_cannon_place_request_do_so(
+    _trigger: On<PlaceRequest<TowerCannon>>,
+    mut commands: Commands,
+    mut placement: BuildingPlacementManager,
+) {
+    let Some(coords) = placement.claim(BuildingType::Tower(TowerType::Cannon)) else { return };
+    commands.spawn(BuilderTowerCannon::new(coords));
 }
 
 fn collect_tower_cannons(

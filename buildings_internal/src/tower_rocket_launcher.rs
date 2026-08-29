@@ -11,7 +11,7 @@ use alteration::{
 use almanach::prelude::*;
 use buildings::prelude::*;
 use game_core::{math::angle_difference, prelude::*};
-use grids::placement::{annotate_non_empty, PlacementChannel};
+use grids::placement::{annotate_non_empty, PlacementChannel, PlaceRequest};
 use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
 use logging::prelude::*;
 use persistence::{
@@ -32,6 +32,7 @@ impl Plugin for TowerRocketLauncherPlugin {
         let almanach_info = BuilderTowerRocketLauncher::almanach_info(app.world().resource::<AssetServer>());
         app
             .add_observer(BuilderTowerRocketLauncher::on_builder_add_spawn_tower_rocket_launcher)
+            .add_observer(on_tower_rocket_launcher_place_request_do_so)
             .add_systems(Update, (
                 shooting_system.run_if(in_state(GameState::Running)),
             ))
@@ -68,7 +69,7 @@ impl BuilderTowerRocketLauncher {
             ]),
             validate: building_validator,
             annotate: annotate_non_empty,
-            placement: PlacementChannel::of::<Building>(),
+            placement: PlacementChannel::of::<TowerRocketLauncher>(),
         }
     }
 
@@ -161,6 +162,15 @@ impl BuilderTowerRocketLauncher {
             ShardType::Fire | ShardType::Water | ShardType::Light | ShardType::Electric => {}
         }
     }
+}
+
+fn on_tower_rocket_launcher_place_request_do_so(
+    _trigger: On<PlaceRequest<TowerRocketLauncher>>,
+    mut commands: Commands,
+    mut placement: BuildingPlacementManager,
+) {
+    let Some(coords) = placement.claim(BuildingType::Tower(TowerType::RocketLauncher)) else { return };
+    commands.spawn(BuilderTowerRocketLauncher::new(coords));
 }
 
 fn collect_tower_rocket_launchers(

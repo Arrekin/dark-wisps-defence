@@ -13,7 +13,8 @@ use game_core::prelude::*;
 use grids::{
     emissions::{EmissionsType, EmitterEnergy, FloodEmissionsDetails, FloodEmissionsEvaluator, FloodEmissionsMode},
     energy_supply::{GeneratorEnergy, SupplierEnergy},
-    placement::{annotate_non_empty, PlacementChannel},
+    placement::{annotate_non_empty, PlacementChannel, PlaceRequest},
+    prelude::ObstacleGridObject,
 };
 use logging::prelude::*;
 use persistence::{
@@ -33,6 +34,7 @@ impl Plugin for MainBasePlugin {
         let almanach_info = BuilderMainBase::almanach_info(app.world().resource::<AssetServer>());
         app
             .add_observer(BuilderMainBase::on_builder_add_spawn_main_base)
+            .add_observer(on_main_base_place_request_do_so)
             .add_systems(CollectSave, collect_main_bases)
             .register_loader(MapLoadingStage::SpawnMapElements, "main_bases", load_main_bases)
             .add_systems(OnEnter(MapLoadingStage::SpawnMapElements), seed_main_base.run_if(creating_new_map))
@@ -90,7 +92,7 @@ impl BuilderMainBase {
             ]),
             validate: building_validator,
             annotate: annotate_non_empty,
-            placement: PlacementChannel::of::<Building>(),
+            placement: PlacementChannel::of::<MainBase>(),
         }
     }
 
@@ -146,6 +148,20 @@ impl BuilderMainBase {
             ;
         commands.trigger(TechnicalStateChanged { entity, kind: TechnicalChange::JustSpawned });
     }
+}
+
+fn on_main_base_place_request_do_so(
+    _trigger: On<PlaceRequest<MainBase>>,
+    mut commands: Commands,
+    mut placement: BuildingPlacementManager,
+    main_base: Single<Entity, With<MainBase>>,
+) {
+    let Some(coords) = placement.claim_free(BuildingType::MainBase) else { return };
+    // Remove/Insert ObstacleGridObject to trigger grid reprint
+    commands.entity(*main_base)
+        .remove::<ObstacleGridObject>()
+        .insert(coords)
+        .insert(ObstacleGridObject::Building);
 }
 
 fn collect_main_bases(

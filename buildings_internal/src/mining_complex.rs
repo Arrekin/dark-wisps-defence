@@ -11,7 +11,7 @@ use alteration::{
 use almanach::prelude::*;
 use buildings::prelude::*;
 use game_core::prelude::*;
-use grids::placement::{CellHighlight, GridsCollectionParam, PlacementChannel, PlacementValidity};
+use grids::placement::{CellHighlight, GridsCollectionParam, PlacementChannel, PlacementValidity, PlaceRequest};
 use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
 use logging::prelude::*;
 use map_objects::{
@@ -77,6 +77,7 @@ impl Plugin for MiningComplexPlugin {
                 mine_ore_system.run_if(in_state(GameState::Running)),
             ))
             .add_observer(BuilderMiningComplex::on_builder_add_spawn_mining_complex)
+            .add_observer(on_mining_complex_place_request_do_so)
             .add_systems(CollectSave, collect_mining_complexes)
             .register_loader(MapLoadingStage::SpawnMapElements, "mining_complexes", load_mining_complexes)
             .register_building(BuildingType::MiningComplex, almanach_info)
@@ -108,7 +109,7 @@ impl BuilderMiningComplex {
             baseline: HashMap::from([(ModifierType::MaxIntegrityPoints, 100.)]),
             validate: mining_complex_validator,
             annotate: mining_complex_annotator,
-            placement: PlacementChannel::of::<Building>(),
+            placement: PlacementChannel::of::<MiningComplex>(),
         }
     }
 
@@ -173,6 +174,15 @@ impl BuilderMiningComplex {
             .observe(on_technical_state_changed_recompute_operational);
         commands.trigger(TechnicalStateChanged { entity, kind: TechnicalChange::JustSpawned });
     }
+}
+
+fn on_mining_complex_place_request_do_so(
+    _trigger: On<PlaceRequest<MiningComplex>>,
+    mut commands: Commands,
+    mut placement: BuildingPlacementManager,
+) {
+    let Some(coords) = placement.claim(BuildingType::MiningComplex) else { return };
+    commands.spawn(BuilderMiningComplex::new(coords));
 }
 
 fn collect_mining_complexes(

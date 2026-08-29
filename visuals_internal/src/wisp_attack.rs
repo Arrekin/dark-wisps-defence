@@ -1,7 +1,6 @@
 use bevy::prelude::*;
 
 use game_core::prelude::{MapBound, ZDepth};
-use viewport::MouseInfo;
 use visuals::prelude::BuilderWispAttackEffect;
 
 use crate::common::AnimationController;
@@ -13,7 +12,6 @@ impl Plugin for WispAttackEffectPlugin {
             .init_resource::<WispAttackEffectAtlas>()
             .add_systems(Update, (
                 remove_effects_system,
-                spawn_random_wisps_effect_system,
             ))
             .add_observer(on_builder_add_spawn_wisp_attack_effect);
     }
@@ -91,13 +89,4 @@ fn remove_effects_system(
     }
 }
 
-fn spawn_random_wisps_effect_system(
-    mut commands: Commands,
-    button_input: Res<ButtonInput<MouseButton>>,
-    mouse_info: Res<MouseInfo>,
-) {
-    if button_input.just_released(MouseButton::Left){
-        println!("Spawning");
-        commands.spawn(BuilderWispAttackEffect(mouse_info.world_position));
-    }
-}
+
