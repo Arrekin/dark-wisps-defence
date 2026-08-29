@@ -42,7 +42,7 @@ impl TrackingGrid {
         let mut path = vec![from_coords];
         let mut curr_coords = from_coords;
         loop {
-            curr_coords = match self.grid[(curr_coords.y * self.width + curr_coords.x) as usize] {
+            curr_coords = match self.grid[self.index(curr_coords)] {
                 Tracking::Unvisited => panic!("Encountered unvisited field during compilation of path"),
                 Tracking::Tracked {from} => from,
             };

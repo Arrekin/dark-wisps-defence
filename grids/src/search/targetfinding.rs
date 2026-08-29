@@ -6,7 +6,7 @@ use game_core::prelude::GridCoords;
 
 use crate::{prelude::*, wisps::WispsGrid};
 
-use super::common::{CARDINAL_DIRECTIONS, State, VISITED_GRID};
+use super::common::{State, VISITED_GRID};
 
 /// Finds the closest wisp
 /// `ignore_obstacles` ignores all grid obstacles
@@ -20,7 +20,7 @@ pub fn target_find_closest_wisp(
     ignore_obstacles: bool,
 ) -> Option<(GridCoords, Entity)> {
     VISITED_GRID.with_borrow_mut(|visited_grid| {
-        visited_grid.resize_and_reset(obstacle_grid.bounds());
+        visited_grid.resize_and_reset(obstacle_grid.bounds);
         let mut queue = BinaryHeap::new();
         start_coords.into_iter().for_each(
             |coords| {
@@ -29,11 +29,8 @@ pub fn target_find_closest_wisp(
             }
         );
         while let Some(State{ cost, distance, coords }) = queue.pop() {
-            for (delta_x, delta_y) in CARDINAL_DIRECTIONS {
-                let new_coords = coords.shifted((delta_x, delta_y));
-                if distance > range
-                    || !new_coords.is_in_bounds(obstacle_grid.bounds())
-                    || visited_grid.is_visited(new_coords)
+            for new_coords in obstacle_grid.bounds.cardinal_neighbors(coords) {
+                if visited_grid.is_visited(new_coords)
                     || (!ignore_obstacles && !obstacle_grid[new_coords].is_empty())
                 {
                     continue;
@@ -44,7 +41,10 @@ pub fn target_find_closest_wisp(
                 }
 
                 visited_grid.set_visited(new_coords);
-                queue.push(State { cost: cost + 1, distance: distance + 1, coords: new_coords });
+                let new_distance = distance + 1;
+                if new_distance < range {
+                    queue.push(State { cost: cost + 1, distance: new_distance, coords: new_coords });
+                }
             }
         }
         None

@@ -9,7 +9,7 @@
 
 use bevy::prelude::*;
 
-use game_core::prelude::{CELL_SIZE, FieldAffectable, GridCoords};
+use game_core::prelude::{FieldAffectable, GridCoords, GridImprint};
 use grids::{
     force_fields::ForceFieldGrid,
     prelude::GridVersion,
@@ -73,12 +73,10 @@ fn recompute_force_field_grid_system(
     // Recompute the entire grid as a weighted Voronoi diagram.
     // Each cell is assigned to whichever field is "deepest" inside it
     // (smallest normalized distance = actual_dist / effective_radius).
-    for y in 0..grid.height {
-        for x in 0..grid.width {
-            let cell_center = Vec2::new((x as f32 + 0.5) * CELL_SIZE, (y as f32 + 0.5) * CELL_SIZE);
-            let idx = grid.index(GridCoords { x, y });
-            grid.grid[idx] = find_owning_field(cell_center, &fields);
-        }
+    let grid_bounds = grid.bounds;
+    for coords in grid_bounds.iter() {
+        let cell_center = coords.to_world_position_centered(GridImprint::default());
+        grid[coords] = find_owning_field(cell_center, &fields);
     }
     grid.version = grid.version.wrapping_add(1);
 }
@@ -122,7 +120,7 @@ fn field_tracking_system(
         // When the grid changed, every entity may now be owned by a different field.
         if !grid_changed && !coords.is_changed() { continue; }
 
-        if !coords.is_in_bounds(force_field_grid.bounds()) { continue; }
+        if !coords.are_in_bounds(force_field_grid.bounds) { continue; }
         let new_field = force_field_grid[*coords];
         if new_field == affected.current_field { continue; }
 

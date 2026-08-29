@@ -10,7 +10,7 @@ use bevy::{
     sprite_render::{AlphaMode2d, Material2d, Material2dPlugin, MeshMaterial2d},
 };
 
-use game_core::prelude::{MapInfo, ZDepth};
+use game_core::prelude::{Bounds, MapInfo, ZDepth};
 use grids::{
     emissions::{EmissionsGrid, EmissionsType},
     prelude::GridVersion,
@@ -78,6 +78,12 @@ struct EmissionsUniformData {
     grid_height: u32,
     min_value: f32,
     max_value: f32,
+}
+impl EmissionsUniformData {
+    fn new(bounds: Bounds, min_value: f32, max_value: f32) -> Self {
+        let (grid_width, grid_height) = bounds.as_u32();
+        Self { grid_width, grid_height, min_value, max_value }
+    }
 }
 
 #[derive(Asset, AsBindGroup, TypePath, Debug, Clone, Default)]
@@ -170,11 +176,5 @@ fn refresh_display_system(
     }
 
     // Update uniforms
-    let bounds = emissions_grid.bounds();
-    overlay_material.uniforms = EmissionsUniformData {
-        grid_width: bounds.0 as u32,
-        grid_height: bounds.1 as u32,
-        min_value: min_val,
-        max_value: max_val,
-    };
+    overlay_material.uniforms = EmissionsUniformData::new(emissions_grid.bounds, min_val, max_val);
 }

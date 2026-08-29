@@ -3,9 +3,8 @@ use std::f32::consts::PI;
 use bevy::prelude::*;
 
 use alteration::modifiers::prelude::AttackDamage;
-use game_core::prelude::{CELL_SIZE, DamageMessage, GridCoords, Property};
+use game_core::prelude::{ALL_DIRECTIONS, CELL_SIZE, DamageMessage, GridCoords, Property};
 use grids::{
-    search::common::ALL_DIRECTIONS,
     wisps::WispsGrid,
 };
 use logging::prelude::*;
@@ -166,7 +165,7 @@ fn cannonball_hit_system(
         let coords = GridCoords::from_transform(cannonball_transform);
         for (dx, dy) in ALL_DIRECTIONS.iter().chain(&[(0, 0)]) {
             let blast_zone_coords = coords.shifted((*dx, *dy));
-            if !blast_zone_coords.is_in_bounds(wisps_grid.bounds()) { continue; }
+            if !blast_zone_coords.are_in_bounds(wisps_grid.bounds) { continue; }
 
             commands.spawn(BuilderExplosion(blast_zone_coords));
 

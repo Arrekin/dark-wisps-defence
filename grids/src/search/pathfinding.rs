@@ -4,7 +4,7 @@ use game_core::prelude::GridCoords;
 
 use crate::{emissions::EmissionsGrid, energy_supply::EnergySupplyGrid, obstacles::GridStructureType, prelude::*};
 
-use super::common::{ALL_DIRECTIONS, State, TRACKING_GRID};
+use super::common::{State, TRACKING_GRID};
 
 const EMPTY_FIELD_MODIFIER: f32 = 1.0;
 const BUILDING_FIELD_MODIFIER: f32 = 0.1;
@@ -17,24 +17,23 @@ pub fn path_find_energy_beckon(
 ) -> Option<Vec<GridCoords>> {
     // BFS to find closest building field
     TRACKING_GRID.with_borrow_mut(|tracking| {
-        tracking.resize_and_reset(obstacle_grid.bounds());
+        tracking.resize_and_reset(obstacle_grid.bounds);
         let mut queue = BinaryHeap::new();
         queue.push(State{ cost: f32::MIN, distance: 0, coords: start_coords });
         tracking.set_tracked(start_coords, start_coords);
         while let Some(State{ distance, coords, .. }) = queue.pop() {
-            for (delta_x, delta_y) in ALL_DIRECTIONS {
-                let new_coords = coords.shifted((delta_x, delta_y));
-                if !new_coords.is_in_bounds(obstacle_grid.bounds())
-                    || tracking.is_tracked(new_coords)
+            for new_coords in obstacle_grid.bounds.all_neighbors(coords) {
+                if tracking.is_tracked(new_coords)
                     || obstacle_grid[new_coords].has_wall()
                 {
                     continue;
                 }
 
                 // If it is a diagonal move it shall be allowed only if both adjacent fields are empty
-                if delta_x.abs() == delta_y.abs() {
-                    let adjacent_x: GridCoords = (coords.x + delta_x, coords.y).into();
-                    let adjacent_y: GridCoords = (coords.x, coords.y + delta_y).into();
+                let is_diagonal_move = new_coords.x != coords.x && new_coords.y != coords.y;
+                if is_diagonal_move {
+                    let adjacent_x = GridCoords { x: new_coords.x, y: coords.y };
+                    let adjacent_y = GridCoords { x: coords.x, y: new_coords.y };
                     if obstacle_grid[adjacent_x].has_structure() || obstacle_grid[adjacent_y].has_structure() {
                         continue;
                     }

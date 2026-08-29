@@ -157,17 +157,17 @@ pub(crate) fn load_wisps(ctx: &mut LoadContext) -> rusqlite::Result<()> {
 
 pub(crate) fn wisp_validator(
     _: MapObject,
-    coords: GridCoords,
+    origin: GridCoords,
     imprint: GridImprint,
     grids: &GridsCollectionParam,
 ) -> PlacementValidity {
-    if !coords.is_in_bounds(grids.obstacle_grid.bounds()) {
+    if !origin.are_in_bounds(grids.obstacle_grid.bounds) {
         return PlacementValidity::Invalid;
     }
-    if !grids.obstacle_grid.query_imprint_all(coords, imprint, |f| f.is_empty()) {
+    if !grids.obstacle_grid.query_imprint_all(origin, imprint, |f| f.is_empty()) {
         return PlacementValidity::Invalid;
     }
-    if !grids.wisps_grid[coords].is_empty() {
+    if !grids.wisps_grid[origin].is_empty() {
         return PlacementValidity::Invalid;
     }
     PlacementValidity::Valid

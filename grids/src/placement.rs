@@ -204,17 +204,17 @@ impl GridObjectPlacerRequest {
 /// Generic validator: checks bounds, reserved coords, and that all cells are empty.
 pub fn validator_all_empty(
     _: MapObject,
-    coords: GridCoords,
+    origin: GridCoords,
     imprint: GridImprint,
     grids: &GridsCollectionParam,
 ) -> PlacementValidity {
-    if !coords.is_imprint_in_bounds(imprint, grids.obstacle_grid.bounds()) {
+    if !imprint.is_in_bounds(origin, grids.obstacle_grid.bounds) {
         return PlacementValidity::Invalid;
     }
-    if grids.reserved_coords.any_reserved(coords, imprint) {
+    if grids.reserved_coords.any_reserved(origin, imprint) {
         return PlacementValidity::Invalid;
     }
-    if !grids.obstacle_grid.query_imprint_all(coords, imprint, |f| f.is_empty()) {
+    if !grids.obstacle_grid.query_imprint_all(origin, imprint, |f| f.is_empty()) {
         return PlacementValidity::Invalid;
     }
     PlacementValidity::Valid
@@ -224,7 +224,7 @@ pub fn validator_all_empty(
 /// Suitable for any object whose only placement constraint is that all cells must be empty.
 pub fn annotate_non_empty(
     _: MapObject,
-    coords: GridCoords,
+    origin: GridCoords,
     imprint: GridImprint,
     validity: PlacementValidity,
     map_data: &GridsCollectionParam,
@@ -232,11 +232,11 @@ pub fn annotate_non_empty(
     if validity != PlacementValidity::Invalid {
         return vec![];
     }
-    imprint.iter(coords)
-        .filter(|c| {
-            !c.is_in_bounds(map_data.obstacle_grid.bounds())
-                || !map_data.obstacle_grid[*c].is_empty()
+    imprint.iter(origin)
+        .filter(|coords| {
+            !coords.are_in_bounds(map_data.obstacle_grid.bounds)
+                || !map_data.obstacle_grid[*coords].is_empty()
         })
-        .map(|c| (c, CellHighlight::Negative))
+        .map(|coords| (coords, CellHighlight::Negative))
         .collect()
 }

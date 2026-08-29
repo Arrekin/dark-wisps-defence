@@ -150,7 +150,7 @@ fn laser_dart_hit_system(
 ) {
     for (entity, laser_dart_transform, damage) in laser_darts.iter() {
         let coords = GridCoords::from_transform(laser_dart_transform);
-        if !coords.is_in_bounds(wisps_grid.bounds()) {
+        if !coords.are_in_bounds(wisps_grid.bounds) {
             commands.entity(entity).despawn();
             continue;
         }

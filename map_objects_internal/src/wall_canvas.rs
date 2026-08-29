@@ -12,10 +12,10 @@ use bevy::{
     sprite_render::{AlphaMode2d, Material2d, Material2dPlugin, MeshMaterial2d},
 };
 
-use game_core::prelude::{GridCoords, MapInfo, ZDepth};
+use game_core::prelude::{Bounds, GridCoords, MapInfo, ZDepth};
 use map_objects::{prelude::Wall, wall_style::{WallCanvasDebug, WallStyle, WallStyleKey, WallStyles}};
 use states::prelude::MapLoadingStage;
-use visuals::prelude::ShaderLibraryAppExt;
+use visuals::prelude::{MapCanvasBundle, ShaderLibraryAppExt};
 
 pub(crate) struct WallCanvasPlugin;
 impl Plugin for WallCanvasPlugin {
@@ -46,6 +46,12 @@ struct WallCanvasSettings {
     grid_width: u32,
     grid_height: u32,
     debug_mode: u32,
+}
+impl WallCanvasSettings {
+    fn new(bounds: Bounds, debug_mode: u32) -> Self {
+        let (grid_width, grid_height) = bounds.as_u32();
+        Self { grid_width, grid_height, debug_mode }
+    }
 }
 
 #[derive(Asset, AsBindGroup, TypePath, Debug, Clone, Default)]
@@ -84,24 +90,19 @@ impl WallCanvas {
         wall_canvases.iter().for_each(|entity| commands.entity(entity).despawn());
 
         // Bind initialized buffers on the material's spawn frame.
-        let cell_count = (map_info.grid_width * map_info.grid_height) as usize;
+        let map_bounds = map_info.grid_bounds;
+        let cell_count = map_bounds.area();
         let cells = buffers.add(ShaderBuffer::from(vec![0u32; cell_count].as_slice()));
         let style_values: Vec<WallStyle> = styles.entries.iter().map(|e| e.style).collect();
         let style_buffer = buffers.add(ShaderBuffer::from(style_values.as_slice()));
 
+        let material = materials.add(WallCanvasMaterial {
+            cells,
+            styles: style_buffer,
+            settings: WallCanvasSettings::new(map_bounds, debug.shader_index()),
+        });
         commands.spawn((
-            Mesh2d(meshes.add(Rectangle::new(1.0, 1.0))),
-            MeshMaterial2d(materials.add(WallCanvasMaterial {
-                cells,
-                styles: style_buffer,
-                settings: WallCanvasSettings {
-                    grid_width: map_info.grid_width as u32,
-                    grid_height: map_info.grid_height as u32,
-                    debug_mode: debug.shader_index(),
-                },
-            })),
-            Transform::from_xyz(map_info.world_width / 2., map_info.world_height / 2., 0.)
-                .with_scale(Vec3::new(map_info.world_width, -map_info.world_height, 1.)),  // Flip vertically due to coordinate system
+            MapCanvasBundle::new(&mut meshes, material, &map_info),
             WallCanvas,
         ));
     }
@@ -141,11 +142,11 @@ fn rebuild_wall_canvas(
     let material = materials.get(wall_canvas.into_inner())
         .ok_or("WallCanvas material asset missing")?;
 
+    let map_bounds = map_info.grid_bounds;
     cell_data.clear();
-    cell_data.resize((map_info.grid_width * map_info.grid_height) as usize, 0);
+    cell_data.resize(map_bounds.area(), 0);
     for (coords, key) in walls.iter() {
-        if !coords.is_in_bounds((map_info.grid_width, map_info.grid_height)) { continue; }
-        let index = (coords.y * map_info.grid_width + coords.x) as usize;
+        let Some(index) = map_bounds.index_checked(*coords) else { continue; };
         // +1 because the cell buffer reserves 0 for open ground; style indices are 0-based
         // in the table itself.
         cell_data[index] = key.0 + 1;

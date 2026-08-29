@@ -1,5 +1,5 @@
 #import bevy_sprite::mesh2d_vertex_output::VertexOutput
-#import dwd::core::CELL_SIZE
+#import dwd::core::{CELL_SIZE, grid_contains, grid_index}
 #import dwd::dark_ore_crystals::{dark_ore_shading, ore_inset}
 
 // Draws all dark ore in one pass over a quad covering the map grid. Each storage-buffer value is
@@ -30,10 +30,10 @@ const CORNER_ROUND: f32 = 0.45;
 
 fn cell_fill(coords: vec2<i32>) -> f32 {
     // Out of bounds reads as open ground, so map borders get an edge like any other.
-    if coords.x < 0 || coords.y < 0 || coords.x >= i32(settings.grid_width) || coords.y >= i32(settings.grid_height) {
+    if !grid_contains(coords, settings.grid_width, settings.grid_height) {
         return 0.0;
     }
-    return cells[u32(coords.y) * settings.grid_width + u32(coords.x)];
+    return cells[grid_index(coords, settings.grid_width)];
 }
 
 fn is_dark_ore(coords: vec2<i32>) -> bool {

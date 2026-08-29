@@ -1,5 +1,5 @@
 #import bevy_sprite::mesh2d_vertex_output::VertexOutput
-#import dwd::core::CELL_SIZE
+#import dwd::core::{CELL_SIZE, grid_contains, grid_index}
 #import dwd::map_light::MAP_SUN_GROUND_DIRECTION
 #import dwd::wall_style::{WallStyle, LIGHT_PROBE, eroded_distance, plate_noise, wall_shading}
 
@@ -38,10 +38,10 @@ const DEBUG_NOISE: u32 = 3u;
 
 fn cell_style(coords: vec2<i32>) -> u32 {
     // Out of bounds reads as open ground, so map borders get an edge like any other.
-    if coords.x < 0 || coords.y < 0 || coords.x >= i32(settings.grid_width) || coords.y >= i32(settings.grid_height) {
+    if !grid_contains(coords, settings.grid_width, settings.grid_height) {
         return 0u;
     }
-    return cells[u32(coords.y) * settings.grid_width + u32(coords.x)];
+    return cells[grid_index(coords, settings.grid_width)];
 }
 
 struct WallSurface {

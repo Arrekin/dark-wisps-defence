@@ -33,7 +33,7 @@ pub struct TowerRangesPlugin;
 impl Plugin for TowerRangesPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_systems(OnExit(MapLoadingStage::LoadMapInfo), |mut commands: Commands, map_info: Res<MapInfo>| { commands.insert_resource(TowerRangesGrid::new_with_size(map_info.grid_width, map_info.grid_height)); })
+            .add_systems(OnExit(MapLoadingStage::LoadMapInfo), |mut commands: Commands, map_info: Res<MapInfo>| { commands.insert_resource(TowerRangesGrid::new_with_size(map_info.grid_bounds)); })
             .add_observer(on_tower_added_update_ranges)
             .add_observer(on_tower_removed_update_ranges)
             ;

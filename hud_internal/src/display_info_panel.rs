@@ -71,7 +71,7 @@ fn show_on_click_system(
     currently_focused: Option<Single<Entity, With<FocusedMapObject>>>,
     info_panel_camera: Single<Entity, With<DisplayInfoPanelCamera>>,
 ) {
-    if mouse_info.is_over_ui || !mouse.just_pressed(MouseButton::Left) || !mouse_info.grid_coords.is_in_bounds(obstacle_grid.bounds()) { return; }
+    if mouse_info.is_over_ui || !mouse.just_pressed(MouseButton::Left) || !mouse_info.grid_coords.are_in_bounds(obstacle_grid.bounds) { return; }
 
     let field = &obstacle_grid[mouse_info.grid_coords];
     let focused_element = match &field.structure {

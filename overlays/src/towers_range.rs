@@ -17,7 +17,7 @@ use game_core::prelude::{BuildingType, GridCoords, GridImprint, MapInfo, MapObje
 use grids::{
     placement::{GridObjectPlacer, GridPlacerChanged},
     prelude::GridVersion,
-    search::common::{CARDINAL_DIRECTIONS, VISITED_GRID},
+    search::common::VISITED_GRID,
     tower_ranges::TowerRangesGrid,
 };
 use hud::prelude::FocusedMapObject;
@@ -180,9 +180,9 @@ fn refresh_display_system(
             grid_imprint,
             range,
         } => {
-            if grid_coords.is_in_bounds(tower_ranges_grid.bounds()) {
+            if grid_coords.are_in_bounds(tower_ranges_grid.bounds) {
                 overlay_creator.flood_preview_to_overlay(
-                    grid_imprint.iter_in_bounds(*grid_coords, tower_ranges_grid.bounds()),
+                    grid_imprint.iter_in_bounds(*grid_coords, tower_ranges_grid.bounds),
                     *range,
                 )
             } else {
@@ -202,9 +202,7 @@ fn refresh_display_system(
     }
 
     // Update uniforms
-    let bounds = tower_ranges_grid.bounds();
-    overlay_material.grid_data.grid_width = bounds.0 as u32;
-    overlay_material.grid_data.grid_height = bounds.1 as u32;
+    overlay_material.grid_data = tower_ranges_grid.bounds.into();
 }
 
 fn on_grid_placer_changed(
@@ -300,10 +298,10 @@ impl<'a> OverlayBufferCreator<'a> {
         // Start with base buffer data (all signatures + optional selection)
         self.generate_buffer_data(&HighlightMode::None);
         let buffer_data = self.local_buffer_data.take().unwrap();
-        let bounds = self.grid.bounds();
+        let grid_bounds = self.grid.bounds;
 
         VISITED_GRID.with_borrow_mut(|visited_grid| {
-            visited_grid.resize_and_reset(bounds);
+            visited_grid.resize_and_reset(grid_bounds);
             let mut queue = VecDeque::new();
 
             // Start flood from all cells to ensure even distance from buildings bigger than one cell
@@ -318,9 +316,8 @@ impl<'a> OverlayBufferCreator<'a> {
             });
 
             while let Some((distance, coords)) = queue.pop_front() {
-                for (dx, dy) in CARDINAL_DIRECTIONS {
-                    let new_coords = coords.shifted((dx, dy));
-                    if !new_coords.is_in_bounds(bounds) || visited_grid.is_visited(new_coords) {
+                for new_coords in grid_bounds.cardinal_neighbors(coords) {
+                    if visited_grid.is_visited(new_coords) {
                         continue;
                     }
                     visited_grid.set_visited(new_coords);

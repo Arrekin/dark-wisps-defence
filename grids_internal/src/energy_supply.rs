@@ -16,7 +16,7 @@ impl Plugin for EnergySupplyPlugin {
             .insert_resource(EnergySupplyGrid::new_empty())
             .init_resource::<EnergySupplyRecalculatePower>()
             .add_message::<SupplierChangedEvent>()
-            .add_systems(OnExit(MapLoadingStage::LoadMapInfo), |mut commands: Commands, map_info: Res<MapInfo>| { commands.insert_resource(EnergySupplyGrid::new_with_size(map_info.grid_width, map_info.grid_height)); })
+            .add_systems(OnExit(MapLoadingStage::LoadMapInfo), |mut commands: Commands, map_info: Res<MapInfo>| { commands.insert_resource(EnergySupplyGrid::new_with_size(map_info.grid_bounds)); })
             .add_systems(PostUpdate, (
                 (
                     apply_supplier_changes,

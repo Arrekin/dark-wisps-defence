@@ -27,16 +27,16 @@ use states::prelude::*;
 
 use crate::common::*;
 
-fn mining_complex_validator(_: MapObject, coords: GridCoords, imprint: GridImprint, map_data: &GridsCollectionParam) -> PlacementValidity {
-    if !coords.is_imprint_in_bounds(imprint, map_data.obstacle_grid.bounds()) {
+fn mining_complex_validator(_: MapObject, origin: GridCoords, imprint: GridImprint, map_data: &GridsCollectionParam) -> PlacementValidity {
+    if !imprint.is_in_bounds(origin, map_data.obstacle_grid.bounds) {
         return PlacementValidity::Invalid;
     }
-    if map_data.reserved_coords.any_reserved(coords, imprint) {
+    if map_data.reserved_coords.any_reserved(origin, imprint) {
         return PlacementValidity::Invalid;
     }
     let mut has_ore = false;
-    for cell in imprint.iter(coords) {
-        let field = &map_data.obstacle_grid[cell];
+    for coords in imprint.iter(origin) {
+        let field = &map_data.obstacle_grid[coords];
         if field.has_structure() || field.is_within_quantum_field() {
             return PlacementValidity::Invalid;
         }
@@ -45,25 +45,25 @@ fn mining_complex_validator(_: MapObject, coords: GridCoords, imprint: GridImpri
     if !has_ore {
         return PlacementValidity::Invalid;
     }
-    if !map_data.energy_supply_grid.is_imprint_powered(coords, imprint) {
+    if !map_data.energy_supply_grid.is_imprint_powered(origin, imprint) {
         return PlacementValidity::ValidUnpowered;
     }
     PlacementValidity::Valid
 }
 
-fn mining_complex_annotator(_: MapObject, coords: GridCoords, imprint: GridImprint, validity: PlacementValidity, map_data: &GridsCollectionParam) -> Vec<(GridCoords, CellHighlight)> {
+fn mining_complex_annotator(_: MapObject, origin: GridCoords, imprint: GridImprint, validity: PlacementValidity, map_data: &GridsCollectionParam) -> Vec<(GridCoords, CellHighlight)> {
     match validity {
-        PlacementValidity::Invalid => imprint.iter(coords)
-            .filter(|c| {
-                !c.is_in_bounds(map_data.obstacle_grid.bounds())
-                    || map_data.obstacle_grid[*c].has_structure()
-                    || map_data.obstacle_grid[*c].is_within_quantum_field()
+        PlacementValidity::Invalid => imprint.iter(origin)
+            .filter(|coords| {
+                !coords.are_in_bounds(map_data.obstacle_grid.bounds)
+                    || map_data.obstacle_grid[*coords].has_structure()
+                    || map_data.obstacle_grid[*coords].is_within_quantum_field()
             })
-            .map(|c| (c, CellHighlight::Negative))
+            .map(|coords| (coords, CellHighlight::Negative))
             .collect(),
-        _ => imprint.iter_in_bounds(coords, map_data.obstacle_grid.bounds())
-            .filter(|c| map_data.obstacle_grid[*c].has_dark_ore())
-            .map(|c| (c, CellHighlight::Positive))
+        _ => imprint.iter_in_bounds(origin, map_data.obstacle_grid.bounds)
+            .filter(|coords| map_data.obstacle_grid[*coords].has_dark_ore())
+            .map(|coords| (coords, CellHighlight::Positive))
             .collect(),
     }
 }
@@ -132,10 +132,10 @@ impl BuilderMiningComplex {
     ) {
         let entity = trigger.entity;
         let Ok(builder) = builders.get(entity) else { return; };
-        
+
         let building_info = almanach.get_building_info(BuildingType::MiningComplex);
         let grid_imprint = building_info.grid_imprint;
-        
+
         let mut entity_commands = commands.entity(entity);
         if let Some(ip) = builder.integrity_points {
             entity_commands.insert(IntegrityPoints::new(ip));

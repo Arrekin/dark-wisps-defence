@@ -24,8 +24,8 @@ fn collect_map_info(
     map_info: Res<MapInfo>,
     mut save: SaveWriter,
 ) {
-    let width = map_info.grid_width;
-    let height = map_info.grid_height;
+    let width = map_info.grid_bounds.width;
+    let height = map_info.grid_bounds.height;
     let name = map_info.name.clone();
     save.submit(move |tx| {
         tx.execute(
@@ -46,7 +46,7 @@ fn load_map_info(ctx: &mut LoadContext) -> rusqlite::Result<()> {
     });
 
     let (name, width, height) = result?;
-    let map_info = MapInfo::new(name, width, height);
+    let map_info = MapInfo::new(name, (width, height));
 
     ctx.insert_resource(map_info);
     Ok(())

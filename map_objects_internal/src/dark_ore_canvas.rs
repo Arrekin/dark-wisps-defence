@@ -13,10 +13,10 @@ use bevy::{
 };
 
 use almanach::Almanach;
-use game_core::prelude::{GridCoords, MapInfo, ZDepth};
+use game_core::prelude::{Bounds, GridCoords, MapInfo, ZDepth};
 use map_objects::prelude::DarkOre;
 use states::prelude::MapLoadingStage;
-use visuals::prelude::ShaderLibraryAppExt;
+use visuals::prelude::{MapCanvasBundle, ShaderLibraryAppExt};
 
 pub(crate) struct DarkOreCanvasPlugin;
 impl Plugin for DarkOreCanvasPlugin {
@@ -42,6 +42,12 @@ impl Plugin for DarkOreCanvasPlugin {
 struct DarkOreCanvasSettings {
     grid_width: u32,
     grid_height: u32,
+}
+impl DarkOreCanvasSettings {
+    fn new(bounds: Bounds) -> Self {
+        let (grid_width, grid_height) = bounds.as_u32();
+        Self { grid_width, grid_height }
+    }
 }
 
 #[derive(Asset, AsBindGroup, TypePath, Debug, Clone, Default)]
@@ -76,20 +82,16 @@ impl DarkOreCanvas {
     ) {
         dark_ore_canvases.iter().for_each(|entity| commands.entity(entity).despawn());
 
-        let cell_count = (map_info.grid_width * map_info.grid_height) as usize;
+        let map_bounds = map_info.grid_bounds;
+        let cell_count = map_bounds.area();
         let cells = buffers.add(ShaderBuffer::from(vec![0f32; cell_count].as_slice()));
 
+        let material = materials.add(DarkOreCanvasMaterial {
+            cells,
+            settings: DarkOreCanvasSettings::new(map_bounds),
+        });
         commands.spawn((
-            Mesh2d(meshes.add(Rectangle::new(1.0, 1.0))),
-            MeshMaterial2d(materials.add(DarkOreCanvasMaterial {
-                cells,
-                settings: DarkOreCanvasSettings {
-                    grid_width: map_info.grid_width as u32,
-                    grid_height: map_info.grid_height as u32,
-                },
-            })),
-            Transform::from_xyz(map_info.world_width / 2., map_info.world_height / 2., 0.)
-                .with_scale(Vec3::new(map_info.world_width, -map_info.world_height, 1.)),  // Flip vertically due to coordinate system
+            MapCanvasBundle::new(&mut meshes, material, &map_info),
             DarkOreCanvas,
         ));
     }
@@ -148,11 +150,11 @@ fn rebuild_dark_ore_canvas(
 
     let max_field_saturation = almanach.dark_ore.max_field_saturation as f32;
 
+    let map_bounds = map_info.grid_bounds;
     cell_data.clear();
-    cell_data.resize((map_info.grid_width * map_info.grid_height) as usize, 0.0);
+    cell_data.resize(map_bounds.area(), 0.0);
     for (coords, dark_ore) in dark_ores.iter() {
-        if !coords.is_in_bounds((map_info.grid_width, map_info.grid_height)) { continue; }
-        let index = (coords.y * map_info.grid_width + coords.x) as usize;
+        let Some(index) = map_bounds.index_checked(*coords) else { continue; };
         cell_data[index] = (dark_ore.amount as f32 / max_field_saturation).clamp(0.0, 1.0);
     }
 

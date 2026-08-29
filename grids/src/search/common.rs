@@ -1,18 +1,12 @@
 use std::{cell::RefCell, cmp::Ordering};
 
-use game_core::prelude::GridCoords;
+use game_core::prelude::{Bounds, GridCoords};
 
 use crate::visited::{TrackingGrid, VisitedGrid};
 
-pub const CARDINAL_DIRECTIONS: [(i32, i32); 4] = [(0, 1), (1, 0), (0, -1), (-1, 0)];
-pub const ALL_DIRECTIONS: [(i32, i32); 8] = [
-    (0, 1), (1, 0), (0, -1), (-1, 0), // Cardinal directions
-    (1, 1), (1, -1), (-1, 1), (-1, -1) // Diagonal directions
-];
-
 thread_local! {
-    pub static TRACKING_GRID: RefCell<TrackingGrid> = RefCell::new(TrackingGrid::new_with_size(0, 0));
-    pub static VISITED_GRID: RefCell<VisitedGrid> = RefCell::new(VisitedGrid::new_with_size(0, 0));
+    pub static TRACKING_GRID: RefCell<TrackingGrid> = RefCell::new(TrackingGrid::new_with_size(Bounds::default()));
+    pub static VISITED_GRID: RefCell<VisitedGrid> = RefCell::new(VisitedGrid::new_with_size(Bounds::default()));
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]

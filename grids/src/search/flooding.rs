@@ -12,7 +12,7 @@ use crate::{
     tower_ranges::TowerRangesGrid,
 };
 
-use super::common::{CARDINAL_DIRECTIONS, VISITED_GRID};
+use super::common::VISITED_GRID;
 
 pub fn flood_emissions<'a>(
     emissions_grid: &mut EmissionsGrid,
@@ -22,7 +22,7 @@ pub fn flood_emissions<'a>(
     should_field_be_flooded: fn(&Field) -> bool,
 ) {
     VISITED_GRID.with_borrow_mut(|visited_grid| {
-        visited_grid.resize_and_reset(obstacles_grid.bounds());
+        visited_grid.resize_and_reset(obstacles_grid.bounds);
         let mut queue = VecDeque::new();
         let max_range = emissions_details.into_iter().map(|details| details.range).max().unwrap();
         start_coords.into_iter().for_each(|coords| {
@@ -33,11 +33,8 @@ pub fn flood_emissions<'a>(
             }
         });
         while let Some((distance, coords)) = queue.pop_front() {
-            for (delta_x, delta_y) in CARDINAL_DIRECTIONS {
-                let new_coords = coords.shifted((delta_x, delta_y));
-                if !new_coords.is_in_bounds(obstacles_grid.bounds())
-                    || visited_grid.is_visited(new_coords)
-                    || !should_field_be_flooded(&obstacles_grid[new_coords])
+            for new_coords in obstacles_grid.bounds.cardinal_neighbors(coords) {
+                if visited_grid.is_visited(new_coords) || !should_field_be_flooded(&obstacles_grid[new_coords])
                 {
                     continue;
                 }
@@ -88,7 +85,7 @@ pub fn flood_energy_supply(
     supplier: Entity,
 ) {
     VISITED_GRID.with_borrow_mut(|visited_grid| {
-        visited_grid.resize_and_reset(energy_supply_grid.bounds());
+        visited_grid.resize_and_reset(energy_supply_grid.bounds);
         let mut queue = VecDeque::new();
         start_coords.into_iter().for_each(|coords| {
             match mode {
@@ -99,11 +96,8 @@ pub fn flood_energy_supply(
             visited_grid.set_visited(coords);
         });
         while let Some((distance, coords)) = queue.pop_front() {
-            for (delta_x, delta_y) in CARDINAL_DIRECTIONS {
-                let new_coords = coords.shifted((delta_x, delta_y));
-                if !new_coords.is_in_bounds(energy_supply_grid.bounds())
-                    || visited_grid.is_visited(new_coords)
-                {
+            for new_coords in energy_supply_grid.bounds.cardinal_neighbors(coords) {
+                if visited_grid.is_visited(new_coords) {
                     continue;
                 }
 
@@ -129,7 +123,7 @@ pub fn flood_power_coverage(
 ){
     energy_supply_grid.reset_all_power_indicators();
     VISITED_GRID.with_borrow_mut(|visited_grid| {
-        visited_grid.resize_and_reset(energy_supply_grid.bounds());
+        visited_grid.resize_and_reset(energy_supply_grid.bounds);
         let mut queue = VecDeque::new();
         start_coords.into_iter().for_each(|coords| {
             queue.push_back(coords);
@@ -137,11 +131,8 @@ pub fn flood_power_coverage(
             energy_supply_grid[coords].set_power(true);
         });
         while let Some(coords) = queue.pop_front() {
-            for (delta_x, delta_y) in CARDINAL_DIRECTIONS {
-                let new_coords = coords.shifted((delta_x, delta_y));
-                if !new_coords.is_in_bounds(energy_supply_grid.bounds())
-                    || visited_grid.is_visited(new_coords)
-                {
+            for new_coords in energy_supply_grid.bounds.cardinal_neighbors(coords) {
+                if visited_grid.is_visited(new_coords) {
                     continue;
                 }
 
@@ -156,6 +147,7 @@ pub fn flood_power_coverage(
 }
 
 
+/// Covers every cell within `range` of any start cell.
 pub fn flood_tower_range(
     tower_ranges_grid: &mut TowerRangesGrid,
     start_coords: impl IntoIterator<Item = GridCoords>,
@@ -164,7 +156,7 @@ pub fn flood_tower_range(
     tower_entity: Entity,
 ) {
     VISITED_GRID.with_borrow_mut(|visited_grid| {
-        visited_grid.resize_and_reset(tower_ranges_grid.bounds());
+        visited_grid.resize_and_reset(tower_ranges_grid.bounds);
         let mut queue = VecDeque::new();
         start_coords.into_iter().for_each(|coords| {
             match mode {
@@ -175,11 +167,8 @@ pub fn flood_tower_range(
             visited_grid.set_visited(coords);
         });
         while let Some((distance, coords)) = queue.pop_front() {
-            for (delta_x, delta_y) in CARDINAL_DIRECTIONS {
-                let new_coords = coords.shifted((delta_x, delta_y));
-                if !new_coords.is_in_bounds(tower_ranges_grid.bounds())
-                    || visited_grid.is_visited(new_coords)
-                {
+            for new_coords in tower_ranges_grid.bounds.cardinal_neighbors(coords) {
+                if visited_grid.is_visited(new_coords) {
                     continue;
                 }
 

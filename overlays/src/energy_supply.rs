@@ -18,7 +18,7 @@ use grids::{
     energy_supply::EnergySupplyGrid,
     placement::{GridObjectPlacer, GridPlacerChanged},
     prelude::GridVersion,
-    search::common::{CARDINAL_DIRECTIONS, VISITED_GRID},
+    search::common::VISITED_GRID,
 };
 use hud::prelude::FocusedMapObject;
 use states::prelude::{MapLoadingStage, UiInteraction};
@@ -170,7 +170,7 @@ fn refresh_display_system(
         }
         EnergySupplyOverlaySecondaryMode::PlacingConsumer{grid_coords, grid_imprint} => {
             // Include disabled suppliers so the player can see which disabled ranges would cover the new consumer.
-            let suppliers = grid_imprint.iter_in_bounds(*grid_coords, energy_supply_grid.bounds())
+            let suppliers = grid_imprint.iter_in_bounds(*grid_coords, energy_supply_grid.bounds)
                 .flat_map(|coords| {
                     let field = &energy_supply_grid[coords];
                     field.suppliers().iter().chain(field.disabled_suppliers().iter())
@@ -182,9 +182,9 @@ fn refresh_display_system(
             overlay_creator.generate_buffer_data(&HighlightMode::Selected(suppliers));
         }
         EnergySupplyOverlaySecondaryMode::PlacingSupplier{grid_coords, grid_imprint, range} => {
-            if grid_coords.is_in_bounds(energy_supply_grid.bounds()) {
+            if grid_coords.are_in_bounds(energy_supply_grid.bounds) {
                 overlay_creator.flood_potential_energy_supply_to_overlay_heatmap(
-                    grid_imprint.iter_in_bounds(*grid_coords, energy_supply_grid.bounds()),
+                    grid_imprint.iter_in_bounds(*grid_coords, energy_supply_grid.bounds),
                     *range,
                 )
             } else {
@@ -203,9 +203,7 @@ fn refresh_display_system(
     }
     
     // Update uniforms
-    let bounds = energy_supply_grid.bounds();
-    overlay_material.grid_data.grid_width = bounds.0 as u32;
-    overlay_material.grid_data.grid_height = bounds.1 as u32;
+    overlay_material.grid_data = energy_supply_grid.bounds.into();
 }
 
 fn on_grid_placer_changed(
@@ -349,10 +347,10 @@ impl<'a> OverlayBufferCreator<'a> {
         // Start with base buffer data
         self.generate_buffer_data(&HighlightMode::All);
         let buffer_data = self.local_buffer_data.take().unwrap();
-        let bounds = self.energy_supply_grid.bounds();
+        let grid_bounds = self.energy_supply_grid.bounds;
 
         VISITED_GRID.with_borrow_mut(|visited_grid| {
-            visited_grid.resize_and_reset(bounds);
+            visited_grid.resize_and_reset(grid_bounds);
             let mut queue = VecDeque::new();
 
             // Start Flood from all fields to ensure event distance from buildings that are bigger than one cell
@@ -366,13 +364,12 @@ impl<'a> OverlayBufferCreator<'a> {
             // First flood fill: determine reachability and check for power connection
             let mut has_power = false;
             while let Some((distance, coords)) = queue.pop_front() {
-                for (delta_x, delta_y) in CARDINAL_DIRECTIONS {
-                    let new_coords = coords.shifted((delta_x, delta_y));
-                    if !new_coords.is_in_bounds(bounds) || visited_grid.is_visited(new_coords) {
+                for new_coords in grid_bounds.cardinal_neighbors(coords) {
+                    if visited_grid.is_visited(new_coords) {
                         continue;
                     }
                     visited_grid.set_visited(new_coords);
-                    
+
                     // If we are right at the range boundary - check if that field has power
                     if distance == range {
                         if self.energy_supply_grid[new_coords].has_power() {
@@ -410,13 +407,12 @@ impl<'a> OverlayBufferCreator<'a> {
                 });
 
                 while let Some((_, coords)) = queue.pop_front() {
-                    for (delta_x, delta_y) in CARDINAL_DIRECTIONS {
-                        let new_coords = coords.shifted((delta_x, delta_y));
-                        if !new_coords.is_in_bounds(bounds) || visited_grid.is_visited(new_coords) {
+                    for new_coords in grid_bounds.cardinal_neighbors(coords) {
+                        if visited_grid.is_visited(new_coords) {
                             continue;
                         }
                         visited_grid.set_visited(new_coords);
-                        
+
                         let buffer_index = self.energy_supply_grid.index(new_coords);
                         // Only update cells that were marked as highlighted in the previous passes
                         if buffer_data[buffer_index].highlight_level == 2 {

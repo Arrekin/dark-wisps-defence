@@ -2,14 +2,13 @@ use std::ops::{Index, IndexMut};
 
 use bevy::prelude::*;
 
-use game_core::prelude::GridCoords;
+use game_core::prelude::{Bounds, GridCoords};
 
 use crate::{FieldTrait, GridVersionTrait};
 
 #[derive(Resource)]
 pub struct BaseGrid<FieldType, GridVersionType> where FieldType: FieldTrait, GridVersionType: GridVersionTrait {
-    pub width: i32,
-    pub height: i32,
+    pub bounds: Bounds,
     pub grid: Vec<FieldType>,
     pub version: GridVersionType, // Used to determine whether the grid has changed
 }
@@ -17,25 +16,24 @@ pub struct BaseGrid<FieldType, GridVersionType> where FieldType: FieldTrait, Gri
 impl<FieldType, GridVersionType> BaseGrid<FieldType, GridVersionType> where FieldType: FieldTrait, GridVersionType: GridVersionTrait {
     pub fn new_empty() -> Self {
         Self {
-            width: 0,
-            height: 0,
+            bounds: Bounds::default(),
             grid: vec![],
             version: GridVersionType::default(),
         }
     }
-    pub fn new_with_size(width: i32, height: i32) -> Self {
+    pub fn new_with_size(bounds: impl Into<Bounds>) -> Self {
+        let bounds = bounds.into();
         Self {
-            width,
-            height,
-            grid: vec![Default::default(); (width * height) as usize],
+            bounds,
+            grid: vec![Default::default(); bounds.area()],
             version: GridVersionType::default(),
         }
     }
-    pub fn resize_and_reset(&mut self, bounds: (i32, i32)) {
-        if self.bounds() != bounds {
-            self.width = bounds.0;
-            self.height = bounds.1;
-            self.grid.resize((bounds.0 * bounds.1) as usize, Default::default());
+    pub fn resize_and_reset(&mut self, bounds: impl Into<Bounds>) {
+        let bounds = bounds.into();
+        if self.bounds != bounds {
+            self.bounds = bounds;
+            self.grid.resize(bounds.area(), Default::default());
         }
         self.reset();
     }
@@ -43,10 +41,7 @@ impl<FieldType, GridVersionType> BaseGrid<FieldType, GridVersionType> where Fiel
         self.grid.fill(Default::default());
     }
     pub fn index(&self, coords: GridCoords) -> usize {
-        (coords.y * self.width + coords.x) as usize
-    }
-    pub fn bounds(&self) -> (i32, i32) {
-        (self.width, self.height)
+        self.bounds.index(coords)
     }
 }
 

@@ -146,8 +146,8 @@ fn ripple_hit_system(
         // Make bounds +/-1 since the ripple starts from in-between the grid fields
         let lower_bound_x = std::cmp::max(0, starting_grid_coords.x - bounds_range - 1);
         let lower_bound_y = std::cmp::max(0, starting_grid_coords.y - bounds_range - 1);
-        let upper_bound_x = std::cmp::min(wisps_grid.width - 1, starting_grid_coords.x + bounds_range + 1);
-        let upper_bound_y = std::cmp::min(wisps_grid.height - 1, starting_grid_coords.y + bounds_range + 1);
+        let upper_bound_x = std::cmp::min(wisps_grid.bounds.width - 1, starting_grid_coords.x + bounds_range + 1);
+        let upper_bound_y = std::cmp::min(wisps_grid.bounds.height - 1, starting_grid_coords.y + bounds_range + 1);
         for x in lower_bound_x..=upper_bound_x {
             for y in lower_bound_y..=upper_bound_y {
                 for wisp in &wisps_grid[GridCoords{ x, y }] {

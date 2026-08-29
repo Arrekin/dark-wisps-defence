@@ -121,11 +121,11 @@ impl EnergySupplyGrid {
     }
     /// At least one of the imprint's cells must have energy supply.
     pub fn is_imprint_suppliable(&self, coords: GridCoords, imprint: GridImprint) -> bool {
-        imprint.iter_in_bounds(coords, self.bounds()).any(|c| self[c].has_supply())
+        imprint.iter_in_bounds(coords, self.bounds).any(|c| self[c].has_supply())
     }
     /// At least one of the imprint's cells must have power.
     pub fn is_imprint_powered(&self, coords: GridCoords, imprint: GridImprint) -> bool {
-        imprint.iter_in_bounds(coords, self.bounds()).any(|c| self[c].has_power())
+        imprint.iter_in_bounds(coords, self.bounds).any(|c| self[c].has_power())
     }
     pub fn reset_all_power_indicators(&mut self) {
         self.grid.iter_mut().for_each(|field| field.set_power(false));

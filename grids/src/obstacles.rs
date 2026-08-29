@@ -57,19 +57,19 @@ impl ObstacleGrid {
     }
     /// True if `query` returns true for every in-bounds cell of the imprint.
     pub fn query_imprint_all(&self, coords: GridCoords, imprint: GridImprint, query: fn(&Field) -> bool) -> bool {
-        imprint.iter_in_bounds(coords, self.bounds()).all(|c| query(&self[c]))
+        imprint.iter_in_bounds(coords, self.bounds).all(|c| query(&self[c]))
     }
     /// True if `query` returns true for at least one in-bounds cell of the imprint.
     pub fn query_imprint_any(&self, coords: GridCoords, imprint: GridImprint, query: fn(&Field) -> bool) -> bool {
-        imprint.iter_in_bounds(coords, self.bounds()).any(|c| query(&self[c]))
+        imprint.iter_in_bounds(coords, self.bounds).any(|c| query(&self[c]))
     }
     /// Number of in-bounds cells for which `query` returns true.
     pub fn query_imprint_count(&self, coords: GridCoords, imprint: GridImprint, query: fn(&Field) -> bool) -> usize {
-        imprint.iter_in_bounds(coords, self.bounds()).filter(|c| query(&self[*c])).count()
+        imprint.iter_in_bounds(coords, self.bounds).filter(|c| query(&self[*c])).count()
     }
     /// Collects the non-None results of `query` over every in-bounds cell.
     pub fn query_imprint_element<T>(&self, coords: GridCoords, imprint: GridImprint, query: fn(&Field) -> Option<T>) -> Vec<T> {
-        imprint.iter_in_bounds(coords, self.bounds()).filter_map(|c| query(&self[c])).collect()
+        imprint.iter_in_bounds(coords, self.bounds).filter_map(|c| query(&self[c])).collect()
     }
 
     pub fn imprint_custom(&mut self, coords: GridCoords, imprint: GridImprint, imprint_fn: impl Fn(&mut Field)) {

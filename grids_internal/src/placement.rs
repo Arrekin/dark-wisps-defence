@@ -7,7 +7,7 @@ use bevy::{
 };
 
 use almanach::prelude::Almanach;
-use game_core::prelude::{BuildingType, CELL_SIZE, GridCoords, GridImprint, MapObject, TowerType};
+use game_core::prelude::{Bounds, BuildingType, CELL_SIZE, GridCoords, GridImprint, MapObject, TowerType};
 use grids::placement::{
     ActivePlacement, CellHighlight, GridObjectPlacer, GridObjectPlacerRequest, GridPlacerChanged,
     GridPlacerOverridePropertyRequest, GridsCollectionParam, PlacementMode, PlacementStyle,
@@ -51,6 +51,14 @@ struct GridPlacerUniform {
     cell_rows: u32,
     use_texture: u32,
 }
+impl GridPlacerUniform {
+    fn set_bounds(&mut self, bounds: Bounds) {
+        (self.cell_columns, self.cell_rows) = bounds.as_u32();
+    }
+    fn bounds_match(&self, bounds: Bounds) -> bool {
+        (self.cell_columns, self.cell_rows) == bounds.as_u32()
+    }
+}
 
 #[derive(Asset, AsBindGroup, TypePath, Debug, Clone)]
 #[derive(Default)]
@@ -71,9 +79,7 @@ impl Material2d for GridPlacerMaterial {
 }
 
 fn update_material_imprint(material: &mut GridPlacerMaterial, imprint: GridImprint) {
-    let (w, h) = imprint.bounds();
-    material.uniform.cell_columns = w as u32;
-    material.uniform.cell_rows = h as u32;
+    material.uniform.set_bounds(Bounds::from(imprint));
     material.uniform.cell_data = UVec4::ZERO;
 }
 
@@ -81,22 +87,19 @@ fn update_material_imprint(material: &mut GridPlacerMaterial, imprint: GridImpri
 /// 2 bits per cell (up to 64 cells): 0=inactive, 1=active, 2=highlighted.
 /// Annotated cells (positive or negative) map to state 2. The base_color already encodes validity.
 fn build_cell_data(imprint: GridImprint, origin: GridCoords, annotations: &[(GridCoords, CellHighlight)]) -> UVec4 {
-    let (width, height) = imprint.bounds();
+    let imprint_bounds = Bounds::from(imprint);
     let mut words = [0u32; 4];
-    for iy in 0..height {
-        for ix in 0..width {
-            let cell_coords = origin.shifted((ix, iy));
-            let cell_index = (iy * width + ix) as usize;
-            if cell_index >= 64 { continue; }
+    for (cell_index, local_coords) in imprint_bounds.iter().enumerate() {
+        if cell_index >= 64 { break; }
 
-            let state: u32 = if imprint.covers_coords(origin, cell_coords) {
-                if annotations.iter().any(|(c, _)| *c == cell_coords) { 2 } else { 1 }
-            } else {
-                0
-            };
+        let cell_coords = origin.shifted(local_coords.into());
+        let state: u32 = if imprint.covers_coords(origin, cell_coords) {
+            if annotations.iter().any(|(c, _)| *c == cell_coords) { 2 } else { 1 }
+        } else {
+            0
+        };
 
-            words[cell_index / 16] |= state << ((cell_index % 16) * 2);
-        }
+        words[cell_index / 16] |= state << ((cell_index % 16) * 2);
     }
     UVec4::new(words[0], words[1], words[2], words[3])
 }
@@ -146,8 +149,8 @@ fn revalidate_placement(
     let Some(active_placement) = &grid_object_placer.active_placement else { return; };
     let Some(mut material) = materials.get_mut(material_handle) else { return; };
 
-    let (w, h) = grid_imprint.bounds();
-    if material.uniform.cell_columns != w as u32 || material.uniform.cell_rows != h as u32 {
+    let imprint_bounds = Bounds::from(*grid_imprint);
+    if !material.uniform.bounds_match(imprint_bounds) {
         commands.entity(placer_entity).insert(Mesh2d(meshes.add(Rectangle::from_size(grid_imprint.world_size()))));
         update_material_imprint(&mut material, *grid_imprint);
     }

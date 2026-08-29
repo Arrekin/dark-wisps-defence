@@ -61,7 +61,7 @@ impl Plugin for ObstaclesGridPlugin {
         app
             .insert_resource(ObstacleGrid::new_empty())
             .init_resource::<ReservedCoords>()
-            .add_systems(OnExit(MapLoadingStage::LoadMapInfo), |mut commands: Commands, map_info: Res<MapInfo>| { commands.insert_resource(ObstacleGrid::new_with_size(map_info.grid_width, map_info.grid_height)); })
+            .add_systems(OnExit(MapLoadingStage::LoadMapInfo), |mut commands: Commands, map_info: Res<MapInfo>| { commands.insert_resource(ObstacleGrid::new_with_size(map_info.grid_bounds)); })
             .add_systems(First, clear_reserved_coords)
             .add_observer(on_insert_obstacle_grid_object_imprint_on_grid)
             .add_observer(on_remove_obstacle_grid_object_remove_from_grid)

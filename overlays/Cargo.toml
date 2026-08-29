@@ -13,6 +13,7 @@ hud = { workspace = true }
 buildings = { workspace = true }
 alteration = { workspace = true }
 almanach = { workspace = true }
+visuals = { workspace = true }
 
 [lints]
 workspace = true

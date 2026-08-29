@@ -5,17 +5,17 @@ use grids::{
     placement::{validator_all_empty, GridsCollectionParam, PlacementValidity},
 };
 
-pub(crate) fn building_validator(map_object: MapObject, coords: GridCoords, imprint: GridImprint, map_data: &GridsCollectionParam) -> PlacementValidity {
+pub(crate) fn building_validator(map_object: MapObject, origin: GridCoords, imprint: GridImprint, map_data: &GridsCollectionParam) -> PlacementValidity {
     let MapObject::Building(building_type) = map_object else {
         return PlacementValidity::Invalid;
     };
 
-    if validator_all_empty(map_object, coords, imprint, map_data) == PlacementValidity::Invalid {
+    if validator_all_empty(map_object, origin, imprint, map_data) == PlacementValidity::Invalid {
         return PlacementValidity::Invalid;
     }
 
     let needs_power = !matches!(building_type, BuildingType::MainBase | BuildingType::EnergyRelay);
-    if needs_power && !map_data.energy_supply_grid.is_imprint_powered(coords, imprint) {
+    if needs_power && !map_data.energy_supply_grid.is_imprint_powered(origin, imprint) {
         return PlacementValidity::ValidUnpowered;
     }
 

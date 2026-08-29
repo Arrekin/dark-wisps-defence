@@ -45,29 +45,26 @@ impl Plugin for MainBasePlugin {
 /// Spawn one `BuilderMainBase` at map center on a new map.
 fn seed_main_base(mut commands: Commands, map_info: Res<MapInfo>) {
     let center = GridCoords {
-        x: map_info.grid_width / 2,
-        y: map_info.grid_height / 2,
+        x: map_info.grid_bounds.width / 2,
+        y: map_info.grid_bounds.height / 2,
     };
     commands.spawn(BuilderMainBase::new(center));
 }
 
-/// Center the main camera on the `MainBase` at the end of every map build,
+/// Runs at the end of every map build. Centers the main camera on the `MainBase`,
 /// falling back to map center when there is no main base.
 fn center_camera_on_main_base(
     map_info: Res<MapInfo>,
     main_base: Option<Single<&GlobalTransform, With<MainBase>>>,
     camera: Single<&mut Transform, With<MainCamera>>,
 ) {
-    let (x, y) = match main_base {
-        Some(base) => {
-            let translation = base.into_inner().translation();
-            (translation.x, translation.y)
-        }
-        None => (map_info.world_width / 2.0, map_info.world_height / 2.0),
+    let center = match main_base {
+        Some(base) => base.into_inner().translation().truncate(),
+        None => map_info.world_size() / 2.0,
     };
     let translation = &mut camera.into_inner().translation;
-    translation.x = x;
-    translation.y = y;
+    translation.x = center.x;
+    translation.y = center.y;
 }
 
 
@@ -116,7 +113,7 @@ impl BuilderMainBase {
 
         let building_info = almanach.get_building_info(BuildingType::MainBase);
         let grid_imprint = building_info.grid_imprint;
-        
+
         let mut entity_commands = commands.entity(entity);
         if let Some(ip) = builder.integrity_points {
             entity_commands.insert(IntegrityPoints::new(ip));

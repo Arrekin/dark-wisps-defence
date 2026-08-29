@@ -4,9 +4,8 @@ use bevy::{
 };
 
 use alteration::modifiers::prelude::AttackDamage;
-use game_core::prelude::{DamageMessage, GridCoords, Property};
+use game_core::prelude::{ALL_DIRECTIONS, DamageMessage, GridCoords, Property};
 use grids::{
-    search::common::ALL_DIRECTIONS,
     wisps::WispsGrid,
 };
 use logging::prelude::*;
@@ -199,7 +198,7 @@ fn rocket_hit_system(
 ) {
     for (entity, rocket_transform, target, attack_damage) in rockets.iter() {
         let rocket_coords = GridCoords::from_transform(rocket_transform);
-        if !rocket_coords.is_in_bounds(wisps_grid.bounds()) {
+        if !rocket_coords.are_in_bounds(wisps_grid.bounds) {
             commands.entity(entity).despawn();
             continue;
         }
@@ -210,7 +209,7 @@ fn rocket_hit_system(
         let coords = GridCoords::from_transform(rocket_transform);
         for (dx, dy) in ALL_DIRECTIONS.iter().chain(&[(0, 0)]) {
             let blast_zone_coords = coords.shifted((*dx, *dy));
-            if !blast_zone_coords.is_in_bounds(wisps_grid.bounds()) { continue; }
+            if !blast_zone_coords.are_in_bounds(wisps_grid.bounds) { continue; }
 
             commands.spawn(BuilderExplosion(blast_zone_coords));
 

@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use nanorand::Rng;
 use strum::{AsRefStr, EnumIter, EnumString};
 
-use game_core::prelude::{FromEntity, GridCoords, MapBound, Moment, MomentKind, SSS, WispType};
+use game_core::prelude::{Bounds, FromEntity, GridCoords, MapBound, Moment, MomentKind, SSS, WispType};
 use grids::prelude::ObstacleGrid;
 
 #[derive(Component, Clone, Debug)]
@@ -83,7 +83,7 @@ impl SpawnArea {
                 GridCoords { x, y }
             }
             SpawnArea::Edge { side } => {
-                let (width, height) = obstacle_grid.bounds();
+                let Bounds { width, height } = obstacle_grid.bounds;
                 match side {
                     EdgeSide::Top => GridCoords { x: rng.generate_range(0..width), y: height - 1 },
                     EdgeSide::Bottom => GridCoords { x: rng.generate_range(0..width), y: 0 },
@@ -92,7 +92,7 @@ impl SpawnArea {
                 }
             }
             SpawnArea::EdgesAll => {
-                let (width, height) = obstacle_grid.bounds();
+                let Bounds { width, height } = obstacle_grid.bounds;
                 // Perimeter cells, indexed by walking the border in one pass:
                 // bottom row, then right column, then top row, then left column.
                 // Corners belong to the rows, so each column contributes

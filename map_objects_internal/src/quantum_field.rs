@@ -252,17 +252,17 @@ fn load_quantum_fields(ctx: &mut LoadContext) -> rusqlite::Result<()> {
 
 fn quantum_field_validator(
     _: MapObject,
-    coords: GridCoords,
+    origin: GridCoords,
     imprint: GridImprint,
     grids: &GridsCollectionParam,
 ) -> PlacementValidity {
-    if !coords.is_in_bounds(grids.obstacle_grid.bounds()) {
+    if !origin.are_in_bounds(grids.obstacle_grid.bounds) {
         return PlacementValidity::Invalid;
     }
-    if grids.reserved_coords.any_reserved(coords, imprint) {
+    if grids.reserved_coords.any_reserved(origin, imprint) {
         return PlacementValidity::Invalid;
     }
-    if !grids.obstacle_grid.query_imprint_all(coords, imprint, |f| !f.is_within_quantum_field()) {
+    if !grids.obstacle_grid.query_imprint_all(origin, imprint, |f| !f.is_within_quantum_field()) {
         return PlacementValidity::Invalid;
     }
     PlacementValidity::Valid
@@ -270,7 +270,7 @@ fn quantum_field_validator(
 
 fn quantum_field_annotator(
     _: MapObject,
-    coords: GridCoords,
+    origin: GridCoords,
     imprint: GridImprint,
     validity: PlacementValidity,
     grids: &GridsCollectionParam,
@@ -278,12 +278,12 @@ fn quantum_field_annotator(
     if validity != PlacementValidity::Invalid {
         return vec![];
     }
-    imprint.iter(coords)
-        .filter(|c| {
-            !c.is_in_bounds(grids.obstacle_grid.bounds())
-                || grids.obstacle_grid[*c].is_within_quantum_field()
+    imprint.iter(origin)
+        .filter(|coords| {
+            !coords.are_in_bounds(grids.obstacle_grid.bounds)
+                || grids.obstacle_grid[*coords].is_within_quantum_field()
         })
-        .map(|c| (c, CellHighlight::Negative))
+        .map(|coords| (coords, CellHighlight::Negative))
         .collect()
 }
 

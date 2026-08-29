@@ -120,7 +120,7 @@ fn editor_ui(world: &mut World) {
 }
 
 fn create_new_map(world: &mut World, name: &str, width: i32, height: i32) {
-    let map_info = MapInfo::new(name, width, height);
+    let map_info = MapInfo::new(name, (width, height));
     world.commands().trigger(LoadGameSignal(LoadMapConfig::new_map(map_info)));
     world.resource_mut::<EditorState>().reset_for_new_map(name);
 }
@@ -128,7 +128,7 @@ fn create_new_map(world: &mut World, name: &str, width: i32, height: i32) {
 fn tab_general(ui: &mut egui::Ui, world: &mut World) {
     // Read-only map info header
     let info = world.resource::<MapInfo>();
-    ui.label(format!("Map: {}  ({} × {})", info.name, info.grid_width, info.grid_height));
+    ui.label(format!("Map: {}  ({} × {})", info.name, info.grid_bounds.width, info.grid_bounds.height));
 
     ui.separator();
 
