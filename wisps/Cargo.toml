@@ -10,7 +10,6 @@ strum = { workspace = true }
 game_core = { workspace = true }
 grids = { workspace = true }
 alteration = { workspace = true }
-logging = { workspace = true }
 
 [lints]
 workspace = true

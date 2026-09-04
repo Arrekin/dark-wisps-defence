@@ -9,7 +9,6 @@ game_core = { workspace = true }
 grids = { workspace = true }
 buildings = { workspace = true }
 alteration = { workspace = true }
-persistence = { workspace = true }
 states = { workspace = true }
 almanach = { workspace = true }
 viewport = { workspace = true }

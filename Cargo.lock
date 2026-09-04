@@ -124,7 +124,7 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
 name = "almanach"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "alteration",
  "bevy",
@@ -136,7 +136,7 @@ dependencies = [
 
 [[package]]
 name = "alteration"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bevy",
  "game_core",
@@ -144,7 +144,7 @@ dependencies = [
 
 [[package]]
 name = "alteration_internal"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "alteration",
  "bevy",
@@ -1907,7 +1907,7 @@ dependencies = [
 
 [[package]]
 name = "buildings"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "alteration",
  "bevy",
@@ -1917,7 +1917,7 @@ dependencies = [
 
 [[package]]
 name = "buildings_internal"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "almanach",
  "alteration",
@@ -2038,9 +2038,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.4.4"
+version = "1.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ad534f4357a5264cce5019c989cf66a4f0dc4e0d1b1d15f8aacec0ff7360273"
+checksum = "005ec2760ca554fae18df7a11195552ec576cd665632a881bc011d5bb2fd4d80"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -2297,7 +2297,7 @@ checksum = "f27ae1dd37df86211c42e150270f82743308803d90a6f6e6651cd730d5e1732f"
 
 [[package]]
 name = "dark-wisps-defence"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "almanach",
  "alteration_internal",
@@ -2446,7 +2446,7 @@ dependencies = [
 
 [[package]]
 name = "editor"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "almanach",
  "bevy",
@@ -2665,9 +2665,9 @@ dependencies = [
 
 [[package]]
 name = "find-msvc-tools"
-version = "0.1.11"
+version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d45db016d36b838f563236e9193d0ee6ce38f3f68b6c94e914b4929c96bbb890"
+checksum = "3e0f1c7c3a72c66fd80abe965175f7523475c0489a87d3ff9d6e8c87d87a9d2d"
 
 [[package]]
 name = "fixedbitset"
@@ -2677,12 +2677,13 @@ checksum = "1d674e81391d1e1ab681a28d99df07927c6d4aa5b027d7da16ba32d1d21ecd99"
 
 [[package]]
 name = "flate2"
-version = "1.1.9"
+version = "1.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "843fba2746e448b37e26a819579957415c8cef339bf08564fe8b7ddbd959573c"
+checksum = "6e634e2e0ebac1ee034020da1ca582e17ffe4e0f5e985823721e168928136dcb"
 dependencies = [
  "crc32fast",
- "miniz_oxide",
+ "miniz_oxide 0.9.1",
+ "zlib-rs",
 ]
 
 [[package]]
@@ -2837,7 +2838,7 @@ dependencies = [
 
 [[package]]
 name = "game_core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bevy",
  "lib-derive",
@@ -2847,7 +2848,7 @@ dependencies = [
 
 [[package]]
 name = "game_core_internal"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "alteration",
  "bevy",
@@ -3013,7 +3014,7 @@ checksum = "b40ca9252762c466af32d0b1002e91e4e1bc5398f77455e55474deb466355ff5"
 
 [[package]]
 name = "grids"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "alteration",
  "bevy",
@@ -3022,7 +3023,7 @@ dependencies = [
 
 [[package]]
 name = "grids_internal"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "almanach",
  "alteration",
@@ -3030,7 +3031,6 @@ dependencies = [
  "buildings",
  "game_core",
  "grids",
- "persistence",
  "states",
  "viewport",
 ]
@@ -3139,9 +3139,9 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
 name = "hermit-abi"
-version = "0.5.2"
+version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fc0fef456e4baa96da950455cd02c081ca953b141298e41db3fc7e36b1da849c"
+checksum = "e17592d60ebacc7d5e169f4663c5f84f9161cc90328abcfe8456f41e4dfcb284"
 
 [[package]]
 name = "hexasphere"
@@ -3162,7 +3162,7 @@ checksum = "dfa686283ad6dd069f105e5ab091b04c62850d3e4cf5d67debad1933f55023df"
 
 [[package]]
 name = "hud"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bevy",
  "game_core",
@@ -3171,11 +3171,10 @@ dependencies = [
 
 [[package]]
 name = "hud_internal"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "almanach",
  "bevy",
- "buildings",
  "game_core",
  "grids",
  "hud",
@@ -3354,9 +3353,9 @@ dependencies = [
 
 [[package]]
 name = "indexmap"
-version = "2.14.0"
+version = "2.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d466e9454f08e4a911e14806c24e16fba1b4c121d1ea474396f396069cf949d9"
+checksum = "07aa2048142242915a31d35844fb311e0e53fcca590c3a0a40dcf1b841fa09eb"
 dependencies = [
  "equivalent",
  "hashbrown 0.17.1",
@@ -3518,7 +3517,7 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
 name = "lib-derive"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3549,9 +3548,9 @@ checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 
 [[package]]
 name = "libredox"
-version = "0.1.20"
+version = "0.1.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "28d0a00925a9f930d679b6789b721e3a7f9ed110f41b86d2497caa780c3a070a"
+checksum = "8d8f1ea3f21fd3405dcaf6c9b5c1630af9afc422d9073ea39c5f6d6c772e08ed"
 dependencies = [
  "bitflags 2.13.1",
  "libc",
@@ -3627,7 +3626,7 @@ checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
 name = "logging"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bevy",
  "crossbeam-channel",
@@ -3636,7 +3635,7 @@ dependencies = [
 
 [[package]]
 name = "map_objects"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bevy",
  "game_core",
@@ -3646,7 +3645,7 @@ dependencies = [
 
 [[package]]
 name = "map_objects_internal"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "almanach",
  "bevy",
@@ -3693,6 +3692,16 @@ name = "miniz_oxide"
 version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1fa76a2c86f704bdb222d66965fb3d63269ce38518b83cb0575fca855ebb6316"
+dependencies = [
+ "adler2",
+ "simd-adler32",
+]
+
+[[package]]
+name = "miniz_oxide"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b63fbc4a50860e98e7b2aa7804ded1db5cbc3aff9193adaff57a6931bf7c4b4c"
 dependencies = [
  "adler2",
  "simd-adler32",
@@ -3760,7 +3769,7 @@ checksum = "6e3d189da485332e96ba8a5ef646a311871abd7915bf06ac848a9117f19cf6e4"
 
 [[package]]
 name = "narrative"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bevy",
  "bevy_egui",
@@ -3770,7 +3779,7 @@ dependencies = [
 
 [[package]]
 name = "narrative_internal"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bevy",
  "bevy_egui",
@@ -4255,16 +4264,15 @@ dependencies = [
 
 [[package]]
 name = "outcomes"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bevy",
  "bevy_egui",
- "game_core",
 ]
 
 [[package]]
 name = "overlays"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "almanach",
  "alteration",
@@ -4370,7 +4378,7 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 
 [[package]]
 name = "persistence"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bevy",
  "crossbeam-channel",
@@ -4454,7 +4462,7 @@ dependencies = [
  "crc32fast",
  "fdeflate",
  "flate2",
- "miniz_oxide",
+ "miniz_oxide 0.8.9",
 ]
 
 [[package]]
@@ -4488,9 +4496,9 @@ checksum = "05c8b63e8d9609db387f0324918f81d68fe27748f084ef092fb35954d0539a85"
 
 [[package]]
 name = "portable-atomic-util"
-version = "0.2.7"
+version = "0.2.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c2a106d1259c23fac8e543272398ae0e3c0b8d33c88ed73d0cc71b0f1d902618"
+checksum = "10ab3eb7f3becc3a1cbc4f2c6f20267996cfc1a6467a873763411b136a122715"
 dependencies = [
  "portable-atomic",
 ]
@@ -4793,7 +4801,7 @@ checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 
 [[package]]
 name = "research"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bevy",
  "game_core",
@@ -4804,7 +4812,7 @@ dependencies = [
 
 [[package]]
 name = "research_internal"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "almanach",
  "bevy",
@@ -4823,7 +4831,7 @@ dependencies = [
 
 [[package]]
 name = "resources"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bevy",
  "game_core",
@@ -4832,7 +4840,7 @@ dependencies = [
 
 [[package]]
 name = "resources_internal"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bevy",
  "persistence",
@@ -5029,7 +5037,7 @@ dependencies = [
 
 [[package]]
 name = "session"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bevy",
  "game_core",
@@ -5050,7 +5058,7 @@ dependencies = [
 
 [[package]]
 name = "shards"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "alteration",
  "bevy",
@@ -5059,7 +5067,7 @@ dependencies = [
 
 [[package]]
 name = "shards_internal"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "almanach",
  "bevy",
@@ -5155,9 +5163,9 @@ dependencies = [
 
 [[package]]
 name = "smallvec"
-version = "1.15.2"
+version = "1.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8ed6a63f02c8539c91a8685a86f4099661ba3da017932f6ebbea6de3f0fa7c90"
+checksum = "b9be42f50aa861c555654aa3a37f52f4b1074bacf4e48fe0ef7fa584e80f1f0f"
 
 [[package]]
 name = "smithay-client-toolkit"
@@ -5278,7 +5286,7 @@ dependencies = [
 
 [[package]]
 name = "states"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bevy",
 ]
@@ -5541,9 +5549,9 @@ dependencies = [
 
 [[package]]
 name = "tinyvec"
-version = "1.12.0"
+version = "1.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bb4ebadaa0af04fab11ae01eb5f9fdb5f9c5b875506e210e71c07873528baa7f"
+checksum = "4cf0ded5c4e56918d8f8a339e1bb67d038d3bc6d144ac407904015ba2e4cde9b"
 dependencies = [
  "tinyvec_macros",
 ]
@@ -5556,9 +5564,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "toml"
-version = "1.1.4+spec-1.1.0"
+version = "1.1.5+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3aace63f4bbcdfc2c965b059de67119c89c4017a70d633be6c104910f67056f5"
+checksum = "12c0ba9680044b4ce98d391a62094047eada0d64860b80166c39f4a6b5640785"
 dependencies = [
  "indexmap",
  "serde_core",
@@ -5709,9 +5717,9 @@ checksum = "d2df906b07856748fa3f6e0ad0cbaa047052d4a7dd609e231c4f72cee8c36f31"
 
 [[package]]
 name = "twox-hash"
-version = "2.1.3"
+version = "2.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8464ec13c3691491391d9fce00f6416c9a48e46972f72d7865688be2080192c9"
+checksum = "5283634e518fe9e82c7b20520bb4bc209009fd16c82077c802f8111ecbb0117a"
 
 [[package]]
 name = "typeid"
@@ -5751,7 +5759,7 @@ checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
 
 [[package]]
 name = "units"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bevy",
  "game_core",
@@ -5761,7 +5769,7 @@ dependencies = [
 
 [[package]]
 name = "units_internal"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bevy",
  "buildings",
@@ -5795,9 +5803,9 @@ checksum = "b6c140620e7ffbb22c2dee59cafe6084a59b5ffc27a8859a5f0d494b5d52b6be"
 
 [[package]]
 name = "uuid"
-version = "1.25.0"
+version = "1.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f053576934f05a761a402421fbbe3d425d9366f75f978806a037b3ca481abecc"
+checksum = "b5772d71c9be8a8a6ac2117d949c5b224c1b72241bb611d9a3012edcf8af7812"
 dependencies = [
  "getrandom 0.4.3",
  "js-sys",
@@ -5868,7 +5876,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "viewport"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bevy",
  "bevy_egui",
@@ -5877,7 +5885,7 @@ dependencies = [
 
 [[package]]
 name = "visuals"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "alteration",
  "bevy",
@@ -5886,12 +5894,11 @@ dependencies = [
 
 [[package]]
 name = "visuals_internal"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bevy",
  "game_core",
  "states",
- "viewport",
  "visuals",
 ]
 
@@ -6112,7 +6119,7 @@ checksum = "323f4da9523e9a669e1eaf9c6e763892769b1d38c623913647bfdc1532fe4549"
 
 [[package]]
 name = "weaponry"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "alteration",
  "bevy",
@@ -6122,7 +6129,7 @@ dependencies = [
 
 [[package]]
 name = "weaponry_internal"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "alteration",
  "bevy",
@@ -6361,7 +6368,7 @@ dependencies = [
 
 [[package]]
 name = "widgets"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bevy",
  "resources",
@@ -6370,7 +6377,7 @@ dependencies = [
 
 [[package]]
 name = "widgets_internal"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bevy",
  "game_core",
@@ -6747,20 +6754,19 @@ dependencies = [
 
 [[package]]
 name = "wisps"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "alteration",
  "bevy",
  "game_core",
  "grids",
- "logging",
  "nanorand",
  "strum",
 ]
 
 [[package]]
 name = "wisps_internal"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "almanach",
  "alteration",
@@ -6773,7 +6779,6 @@ dependencies = [
  "nanorand",
  "persistence",
  "resources",
- "session",
  "states",
  "visuals",
  "wisps",
@@ -6982,6 +6987,12 @@ dependencies = [
  "quote",
  "syn 3.0.4",
 ]
+
+[[package]]
+name = "zlib-rs"
+version = "0.6.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "34b31d188d9d685a4f9c7b46d6e36631b07058d2cfe190267adce54dc230bf12"
 
 [[package]]
 name = "zune-core"

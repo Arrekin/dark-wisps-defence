@@ -7,12 +7,18 @@ Wisps are attracted to energy and will prioritise attacking energy producers/ene
 The game is currently not fully playable, but it already has most of the main components:
 - Wisps spawning and pathfinding, including rage mode when a player blocks the path to the wisps' targets
 - Placable buildings
-- 4 distinct towers
+- 5 distinct towers
 - Ore mining
 - Game Persistance(Save & Load maps)
 - Basic map editor capabilities
+- Research 
+- Upgrade Shards
 
-Development preview: [Youtube video >>>](https://youtu.be/9lJq3Hm-R4I?si=J8USUYoAFk2XkjRv)
+
+Development preview(v0.2): [Youtube video >>>](https://youtu.be/w-w71CizF3s)
+
+Older previews:
+- [v0.1](https://youtu.be/9lJq3Hm-R4I?si=J8USUYoAFk2XkjRv)
 
 # Controls
 
@@ -38,7 +44,6 @@ Development preview: [Youtube video >>>](https://youtu.be/9lJq3Hm-R4I?si=J8USUYo
 - **3**: Place rocket launcher tower (explosive area damage)
 
 ## Visual Overlays
-- **G**: Toggle grid display
 - **6**: Toggle emissions overlay (Wisps follow its gradient)
 - **7**: Toggle energy supply overlay (shows power grid coverage)
 - **8**: Toggle towers range overlay

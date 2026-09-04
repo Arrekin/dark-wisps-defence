@@ -29,6 +29,9 @@ research_internal = { workspace = true }
 widgets_internal = { workspace = true }
 visuals_internal = { workspace = true }
 
+[lints]
+workspace = true
+
 [workspace]
 members = [
   "logging",
@@ -74,7 +77,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 
 [workspace.lints.clippy]
