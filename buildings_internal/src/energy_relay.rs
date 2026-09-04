@@ -26,6 +26,7 @@ use states::prelude::*;
 use visuals::prelude::*;
 
 use crate::common::*;
+use crate::tooltip::building_tooltip;
 
 pub struct EnergyRelayPlugin;
 impl Plugin for EnergyRelayPlugin {
@@ -54,6 +55,7 @@ impl BuilderEnergyRelay {
     pub fn almanach_info(asset_server: &AssetServer) -> BuildingInfo {
         BuildingInfo {
             name: "Energy Relay".to_string(),
+            description: "Relays energy over the ground it covers, allowing buildings to function far from Main Base.".to_string(),
             sprite: asset_server.load("buildings/energy_relay.png"),
             top_sprite: None,
             grid_imprint: GridImprint::Rectangle { width: 2, height: 2 },
@@ -65,6 +67,10 @@ impl BuilderEnergyRelay {
             validate: building_validator,
             annotate: annotate_non_empty,
             placement: PlacementChannel::of::<EnergyRelay>(),
+            presentation: ObjectPresentation {
+                face: ObjectFace::Image(asset_server.load("buildings/energy_relay.png")),
+                tooltip: Some(building_tooltip),
+            },
         }
     }
 

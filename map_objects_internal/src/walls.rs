@@ -1,16 +1,19 @@
 use bevy::prelude::*;
 
-use almanach::{Almanach, AlmanachAppExt, WallInfo};
+use almanach::{Almanach, AlmanachAppExt, ObjectFace, ObjectPresentation, WallInfo};
 use game_core::prelude::{GridCoords, GridImprint, MapObject, SSS};
 use grids::obstacles::GridStructureType;
 use grids::placement::{annotate_non_empty, GridObjectPlacer, GridsCollectionParam, PlacementChannel, PlacementMode, PlacementStyle, PlacementValidity, PlaceRequest, RemoveRequest, validator_all_empty};
+use hud::prelude::BuilderSideMenuItemTooltip;
 use logging::prelude::*;
-use map_objects::prelude::{Wall, WallStyleKey, WallStyles};
+use map_objects::prelude::{BuilderWallFace, BuilderWallSideMenuTooltip, Wall};
+use map_objects::wall_style::{WallStyleKey, WallStyles};
 use persistence::{
     prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveWriter},
     rusqlite,
 };
 use states::prelude::MapLoadingStage;
+
 
 pub struct WallPlugin;
 impl Plugin for WallPlugin {
@@ -22,6 +25,7 @@ impl Plugin for WallPlugin {
             .add_observer(BuilderWall::on_builder_add_spawn_wall)
             .add_observer(on_wall_place_request_do_so)
             .add_observer(on_wall_remove_request_do_so)
+            .add_observer(on_builder_add_spawn_wall_tooltip)
             .register_walls(almanach_info)
             ;
     }
@@ -56,11 +60,16 @@ impl BuilderWall {
     pub fn almanach_info(asset_server: &AssetServer) -> WallInfo {
         WallInfo {
             name: "Wall".to_string(),
+            description: "Blocks ground movement and shapes the paths wisps take.".to_string(),
             grid_imprint: WALL_GRID_IMPRINT,
             sprite: asset_server.load("map_objects/wall_4side.png"),
             validate: validator_all_empty,
             annotate: annotate_non_empty,
             placement: PlacementChannel::of::<Wall>().with_modes(PlacementMode::OnPress),
+            presentation: ObjectPresentation {
+                face: ObjectFace::built::<BuilderWallFace>(),
+                tooltip: Some(wall_tooltip),
+            },
         }
     }
 
@@ -170,4 +179,29 @@ fn on_wall_remove_request_do_so(
     if let GridStructureType::Wall(entity) = grids.obstacle_grid[*coords].structure {
         commands.entity(entity).despawn();
     }
+}
+
+/// Queues tooltip construction for a wall placement tile.
+pub(crate) fn wall_tooltip(commands: &mut Commands, anchor: Entity, _map_object: MapObject) {
+    commands.spawn(BuilderWallSideMenuTooltip(anchor));
+}
+
+fn on_builder_add_spawn_wall_tooltip(
+    trigger: On<Add, BuilderWallSideMenuTooltip>,
+    mut commands: Commands,
+    almanach: Res<Almanach>,
+    builders: Query<&BuilderWallSideMenuTooltip>,
+) {
+    let entity = trigger.entity;
+    let Ok(builder) = builders.get(entity) else { return; };
+
+    let info = &almanach.walls;
+    commands.entity(entity)
+        .remove::<BuilderWallSideMenuTooltip>()
+        .insert(
+            BuilderSideMenuItemTooltip::new(builder.0)
+                .with_name(info.name.clone())
+                .with_description(info.description.clone())
+                .with_fact(info.grid_imprint.label()),
+        );
 }

@@ -22,10 +22,10 @@ use bevy::color::palettes::css::{AQUA, BLUE};
 use bevy::prelude::*;
 
 use almanach::prelude::AlmanachAppExt;
-use almanach::{Almanach, QuantumFieldInfo};
+use almanach::{Almanach, ObjectFace, ObjectPresentation, QuantumFieldInfo};
 use game_core::prelude::{GridCoords, GridImprint, MapObject, SSS};
 use grids::placement::{BeginPlacing, CellHighlight, GridObjectPlacer, GridsCollectionParam, PlacementChannel, PlacementValidity, PlaceRequest, RemoveRequest};
-use hud::prelude::{DisplayPanelMainContentRoot, FocusedMapObject};
+use hud::prelude::{BuilderSideMenuItemTooltip, DisplayPanelMainContentRoot, FocusedMapObject};
 use logging::prelude::*;
 use map_objects::prelude::*;
 use persistence::{
@@ -36,6 +36,7 @@ use resources::prelude::*;
 use states::prelude::{GameState, MapLoadingStage, UiInteraction};
 use units::expedition_drone::{DroneState, ExpeditionDrone, ExpeditionDroneDeploymentRequest};
 use widgets::prelude::*;
+
 
 pub struct QuantumFieldPlugin;
 impl Plugin for QuantumFieldPlugin {
@@ -59,16 +60,22 @@ impl Plugin for QuantumFieldPlugin {
         .add_observer(on_focused_map_object_insert_update_quantum_field_panel)
         .add_observer(on_quantum_field_place_request_do_so)
         .add_observer(on_quantum_field_remove_request_do_so)
+        .add_observer(on_builder_add_spawn_quantum_field_tooltip)
         .add_systems(CollectSave, collect_quantum_fields)
         .register_loader(MapLoadingStage::SpawnMapElements, "quantum_fields", load_quantum_fields)
         .register_quantum_field(QuantumFieldInfo {
             name: "Quantum Field".to_string(),
+            description: "An anomaly preventing Main Base from warping. Every layer must be scanned and solved.".to_string(),
             min_size: 3,
             max_size: 6,
             default_size: 3,
             validate: quantum_field_validator,
             annotate: quantum_field_annotator,
             placement: PlacementChannel::of::<QuantumField>(),
+            presentation: ObjectPresentation {
+                face: ObjectFace::built::<BuilderQuantumFieldFace>(),
+                tooltip: Some(quantum_field_tooltip),
+            },
         })
         ;
     }
@@ -519,8 +526,8 @@ impl QuantumFieldActionButton {
                     justify_content: JustifyContent::Center,
                     ..default()
                 },
-                BackgroundColor::from(Color::linear_rgba(0., 0., 0.2, 0.2)),
-                BorderColor::from(Color::linear_rgba(0., 0.2, 1., 1.)),
+                BackgroundColor::from(Color::srgba(0., 0., 0.2, 0.2)),
+                BorderColor::from(Color::srgba(0., 0.2, 1., 1.)),
                 children![(
                     Text::new("Send Expeditions / Stop Expeditions / Pay cost"),
                     TextColor::from(BLUE),
@@ -749,4 +756,33 @@ fn initialize_quantum_field_panel_content_system(
                 ],
             ));
         });
+}
+
+/// Queues tooltip construction for a quantum-field placement tile.
+pub(crate) fn quantum_field_tooltip(commands: &mut Commands, anchor: Entity, _map_object: MapObject) {
+    commands.spawn(BuilderQuantumFieldSideMenuTooltip(anchor));
+}
+
+fn on_builder_add_spawn_quantum_field_tooltip(
+    trigger: On<Add, BuilderQuantumFieldSideMenuTooltip>,
+    mut commands: Commands,
+    almanach: Res<Almanach>,
+    builders: Query<&BuilderQuantumFieldSideMenuTooltip>,
+) {
+    let entity = trigger.entity;
+    let Ok(builder) = builders.get(entity) else { return; };
+
+    let info = &almanach.quantum_fields;
+    // A field is placed at a size the player picks, so its footprint is a range.
+    let smallest = GridImprint::Rectangle { width: info.min_size, height: info.min_size };
+    let largest = GridImprint::Rectangle { width: info.max_size, height: info.max_size };
+
+    commands.entity(entity)
+        .remove::<BuilderQuantumFieldSideMenuTooltip>()
+        .insert(
+            BuilderSideMenuItemTooltip::new(builder.0)
+                .with_name(info.name.clone())
+                .with_description(info.description.clone())
+                .with_fact(format!("{} to {}", smallest.label(), largest.label())),
+        );
 }

@@ -1,10 +1,11 @@
 use bevy::prelude::*;
 
 use almanach::prelude::AlmanachAppExt;
-use almanach::{Almanach, DarkOreInfo};
+use almanach::{Almanach, DarkOreInfo, ObjectFace, ObjectPresentation};
 use game_core::prelude::{GridCoords, GridImprint, MapObject, SSS};
 use grids::placement::{annotate_non_empty, GridObjectPlacer, GridsCollectionParam, PlacementChannel, PlacementMode, PlacementValidity, PlaceRequest, RemoveRequest, validator_all_empty};
 use grids::prelude::ObstacleGrid;
+use hud::prelude::BuilderSideMenuItemTooltip;
 use logging::prelude::*;
 use map_objects::prelude::*;
 use persistence::{
@@ -12,6 +13,7 @@ use persistence::{
     rusqlite,
 };
 use states::prelude::MapLoadingStage;
+
 
 pub struct DarkOrePlugin;
 impl Plugin for DarkOrePlugin {
@@ -25,6 +27,7 @@ impl Plugin for DarkOrePlugin {
             .add_observer(dark_ore_area_scanner::on_add_dark_ore_sync_scanners)
             .add_observer(on_dark_ore_place_request_do_so)
             .add_observer(on_dark_ore_remove_request_do_so)
+            .add_observer(on_builder_add_spawn_dark_ore_tooltip)
             .add_systems(CollectSave, collect_dark_ores)
             .register_loader(MapLoadingStage::SpawnMapElements, "dark_ores", load_dark_ores)
             .register_dark_ore(almanach_info)
@@ -45,12 +48,17 @@ impl BuilderDarkOre {
     pub fn almanach_info(asset_server: &AssetServer) -> DarkOreInfo {
         DarkOreInfo {
             name: "Dark Ore".to_string(),
+            description: "A deposit of dark ore. A mining complex in range extracts it over time.".to_string(),
             grid_imprint: DARK_ORE_GRID_IMPRINT,
             sprite: asset_server.load("map_objects/dark_ore_1.png"),
             max_field_saturation: 1000,
             validate: validator_all_empty,
             annotate: annotate_non_empty,
             placement: PlacementChannel::of::<DarkOre>().with_modes(PlacementMode::OnPress),
+            presentation: ObjectPresentation {
+                face: ObjectFace::Image(asset_server.load("map_objects/dark_ore_1.png")),
+                tooltip: Some(dark_ore_tooltip),
+            },
         }
     }
 
@@ -240,3 +248,28 @@ pub(crate) mod dark_ore_area_scanner {
     }
 }
 
+
+/// Queues tooltip construction for a dark-ore placement tile.
+pub(crate) fn dark_ore_tooltip(commands: &mut Commands, anchor: Entity, _map_object: MapObject) {
+    commands.spawn(BuilderDarkOreSideMenuTooltip(anchor));
+}
+
+fn on_builder_add_spawn_dark_ore_tooltip(
+    trigger: On<Add, BuilderDarkOreSideMenuTooltip>,
+    mut commands: Commands,
+    almanach: Res<Almanach>,
+    builders: Query<&BuilderDarkOreSideMenuTooltip>,
+) {
+    let entity = trigger.entity;
+    let Ok(builder) = builders.get(entity) else { return; };
+
+    let info = &almanach.dark_ore;
+    commands.entity(entity)
+        .remove::<BuilderDarkOreSideMenuTooltip>()
+        .insert(
+            BuilderSideMenuItemTooltip::new(builder.0)
+                .with_name(info.name.clone())
+                .with_description(info.description.clone())
+                .with_fact(info.grid_imprint.label()),
+        );
+}

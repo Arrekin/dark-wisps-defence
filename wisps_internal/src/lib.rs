@@ -1,7 +1,9 @@
+pub(crate) mod face;
 pub(crate) mod materials;
 pub(crate) mod spawning;
 pub(crate) mod systems;
 pub(crate) mod summoning;
+pub(crate) mod tooltip;
 
 use bevy::prelude::*;
 use bevy::sprite_render::Material2dPlugin;
@@ -12,12 +14,16 @@ use grids::placement::{annotate_non_empty, PlacementChannel, PlacementMode};
 use persistence::prelude::{AppGameLoadSaveExtension, CollectSave};
 use states::prelude::*;
 use visuals::prelude::*;
-use wisps::{WispElectricType, WispFireType, WispLightType, WispWaterType, prelude::*};
+use wisps::{BuilderWispFace, WispElectricType, WispFireType, WispLightType, WispWaterType, prelude::*};
 
 pub struct WispsPlugin;
 impl Plugin for WispsPlugin {
     fn build(&self, app: &mut App) {
         app
+            .register_shader_library("shaders/wisps/fire_look.wgsl")
+            .register_shader_library("shaders/wisps/water_look.wgsl")
+            .register_shader_library("shaders/wisps/light_look.wgsl")
+            .register_shader_library("shaders/wisps/electric_look.wgsl")
             .add_plugins((
                 Material2dPlugin::<materials::WispFireMaterial>::default(),
                 Material2dPlugin::<materials::WispWaterMaterial>::default(),
@@ -25,6 +31,8 @@ impl Plugin for WispsPlugin {
                 Material2dPlugin::<materials::WispElectricMaterial>::default(),
             ))
             .add_plugins(summoning::SummoningPlugin)
+            .add_plugins(face::WispFacePlugin)
+            .add_plugins(tooltip::WispTooltipPlugin)
             .add_systems(PreUpdate,
                 systems::remove_dead_wisps.run_if(in_state(GameState::Running)),
             )
@@ -61,10 +69,21 @@ impl Plugin for WispsPlugin {
             .add_systems(CollectSave, spawning::collect_wisps)
             .register_loader(MapLoadingStage::SpawnMapElements, "wisps", spawning::load_wisps)
             .register_wisps(WispInfo {
+                description: "A hostile wisp. Advances on your buildings and attacks what it reaches.".to_string(),
                 grid_imprint: WISP_GRID_IMPRINT,
                 validate: spawning::wisp_validator,
                 annotate: annotate_non_empty,
                 placement: PlacementChannel::of::<WispType>().with_modes(PlacementMode::OnPress),
+                presentation: ObjectPresentation {
+                    face: ObjectFace::Built(insert_wisp_face),
+                    tooltip: Some(tooltip::wisp_tooltip),
+                },
             });
     }
+}
+
+/// Inserts the UI face builder for a wisp placement tile.
+fn insert_wisp_face(face_node: &mut EntityCommands, map_object: MapObject) {
+    let MapObject::Wisp(wisp_type) = map_object else { return };
+    face_node.insert(BuilderWispFace(wisp_type));
 }

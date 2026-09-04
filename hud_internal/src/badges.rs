@@ -112,8 +112,8 @@ fn initialize_badges_system(
                 border_radius: BorderRadius::all(Val::Px(2.)),
                 ..default()
             },
-            BackgroundColor::from(Color::linear_rgba(0., 0.3, 0.7, 0.1)),
-            BorderColor::from(Color::linear_rgba(0., 0.3, 0.9, 0.3)),
+            BackgroundColor::from(Color::srgba(0., 0.3, 0.7, 0.1)),
+            BorderColor::from(Color::srgba(0., 0.3, 0.9, 0.3)),
         )).with_children(|parent| {
             for essence_type in EssenceType::iter() {
                 let essence_badge = parent
@@ -128,7 +128,7 @@ fn initialize_badges_system(
                         },
                         EssenceBadge,
                     ))
-                    .observe(recolor_background_on::<Pointer<Over>>(Color::linear_rgba(0., 0.3, 0.9, 0.3)))
+                    .observe(recolor_background_on::<Pointer<Over>>(Color::srgba(0., 0.3, 0.9, 0.3)))
                     .observe(recolor_background_on::<Pointer<Out>>(Color::NONE))
                     .with_children(|parent| {
                         // Essence circle
@@ -162,10 +162,10 @@ fn initialize_badges_system(
 
 fn essence_type_to_badge_colors(essence_type: EssenceType) -> (BackgroundColor, BorderColor) {
     match essence_type {
-        EssenceType::Fire => (BackgroundColor::from(Color::linear_rgba(1., 0.05, 0.05, 0.8)), BorderColor::from(Color::linear_rgba(1., 0., 0., 0.9))),
-        EssenceType::Water => (BackgroundColor::from(Color::linear_rgba(0.05, 0.05, 1., 0.8)), BorderColor::from(Color::linear_rgba(0., 0., 1., 0.9))),
-        EssenceType::Light => (BackgroundColor::from(Color::linear_rgba(0.95, 0.95, 0.95, 0.8)), BorderColor::from(Color::linear_rgba(1., 1., 1., 0.9))),
-        EssenceType::Electric => (BackgroundColor::from(Color::linear_rgba(1., 0.95, 0.05, 0.8)), BorderColor::from(Color::linear_rgba(1., 1., 0., 0.9))),
+        EssenceType::Fire => (BackgroundColor::from(Color::srgba(1., 0.05, 0.05, 0.8)), BorderColor::from(Color::srgba(1., 0., 0., 0.9))),
+        EssenceType::Water => (BackgroundColor::from(Color::srgba(0.05, 0.05, 1., 0.8)), BorderColor::from(Color::srgba(0., 0., 1., 0.9))),
+        EssenceType::Light => (BackgroundColor::from(Color::srgba(0.95, 0.95, 0.95, 0.8)), BorderColor::from(Color::srgba(1., 1., 1., 0.9))),
+        EssenceType::Electric => (BackgroundColor::from(Color::srgba(1., 0.95, 0.05, 0.8)), BorderColor::from(Color::srgba(1., 1., 0., 0.9))),
     }
 }
 

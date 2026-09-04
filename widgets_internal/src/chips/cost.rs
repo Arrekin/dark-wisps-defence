@@ -1,10 +1,9 @@
-use bevy::color::palettes::css::{GREEN, RED};
 use bevy::prelude::*;
 
 use resources::prelude::Stock;
 use widgets::prelude::{
-    BuilderChip, BuilderCostChip, ChipChildren, CostChip, CostChipVisualFullPrice,
-    CostChipVisualUnitAvailable, TooltipBundle,
+    BuilderChip, BuilderChipStrip, BuilderCostChip, BuilderFullPriceCostStrip, BuilderTooltip,
+    ChipChildren, CostChip, CostChipVisualFullPrice, CostChipVisualUnitAvailable,
 };
 use widgets::common::utils::set_text_if_changed;
 
@@ -15,6 +14,7 @@ impl Plugin for CostChipPlugin {
     fn build(&self, app: &mut App) {
         app
             .add_observer(on_builder_add_spawn_cost_chip)
+            .add_observer(on_builder_add_spawn_full_price_cost_strip)
             .add_systems(Update, (
                 sync_cost_chip_contents,
                 update_cost_chip_borders,
@@ -22,14 +22,8 @@ impl Plugin for CostChipPlugin {
     }
 }
 
-/// Expands the builder into the core's `BuilderChip` plus the runtime
-/// `CostChip`, then attaches the resource-name tooltip. The icon-and-amount
-/// tree itself is built by `on_builder_add_spawn_chip` once `BuilderChip`
-/// lands — this observer never touches nodes directly.
-///
-/// The border is left neutral here rather than computed: inserting `CostChip`
-/// counts as a change, so `update_cost_chip_borders` paints it on the next
-/// frame and the affordability rule lives in exactly one place.
+/// Expands a cost request into the shared chip builder and runtime cost state, then attaches the
+/// resource-name tooltip. Border color is applied by `update_cost_chip_borders` after insertion.
 fn on_builder_add_spawn_cost_chip(
     trigger: On<Add, BuilderCostChip>,
     mut commands: Commands,
@@ -52,13 +46,34 @@ fn on_builder_add_spawn_cost_chip(
             CostChip { resource_type, amount },
         ));
 
-    let tooltip = commands.spawn(TooltipBundle::new(chip_entity)).id();
+    // The single-line resource name uses a content-sized tooltip.
+    let tooltip = commands.spawn(BuilderTooltip::new(chip_entity).sized_to_content()).id();
     commands.entity(tooltip).with_child((
         Text::new(resource_type.to_string()),
         TextFont::from_font_size(CHIP_FONT_SIZE),
         TextColor::from(Color::WHITE),
         TextLayout::no_wrap(),
     ));
+}
+
+/// Expands into [`BuilderChipStrip`] with one chip per cost.
+fn on_builder_add_spawn_full_price_cost_strip(
+    trigger: On<Add, BuilderFullPriceCostStrip>,
+    mut commands: Commands,
+    builders: Query<&BuilderFullPriceCostStrip>,
+) {
+    let strip_entity = trigger.entity;
+    let Ok(builder) = builders.get(strip_entity) else { return };
+    let costs = builder.0.clone();
+
+    commands.entity(strip_entity)
+        .remove::<BuilderFullPriceCostStrip>()
+        .insert(BuilderChipStrip)
+        .with_children(|strip| {
+            for cost in costs {
+                strip.spawn((BuilderCostChip::from(cost), CostChipVisualFullPrice));
+            }
+        });
 }
 
 /// Rewrites the amount text when the owner mutates `CostChip`. The icon is
@@ -75,13 +90,8 @@ fn sync_cost_chip_contents(
     }
 }
 
-/// Paints the border of every specialized chip. Two triggers matter — the
-/// stock moved, or the owner rewrote the amount — so this is one system
-/// filtering on both rather than a pair of run conditions that would each
-/// miss the other's trigger.
-///
-/// Chips with no specialization are excluded by the query and keep their
-/// neutral border for life.
+/// Updates specialized chip borders when stock or displayed cost changes. Unspecialized chips are
+/// excluded and retain their neutral border.
 fn update_cost_chip_borders(
     stock: Res<Stock>,
     mut chips: Query<
@@ -103,6 +113,11 @@ fn update_cost_chip_borders(
     }
 }
 
+/// Returns the palette colors for affordable and blocking costs.
 fn availability_color(affordable: bool) -> Color {
-    if affordable { GREEN.into() } else { RED.into() }
+    if affordable {
+        Color::srgb_u8(0x35, 0xB8, 0x7A)
+    } else {
+        Color::srgb_u8(0xFF, 0x3D, 0x8D)
+    }
 }

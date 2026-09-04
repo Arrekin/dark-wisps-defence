@@ -25,6 +25,7 @@ use weaponry::prelude::*;
 use wisps::prelude::*;
 
 use crate::common::*;
+use crate::tooltip::building_tooltip;
 
 pub struct TowerRocketLauncherPlugin;
 impl Plugin for TowerRocketLauncherPlugin {
@@ -57,6 +58,7 @@ impl BuilderTowerRocketLauncher {
     pub fn almanach_info(asset_server: &AssetServer) -> BuildingInfo {
         BuildingInfo {
             name: "Rocket Launcher Tower".to_string(),
+            description: "Long-range rockets, reaching well beyond the other towers.".to_string(),
             sprite: asset_server.load("buildings/tower_rocket_launcher.png"),
             top_sprite: Some(asset_server.load("buildings/tower_rocket_launcher_top.png")),
             grid_imprint: GridImprint::Rectangle { width: 3, height: 3 },
@@ -70,6 +72,10 @@ impl BuilderTowerRocketLauncher {
             validate: building_validator,
             annotate: annotate_non_empty,
             placement: PlacementChannel::of::<TowerRocketLauncher>(),
+            presentation: ObjectPresentation {
+                face: ObjectFace::Image(asset_server.load("buildings/tower_rocket_launcher.png")),
+                tooltip: Some(building_tooltip),
+            },
         }
     }
 

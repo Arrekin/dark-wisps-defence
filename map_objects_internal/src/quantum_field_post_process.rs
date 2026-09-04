@@ -36,7 +36,7 @@ use bevy::prelude::*;
 use game_core::prelude::GridImprint;
 use units::expedition_drone::{ExpeditionDrone, ScanSpot, ScanningBeam};
 use viewport::PostProcessCamera;
-use visuals::post_process::QuantumFieldPostProcessSet;
+use visuals::prelude::{QuantumFieldPostProcessSet, ShaderLibraryAppExt};
 
 use crate::quantum_field::QuantumFieldLayers;
 
@@ -44,6 +44,7 @@ pub struct QuantumFieldPostProcessPlugin;
 impl Plugin for QuantumFieldPostProcessPlugin {
     fn build(&self, app: &mut App) {
         app
+            .register_shader_library("shaders/quantum_field.wgsl")
             .add_plugins((
                 ExtractComponentPlugin::<QuantumFieldPostProcess>::default(),
                 UniformComponentPlugin::<QuantumFieldPostProcess>::default(),

@@ -45,7 +45,7 @@ const PANEL_Z_INDEX: i32 = 100;
 
 const HEADER_HEIGHT: f32 = 48.0;
 const HEADER_FONT_SIZE: f32 = 28.0;
-const HEADER_COLOR: Color = Color::linear_rgba(0.9, 0.9, 0.9, 1.);
+const HEADER_COLOR: Color = Color::srgba(0.9, 0.9, 0.9, 1.);
 
 const CLOSE_BUTTON_SIZE: f32 = 28.0;
 

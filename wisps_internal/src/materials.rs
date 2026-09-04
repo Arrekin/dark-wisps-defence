@@ -62,7 +62,7 @@ pub(crate) struct WispFireMaterial {
 impl WispFireMaterial {
     /// Transparent padding around the orb so its flame licks have room to reach
     /// beyond the cell; the orb keeps its on-screen size while only the margin grows.
-    /// Mirrored by `QUAD_SCALE` in `assets/shaders/wisps/fire.wgsl` — keep the two equal.
+    /// Mirrored by `QUAD_SCALE` in `assets/shaders/wisps/fire_look.wgsl` — keep the two equal.
     pub const QUAD_SCALE: f32 = 2.5;
 }
 impl Material2d for WispFireMaterial {
@@ -138,7 +138,7 @@ pub(crate) struct WispWaterMaterial {
 impl WispWaterMaterial {
     /// Transparent padding around the droplet so its energetic wobble and lunge
     /// have room inside the mesh; the droplet keeps its on-screen size while only
-    /// the margin grows. Mirrored by `QUAD_SCALE` in `assets/shaders/wisps/water.wgsl`
+    /// the margin grows. Mirrored by `QUAD_SCALE` in `assets/shaders/wisps/water_look.wgsl`
     /// (which scales UV by it) — keep the two equal, or the droplet mis-scales.
     pub const QUAD_SCALE: f32 = 2.4;
 }

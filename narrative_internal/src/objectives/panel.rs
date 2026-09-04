@@ -283,8 +283,8 @@ fn on_add_objective_details_spawn_row(
             row_gap: Val::Px(2.),
             ..default()
         },
-        BackgroundColor::from(Color::linear_rgba(0.3, 0.3, 0.3, 0.7)),
-        BorderColor::from(Color::linear_rgba(0.2, 0.2, 0.2, 0.9)),
+        BackgroundColor::from(Color::srgba(0.3, 0.3, 0.3, 0.7)),
+        BorderColor::from(Color::srgba(0.2, 0.2, 0.2, 0.9)),
     ))
     .add_children(&[header, row_content])
     .id();
@@ -331,23 +331,23 @@ fn rebuild_panel(
         let (check_img, bg, border) = match state {
             ObjectiveState::Inactive => (
                 "ui/objectives_check_active.png",
-                Color::linear_rgba(0.3, 0.3, 0.3, 0.7),
-                Color::linear_rgba(0.2, 0.2, 0.2, 0.9),
+                Color::srgba(0.3, 0.3, 0.3, 0.7),
+                Color::srgba(0.2, 0.2, 0.2, 0.9),
             ),
             ObjectiveState::InProgress => (
                 "ui/objectives_check_active.png",
-                Color::linear_rgba(0.1, 0.3, 0.8, 0.7),
-                Color::linear_rgba(0., 0.2, 0.8, 0.9),
+                Color::srgba(0.1, 0.3, 0.8, 0.7),
+                Color::srgba(0., 0.2, 0.8, 0.9),
             ),
             ObjectiveState::Satisfied => (
                 "ui/objectives_check_completed.png",
-                Color::linear_rgba(0.1, 0.8, 0.3, 0.7),
-                Color::linear_rgba(0., 0.8, 0.2, 0.9),
+                Color::srgba(0.1, 0.8, 0.3, 0.7),
+                Color::srgba(0., 0.8, 0.2, 0.9),
             ),
             ObjectiveState::Failed => (
                 "ui/objectives_check_failed.png",
-                Color::linear_rgba(0.8, 0.1, 0.3, 0.7),
-                Color::linear_rgba(0.8, 0., 0.2, 0.9),
+                Color::srgba(0.8, 0.1, 0.3, 0.7),
+                Color::srgba(0.8, 0., 0.2, 0.9),
             ),
         };
 

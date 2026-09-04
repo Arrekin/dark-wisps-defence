@@ -65,7 +65,7 @@ fn update_building_info_panel_system(
     healthbar.value = integrity_points.get_current();
     healthbar.max_value = integrity_points.get_max();
     let integrity_points_percentage = integrity_points.get_percent();
-    healthbar.color = Color::linear_rgba(1. - integrity_points_percentage, integrity_points_percentage, 0., 1.);
+    healthbar.color = Color::srgba(1. - integrity_points_percentage, integrity_points_percentage, 0., 1.);
 }
 
 fn on_focused_map_object_insert_display_building_info_panel(
@@ -289,8 +289,8 @@ impl ShardSlotOccupied {
                     border: UiRect::all(Val::Px(1.)),
                     ..default()
                 },
-                BackgroundColor(Color::linear_rgba(0.1, 0.3, 0.1, 0.9)),
-                BorderColor::all(Color::linear_rgba(0.2, 0.6, 0.2, 1.0)),
+                BackgroundColor(Color::srgba(0.1, 0.3, 0.1, 0.9)),
+                BorderColor::all(Color::srgba(0.2, 0.6, 0.2, 1.0)),
             ))
             .with_children(|parent| {
                 parent.spawn((
@@ -327,12 +327,12 @@ impl ShardSlotEmpty {
                     border: UiRect::all(Val::Px(1.)),
                     ..default()
                 },
-                BackgroundColor(Color::linear_rgba(0.15, 0.15, 0.15, 0.9)),
-                BorderColor::all(Color::linear_rgba(0.4, 0.4, 0.4, 1.0)),
+                BackgroundColor(Color::srgba(0.15, 0.15, 0.15, 0.9)),
+                BorderColor::all(Color::srgba(0.4, 0.4, 0.4, 1.0)),
             ))
             .observe(Self::on_click_open_shard_selection_panel)
-            .observe(recolor_background_on::<Pointer<Over>>(Color::linear_rgba(0.2, 0.2, 0.4, 0.9)))
-            .observe(recolor_background_on::<Pointer<Out>>(Color::linear_rgba(0.15, 0.15, 0.15, 0.9)))
+            .observe(recolor_background_on::<Pointer<Over>>(Color::srgba(0.2, 0.2, 0.4, 0.9)))
+            .observe(recolor_background_on::<Pointer<Out>>(Color::srgba(0.15, 0.15, 0.15, 0.9)))
             .with_children(|parent| {
                 parent.spawn((
                     Text::new("+"),
@@ -401,8 +401,8 @@ impl ShardSelectionPanel {
                         border: UiRect::all(Val::Px(1.)),
                         ..default()
                     },
-                    BackgroundColor(Color::linear_rgba(0.05, 0.05, 0.1, 0.97)),
-                    BorderColor::all(Color::linear_rgba(0.3, 0.3, 0.5, 1.0)),
+                    BackgroundColor(Color::srgba(0.05, 0.05, 0.1, 0.97)),
+                    BorderColor::all(Color::srgba(0.3, 0.3, 0.5, 1.0)),
                 ))
                 .with_children(|parent| {
                     parent.spawn((
@@ -438,12 +438,12 @@ impl ShardSelectionPanel {
                             border: UiRect::all(Val::Px(1.)),
                             ..default()
                         },
-                        BackgroundColor(Color::linear_rgba(0.2, 0.1, 0.1, 0.9)),
-                        BorderColor::all(Color::linear_rgba(0.5, 0.2, 0.2, 1.0)),
+                        BackgroundColor(Color::srgba(0.2, 0.1, 0.1, 0.9)),
+                        BorderColor::all(Color::srgba(0.5, 0.2, 0.2, 1.0)),
                     ))
                     .observe(Self::on_cancel_click_close_shard_selection_panel)
-                    .observe(recolor_background_on::<Pointer<Over>>(Color::linear_rgba(0.3, 0.15, 0.15, 0.95)))
-                    .observe(recolor_background_on::<Pointer<Out>>(Color::linear_rgba(0.2, 0.1, 0.1, 0.9)))
+                    .observe(recolor_background_on::<Pointer<Over>>(Color::srgba(0.3, 0.15, 0.15, 0.95)))
+                    .observe(recolor_background_on::<Pointer<Out>>(Color::srgba(0.2, 0.1, 0.1, 0.9)))
                     .with_children(|parent| {
                         parent.spawn((
                             Text::new("Cancel"),
@@ -499,12 +499,12 @@ impl ShardPickerItem {
                     border: UiRect::all(Val::Px(1.)),
                     ..default()
                 },
-                BackgroundColor(Color::linear_rgba(0.15, 0.15, 0.25, 0.9)),
-                BorderColor::all(Color::linear_rgba(0.3, 0.3, 0.5, 1.0)),
+                BackgroundColor(Color::srgba(0.15, 0.15, 0.25, 0.9)),
+                BorderColor::all(Color::srgba(0.3, 0.3, 0.5, 1.0)),
             ))
             .observe(Self::on_click_equip_shard)
-            .observe(recolor_background_on::<Pointer<Over>>(Color::linear_rgba(0.25, 0.3, 0.5, 0.95)))
-            .observe(recolor_background_on::<Pointer<Out>>(Color::linear_rgba(0.15, 0.15, 0.25, 0.9)))
+            .observe(recolor_background_on::<Pointer<Over>>(Color::srgba(0.25, 0.3, 0.5, 0.95)))
+            .observe(recolor_background_on::<Pointer<Out>>(Color::srgba(0.15, 0.15, 0.25, 0.9)))
             .with_children(|parent| {
                 parent.spawn((
                     Text::new(label),

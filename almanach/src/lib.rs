@@ -8,7 +8,7 @@ use resources::prelude::Cost;
 use states::prelude::MapLoadingStage;
 
 pub mod prelude {
-    pub use super::{Almanach, AlmanachAppExt, BuildingInfo, ResearchSpawnFn, ShardInfo, ShardRecipe};
+    pub use super::{AccessPattern, Almanach, AlmanachAppExt, BuildingInfo, ObjectFace, ObjectPresentation, ObjectTooltipFn, ResearchSpawnFn, ShardInfo, ShardRecipe};
 }
 
 pub struct AlmanachPlugin;
@@ -100,6 +100,55 @@ impl AlmanachAppExt for App {
 /// on the entity. The editor calls this to seed or re-seed a research.
 pub type ResearchSpawnFn = fn(&mut Commands, &ContentId);
 
+#[derive(Clone, Copy)]
+pub enum AccessPattern {
+    Player,
+    Admin,
+}
+
+/// Rendering strategy for a side-menu tile face.
+///
+/// `Image` inserts an image directly. `Built` invokes a domain callback that installs the
+/// domain-owned UI material or builder without creating an internal-crate dependency.
+#[derive(Clone, Default)]
+pub enum ObjectFace {
+    Image(Handle<Image>),
+    Built(fn(&mut EntityCommands, MapObject)),
+    #[default]
+    None,
+}
+
+fn insert_face_builder<B: Component + Default>(face_node: &mut EntityCommands, _map_object: MapObject) {
+    face_node.insert(B::default());
+}
+
+impl ObjectFace {
+    /// Uses component `B` as the domain-owned face builder.
+    pub fn built<B: Component + Default>() -> Self {
+        Self::Built(insert_face_builder::<B>)
+    }
+
+    /// Applies the face to an already-sized tile node.
+    pub fn apply(&self, face_node: &mut EntityCommands, map_object: MapObject) {
+        match self {
+            Self::Image(image) => { face_node.insert(ImageNode::new(image.clone())); }
+            Self::Built(build) => build(face_node, map_object),
+            Self::None => {}
+        }
+    }
+}
+
+/// Callback that spawns a tile tooltip anchored to the supplied entity.
+pub type ObjectTooltipFn = fn(&mut Commands, Entity, MapObject);
+
+/// Face and optional tooltip used by a map object's side-menu tile.
+#[derive(Clone)]
+pub struct ObjectPresentation {
+    pub face: ObjectFace,
+    /// No tooltip is spawned when this is `None`.
+    pub tooltip: Option<ObjectTooltipFn>,
+}
+
 #[derive(Resource)]
 pub struct Almanach {
     buildings: HashMap<BuildingType, BuildingInfo>,
@@ -136,6 +185,20 @@ impl Almanach {
             .unwrap_or_else(|| panic!("Building {building_type:?} not found in almanach"))
     }
 
+    /// Tower variants in deterministic menu order. Access does not affect the tower list.
+    pub fn constructible_towers(&self, _access: AccessPattern) -> impl Iterator<Item = BuildingType> {
+        BuildingType::all().filter(|building_type| matches!(building_type, BuildingType::Tower(_)))
+    }
+
+    /// Non-tower variants in deterministic menu order. The editor catalog also includes the
+    /// Main Base.
+    pub fn constructible_buildings(&self, access: AccessPattern) -> impl Iterator<Item = BuildingType> {
+        BuildingType::all().filter(move |building_type| {
+            !matches!(building_type, BuildingType::Tower(_))
+                && (matches!(access, AccessPattern::Admin) || !matches!(building_type, BuildingType::MainBase))
+        })
+    }
+
     // === Shards ===
 
     pub fn get_shard_info(&self, shard_type: ShardType) -> &ShardInfo {
@@ -160,6 +223,17 @@ impl Almanach {
             MapObject::Wisp(_) => (&self.wisps).into(),
         }
     }
+
+    /// Returns the side-menu presentation registered for a map object.
+    pub fn presentation_for(&self, map_object: MapObject) -> &ObjectPresentation {
+        match map_object {
+            MapObject::Building(building_type) => &self.get_building_info(building_type).presentation,
+            MapObject::Wall => &self.walls.presentation,
+            MapObject::DarkOre => &self.dark_ore.presentation,
+            MapObject::QuantumField => &self.quantum_fields.presentation,
+            MapObject::Wisp(_) => &self.wisps.presentation,
+        }
+    }
 }
 
 
@@ -170,6 +244,7 @@ impl Almanach {
 #[derive(Clone)]
 pub struct BuildingInfo {
     pub name: String,
+    pub description: String,
     pub grid_imprint: GridImprint,
     pub cost: Vec<Cost>,
     pub baseline: HashMap<ModifierType, f32>,
@@ -178,6 +253,7 @@ pub struct BuildingInfo {
     pub sprite: Handle<Image>,
     pub top_sprite: Option<Handle<Image>>,
     pub placement: PlacementChannel,
+    pub presentation: ObjectPresentation,
 }
 
 impl From<&BuildingInfo> for ObjectPlacementInfo {
@@ -199,11 +275,13 @@ impl From<&BuildingInfo> for ObjectPlacementInfo {
 #[derive(Clone)]
 pub struct WallInfo {
     pub name: String,
+    pub description: String,
     pub grid_imprint: GridImprint,
     pub sprite: Handle<Image>,
     pub validate: PlacementValidatorFn,
     pub annotate: PlacementAnnotatorFn,
     pub placement: PlacementChannel,
+    pub presentation: ObjectPresentation,
 }
 
 impl From<&WallInfo> for ObjectPlacementInfo {
@@ -225,12 +303,14 @@ impl From<&WallInfo> for ObjectPlacementInfo {
 #[derive(Clone)]
 pub struct DarkOreInfo {
     pub name: String,
+    pub description: String,
     pub grid_imprint: GridImprint,
     pub sprite: Handle<Image>,
     pub max_field_saturation: u32,
     pub validate: PlacementValidatorFn,
     pub annotate: PlacementAnnotatorFn,
     pub placement: PlacementChannel,
+    pub presentation: ObjectPresentation,
 }
 
 impl From<&DarkOreInfo> for ObjectPlacementInfo {
@@ -252,12 +332,14 @@ impl From<&DarkOreInfo> for ObjectPlacementInfo {
 #[derive(Clone)]
 pub struct QuantumFieldInfo {
     pub name: String,
+    pub description: String,
     pub min_size: i32,
     pub max_size: i32,
     pub default_size: i32,
     pub validate: PlacementValidatorFn,
     pub annotate: PlacementAnnotatorFn,
     pub placement: PlacementChannel,
+    pub presentation: ObjectPresentation,
 }
 
 impl From<&QuantumFieldInfo> for ObjectPlacementInfo {
@@ -284,10 +366,13 @@ impl QuantumFieldInfo {
 
 #[derive(Clone)]
 pub struct WispInfo {
+    /// Shared by all wisp types; each display name comes from its `WispType`.
+    pub description: String,
     pub grid_imprint: GridImprint,
     pub validate: PlacementValidatorFn,
     pub annotate: PlacementAnnotatorFn,
     pub placement: PlacementChannel,
+    pub presentation: ObjectPresentation,
 }
 
 impl From<&WispInfo> for ObjectPlacementInfo {

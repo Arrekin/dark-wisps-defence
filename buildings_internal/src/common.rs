@@ -7,6 +7,7 @@ use grids::placement::{
 };
 use logging::prelude::*;
 use resources::prelude::Stock;
+use states::AdminMode;
 
 pub(crate) fn building_validator(map_object: MapObject, origin: GridCoords, imprint: GridImprint, map_data: &GridsCollectionParam) -> PlacementValidity {
     let MapObject::Building(building_type) = map_object else {
@@ -38,6 +39,7 @@ pub(crate) struct BuildingPlacementManager<'w, 's> {
     almanach: Res<'w, Almanach>,
     grids: GridsCollectionParam<'w>,
     stock: ResMut<'w, Stock>,
+    admin_mode: Res<'w, State<AdminMode>>,
     placer: Single<'w, 's, (&'static GridCoords, &'static GridImprint), With<GridObjectPlacer>>,
 }
 
@@ -50,7 +52,13 @@ impl<'w, 's> BuildingPlacementManager<'w, 's> {
 
     /// Validate the site, charge the building's cost, reserve the cells.
     /// `None` means refused or unaffordable; nothing is charged in that case.
+    ///
+    /// In admin mode placement is free. Validation still runs.
     pub(crate) fn claim(&mut self, building_type: BuildingType) -> Option<GridCoords> {
+        if self.admin_mode.get().is_enabled() {
+            return self.claim_free(building_type);
+        }
+
         let (coords, imprint) = (self.coords(), self.imprint());
         if !self.is_site_valid(building_type, coords, imprint) { return None; }
 

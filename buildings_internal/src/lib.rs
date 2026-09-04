@@ -11,6 +11,7 @@ pub(crate) mod mining_complex;
 pub(crate) mod exploration_center;
 pub(crate) mod forge;
 pub(crate) mod info_panel;
+pub(crate) mod tooltip;
 
 use bevy::prelude::*;
 
@@ -21,6 +22,7 @@ impl Plugin for BuildingsPlugin {
             .add_plugins((
                 common_systems::CommonSystemsPlugin,
                 info_panel::InfoPanelPlugin,
+                tooltip::BuildingTooltipPlugin,
                 energy_relay::EnergyRelayPlugin,
                 exploration_center::ExplorationCenterPlugin,
                 main_base::MainBasePlugin,

@@ -26,6 +26,7 @@ use states::prelude::*;
 use viewport::MainCamera;
 
 use crate::common::*;
+use crate::tooltip::building_tooltip;
 
 
 pub struct MainBasePlugin;
@@ -82,6 +83,7 @@ impl BuilderMainBase {
     pub fn almanach_info(asset_server: &AssetServer) -> BuildingInfo {
         BuildingInfo {
             name: "Main Base".to_string(),
+            description: "Home. Generates energy for the surrounding area.".to_string(),
             sprite: asset_server.load("buildings/main_base.png"),
             top_sprite: None,
             grid_imprint: GridImprint::Rectangle { width: 6, height: 6 },
@@ -93,6 +95,10 @@ impl BuilderMainBase {
             validate: building_validator,
             annotate: annotate_non_empty,
             placement: PlacementChannel::of::<MainBase>(),
+            presentation: ObjectPresentation {
+                face: ObjectFace::Image(asset_server.load("buildings/main_base.png")),
+                tooltip: Some(building_tooltip),
+            },
         }
     }
 

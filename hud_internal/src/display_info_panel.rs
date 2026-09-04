@@ -128,8 +128,8 @@ fn initialize_display_info_panel_system(
             padding: UiRect::all(Val::Px(4.0)),
             ..default()
         },
-        BackgroundColor::from(Color::linear_rgba(0.46, 0.62, 0.67, 1.)),
-        BorderColor::from(Color::linear_rgba(0., 0.2, 1., 1.)),
+        BackgroundColor::from(Color::srgba(0.46, 0.62, 0.67, 1.)),
+        BorderColor::from(Color::srgba(0., 0.2, 1., 1.)),
         Visibility::Hidden,
         DisplayInfoPanel,
         children![

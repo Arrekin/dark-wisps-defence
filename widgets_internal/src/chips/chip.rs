@@ -5,11 +5,13 @@ use widgets::prelude::{BuilderChip, Chip, ChipChildren, ChipsFaded};
 // Chip body
 const CHIP_HEIGHT: f32 = 24.0;
 const CHIP_ICON_SIZE: f32 = 18.0;
-const CHIP_BACKGROUND: Color = Color::linear_rgba(0.12, 0.12, 0.18, 1.);
+/// #0D1630 elevated surface.
+const CHIP_BACKGROUND: Color = Color::srgb_u8(0x0D, 0x16, 0x30);
 
-/// Border of a chip nothing has coloured. A specialization that paints the
-/// border keeps this only for the frame between spawn and its first update.
-const CHIP_NEUTRAL_BORDER: Color = Color::linear_rgba(0.4, 0.4, 0.4, 1.);
+/// Border of a chip nothing has coloured, #233A68 structural. A specialization
+/// that paints the border keeps this only for the frame between spawn and its
+/// first update.
+const CHIP_NEUTRAL_BORDER: Color = Color::srgb_u8(0x23, 0x3A, 0x68);
 
 // Shared with the specializations, which style on top of the core.
 pub(super) const CHIP_FONT_SIZE: f32 = 12.0;
@@ -24,9 +26,8 @@ impl Plugin for ChipPlugin {
     }
 }
 
-/// Builds the chip tree and records its nodes. That is the whole widget — no
-/// tooltip, no colour states, no notion of what is being shown. Specializations
-/// expand into `BuilderChip` and then write `ChipChildren` directly.
+/// Builds the shared icon/text tree and records its entities in `ChipChildren`. Specializations
+/// own tooltip and visual-state behavior.
 fn on_builder_add_spawn_chip(
     trigger: On<Add, BuilderChip>,
     mut commands: Commands,
@@ -44,9 +45,7 @@ fn on_builder_add_spawn_chip(
         },
     )).id();
 
-    // An icon-only chip spawns no text node at all, rather than an empty one —
-    // `ChipChildren.text` being `None` is what tells a specialization there is
-    // nothing to write to.
+    // `None` means the chip has no text entity for specializations to update.
     let text = builder.text.as_ref().map(|content| commands.spawn((
         Text::new(content.clone()),
         TextFont::from_font_size(CHIP_FONT_SIZE),

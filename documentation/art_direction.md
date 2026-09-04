@@ -23,6 +23,7 @@ interface resolution-independent, animatable, and cheap to iterate on.
 | Ultraviolet | `#7657FF` |
 | Spectral violet | `#B45CFF` |
 | Danger magenta | `#FF3D8D` |
+| Requirement met | `#35B87A` |
 | Rare positive state | `#42F5C8` |
 
 Accent semantics are fixed:
@@ -30,7 +31,14 @@ Accent semantics are fixed:
 * **Ice blue** — the default interactive color: hover, selection, focus.
 * **Violet** — anomalous energy and exotic phenomena.
 * **Magenta** — danger and irreversible actions.
+* **Green** — a requirement already satisfied; the ordinary positive, as on an affordable
+  cost. Quieter than magenta in both saturation and value, so a screen reads calm until
+  something blocks. Its hue sits well clear of ice blue, so a met requirement is never
+  mistaken for something interactive.
 * **Teal** — rare positive states; used sparingly so it stays special.
+
+Green and teal are not interchangeable. Green is the common case answering "yes"; teal marks
+something uncommon enough to be worth stopping at.
 
 Never use every accent simultaneously. A screen should read as mostly dark with one or
 two accents carrying meaning.

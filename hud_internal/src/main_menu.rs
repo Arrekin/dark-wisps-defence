@@ -33,7 +33,7 @@ impl MainMenuRoot {
                 justify_content: JustifyContent::Center,
                 align_items: AlignItems::Center,
             }
-            BackgroundColor(Color::linear_rgba(0.0, 0.0, 0.0, 0.7))
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.7))
             Visibility::Hidden
             Children [
                 (
@@ -65,7 +65,7 @@ impl LoadMapButton {
                     justify_content: JustifyContent::Center,
                     align_items: AlignItems::Center,
                 }
-                BackgroundColor(Color::linear_rgba(0.2, 0.2, 0.8, 1.0))
+                BackgroundColor(Color::srgba(0.2, 0.2, 0.8, 1.0))
                 Children [
                     ( Text("Load Map") template_value(TextLayout::no_wrap()) )
                 ]
@@ -130,7 +130,7 @@ impl MapEntryButton {
                     justify_content: JustifyContent::Center,
                     align_items: AlignItems::Center,
                 }
-                BackgroundColor(Color::linear_rgba(0.3, 0.3, 0.3, 1.0))
+                BackgroundColor(Color::srgba(0.3, 0.3, 0.3, 1.0))
                 Children [
                     ( Text(name) template_value(TextLayout::no_wrap()) )
                 ]

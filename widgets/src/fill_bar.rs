@@ -76,11 +76,11 @@ impl Default for BuilderFillBar {
     fn default() -> Self {
         Self {
             fill_bar: FillBar::default(),
-            background_color: BackgroundColor::from(Color::linear_rgba(0.1, 0.1, 0.1, 0.8)),
-            border_color: BorderColor::from(Color::linear_rgba(0.4, 0.4, 0.4, 1.)),
+            background_color: BackgroundColor::from(Color::srgba(0.1, 0.1, 0.1, 0.8)),
+            border_color: BorderColor::from(Color::srgba(0.4, 0.4, 0.4, 1.)),
             border: UiRect::all(Val::Px(1.0)),
             border_radius: BorderRadius::ZERO,
-            fill_color: BackgroundColor::from(Color::linear_rgba(0.2, 0.6, 1.0, 1.0)),
+            fill_color: BackgroundColor::from(Color::srgba(0.2, 0.6, 1.0, 1.0)),
         }
     }
 }

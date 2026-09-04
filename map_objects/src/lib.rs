@@ -12,12 +12,30 @@ pub struct DarkOre {
     pub amount: i32,
 }
 
+/// Requests a dark-ore tooltip anchored to the contained tile entity.
+#[derive(Component, Clone, Copy, Debug)]
+pub struct BuilderDarkOreSideMenuTooltip(pub Entity);
 
-/// Drawn by the wall canvas from `GridCoords`, so the entity itself carries no transform or
-/// render layer.
+/// Drawn by the wall canvas from `GridCoords`, so the entity itself carries no transform or render layer.
 #[derive(Component)]
 #[require(MapBound, ObstacleGridObject = ObstacleGridObject::Wall, EmissionsGridSpreadAffector)]
 pub struct Wall;
+
+/// Requests the wall UI material on an already-sized node.
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub struct BuilderWallFace;
+
+/// Requests a wall tooltip anchored to the contained tile entity.
+#[derive(Component, Clone, Copy, Debug)]
+pub struct BuilderWallSideMenuTooltip(pub Entity);
+
+/// Requests the quantum-field UI material on an already-sized node.
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub struct BuilderQuantumFieldFace;
+
+/// Requests a quantum-field tooltip anchored to the contained tile entity.
+#[derive(Component, Clone, Copy, Debug)]
+pub struct BuilderQuantumFieldSideMenuTooltip(pub Entity);
 
 /// Progressive obstacle requiring drone scanning to solve.
 /// Layers are defined at spawn time; current_layer indexes into the layers vec.
@@ -67,6 +85,11 @@ pub struct DarkOreAreaScanner {
 
 pub mod prelude {
     pub use super::{
+        BuilderDarkOreSideMenuTooltip,
+        BuilderQuantumFieldFace,
+        BuilderQuantumFieldSideMenuTooltip,
+        BuilderWallFace,
+        BuilderWallSideMenuTooltip,
         DarkOre, DarkOreAreaScanner, DarkOreInRange,
         ExpeditionZone,
         HasOreInScannerRange,
@@ -75,5 +98,4 @@ pub mod prelude {
         QuantumFieldSolved,
         Wall,
     };
-    pub use super::wall_style::{WallStyleKey, WallStyles};
 }

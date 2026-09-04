@@ -3,6 +3,8 @@ use bevy::prelude::*;
 
 use game_core::prelude::ZDepth;
 
+pub mod side_menu_tooltip;
+
 // Marks the root of the space allowed for external content.
 #[derive(Component)]
 pub struct DisplayPanelMainContentRoot;
@@ -63,4 +65,5 @@ pub mod prelude {
         DisplayPanelMainContentRoot, FocusedMapObject, IndicatorDisplay, IndicatorOf,
         IndicatorSpriteHandle, IndicatorType, Indicators, ShowGrid,
     };
+    pub use super::side_menu_tooltip::BuilderSideMenuItemTooltip;
 }

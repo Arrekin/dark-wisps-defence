@@ -199,7 +199,7 @@ move |trigger: On<Remove, T>, mut commands: Commands, indicators: Query<&Indicat
 - Query variables use plural form (e.g., `tabs`, `segments`), not `_q` suffix(singular when using Single<>)
 - Encapsulate component internals behind methods. Designs APIs. 
 - **Use `pub` in API crates, `pub(crate)` in `_internal` crates.** `pub(crate)` in internal crates enforces API boundaries — `pub` in internal is a sign of design issues.
-- **Comments must be timeless.** Never leave comments that reference the current conversation, refactoring session, or rationale like "we moved this here because X was duplicated." Comments should make sense to a reader who has no context of how the code evolved. If the code is self-explanatory, no comment is needed.
+- **Comments must be timeless.** Never leave comments that reference the current conversation, refactoring session, or rationale like "we moved this here because X was duplicated." Comments should make sense to a reader who has no context of how the code evolved. If the code is self-explanatory, no comment is needed. Prefer active voice — "The caller decides what fills the strip", not "What fills the strip is decided by the caller."
 - Prefer `query.iter()` over `&query` (the same for `iter_mut`)
 - Avoid contractions in variable names — verbosity is preferred.
 

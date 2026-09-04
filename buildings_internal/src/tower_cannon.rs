@@ -27,6 +27,7 @@ use weaponry::prelude::*;
 use wisps::prelude::*;
 
 use crate::common::*;
+use crate::tooltip::building_tooltip;
 
 pub struct TowerCannonPlugin;
 impl Plugin for TowerCannonPlugin {
@@ -59,6 +60,7 @@ impl BuilderTowerCannon {
     pub fn almanach_info(asset_server: &AssetServer) -> BuildingInfo {
         BuildingInfo {
             name: "Cannon Tower".to_string(),
+            description: "Heavy single shots. Hits hard but fires slowly.".to_string(),
             sprite: asset_server.load("buildings/tower_cannon.png"),
             top_sprite: None,
             grid_imprint: GridImprint::Rectangle { width: 3, height: 3 },
@@ -72,6 +74,10 @@ impl BuilderTowerCannon {
             validate: building_validator,
             annotate: annotate_non_empty,
             placement: PlacementChannel::of::<TowerCannon>(),
+            presentation: ObjectPresentation {
+                face: ObjectFace::Image(asset_server.load("buildings/tower_cannon.png")),
+                tooltip: Some(building_tooltip),
+            },
         }
     }
 

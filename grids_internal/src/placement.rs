@@ -11,7 +11,7 @@ use game_core::prelude::{Bounds, BuildingType, CELL_SIZE, GridCoords, GridImprin
 use grids::placement::{
     ActivePlacement, CellHighlight, GridObjectPlacer, GridObjectPlacerRequest, GridPlacerChanged,
     GridPlacerOverridePropertyRequest, GridsCollectionParam, PlacementMode, PlacementStyle,
-    PlacementValidity, StopPlacing,
+    PlacementValidity, StartPlacing, StopPlacing,
 };
 use states::prelude::UiInteraction;
 use viewport::MouseInfo;
@@ -248,11 +248,13 @@ fn begin_placement(
     *grid_imprint = placement_info.imprint;
     *placement_style = PlacementStyle::default();
 
-    (placement_info.placement.begin)(&mut commands);
-
+    let begin_for_domain = placement_info.placement.begin;
     grid_object_placer.active_placement = Some(ActivePlacement { map_object, placement_info });
-
     (*ui_interaction_state).set_if_neq(UiInteraction::PlaceGridObject);
+
+    // General before specialized, so an observer of either sees the session already open.
+    commands.trigger(StartPlacing);
+    begin_for_domain(&mut commands);
     commands.trigger(GridPlacerChanged);
 }
 

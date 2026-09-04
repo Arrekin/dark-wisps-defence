@@ -22,13 +22,21 @@ use crate::common::fade::{Fade, FadeState};
 
 const SHADER_ASSET_PATH: &str = "shaders/void_panel.wgsl";
 
-/// Silhouette dimensions in pixels and the resting intensity of the two edge layers.
+/// Silhouette dimensions in pixels and the resting intensity of the three edge layers.
 #[derive(ShaderType, Clone, Copy, Debug)]
 pub struct VoidPanelGeometry {
     pub border_width: f32,
     pub corner_cut: f32,
     pub edge_brightness: f32,
     pub rim_intensity: f32,
+    pub hairline_strength: f32,
+    /// How far the contour's brightness swings around 1.0 between the facet facing the light and
+    /// the one facing away. Zero draws every edge the same colour.
+    ///
+    /// Declared as 12 bytes so the struct measures a multiple of 16 and the members after it in
+    /// [`VoidPanelMaterial`] keep their offsets.
+    #[shader(size(12))]
+    pub contour_light_range: f32,
 }
 
 /// How a panel answers a fully raised style state. See [`VoidPanelStyle`], which is the
@@ -41,16 +49,15 @@ pub struct VoidPanelStyleResponse {
     pub corner_mark: f32,
 }
 
-/// Shape and travel of two surges that move continuously around the panel border.
+/// Animation parameters for the two surges traveling around the panel border.
 #[derive(ShaderType, Clone, Copy, Debug)]
 pub struct VoidPanelBorderSurge {
     /// Laps of the perimeter per second.
     pub rate: f32,
     /// Length of one surge along the border, in pixels.
     pub span: f32,
-    /// Pixels added to the contour's width at the centre of a surge. Bounded by
-    /// `HAIRLINE_INSET` in the shader: a contour that reaches the hairline fills the dark
-    /// channel between them, and a surge then reads as a gap being papered over.
+    /// Pixels added to contour width at the surge center. The shader caps this before the contour
+    /// reaches `HAIRLINE_INSET`.
     pub width: f32,
     /// How hard the surge drives the contour's brightness.
     pub intensity: f32,
@@ -59,9 +66,9 @@ pub struct VoidPanelBorderSurge {
 /// GPU-side uniform for the void-panel shader. Field order and types mirror the
 /// `VoidPanelMaterial` struct in `assets/shaders/void_panel.wgsl` exactly.
 ///
-/// Every member must start at a multiple of 16 bytes, and nothing here pads automatically.
-/// A member narrower than 16 bytes shifts every member after it and panics when the buffer
-/// is prepared. All members are currently exactly 16 bytes; keep it that way.
+/// Every member must start at a multiple of 16 bytes, and nothing here pads automatically. A
+/// member whose data is shorter shifts every member after it and panics when the buffer is
+/// prepared; `#[shader(size(X))]` declares the padded size that keeps the offsets right.
 #[derive(AsBindGroup, Asset, TypePath, Clone, Copy, Debug)]
 pub struct VoidPanelMaterial {
     /// Field color at the panel center.
@@ -113,7 +120,7 @@ impl UiMaterial for VoidPanelMaterial {
 const EASE_HOVER: f32 = 10.0;
 const EASE_SELECTED: f32 = 6.0;
 const EASE_STYLE: f32 = 4.0;
-/// Slowest of the four: surges arriving on a border should feel like something spinning up.
+/// Border surges use the slowest state transition.
 const EASE_BORDER_SURGE: f32 = 3.0;
 
 /// How a panel looks while its style state is raised. A consumer declares one of these
@@ -189,8 +196,7 @@ impl VoidPanel {
         self.style_amount.set_target(0.0);
     }
 
-    /// Raises or lowers the two surges that travel the border. Anything above zero means
-    /// something is happening here; it says nothing about how well it is going.
+    /// Raises or lowers both border surges.
     pub fn set_border_surge(&mut self, surging: bool) {
         self.border_surge_amount.set_target(if surging { 1.0 } else { 0.0 });
     }
@@ -282,10 +288,21 @@ impl BuilderVoidPanel {
         self
     }
 
-    /// Speed, length and strength of the surges that travel the border once the panel is
-    /// raised. A surface much smaller or larger than a card wants its own values —
-    /// span is in pixels, so the default reads as a short arc on a card and most of the
-    /// border on a tile.
+    /// Strength of the crisp line a few pixels below the top edge. Zero removes the layer.
+    pub fn with_hairline_strength(mut self, strength: f32) -> Self {
+        self.void_panel.geometry.hairline_strength = strength;
+        self
+    }
+
+    /// Directional contour-brightness range around 1.0. Zero disables bevel shading; the visible
+    /// contrast scales with `edge_brightness`.
+    pub fn with_contour_light_range(mut self, range: f32) -> Self {
+        self.void_panel.geometry.contour_light_range = range;
+        self
+    }
+
+    /// Overrides border-surge speed, span, width, and intensity. Span and width are pixel values
+    /// and should be scaled for the panel perimeter.
     pub fn with_border_surge(mut self, border_surge: VoidPanelBorderSurge) -> Self {
         self.void_panel.border_surge = border_surge;
         self
@@ -319,15 +336,14 @@ impl Default for VoidPanel {
                 corner_cut: 12.0,
                 edge_brightness: 0.35,
                 rim_intensity: 0.06,
+                hairline_strength: 0.45,
+                contour_light_range: 0.5,
             },
             selected: FadeState::new(EASE_SELECTED),
             hover: FadeState::new(EASE_HOVER),
             style_amount: FadeState::new(EASE_STYLE),
-            // At zero no surges are drawn, so every panel that never asks for them pays a
-            // few arithmetic operations and nothing else.
             border_surge_amount: FadeState::new(EASE_BORDER_SURGE),
             border_surge: VoidPanelBorderSurge {
-                // One lap every five seconds.
                 rate: 1.0 / 5.0,
                 span: 56.0,
                 width: 3.0,

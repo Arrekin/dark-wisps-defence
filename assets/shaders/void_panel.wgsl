@@ -11,12 +11,19 @@
 @group(0) @binding(1)
 var<uniform> globals: Globals;
 
-// Silhouette dimensions in pixels and the resting intensity of the two edge layers.
+// Silhouette dimensions in pixels and the resting intensity of the three edge layers.
 struct VoidPanelGeometry {
     border_width: f32,
     corner_cut: f32,
     edge_brightness: f32,
     rim_intensity: f32,
+    hairline_strength: f32,
+    // How far the contour's brightness swings around 1.0 between the facet facing the light and
+    // the one facing away. Zero draws every edge the same colour.
+    //
+    // Declared as 12 bytes so the struct measures a multiple of 16 and the members after it in
+    // VoidPanelMaterial keep their offsets.
+    @size(12) contour_light_range: f32,
 };
 
 // How the panel answers a fully raised style state. The scales multiply the field and the
@@ -45,9 +52,8 @@ struct VoidPanelBorderSurge {
     rate: f32,
     // Length of one surge along the border, in pixels.
     span: f32,
-    // Pixels added to the contour's width at the centre of a surge. Bounded by
-    // HAIRLINE_INSET: a contour that reaches the hairline fills the dark channel between
-    // them, and the surge then reads as a gap being papered over rather than as light.
+    // Pixels added to contour width at the surge center. Capped before the contour reaches
+    // HAIRLINE_INSET, preserving the dark channel below the hairline.
     width: f32,
     // How hard the surge drives the contour's brightness.
     intensity: f32,
@@ -77,13 +83,9 @@ const SQRT_2_INV: f32 = 0.70710678;
 
 // Light direction in y-down UI space.
 const LIGHT_DIR: vec2<f32> = vec2<f32>(-0.4472, -0.8944);
-// How far the per-facet contour brightness swings around 1.0.
-const CONTOUR_LIGHT_RANGE: f32 = 0.5;
 
-// Distance from the border at which the inner hairline sits, and its strength.
+// Distance from the border at which the inner hairline sits.
 const HAIRLINE_INSET: f32 = 4.0;
-// At zero the layer is off and the edge is carried by the contour and the rim alone.
-const HAIRLINE_STRENGTH: f32 = 0.45;
 
 // How far hover alone carries the tint toward the accent; selection carries it fully.
 const HOVER_TINT: f32 = 0.5;
@@ -161,6 +163,7 @@ fn fragment(in: UiVertexOutput) -> @location(0) vec4<f32> {
     let corner_cut = material.geometry.corner_cut;
     let edge_brightness = material.geometry.edge_brightness;
     let rim_intensity = material.geometry.rim_intensity;
+    let hairline_strength = material.geometry.hairline_strength;
     let selected = eased(material.selected_fade, globals.time);
     let hover = eased(material.hover_fade, globals.time);
     let style_amount = eased(material.style_fade, globals.time);
@@ -189,9 +192,9 @@ fn fragment(in: UiVertexOutput) -> @location(0) vec4<f32> {
     // spread across the panel.
     let n = normalize(vec2<f32>(dpdx(d), dpdy(d)) + vec2<f32>(1e-6));
     let n_dot_l = dot(n, LIGHT_DIR);
-    // Resulting multipliers: top ~1.45, top-left chamfer ~1.47, left ~1.22, right ~0.78,
-    // bottom ~0.55, bottom-right chamfer ~0.53.
-    let contour_light = 1.0 + n_dot_l * CONTOUR_LIGHT_RANGE;
+    // Directional contour lighting. With range 0.5, brightness is approximately 1.45 on the top
+    // edge and 0.55 on the bottom edge before applying edge_brightness.
+    let contour_light = 1.0 + n_dot_l * material.geometry.contour_light_range;
     // How far this facet faces up. Confines the hairline to the top edge and fades it
     // around the corners instead of ending it abruptly.
     let top_weight = clamp(-n.y, 0.0, 1.0);
@@ -217,9 +220,7 @@ fn fragment(in: UiVertexOutput) -> @location(0) vec4<f32> {
     // panels reads as plates separated by value rather than by outlines; brightness here
     // is reserved for hover and selection.
     //
-    // Two surges ride this band once the border surge is raised, half a lap apart, so they
-    // pass each other at opposite midpoints and the border has a rhythm without a focus.
-    // A surge thickens the contour rather than sitting on it: the panel's own edge swells.
+    // Two surges travel half a lap apart and increase the contour's width and intensity.
     let perimeter = 2.0 * (size.x + size.y);
     let lap = material.border_surge.rate * globals.time;
     let here = perimeter_position(p, half_size);
@@ -242,7 +243,7 @@ fn fragment(in: UiVertexOutput) -> @location(0) vec4<f32> {
     // A crisp line a few pixels below the top edge. Together with the rim it gives the
     // border apparent thickness.
     let hairline = (1.0 - smoothstep(0.5, 0.5 + aa, abs(inset - HAIRLINE_INSET))) * top_weight;
-    color += hairline * material.border_color.rgb * HAIRLINE_STRENGTH;
+    color += hairline * material.border_color.rgb * hairline_strength;
 
     // ---- 4. Rim ----
     // Exponential falloff holds closer to the border than a linear ramp. Near-invisible at

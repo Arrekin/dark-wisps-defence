@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 bevy = { workspace = true }
 game_core = { workspace = true }
+resources = { workspace = true }
 
 [lints]
 workspace = true

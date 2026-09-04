@@ -29,6 +29,7 @@ use weaponry::{
 };
 
 use crate::common::*;
+use crate::tooltip::building_tooltip;
 
 
 pub struct TowerFieldPlugin;
@@ -63,6 +64,7 @@ impl BuilderTowerField {
     pub fn almanach_info(asset_server: &AssetServer) -> BuildingInfo {
         BuildingInfo {
             name: "Field Tower".to_string(),
+            description: "Projects a field that slows every wisp inside it. Deals no damage.".to_string(),
             sprite: asset_server.load("buildings/tower_field.png"),
             top_sprite: None,
             grid_imprint: GridImprint::Plus { extents: 1 },
@@ -74,6 +76,10 @@ impl BuilderTowerField {
             validate: building_validator,
             annotate: annotate_non_empty,
             placement: PlacementChannel::of::<TowerField>(),
+            presentation: ObjectPresentation {
+                face: ObjectFace::Image(asset_server.load("buildings/tower_field.png")),
+                tooltip: Some(building_tooltip),
+            },
         }
     }
 

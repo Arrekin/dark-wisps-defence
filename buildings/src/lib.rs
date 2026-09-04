@@ -7,6 +7,13 @@ use grids::{AutoGridTransformSync, prelude::{GridVersion, ObstacleGridObject}};
 #[derive(Component, Default)]
 pub struct Tower;
 
+/// Requests a side-menu tooltip for `building_type`, anchored to `anchor`.
+#[derive(Component, Clone, Copy, Debug)]
+pub struct BuilderBuildingSideMenuTooltip {
+    pub anchor: Entity,
+    pub building_type: BuildingType,
+}
+
 #[derive(Component, Clone, Debug, Default)]
 #[require(AutoGridTransformSync, ZDepth::BUILDING, MaxIntegrityPoints, MapBound, ObstacleGridObject = ObstacleGridObject::Building, ModifierBank)]
 pub struct Building;
@@ -76,6 +83,7 @@ pub enum TowerWispTarget {
 pub mod prelude {
     pub use super::{
         Building,
+        BuilderBuildingSideMenuTooltip,
         EnergyRelay,
         ExplorationCenter,
         Forge,

@@ -96,7 +96,7 @@ const VIEW_TITLE_FONT_SIZE: f32 = 14.0;
 
 /// Shared by the title, the stall line and the empty state — the three labels
 /// that frame the content rather than being it.
-const MUTED_TEXT_COLOR: Color = Color::linear_rgba(0.65, 0.65, 0.72, 1.);
+const MUTED_TEXT_COLOR: Color = Color::srgba(0.65, 0.65, 0.72, 1.);
 
 // Identity row
 const IDENTITY_ROW_HEIGHT: f32 = 64.0;
@@ -107,7 +107,7 @@ const NAME_FONT_SIZE: f32 = 16.0;
 // Description
 const DESCRIPTION_HEIGHT: f32 = 36.0;
 const DESCRIPTION_FONT_SIZE: f32 = 12.0;
-const DESCRIPTION_COLOR: Color = Color::linear_rgba(0.75, 0.75, 0.8, 1.);
+const DESCRIPTION_COLOR: Color = Color::srgba(0.75, 0.75, 0.8, 1.);
 
 // Progress and status
 const PROGRESS_ROW_HEIGHT: f32 = 36.0;

@@ -1,37 +1,19 @@
-//! Chips: a compact icon-and-optional-text badge, the strip that lays them out,
-//! and the specializations that give them meaning.
+//! Compact icon-and-text chips, horizontal chip strips, and data-specific chip behavior.
 //!
-//! # The core is dumb
+//! [`Chip`] owns only the shared icon/text tree recorded in [`ChipChildren`]. Specialization
+//! components update that tree and provide their own tooltips or visual states:
 //!
-//! `Chip` owns a tree — an icon and an optional text — and nothing else. It has
-//! no tooltip, no colour states, and no idea what it is showing. Everything a
-//! chip *means* lives in a specialization.
+//! - [`CostChip`] receives amounts from its owner; visual markers color its border by affordability.
+//! - [`BuilderDisplayChip`] binds icon, name, and description to another entity's display components.
 //!
-//! # Specializations do the work
-//!
-//! A specialization is a component plus whatever systems and observers it needs.
-//! It is coupled to the chip by construction, so it reaches into `ChipChildren`
-//! and writes the nodes directly rather than going through an API the core would
-//! have to invent and maintain. It also owns its own tooltip, because what a chip
-//! should say on hover is exactly the kind of thing that differs per flavour.
-//!
-//! Two ship today, and they differ in where their content comes from:
-//!
-//! - [`BuilderCostChip`] — content is **pushed** by the owner, who writes
-//!   [`CostChip`] whenever the displayed amount changes. Opt-in markers colour
-//!   the border by affordability.
-//! - [`BuilderDisplayChip`] — content is **bound** to a subject entity and read
-//!   from its `DisplayIcon` / `DisplayName` / `DisplayDescription`. Anything
-//!   carrying the display vocabulary gets a chip for free.
-//!
-//! Composing more than one on a chip is allowed; they are ordinary components.
+//! Specializations are ordinary components and may be combined.
 //!
 //! # Usage
 //! ```
 //! // A cost, coloured green while the whole price is affordable.
 //! parent.spawn((BuilderCostChip::from(cost), CostChipVisualFullPrice));
 //!
-//! // Whatever this entity says it is — icon here, name and description on hover.
+//! // Bind a chip to an entity's display metadata.
 //! parent.spawn(BuilderDisplayChip(outcome));
 //! ```
 
@@ -51,6 +33,10 @@ use resources::prelude::{Cost, ResourceType};
 /// children; callers spawn them in the order they want them.
 #[derive(Component, Clone, Copy, Debug, Default)]
 pub struct BuilderChipStrip;
+
+/// Expands into a horizontal strip with one full-price affordability chip per cost.
+#[derive(Component, Clone, Debug)]
+pub struct BuilderFullPriceCostStrip(pub Vec<Cost>);
 
 // ============================================================================
 // Chip core

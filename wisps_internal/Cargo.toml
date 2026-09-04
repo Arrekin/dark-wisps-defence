@@ -12,6 +12,7 @@ game_core = { workspace = true }
 grids = { workspace = true }
 alteration = { workspace = true }
 visuals = { workspace = true }
+hud = { workspace = true }
 almanach = { workspace = true }
 session = { workspace = true }
 states = { workspace = true }

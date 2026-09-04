@@ -11,6 +11,13 @@ use crate::{energy_supply::EnergySupplyGrid, obstacles::{ObstacleGrid, ReservedC
 #[derive(Event, Clone, Copy, Debug)]
 pub struct GridPlacerChanged;
 
+/// Non-generic event emitted when a placement session begins, whatever started it. Read the
+/// object being placed from [`GridObjectPlacer::map_object`], which is set before this fires.
+///
+/// [`BeginPlacing<T>`] carries the same moment for the domain that owns `T`.
+#[derive(Event, Clone, Copy, Debug)]
+pub struct StartPlacing;
+
 /// Non-generic event emitted when the placer deactivates or switches to a different object type.
 /// Domain UIs (e.g., QuantumField size selector) observe this to hide/cleanup.
 #[derive(Event, Clone, Copy, Debug)]

@@ -24,6 +24,7 @@ use weaponry::prelude::*;
 use wisps::prelude::*;
 
 use crate::common::*;
+use crate::tooltip::building_tooltip;
 
 pub struct TowerEmitterPlugin;
 impl Plugin for TowerEmitterPlugin {
@@ -56,6 +57,7 @@ impl BuilderTowerEmitter {
     pub fn almanach_info(asset_server: &AssetServer) -> BuildingInfo {
         BuildingInfo {
             name: "Emitter Tower".to_string(),
+            description: "Pulses a shockwave through everything close by. No aiming, short reach. Applies the brittle effect.".to_string(),
             sprite: asset_server.load("buildings/tower_emitter.png"),
             top_sprite: None,
             grid_imprint: GridImprint::Rectangle { width: 2, height: 2 },
@@ -69,6 +71,10 @@ impl BuilderTowerEmitter {
             validate: building_validator,
             annotate: annotate_non_empty,
             placement: PlacementChannel::of::<TowerEmitter>(),
+            presentation: ObjectPresentation {
+                face: ObjectFace::Image(asset_server.load("buildings/tower_emitter.png")),
+                tooltip: Some(building_tooltip),
+            },
         }
     }
 

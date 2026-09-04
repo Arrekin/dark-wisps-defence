@@ -24,6 +24,7 @@ use weaponry::prelude::*;
 use wisps::prelude::*;
 
 use crate::common::*;
+use crate::tooltip::building_tooltip;
 
 pub struct TowerBlasterPlugin;
 impl Plugin for TowerBlasterPlugin {
@@ -55,6 +56,7 @@ impl BuilderTowerBlaster {
     pub fn almanach_info(asset_server: &AssetServer) -> BuildingInfo {
         BuildingInfo {
             name: "Blaster Tower".to_string(),
+            description: "Rapid laser darts. Little damage per hit, but it almost never stops firing.".to_string(),
             sprite: asset_server.load("buildings/tower_blaster.png"),
             top_sprite: Some(asset_server.load("buildings/tower_blaster_top.png")),
             grid_imprint: GridImprint::Rectangle { width: 2, height: 2 },
@@ -68,6 +70,10 @@ impl BuilderTowerBlaster {
             validate: building_validator,
             annotate: annotate_non_empty,
             placement: PlacementChannel::of::<TowerBlaster>(),
+            presentation: ObjectPresentation {
+                face: ObjectFace::Image(asset_server.load("buildings/tower_blaster.png")),
+                tooltip: Some(building_tooltip),
+            },
         }
     }
 

@@ -2,8 +2,8 @@ use bevy::prelude::*;
 
 use game_core::prelude::{DisplayDescription, DisplayIcon, DisplayName};
 use widgets::prelude::{
-    BuilderChip, BuilderDisplayChip, ChipChildren, DisplayChipChildren, DisplayChipOf, DisplayChips,
-    TooltipBundle,
+    BuilderChip, BuilderDisplayChip, BuilderTooltip, ChipChildren, DisplayChipChildren,
+    DisplayChipOf, DisplayChips,
 };
 use widgets::common::utils::set_text_if_changed;
 
@@ -12,16 +12,16 @@ use super::chip::CHIP_FONT_SIZE;
 // Tooltip text
 const TOOLTIP_TITLE_FONT_SIZE: f32 = CHIP_FONT_SIZE;
 const TOOLTIP_BODY_FONT_SIZE: f32 = 11.0;
-const TOOLTIP_BODY_COLOR: Color = Color::linear_rgba(0.75, 0.75, 0.8, 1.);
+// #EAF4FF primary text, #8BA8CC secondary.
+const TOOLTIP_TITLE_COLOR: Color = Color::srgb_u8(0xEA, 0xF4, 0xFF);
+const TOOLTIP_BODY_COLOR: Color = Color::srgb_u8(0x8B, 0xA8, 0xCC);
 
 pub struct DisplayChipPlugin;
 impl Plugin for DisplayChipPlugin {
     fn build(&self, app: &mut App) {
         app
             .add_observer(on_builder_add_spawn_display_chip)
-            // One system per aspect rather than one filtered on all three: a
-            // name change must not cost an icon write, and each aspect has its
-            // own node to write to.
+            // Each display component updates independently so changes only touch their own node.
             .add_systems(Update, (
                 sync_display_chip_icons,
                 sync_display_chip_names,
@@ -30,12 +30,8 @@ impl Plugin for DisplayChipPlugin {
     }
 }
 
-/// Expands into the chip core plus the `DisplayChipOf` relationship, and builds
-/// the tooltip this specialization owns.
-///
-/// Icon-only by design: the chip stays narrow enough for a strip, and the detail
-/// lives on hover. A subject missing any of the three display components simply
-/// contributes nothing for that aspect.
+/// Builds an icon-only chip linked to its display subject. Name and description appear in its
+/// tooltip; missing display components leave their corresponding content empty.
 fn on_builder_add_spawn_display_chip(
     trigger: On<Add, BuilderDisplayChip>,
     mut commands: Commands,
@@ -47,17 +43,16 @@ fn on_builder_add_spawn_display_chip(
 
     let subject = builder.0;
     let Ok((icon, name, description)) = subjects.get(subject) else {
-        // The subject vanished between spawn and flush — the chip has nothing
-        // to show, so despawn it rather than leaving an empty node behind.
+        // A request whose subject was despawned before command flush cannot produce a chip.
         commands.entity(chip_entity).despawn();
         return;
     };
 
-    let tooltip = commands.spawn(TooltipBundle::new(chip_entity)).id();
+    let tooltip = commands.spawn(BuilderTooltip::new(chip_entity)).id();
     let tooltip_title = commands.spawn((
         Text::new(name.map(|name| name.0.clone()).unwrap_or_default()),
         TextFont::from_font_size(TOOLTIP_TITLE_FONT_SIZE),
-        TextColor::from(Color::WHITE),
+        TextColor::from(TOOLTIP_TITLE_COLOR),
     )).id();
     let tooltip_body = commands.spawn((
         Text::new(description.map(|body| body.0.clone()).unwrap_or_default()),

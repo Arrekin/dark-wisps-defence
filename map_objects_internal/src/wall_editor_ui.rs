@@ -1,75 +1,22 @@
 //! The style picker shown while placing walls: a row of swatches, one per style,
 //! framed when selected. Lives only for the length of a wall placement session.
 
-use bevy::{
-    prelude::*,
-    reflect::TypePath,
-    render::render_resource::AsBindGroup,
-    shader::ShaderRef,
-    ui_render::ui_material::UiMaterial,
-};
+use bevy::prelude::*;
 
-use game_core::prelude::CELL_SIZE;
 use grids::placement::{BeginPlacing, GridObjectPlacer, GridPlacerOverridePropertyRequest, PlacementStyle, StopPlacing};
 use map_objects::prelude::Wall;
-use map_objects::wall_style::{WallStyle, WallStyleKey, WallStyles};
-use visuals::prelude::ShaderLibraryAppExt;
+use map_objects::wall_style::{WallStyleKey, WallStyles};
+
+use super::wall_swatch::WallSwatch;
 
 pub(crate) struct WallEditorUiPlugin;
 impl Plugin for WallEditorUiPlugin {
     fn build(&self, app: &mut App) {
         app
-            .register_shader_library("shaders/wall_style.wgsl")
-            .add_plugins(UiMaterialPlugin::<WallSwatchMaterial>::default())
-            .add_observer(WallSwatch::on_add_construct_wall_swatch)
             .add_observer(GridPlacerUiForWall::on_add_construct_grid_placer_ui)
             .add_observer(GridPlacerUiForWall::on_begin_placing_spawn_grid_placer_ui)
             .add_observer(GridPlacerUiForWall::on_stop_placing_despawn_grid_placer_ui)
             ;
-    }
-}
-
-// Swatch
-
-/// The swatch shader gets its layers from `dwd::wall_style`, which reads no bindings, so the
-/// only thing bound here is the style being previewed.
-#[derive(Asset, AsBindGroup, TypePath, Clone, Copy, Debug)]
-struct WallSwatchMaterial {
-    #[uniform(0)]
-    style: WallStyle,
-}
-impl UiMaterial for WallSwatchMaterial {
-    fn fragment_shader() -> ShaderRef {
-        "shaders/wall_swatch.wgsl".into()
-    }
-}
-
-/// Draws one style as a single wall cell, at the size that cell has on the map.
-#[derive(Component, Clone, Copy, Debug)]
-pub(crate) struct WallSwatch(pub WallStyleKey);
-impl WallSwatch {
-    /// World pixels per cell. Matches `CELL_SIZE` in assets/shaders/wall_swatch.wgsl.
-    const SIZE: f32 = CELL_SIZE;
-
-    fn on_add_construct_wall_swatch(
-        trigger: On<Add, WallSwatch>,
-        mut commands: Commands,
-        swatches: Query<&WallSwatch>,
-        styles: Res<WallStyles>,
-        mut materials: ResMut<Assets<WallSwatchMaterial>>,
-    ) {
-        let entity = trigger.entity;
-        let Ok(swatch) = swatches.get(entity) else { return; };
-        let Some(entry) = styles.entries.get(swatch.0.0 as usize) else { return; };
-
-        commands.entity(entity).insert((
-            Node {
-                width: Val::Px(Self::SIZE),
-                height: Val::Px(Self::SIZE),
-                ..default()
-            },
-            MaterialNode(materials.add(WallSwatchMaterial { style: entry.style })),
-        ));
     }
 }
 

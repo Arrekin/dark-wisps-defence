@@ -12,9 +12,10 @@ pub mod void_panel;
 
 pub mod prelude {
     pub use super::chips::{
-        BuilderChip, BuilderChipStrip, BuilderCostChip, BuilderDisplayChip, Chip, ChipChildren,
-        ChipsFaded, CostChip, CostChipVisualFullPrice, CostChipVisualUnitAvailable,
-        DisplayChipChildren, DisplayChipOf, DisplayChips,
+        BuilderChip, BuilderChipStrip, BuilderCostChip, BuilderDisplayChip,
+        BuilderFullPriceCostStrip, Chip, ChipChildren, ChipsFaded, CostChip,
+        CostChipVisualFullPrice, CostChipVisualUnitAvailable, DisplayChipChildren, DisplayChipOf,
+        DisplayChips,
     };
     pub use super::close_button::{
         BuilderCloseButton, CloseButton, CloseButtonGeometry, CloseButtonHover,
@@ -30,7 +31,9 @@ pub mod prelude {
     pub use super::text_command_button::{
         BuilderTextCommandButton, TextCommandButton, TextCommandButtonChildren,
     };
-    pub use super::tooltip::{TooltipBundle, TooltipOf, TooltipOffsetAbove, Tooltips};
+    pub use super::tooltip::{
+        BuilderTooltip, TooltipLeftLimit, TooltipOf, TooltipOffsetAbove, Tooltips,
+    };
     pub use super::typography::TextRole;
     pub use super::void_panel::{
         BuilderVoidPanel, VoidPanel, VoidPanelBorderSurge, VoidPanelMaterial, VoidPanelStyle,

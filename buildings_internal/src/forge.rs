@@ -30,16 +30,14 @@ use resources::prelude::*;
 use shards::prelude::*;
 use states::prelude::*;
 use widgets::{
-    prelude::{
-        BuilderChipStrip, BuilderCostChip, BuilderFillBar, CostChipVisualFullPrice, FillBar,
-        TooltipBundle, TooltipOf,
-    },
+    prelude::{BuilderFillBar, BuilderFullPriceCostStrip, BuilderTooltip, FillBar},
     common::utils::recolor_background_on,
 };
 
 use crate::{
     common::*,
     info_panel::BuildingInfoPanelEnabledTrigger,
+    tooltip::building_tooltip,
 };
 
 pub struct ForgePlugin;
@@ -67,6 +65,12 @@ impl Plugin for ForgePlugin {
             ;
     }
 }
+
+
+// Shard tooltip colors: title, description, then lower-contrast crafting facts.
+const TOOLTIP_TITLE_COLOR: Color = Color::srgb_u8(0xEA, 0xF4, 0xFF);
+const TOOLTIP_BODY_COLOR: Color = Color::srgb_u8(0x8B, 0xA8, 0xCC);
+const TOOLTIP_FACTS_COLOR: Color = Color::srgb_u8(0x6B, 0x82, 0xA0);
 
 
 // ============================================================================
@@ -212,6 +216,7 @@ impl BuilderForge {
     pub fn almanach_info(asset_server: &AssetServer) -> BuildingInfo {
         BuildingInfo {
             name: "Forge".to_string(),
+            description: "Crafts shards from resources.".to_string(),
             sprite: asset_server.load("buildings/forge.png"),
             top_sprite: None,
             grid_imprint: GridImprint::Rectangle { width: 3, height: 3 },
@@ -220,6 +225,10 @@ impl BuilderForge {
             validate: building_validator,
             annotate: annotate_non_empty,
             placement: PlacementChannel::of::<Forge>(),
+            presentation: ObjectPresentation {
+                face: ObjectFace::Image(asset_server.load("buildings/forge.png")),
+                tooltip: Some(building_tooltip),
+            },
         }
     }
 
@@ -488,10 +497,10 @@ impl ForgeInfoPanel {
                             },
                             children![(
                                 BuilderFillBar::default()
-                                    .with_background_color(Color::linear_rgba(0.1, 0.1, 0.1, 0.8))
-                                    .with_border(Color::linear_rgba(0.4, 0.4, 0.3, 1.), UiRect::all(Val::Px(1.)))
+                                    .with_background_color(Color::srgba(0.1, 0.1, 0.1, 0.8))
+                                    .with_border(Color::srgba(0.4, 0.4, 0.3, 1.), UiRect::all(Val::Px(1.)))
                                     .with_border_radius(BorderRadius::all(Val::Px(2.)))
-                                    .with_fill_color(Color::linear_rgba(0.8, 0.6, 0.1, 1.0))
+                                    .with_fill_color(Color::srgba(0.8, 0.6, 0.1, 1.0))
                                     .with_fill_fraction(fraction),
                                 ForgeProgressFill,
                             )],
@@ -516,7 +525,7 @@ impl ForgeInfoPanel {
                     align_self: AlignSelf::Center,
                     ..default()
                 },
-                BackgroundColor::from(Color::linear_rgba(0.4, 0.15, 0.15, 0.9)),
+                BackgroundColor::from(Color::srgba(0.4, 0.15, 0.15, 0.9)),
                 children![(
                     Text::new("Cancel"),
                     TextFont::from_font_size(12.),
@@ -613,13 +622,13 @@ impl ForgeShardButton {
         let icon_color = if affordable {
             Color::WHITE
         } else {
-            Color::linear_rgba(1., 1., 1., 0.3)
+            Color::srgba(1., 1., 1., 0.3)
         };
 
         let bg_color_normal = if affordable {
-            Color::linear_rgba(0.15, 0.15, 0.25, 0.9)
+            Color::srgba(0.15, 0.15, 0.25, 0.9)
         } else {
-            Color::linear_rgba(0.1, 0.1, 0.1, 0.7)
+            Color::srgba(0.1, 0.1, 0.1, 0.7)
         };
 
         // Button face: the shard icon on a tinted square; dimmed and non-interactive when unaffordable.
@@ -637,56 +646,34 @@ impl ForgeShardButton {
         ));
         if affordable {
             commands.entity(entity)
-                .observe(recolor_background_on::<Pointer<Over>>(Color::linear_rgba(0.25, 0.3, 0.5, 0.95)))
+                .observe(recolor_background_on::<Pointer<Over>>(Color::srgba(0.25, 0.3, 0.5, 0.95)))
                 .observe(recolor_background_on::<Pointer<Out>>(bg_color_normal))
                 .observe(Self::on_click_request_start_forge);
         }
 
-        // Hover tooltip. `TooltipBundle` groups the required components;
-        // the positioning system in `widgets_internal` places it above the slot.
-        commands.spawn(TooltipBundle {
-            tooltip_of: TooltipOf(entity),
-            node: Node {
-                display: Display::None,
-                position_type: PositionType::Absolute,
-                padding: UiRect::all(Val::Px(6.)),
-                flex_direction: FlexDirection::Column,
-                align_items: AlignItems::Start,
-                row_gap: Val::Px(4.),
-                border_radius: BorderRadius::all(Val::Px(4.)),
-                min_width: Val::Px(140.),
-                ..default()
-            },
-            background_color: BackgroundColor::from(Color::linear_rgba(0.1, 0.1, 0.2, 0.95)),
-        })
-        .with_children(|tooltip| {
-            tooltip.spawn((
-                Text::new(info.name.clone()),
-                TextFont::from_font_size(12.),
-                TextColor::from(Color::WHITE),
-                TextLayout::no_wrap(),
-            ));
-            tooltip.spawn((
-                Text::new(info.description.clone()),
-                TextFont::from_font_size(10.),
-                TextColor::from(Color::linear_rgba(0.8, 0.8, 0.8, 1.)),
-            ));
-            tooltip.spawn((
-                Text::new(format!("Forge time: {:.0}s", recipe.duration.as_secs_f32())),
-                TextFont::from_font_size(10.),
-                TextColor::from(Color::linear_rgba(0.7, 0.8, 0.7, 1.)),
-                TextLayout::no_wrap(),
-            ));
-            tooltip.spawn(BuilderChipStrip)
-                .with_children(|cost_row| {
-                    for cost in recipe.cost.iter().copied() {
-                        cost_row.spawn((
-                            BuilderCostChip::from(cost),
-                            CostChipVisualFullPrice,
-                        ));
-                    }
-                });
-        });
+        commands.spawn((
+            BuilderTooltip::new(entity),
+            children![
+                (
+                    Text::new(info.name.clone()),
+                    TextFont::from_font_size(12.),
+                    TextColor::from(TOOLTIP_TITLE_COLOR),
+                    TextLayout::no_wrap(),
+                ),
+                (
+                    Text::new(info.description.clone()),
+                    TextFont::from_font_size(10.),
+                    TextColor::from(TOOLTIP_BODY_COLOR),
+                ),
+                (
+                    Text::new(format!("Forge time: {:.0}s", recipe.duration.as_secs_f32())),
+                    TextFont::from_font_size(10.),
+                    TextColor::from(TOOLTIP_FACTS_COLOR),
+                    TextLayout::no_wrap(),
+                ),
+                BuilderFullPriceCostStrip(recipe.cost.clone()),
+            ],
+        ));
     }
 
     fn on_click_request_start_forge(

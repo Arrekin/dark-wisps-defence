@@ -26,6 +26,7 @@ use resources::prelude::*;
 use states::prelude::*;
 
 use crate::common::*;
+use crate::tooltip::building_tooltip;
 
 fn mining_complex_validator(_: MapObject, origin: GridCoords, imprint: GridImprint, map_data: &GridsCollectionParam) -> PlacementValidity {
     if !imprint.is_in_bounds(origin, map_data.obstacle_grid.bounds) {
@@ -102,6 +103,7 @@ impl BuilderMiningComplex {
     pub fn almanach_info(asset_server: &AssetServer) -> BuildingInfo {
         BuildingInfo {
             name: "Mining Complex".to_string(),
+            description: "Extracts dark ore from deposits in range.".to_string(),
             sprite: asset_server.load("buildings/mining_complex.png"),
             top_sprite: None,
             grid_imprint: GridImprint::Rectangle { width: 3, height: 3 },
@@ -110,6 +112,10 @@ impl BuilderMiningComplex {
             validate: mining_complex_validator,
             annotate: mining_complex_annotator,
             placement: PlacementChannel::of::<MiningComplex>(),
+            presentation: ObjectPresentation {
+                face: ObjectFace::Image(asset_server.load("buildings/mining_complex.png")),
+                tooltip: Some(building_tooltip),
+            },
         }
     }
 

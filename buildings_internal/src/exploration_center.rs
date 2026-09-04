@@ -63,6 +63,7 @@ use widgets::{
 use crate::{
     common::*,
     info_panel::BuildingInfoPanelEnabledTrigger,
+    tooltip::building_tooltip,
 };
 
 
@@ -115,6 +116,7 @@ impl BuilderExplorationCenter {
     pub fn almanach_info(asset_server: &AssetServer) -> BuildingInfo {
         BuildingInfo {
             name: "Exploration Center".to_string(),
+            description: "Houses expedition drones and sends them out to scan objects of interest.".to_string(),
             sprite: asset_server.load("buildings/exploration_center.png"),
             top_sprite: None,
             grid_imprint: GridImprint::Rectangle { width: 4, height: 4 },
@@ -123,6 +125,10 @@ impl BuilderExplorationCenter {
             validate: building_validator,
             annotate: annotate_non_empty,
             placement: PlacementChannel::of::<ExplorationCenter>(),
+            presentation: ObjectPresentation {
+                face: ObjectFace::Image(asset_server.load("buildings/exploration_center.png")),
+                tooltip: Some(building_tooltip),
+            },
         }
     }
 
@@ -146,10 +152,10 @@ impl BuilderExplorationCenter {
     ) {
         let entity = trigger.entity;
         let Ok(builder) = builders.get(entity) else { return; };
-        
+
         let building_info = almanach.get_building_info(BuildingType::ExplorationCenter);
         let grid_imprint = building_info.grid_imprint;
-        
+
         let mut entity_commands = commands.entity(entity);
         if let Some(ip) = builder.integrity_points {
             entity_commands.insert(IntegrityPoints::new(ip));
@@ -284,7 +290,7 @@ impl ExplorationCenterInfoPanel {
             exploration_center_panel.into_inner().display = Display::None;
         }
     }
-    
+
     fn on_rebuild_drone_slots(
         _trigger: On<RebuildDroneSlotsUi>,
         mut commands: Commands,
@@ -303,20 +309,20 @@ impl ExplorationCenterInfoPanel {
         for panel in selection_panels.iter() {
             commands.entity(panel).despawn();
         }
-        
+
         // Get drone entities via HomeBaseLinkedObjects (all linked objects are drones)
         let drone_count = linked_objects.map(|lo| lo.len()).unwrap_or_default();
         let max_slots = center.max_drone_slots;
-        
+
         // Update drone count text
         drone_count_text.into_inner().0 = format!("Drones: {}/{}", drone_count, max_slots);
-        
-        
+
+
         // Spawn drone slot rows (slot + action button) for each owned drone
         for drone_entity in linked_objects.map(|lo| lo.iter()).unwrap_or_default() {
             commands.entity(*slots_container).with_child(DroneSlotRow::new(drone_entity));
         }
-        
+
         // Spawn buy button slot if there are free slots
         if drone_count < max_slots {
             commands.entity(*slots_container).with_child(BuyDroneSlot);
@@ -379,7 +385,7 @@ impl DroneSlotRow {
     fn new(drone_entity: Entity) -> Self {
         Self { drone_entity }
     }
-    
+
     fn on_add_construct_drone_slot_row(
         trigger: On<Add, DroneSlotRow>,
         mut commands: Commands,
@@ -388,7 +394,7 @@ impl DroneSlotRow {
         let entity = trigger.entity;
         let Ok(row) = rows.get(entity) else { return };
         let drone_entity = row.drone_entity;
-        
+
         commands.entity(entity).insert((
             Node {
                 flex_direction: FlexDirection::Column,
@@ -405,7 +411,7 @@ impl DroneSlotRow {
 }
 
 const FUEL_BAR_WIDTH: f32 = 6.0;
-const FUEL_BAR_COLOR: Color = Color::linear_rgba(0.9, 0.8, 0.2, 1.0); // yellow
+const FUEL_BAR_COLOR: Color = Color::srgba(0.9, 0.8, 0.2, 1.0); // yellow
 
 /// A square representing an owned drone
 #[derive(Component)]
@@ -416,7 +422,7 @@ impl DroneSlot {
     fn new(drone_entity: Entity) -> BuilderDroneSlot {
         BuilderDroneSlot { drone_entity }
     }
-    
+
     fn update(
         mut commands: Commands,
         asset_server: Res<AssetServer>,
@@ -427,7 +433,7 @@ impl DroneSlot {
     ) {
         for (slot, tooltips, children) in slots.iter() {
             let Ok(drone_state) = drones.get(slot.drone_entity) else { continue; };
-            
+
             // Update icon if state changed
             for child in children.iter() {
                 if let Ok(mut image) = icons.get_mut(child) {
@@ -472,7 +478,7 @@ impl BuilderDroneSlot {
         let entity = trigger.entity;
         let Ok(builder) = builders.get(entity) else { return };
         let Ok((drone_state, drone_fuel)) = drones.get(builder.drone_entity) else { return };
-        
+
         commands.entity(entity)
             .remove::<BuilderDroneSlot>()
             .insert((
@@ -498,7 +504,7 @@ impl BuilderDroneSlot {
                             ..default()
                         },
                         ImageNode::new(asset_server.load(DroneSlot::state_icon(*drone_state))),
-                        BorderColor::from(Color::linear_rgba(0.3, 0.6, 0.3, 1.)),
+                        BorderColor::from(Color::srgba(0.3, 0.6, 0.3, 1.)),
                         DroneSlotIcon,
                     ),
                     // Fuel bar (vertical, bottom-aligned fill)
@@ -511,8 +517,8 @@ impl BuilderDroneSlot {
                         children![(
                             BuilderFillBar::default()
                                 .with_axis(FillAxis::Vertical)
-                                .with_background_color(Color::linear_rgba(0.1, 0.1, 0.1, 0.8))
-                                .with_border(Color::linear_rgba(0.4, 0.4, 0.2, 1.), UiRect::all(Val::Px(1.)))
+                                .with_background_color(Color::srgba(0.1, 0.1, 0.1, 0.8))
+                                .with_border(Color::srgba(0.4, 0.4, 0.2, 1.), UiRect::all(Val::Px(1.)))
                                 .with_border_radius(BorderRadius::all(Val::Px(2.)))
                                 .with_fill_color(FUEL_BAR_COLOR)
                                 .with_fill_fraction(drone_fuel.fraction()),
@@ -553,7 +559,7 @@ impl BuilderDroneActionButton {
     fn new(drone_entity: Entity) -> Self {
         Self { drone_entity }
     }
-    
+
     fn on_builder_add_spawn_drone_action_button(
         trigger: On<Add, BuilderDroneActionButton>,
         mut commands: Commands,
@@ -563,15 +569,15 @@ impl BuilderDroneActionButton {
         let entity = trigger.entity;
         let Ok(builder) = builders.get(entity) else { return };
         let Ok((drone_state, drone)) = drones.get(builder.drone_entity) else { return };
-        
+
         let (text, is_active) = DroneActionButton::button_state(*drone_state, drone.mission_target.is_some());
-        
+
         let text_entity = commands.spawn((
             Text::new(text),
-            TextColor::from(if is_active { Color::WHITE } else { Color::linear_rgba(0.6, 0.6, 0.6, 1.) }),
+            TextColor::from(if is_active { Color::WHITE } else { Color::srgba(0.6, 0.6, 0.6, 1.) }),
             TextFont::default().with_font_size(10.0),
         )).id();
-        
+
         commands.entity(entity)
             .remove::<BuilderDroneActionButton>()
             .insert((
@@ -585,15 +591,15 @@ impl BuilderDroneActionButton {
                     ..default()
                 },
                 BackgroundColor::from(if is_active {
-                    Color::linear_rgba(0.2, 0.3, 0.5, 0.9)
+                    Color::srgba(0.2, 0.3, 0.5, 0.9)
                 } else {
-                    Color::linear_rgba(0.2, 0.2, 0.2, 0.5)
+                    Color::srgba(0.2, 0.2, 0.2, 0.5)
                 }),
             ))
             .add_child(text_entity)
             .observe(DroneActionButton::on_click_handle_drone_action)
-            .observe(recolor_background_on::<Pointer<Over>>(Color::linear_rgba(0.3, 0.4, 0.6, 0.95)))
-            .observe(recolor_background_on::<Pointer<Out>>(Color::linear_rgba(0.2, 0.3, 0.5, 0.9)));
+            .observe(recolor_background_on::<Pointer<Over>>(Color::srgba(0.3, 0.4, 0.6, 0.95)))
+            .observe(recolor_background_on::<Pointer<Out>>(Color::srgba(0.2, 0.3, 0.5, 0.9)));
     }
 }
 
@@ -608,7 +614,7 @@ impl DroneActionButton {
     fn new(drone_entity: Entity) -> BuilderDroneActionButton {
         BuilderDroneActionButton::new(drone_entity)
     }
-    
+
     fn update(
         buttons: Query<&DroneActionButton>,
         drones: Query<(&DroneState, &ExpeditionDrone)>,
@@ -617,13 +623,13 @@ impl DroneActionButton {
         for button in buttons.iter() {
             let Ok((drone_state, drone)) = drones.get(button.drone_entity) else { continue };
             let (text, is_active) = Self::button_state(*drone_state, drone.mission_target.is_some());
-            
+
             let Ok((mut t, mut color)) = texts.get_mut(button.text_entity) else { continue };
             t.0 = text.to_string();
-            *color = TextColor::from(if is_active { Color::WHITE } else { Color::linear_rgba(0.6, 0.6, 0.6, 1.) });
+            *color = TextColor::from(if is_active { Color::WHITE } else { Color::srgba(0.6, 0.6, 0.6, 1.) });
         }
     }
-    
+
     fn button_state(state: DroneState, has_mission: bool) -> (&'static str, bool) {
         match state {
             DroneState::Stationed => ("Send", true),
@@ -637,7 +643,7 @@ impl DroneActionButton {
             }
         }
     }
-    
+
     fn on_click_handle_drone_action(
         trigger: On<Pointer<Click>>,
         mut commands: Commands,
@@ -646,7 +652,7 @@ impl DroneActionButton {
     ) {
         let Ok(button) = buttons.get(trigger.entity) else { return };
         let Ok((drone_state, drone)) = drones.get(button.drone_entity) else { return };
-        
+
         match drone_state {
             DroneState::Stationed => {
                 commands.trigger(OpenTargetSelectionPanel { drone: button.drone_entity });
@@ -677,7 +683,7 @@ impl SlotTooltipData {
             Self::BuyCost(cost) => format!("Cost: {} ore", cost),
         }
     }
-    
+
     /// Returns the drone entity if it is outside home base
     fn drone_outside_home_base(&self) -> Option<Entity> {
         match self {
@@ -719,10 +725,10 @@ impl BuilderSlotTooltip {
                 border_radius: BorderRadius::all(Val::Px(4.)),
                 ..default()
             },
-            BackgroundColor::from(Color::linear_rgba(0.1, 0.1, 0.2, 0.95)),
+            BackgroundColor::from(Color::srgba(0.1, 0.1, 0.2, 0.95)),
         )
     }
-    
+
     /// Build the tooltip UI structure. Camera preview is handled by on_data_changed_update_tooltip_display.
     fn on_builder_add_spawn_slot_tooltip(
         trigger: On<Add, BuilderSlotTooltip>,
@@ -731,14 +737,14 @@ impl BuilderSlotTooltip {
     ) {
         let entity = trigger.entity;
         let Ok(builder) = builders.get(entity) else { return };
-        
+
         // Text showing drone state
         let text_entity = commands.spawn((
             Text::new(builder.data.text()),
             TextColor::from(Color::WHITE),
             TextFont::default().with_font_size(11.0),
         )).id();
-        
+
         // Initialize tooltip without camera - on_data_changed will add it if needed
         commands.entity(entity)
             .remove::<BuilderSlotTooltip>()
@@ -759,7 +765,7 @@ struct SlotTooltip {
 impl SlotTooltip {
     fn new(text_entity: Entity) -> Self {
         Self { text_entity, preview_node_entity: Entity::PLACEHOLDER }
-    }    
+    }
     /// Handles camera preview creation/removal when drone state changes.
     /// Cameras are created only when needed.
     fn on_data_changed_update_tooltip_display(
@@ -772,16 +778,16 @@ impl SlotTooltip {
     ) {
         let entity = trigger.entity;
         let Ok((mut tooltip, data, maybe_owned_cameras)) = tooltips.get_mut(entity) else { return };
-        
+
         // Update text
         if let Ok(mut text) = texts.get_mut(tooltip.text_entity) {
             text.0 = data.text();
         }
-        
+
         // Check if we need camera preview (drone on mission)
         let needs_camera = data.drone_outside_home_base().is_some();
         let has_camera = maybe_owned_cameras.is_some();
-        
+
         if needs_camera && !has_camera {
             // Add camera preview
             let Some(drone_entity) = data.drone_outside_home_base() else { unreachable!() };
@@ -793,7 +799,7 @@ impl SlotTooltip {
                         2.,
                     ).with_auto_follow_entity(drone_entity)
                 ).id();
-                
+
                 let preview_node = commands.spawn((
                     Node {
                         width: Val::Px(TOOLTIP_CAMERA_SIZE),
@@ -801,10 +807,10 @@ impl SlotTooltip {
                         border: UiRect::all(Val::Px(1.)),
                         ..default()
                     },
-                    BorderColor::from(Color::linear_rgba(0.3, 0.5, 0.3, 1.)),
+                    BorderColor::from(Color::srgba(0.3, 0.5, 0.3, 1.)),
                     ViewportNode::new(camera),
                 )).id();
-                
+
                 commands.entity(entity).add_child(preview_node);
                 tooltip.preview_node_entity = preview_node;
             }
@@ -818,7 +824,7 @@ impl SlotTooltip {
             preview_node.display = Display::None;
         }
     }
-    
+
     // Note: on_remove not needed - CameraOf relationship auto-despawns cameras when tooltip despawns
 }
 
@@ -840,8 +846,8 @@ impl BuyDroneSlot {
                 border_radius: BorderRadius::all(Val::Px(4.)),
                 ..default()
             },
-            BackgroundColor::from(Color::linear_rgba(0.1, 0.2, 0.4, 0.8)),
-            BorderColor::from(Color::linear_rgba(0.2, 0.4, 0.8, 1.)),
+            BackgroundColor::from(Color::srgba(0.1, 0.2, 0.4, 0.8)),
+            BorderColor::from(Color::srgba(0.2, 0.4, 0.8, 1.)),
             children![(
                 Text::new("+"),
                 TextColor::from(BLUE),
@@ -850,8 +856,8 @@ impl BuyDroneSlot {
             related![Tooltips[BuilderSlotTooltip::new_buy()]],
         ))
         .observe(Self::on_click_buy_drone)
-        .observe(recolor_background_on::<Pointer<Over>>(Color::linear_rgba(0.15, 0.3, 0.5, 0.9)))
-        .observe(recolor_background_on::<Pointer<Out>>(Color::linear_rgba(0.1, 0.2, 0.4, 0.8)));
+        .observe(recolor_background_on::<Pointer<Over>>(Color::srgba(0.15, 0.3, 0.5, 0.9)))
+        .observe(recolor_background_on::<Pointer<Out>>(Color::srgba(0.1, 0.2, 0.4, 0.8)));
     }
 
     fn on_click_buy_drone(
@@ -861,15 +867,15 @@ impl BuyDroneSlot {
         focused_center: Single<(Entity, &ExplorationCenter, Option<&HomeBaseLinkedObjects>), With<FocusedMapObject>>,
     ) {
         let (focused_entity, center, linked_objects) = focused_center.into_inner();
-        
+
         // Check slot availability
         let owned_count = linked_objects.map(|lo| lo.len()).unwrap_or(0);
         if owned_count >= center.max_drone_slots { return; }
-        
+
         // Check cost
         let cost = Cost { resource_type: ResourceType::DarkOre, amount: DRONE_COST_ORE as i32 };
         if !stock.try_pay_cost(cost) { return; }
-        
+
         // Spawn new drone and trigger UI rebuild
         commands.spawn(BuilderExpeditionDrone::new(focused_entity));
         commands.trigger(RebuildDroneSlotsUi);
@@ -897,7 +903,7 @@ impl TargetSelectionPanel {
     fn new(drone_entity: Entity) -> Self {
         Self { drone_entity }
     }
-    
+
     fn on_add_construct_target_selection_panel(
         trigger: On<Add, TargetSelectionPanel>,
         mut commands: Commands,
@@ -909,12 +915,12 @@ impl TargetSelectionPanel {
         let entity = trigger.entity;
         let Ok(panel) = panels.get(entity) else { return };
         let drone_entity = panel.drone_entity;
-        
+
         // Get drone's home base position and fuel for distance calculations
         let Ok((home_base, drone_fuel)) = drones.get(drone_entity) else { return };
         let Ok(home_transform) = home_bases.get(home_base.0) else { return };
         let home_pos = home_transform.translation.xy();
-        
+
         // Build list of target items with fuel cost data, sorted by effectiveness
         let mut target_data: Vec<_> = targets.iter()
             .map(|(target_entity, name, coords, imprint)| {
@@ -924,16 +930,16 @@ impl TargetSelectionPanel {
                 (target_entity, name.as_str().to_string(), *coords, fuel_percent)
             })
             .collect();
-        
+
         // Sort by fuel percentage (most effective = lowest fuel cost first)
         target_data.sort_by(|a, b| a.3.partial_cmp(&b.3).unwrap_or(std::cmp::Ordering::Equal));
-        
+
         let target_items: Vec<_> = target_data.iter()
             .map(|(target_entity, name, coords, fuel_percent)| {
                 TargetListItem::new(drone_entity, *target_entity, name, *coords, *fuel_percent)
             })
             .collect();
-        
+
         commands.entity(entity).insert((
             Node {
                 position_type: PositionType::Absolute,
@@ -953,10 +959,10 @@ impl TargetSelectionPanel {
                 border_radius: BorderRadius::all(Val::Px(6.)),
                 ..default()
             },
-            BackgroundColor::from(Color::linear_rgba(0.1, 0.1, 0.15, 0.95)),
-            BorderColor::from(Color::linear_rgba(0.3, 0.3, 0.5, 1.)),
+            BackgroundColor::from(Color::srgba(0.1, 0.1, 0.15, 0.95)),
+            BorderColor::from(Color::srgba(0.3, 0.3, 0.5, 1.)),
         ));
-        
+
         // Header
         commands.entity(entity).with_child((
             Text::new("Select Target"),
@@ -964,7 +970,7 @@ impl TargetSelectionPanel {
             TextFont::default().with_font_size(14.0),
             Node { margin: UiRect::bottom(Val::Px(8.)), ..default() },
         ));
-        
+
         // Scrollable list container
         let scroll_container = commands.spawn((
             Node {
@@ -976,12 +982,12 @@ impl TargetSelectionPanel {
             ScrollPosition::default(),
         )).id();
         commands.entity(entity).add_child(scroll_container);
-        
+
         // Add target items or "no targets" message
         if target_items.is_empty() {
             commands.entity(scroll_container).with_child((
                 Text::new("No valid targets"),
-                TextColor::from(Color::linear_rgba(0.6, 0.6, 0.6, 1.)),
+                TextColor::from(Color::srgba(0.6, 0.6, 0.6, 1.)),
                 TextFont::default().with_font_size(12.0),
             ));
         } else {
@@ -989,7 +995,7 @@ impl TargetSelectionPanel {
                 commands.entity(scroll_container).with_child(item);
             }
         }
-        
+
         // Cancel button
         let cancel_btn = commands.spawn((
             Button,
@@ -1000,7 +1006,7 @@ impl TargetSelectionPanel {
                 border_radius: BorderRadius::all(Val::Px(4.)),
                 ..default()
             },
-            BackgroundColor::from(Color::linear_rgba(0.3, 0.2, 0.2, 0.9)),
+            BackgroundColor::from(Color::srgba(0.3, 0.2, 0.2, 0.9)),
             children![(
                 Text::new("Cancel"),
                 TextColor::from(Color::WHITE),
@@ -1009,7 +1015,7 @@ impl TargetSelectionPanel {
         )).observe(Self::on_cancel_click_close_target_selection_panel).id();
         commands.entity(entity).add_child(cancel_btn);
     }
-    
+
     /// Opens the target selection panel centered on screen
     fn on_open_target_selection_panel_do_so(
         trigger: On<OpenTargetSelectionPanel>,
@@ -1020,7 +1026,7 @@ impl TargetSelectionPanel {
         for panel in existing_panels.iter() {
             commands.entity(panel).despawn();
         }
-        
+
         // Spawn as separate root UI entity (not child of info panel)
         // Position centered on screen using left/top percentages
         commands.spawn((
@@ -1029,7 +1035,7 @@ impl TargetSelectionPanel {
             Pickable::default(),
         ));
     }
-    
+
     fn on_cancel_click_close_target_selection_panel(
         _trigger: On<Pointer<Click>>,
         mut commands: Commands,
@@ -1039,20 +1045,20 @@ impl TargetSelectionPanel {
             commands.entity(panel).despawn();
         }
     }
-    
+
     fn on_select_target_deploy_drone_to_target(
         trigger: On<OpenTargetSelectionForDrone>,
         mut commands: Commands,
         panels: Query<Entity, With<TargetSelectionPanel>>,
     ) {
         let event = trigger.event();
-        
+
         // Send the drone to target
         commands.trigger(ExpeditionDroneDeploymentRequest {
             drone: event.drone,
             target: event.target,
         });
-        
+
         // Close the panel
         for panel in panels.iter() {
             commands.entity(panel).despawn();
@@ -1087,20 +1093,20 @@ impl TargetListItem {
     /// Color for fuel percentage: <60% green, <80% yellow, <100% orange, >=100% red
     fn fuel_color(fuel_percent: f32) -> Color {
         if fuel_percent < 60.0 {
-            Color::linear_rgba(0.3, 0.9, 0.3, 1.0) // green
+            Color::srgba(0.3, 0.9, 0.3, 1.0) // green
         } else if fuel_percent < 80.0 {
-            Color::linear_rgba(0.9, 0.9, 0.2, 1.0) // yellow
+            Color::srgba(0.9, 0.9, 0.2, 1.0) // yellow
         } else if fuel_percent < 100.0 {
-            Color::linear_rgba(0.9, 0.5, 0.2, 1.0) // orange
+            Color::srgba(0.9, 0.5, 0.2, 1.0) // orange
         } else {
-            Color::linear_rgba(0.9, 0.2, 0.2, 1.0) // red
+            Color::srgba(0.9, 0.2, 0.2, 1.0) // red
         }
     }
-    
+
     fn new(drone_entity: Entity, target_entity: Entity, name: &str, coords: GridCoords, fuel_percent: f32) -> impl Bundle {
         let fuel_text = format!("{}%", fuel_percent.round() as i32);
         let fuel_color = Self::fuel_color(fuel_percent);
-        
+
         (
             Self { drone_entity, target_entity },
             Node {
@@ -1113,7 +1119,7 @@ impl TargetListItem {
                 border_radius: BorderRadius::all(Val::Px(3.)),
                 ..default()
             },
-            BackgroundColor::from(Color::linear_rgba(0.15, 0.15, 0.2, 0.9)),
+            BackgroundColor::from(Color::srgba(0.15, 0.15, 0.2, 0.9)),
             children![
                 // Left side: Name, coordinates, and fuel cost
                 (
@@ -1129,7 +1135,7 @@ impl TargetListItem {
                         ),
                         (
                             Text::new(format!("at ({}, {})", coords.x, coords.y)),
-                            TextColor::from(Color::linear_rgba(0.7, 0.7, 0.7, 1.)),
+                            TextColor::from(Color::srgba(0.7, 0.7, 0.7, 1.)),
                             TextFont::default().with_font_size(10.0),
                         ),
                         // Fuel cost indicator
@@ -1142,7 +1148,7 @@ impl TargetListItem {
                             children![
                                 (
                                     Text::new("Fuel needed for travel: "),
-                                    TextColor::from(Color::linear_rgba(0.6, 0.6, 0.6, 1.)),
+                                    TextColor::from(Color::srgba(0.6, 0.6, 0.6, 1.)),
                                     TextFont::default().with_font_size(10.0),
                                 ),
                                 (
@@ -1162,23 +1168,23 @@ impl TargetListItem {
                         border: UiRect::all(Val::Px(1.)),
                         ..default()
                     },
-                    BorderColor::from(Color::linear_rgba(0.4, 0.4, 0.6, 1.)),
+                    BorderColor::from(Color::srgba(0.4, 0.4, 0.6, 1.)),
                     TargetListItemCameraPreview { target_entity },
                 ),
             ],
         )
     }
-    
+
     fn on_add_construct_target_list_item(
         trigger: On<Add, TargetListItem>,
         mut commands: Commands,
     ) {
         commands.entity(trigger.entity)
             .observe(Self::on_click_select_expedition_target)
-            .observe(recolor_background_on::<Pointer<Over>>(Color::linear_rgba(0.25, 0.3, 0.4, 0.9)))
-            .observe(recolor_background_on::<Pointer<Out>>(Color::linear_rgba(0.15, 0.15, 0.2, 0.9)));
+            .observe(recolor_background_on::<Pointer<Over>>(Color::srgba(0.25, 0.3, 0.4, 0.9)))
+            .observe(recolor_background_on::<Pointer<Out>>(Color::srgba(0.15, 0.15, 0.2, 0.9)));
     }
-    
+
     fn on_click_select_expedition_target(
         trigger: On<Pointer<Click>>,
         mut commands: Commands,
@@ -1207,7 +1213,7 @@ impl TargetListItemCameraPreview {
         let entity = trigger.entity;
         let Ok(preview) = previews.get(entity) else { return };
         let Ok((coords, imprint)) = targets.get(preview.target_entity) else { return };
-        
+
         // Add camera preview centered on the target
         let world_pos = coords.to_world_position_centered(*imprint);
         let camera = commands.spawn(BuilderPreviewCamera::new(
@@ -1215,7 +1221,7 @@ impl TargetListItemCameraPreview {
             world_pos,
             3., // Zoom level
         )).id();
-        
+
         commands.entity(entity).insert(ViewportNode::new(camera));
     }
 }

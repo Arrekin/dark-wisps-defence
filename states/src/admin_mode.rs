@@ -9,6 +9,9 @@ pub enum AdminMode {
     Enabled,
 }
 impl AdminMode {
+    pub fn is_enabled(&self) -> bool {
+        matches!(self, AdminMode::Enabled)
+    }
     pub(crate) fn toggle_admin_mode(
         mut next_admin_mode: ResMut<NextState<AdminMode>>,
         mut next_game_state: ResMut<NextState<GameState>>,

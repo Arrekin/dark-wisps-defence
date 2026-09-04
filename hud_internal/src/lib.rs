@@ -1,4 +1,4 @@
-pub(crate) mod construction_menu;
+pub(crate) mod side_menu;
 pub(crate) mod badges;
 pub(crate) mod main_menu;
 pub(crate) mod pause_indicator;
@@ -19,7 +19,7 @@ impl Plugin for HudPlugin {
                 badges::BadgesPlugin,
                 display_info_panel::DisplayInfoPanelPlugin,
                 indicators::IndicatorsPlugin,
-                construction_menu::ConstructionMenuPlugin,
+                side_menu::SideMenuPlugin,
                 main_menu::MainMenuPlugin,
                 pause_indicator::PauseIndicatorPlugin,
             ))

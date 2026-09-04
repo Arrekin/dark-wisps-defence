@@ -67,8 +67,8 @@ impl Default for BuilderHealthbar {
         Self {
             healthbar: Healthbar::default(),
             builder_fill_bar: BuilderFillBar::default()
-                .with_background_color(Color::linear_rgba(0., 0., 0., 0.))
-                .with_border(Color::linear_rgba(0., 0.2, 1., 1.), UiRect::all(Val::Px(2.0))),
+                .with_background_color(Color::NONE)
+                .with_border(Color::srgba(0., 0.2, 1., 1.), UiRect::all(Val::Px(2.0))),
             font_size: 16.,
         }
     }

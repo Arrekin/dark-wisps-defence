@@ -194,6 +194,17 @@ impl GridImprint {
         self.world_size() / 2.
     }
 
+    /// Short footprint label: `3×3` for a rectangle, and a plus's bounding box as `Plus 3×3`.
+    pub fn label(&self) -> String {
+        match self {
+            GridImprint::Rectangle { width, height } => format!("{width}×{height}"),
+            GridImprint::Plus { extents } => {
+                let span = extents * 2 + 1;
+                format!("Plus {span}×{span}")
+            }
+        }
+    }
+
     /// Generate a random local offset within the imprint bounds.
     pub fn random_local_offset(&self) -> Vec2 {
         use nanorand::Rng;

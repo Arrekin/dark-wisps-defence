@@ -3166,6 +3166,7 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "game_core",
+ "resources",
 ]
 
 [[package]]
@@ -6767,6 +6768,7 @@ dependencies = [
  "buildings",
  "game_core",
  "grids",
+ "hud",
  "logging",
  "nanorand",
  "persistence",
