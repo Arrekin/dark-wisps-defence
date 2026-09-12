@@ -9,12 +9,12 @@ use bevy::prelude::*;
 use bevy::sprite_render::Material2dPlugin;
 
 use almanach::{WispInfo, prelude::*};
-use game_core::{motion::MotionSystems, prelude::*};
-use grids::placement::{annotate_non_empty, PlacementChannel, PlacementMode};
+use game_core::motion::MotionSystems;
+use grids::placement::{annotate_non_empty, PlacementModes};
 use persistence::prelude::{AppGameLoadSaveExtension, CollectSave};
 use states::prelude::*;
 use visuals::prelude::*;
-use wisps::{BuilderWispFace, WispElectricType, WispFireType, WispLightType, WispWaterType, prelude::*};
+use wisps::prelude::*;
 
 pub struct WispsPlugin;
 impl Plugin for WispsPlugin {
@@ -62,10 +62,6 @@ impl Plugin for WispsPlugin {
             .add_observer(spawning::BuilderWisp::on_builder_add_spawn_wisp)
             .add_observer(spawning::on_wisp_place_request_do_so)
             .add_observer(spawning::on_wisp_remove_request_do_so)
-            .add_observer(spawning::on_wisp_spawn_attach_material::<WispFireType, materials::WispFireMaterial>)
-            .add_observer(spawning::on_wisp_spawn_attach_material::<WispWaterType, materials::WispWaterMaterial>)
-            .add_observer(spawning::on_wisp_spawn_attach_material::<WispLightType, materials::WispLightMaterial>)
-            .add_observer(spawning::on_wisp_spawn_attach_material::<WispElectricType, materials::WispElectricMaterial>)
             .add_systems(CollectSave, spawning::collect_wisps)
             .register_loader(MapLoadingStage::SpawnMapElements, "wisps", spawning::load_wisps)
             .register_wisps(WispInfo {
@@ -73,17 +69,10 @@ impl Plugin for WispsPlugin {
                 grid_imprint: WISP_GRID_IMPRINT,
                 validate: spawning::wisp_validator,
                 annotate: annotate_non_empty,
-                placement: PlacementChannel::of::<WispType>().with_modes(PlacementMode::OnPress),
+                placement: PlacementModes::on_press(),
                 presentation: ObjectPresentation {
-                    face: ObjectFace::Built(insert_wisp_face),
                     tooltip: Some(tooltip::wisp_tooltip),
                 },
             });
     }
-}
-
-/// Inserts the UI face builder for a wisp placement tile.
-fn insert_wisp_face(face_node: &mut EntityCommands, map_object: MapObject) {
-    let MapObject::Wisp(wisp_type) = map_object else { return };
-    face_node.insert(BuilderWispFace(wisp_type));
 }

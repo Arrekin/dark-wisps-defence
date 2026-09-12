@@ -9,7 +9,7 @@ use bevy::picking::hover::Hovered;
 use bevy::prelude::*;
 
 use game_core::prelude::MapObject;
-use grids::placement::{GridObjectPlacer, StartPlacing, StopPlacing};
+use grids::placement::{BeginPlacing, StopPlacing};
 use states::{AdminMode, prelude::UiInteraction};
 
 use widgets::prelude::{BuilderVoidPanel, VoidPanel};
@@ -143,15 +143,14 @@ pub(crate) fn on_insert_section_state_manage_strip(
 
 /// Latches the section containing the active object. Object identity keeps the latch valid across
 /// placement shortcuts and tile rebuilds.
-pub(crate) fn on_start_placing_latch_owning_section(
-    _trigger: On<StartPlacing>,
+pub(crate) fn on_begin_placing_latch_owning_section(
+    trigger: On<BeginPlacing>,
     mut commands: Commands,
-    placer: Single<&GridObjectPlacer>,
     sections: Query<(Entity, &SectionLatch, &Children), With<SideMenuSection>>,
     strips: Query<&Children, With<SideMenuStrip>>,
     tiles: Query<&PlacementTile>,
 ) {
-    let Some(placed) = placer.map_object() else { return };
+    let BeginPlacing(placed) = *trigger;
 
     for (section_entity, latch, children) in sections.iter() {
         let holds_tile = children.first()

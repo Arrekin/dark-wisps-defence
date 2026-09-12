@@ -1,6 +1,6 @@
 use bevy::{
     prelude::*,
-    render::render_resource::AsBindGroup,
+    render::render_resource::{AsBindGroup, ShaderType},
     shader::ShaderRef,
     sprite_render::{AlphaMode2d, Material2d},
 };
@@ -14,6 +14,14 @@ pub(crate) trait WispMaterial: Material2d {
     /// Quad size multiplier over the wisp's grid footprint. Materials whose visual
     /// deforms past its resting radius pad the mesh so it never clips the quad edge.
     fn mesh_scale() -> f32 { 1.0 }
+    /// Multiplies the quad's final colour alpha; a placement ghost sets it below 1.0.
+    fn set_alpha(&mut self, alpha: f32);
+}
+
+/// Per-quad settings uploaded alongside the shared look and effects uniforms.
+#[derive(ShaderType, Clone, Copy, Debug, Default)]
+pub(crate) struct WispQuadUniform {
+    pub alpha: f32,
 }
 
 /// Wisp materials whose look reacts to measured motion through plain `vigor` and
@@ -55,6 +63,9 @@ pub(crate) struct WispFireMaterial {
     #[uniform(5)]
     pub effects: EffectVisualUniform,
 
+    #[uniform(6)]
+    pub quad: WispQuadUniform,
+
     /// Source motion behind the uniforms above; CPU-only (never uploaded), read to
     /// gate re-uploads in `drive_wisp_locomotion`.
     locomotion: Locomotion,
@@ -67,7 +78,7 @@ impl WispFireMaterial {
 }
 impl Material2d for WispFireMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/wisps/fire.wgsl".into()
+        "shaders/wisps/fire_quad.wgsl".into()
     }
     fn alpha_mode(&self) -> AlphaMode2d {
         AlphaMode2d::Blend
@@ -82,10 +93,12 @@ impl WispMaterial for WispFireMaterial {
             heading_x: 0.,
             heading_y: 0.,
             effects: EffectVisualUniform::default(),
+            quad: WispQuadUniform { alpha: 1.0 },
             locomotion: Locomotion::default(),
         }
     }
     fn mesh_scale() -> f32 { Self::QUAD_SCALE }
+    fn set_alpha(&mut self, alpha: f32) { self.quad.alpha = alpha; }
 }
 impl WispLocomotiveMaterial for WispFireMaterial {
     fn locomotion(&self) -> &Locomotion { &self.locomotion }
@@ -134,6 +147,9 @@ pub(crate) struct WispWaterMaterial {
 
     #[uniform(5)]
     pub effects: EffectVisualUniform,
+
+    #[uniform(6)]
+    pub quad: WispQuadUniform,
 }
 impl WispWaterMaterial {
     /// Transparent padding around the droplet so its energetic wobble and lunge
@@ -144,7 +160,7 @@ impl WispWaterMaterial {
 }
 impl Material2d for WispWaterMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/wisps/water.wgsl".into()
+        "shaders/wisps/water_quad.wgsl".into()
     }
     fn alpha_mode(&self) -> AlphaMode2d {
         AlphaMode2d::Blend
@@ -165,9 +181,11 @@ impl WispMaterial for WispWaterMaterial {
             surf_anchor_phase: 0.,
             anchor_time: 0.,
             effects: EffectVisualUniform::default(),
+            quad: WispQuadUniform { alpha: 1.0 },
         }
     }
     fn mesh_scale() -> f32 { Self::QUAD_SCALE }
+    fn set_alpha(&mut self, alpha: f32) { self.quad.alpha = alpha; }
 }
 impl EffectVisualMaterial for WispWaterMaterial {
     fn effects_mut(&mut self) -> &mut EffectVisualUniform {
@@ -192,13 +210,16 @@ pub(crate) struct WispLightMaterial {
     #[uniform(5)]
     pub effects: EffectVisualUniform,
 
+    #[uniform(6)]
+    pub quad: WispQuadUniform,
+
     /// Source motion behind the uniforms above; CPU-only (never uploaded), read to
     /// gate re-uploads in `drive_wisp_locomotion`.
     locomotion: Locomotion,
 }
 impl Material2d for WispLightMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/wisps/light.wgsl".into()
+        "shaders/wisps/light_quad.wgsl".into()
     }
     fn alpha_mode(&self) -> AlphaMode2d {
         AlphaMode2d::Blend
@@ -213,9 +234,11 @@ impl WispMaterial for WispLightMaterial {
             heading_x: 0.,
             heading_y: 0.,
             effects: EffectVisualUniform::default(),
+            quad: WispQuadUniform { alpha: 1.0 },
             locomotion: Locomotion::default(),
         }
     }
+    fn set_alpha(&mut self, alpha: f32) { self.quad.alpha = alpha; }
 }
 impl WispLocomotiveMaterial for WispLightMaterial {
     fn locomotion(&self) -> &Locomotion { &self.locomotion }
@@ -246,13 +269,16 @@ pub(crate) struct WispElectricMaterial {
     #[uniform(5)]
     pub effects: EffectVisualUniform,
 
+    #[uniform(6)]
+    pub quad: WispQuadUniform,
+
     /// Source motion behind the uniforms above; CPU-only (never uploaded), read to
     /// gate re-uploads in `drive_wisp_locomotion`.
     locomotion: Locomotion,
 }
 impl Material2d for WispElectricMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/wisps/electric.wgsl".into()
+        "shaders/wisps/electric_quad.wgsl".into()
     }
     fn alpha_mode(&self) -> AlphaMode2d {
         AlphaMode2d::Blend
@@ -267,9 +293,11 @@ impl WispMaterial for WispElectricMaterial {
             heading_x: 0.,
             heading_y: 0.,
             effects: EffectVisualUniform::default(),
+            quad: WispQuadUniform { alpha: 1.0 },
             locomotion: Locomotion::default(),
         }
     }
+    fn set_alpha(&mut self, alpha: f32) { self.quad.alpha = alpha; }
 }
 impl WispLocomotiveMaterial for WispElectricMaterial {
     fn locomotion(&self) -> &Locomotion { &self.locomotion }

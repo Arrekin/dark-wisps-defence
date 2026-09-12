@@ -93,8 +93,9 @@ pub(crate) fn on_add_tile_children_apply_presentation(
     let Ok((placement_tile, children)) = tiles.get(tile_entity) else { return };
     let map_object = placement_tile.0;
 
+    commands.trigger(ObjectFaceRequest::ui(children.face, map_object));
+
     let presentation = almanach.presentation_for(map_object);
-    presentation.face.apply(&mut commands.entity(children.face), map_object);
     if let Some(build_tooltip) = presentation.tooltip {
         build_tooltip(&mut commands, tile_entity, map_object);
     }

@@ -24,7 +24,7 @@ impl Plugin for SideMenuPlugin {
             .add_systems(OnEnter(MapLoadingStage::Ready), strip::trigger_offering_changed)
             .add_observer(section::on_insert_section_state_manage_strip)
             .add_observer(section::on_click_section_cancel_placement)
-            .add_observer(section::on_start_placing_latch_owning_section)
+            .add_observer(section::on_begin_placing_latch_owning_section)
             .add_observer(section::on_stop_placing_release_owning_section)
             .add_observer(strip::on_offering_changed_refill_strips)
             .add_observer(tile::on_add_tile_build)

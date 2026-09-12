@@ -10,7 +10,7 @@ use alteration::{
 use almanach::prelude::*;
 use buildings::prelude::*;
 use game_core::{math::angle_difference, prelude::*};
-use grids::placement::{annotate_non_empty, PlacementChannel, PlaceRequest};
+use grids::placement::{annotate_non_empty, PlacementModes, PlaceRequest};
 use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
 use logging::prelude::*;
 use persistence::{
@@ -69,9 +69,8 @@ impl BuilderTowerBlaster {
             ]),
             validate: building_validator,
             annotate: annotate_non_empty,
-            placement: PlacementChannel::of::<TowerBlaster>(),
+            placement: PlacementModes::default(),
             presentation: ObjectPresentation {
-                face: ObjectFace::Image(asset_server.load("buildings/tower_blaster.png")),
                 tooltip: Some(building_tooltip),
             },
         }
@@ -170,10 +169,11 @@ impl BuilderTowerBlaster {
 }
 
 fn on_tower_blaster_place_request_do_so(
-    _trigger: On<PlaceRequest<TowerBlaster>>,
+    trigger: On<PlaceRequest>,
     mut commands: Commands,
     mut placement: BuildingPlacementManager,
 ) {
+    let PlaceRequest(MapObject::Building(BuildingType::Tower(TowerType::Blaster))) = *trigger else { return };
     let Some(coords) = placement.claim(BuildingType::Tower(TowerType::Blaster)) else { return };
     commands.spawn(BuilderTowerBlaster::new(coords));
 }

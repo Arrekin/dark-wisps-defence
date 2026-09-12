@@ -1,11 +1,11 @@
 #import bevy_sprite::mesh2d_vertex_output::VertexOutput
 #import bevy_sprite::mesh2d_view_bindings::globals
-#import dwd::wisps::water::{WispWaterLook, dwd_wisp_water}
+#import dwd::wisps::light::{WispLightLook, dwd_wisp_light}
 
-// Map-material bindings for the shared water-wisp shader.
+// Map-material bindings for the shared light-wisp shader.
 
 @group(2) @binding(4)
-var<uniform> uniforms: WispWaterLook;
+var<uniform> uniforms: WispLightLook;
 
 const WISP_EFFECT_SLOTS: u32 = 8u;
 struct WispEffects {
@@ -15,7 +15,15 @@ struct WispEffects {
 @group(2) @binding(5)
 var<uniform> effects: WispEffects;
 
+struct WispQuad {
+    alpha: f32,
+};
+@group(2) @binding(6)
+var<uniform> quad: WispQuad;
+
 @fragment
 fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
-    return dwd_wisp_water(mesh.uv, globals.time, uniforms, effects.mask);
+    var color = dwd_wisp_light(mesh.uv, globals.time, uniforms, effects.mask);
+    color.a *= quad.alpha;
+    return color;
 }

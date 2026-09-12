@@ -3,12 +3,13 @@ use bevy::prelude::*;
 
 use alteration::modifiers::prelude::ModifierType;
 use game_core::prelude::{BuildingType, ContentId, GridImprint, MapObject, ShardType};
-use grids::placement::{ObjectPlacementInfo, PlacementAnnotatorFn, PlacementChannel, PlacementValidatorFn};
+use grids::placement::{ObjectPlacementInfo, PlacementAnnotatorFn, PlacementModes, PlacementValidatorFn};
 use resources::prelude::Cost;
 use states::prelude::MapLoadingStage;
 
+
 pub mod prelude {
-    pub use super::{AccessPattern, Almanach, AlmanachAppExt, BuildingInfo, ObjectFace, ObjectPresentation, ObjectTooltipFn, ResearchSpawnFn, ShardInfo, ShardRecipe};
+    pub use super::{AccessPattern, Almanach, AlmanachAppExt, BuildingInfo, ObjectPresentation, ObjectTooltipFn, ResearchSpawnFn, ShardInfo, ShardRecipe};
 }
 
 pub struct AlmanachPlugin;
@@ -106,45 +107,12 @@ pub enum AccessPattern {
     Admin,
 }
 
-/// Rendering strategy for a side-menu tile face.
-///
-/// `Image` inserts an image directly. `Built` invokes a domain callback that installs the
-/// domain-owned UI material or builder without creating an internal-crate dependency.
-#[derive(Clone, Default)]
-pub enum ObjectFace {
-    Image(Handle<Image>),
-    Built(fn(&mut EntityCommands, MapObject)),
-    #[default]
-    None,
-}
-
-fn insert_face_builder<B: Component + Default>(face_node: &mut EntityCommands, _map_object: MapObject) {
-    face_node.insert(B::default());
-}
-
-impl ObjectFace {
-    /// Uses component `B` as the domain-owned face builder.
-    pub fn built<B: Component + Default>() -> Self {
-        Self::Built(insert_face_builder::<B>)
-    }
-
-    /// Applies the face to an already-sized tile node.
-    pub fn apply(&self, face_node: &mut EntityCommands, map_object: MapObject) {
-        match self {
-            Self::Image(image) => { face_node.insert(ImageNode::new(image.clone())); }
-            Self::Built(build) => build(face_node, map_object),
-            Self::None => {}
-        }
-    }
-}
-
 /// Callback that spawns a tile tooltip anchored to the supplied entity.
 pub type ObjectTooltipFn = fn(&mut Commands, Entity, MapObject);
 
-/// Face and optional tooltip used by a map object's side-menu tile.
+/// Optional side-menu behavior for a map object.
 #[derive(Clone)]
 pub struct ObjectPresentation {
-    pub face: ObjectFace,
     /// No tooltip is spawned when this is `None`.
     pub tooltip: Option<ObjectTooltipFn>,
 }
@@ -252,7 +220,7 @@ pub struct BuildingInfo {
     pub annotate: PlacementAnnotatorFn,
     pub sprite: Handle<Image>,
     pub top_sprite: Option<Handle<Image>>,
-    pub placement: PlacementChannel,
+    pub placement: PlacementModes,
     pub presentation: ObjectPresentation,
 }
 
@@ -263,7 +231,6 @@ impl From<&BuildingInfo> for ObjectPlacementInfo {
             validate: info.validate,
             annotate: info.annotate,
             placement: info.placement,
-            preview_image: Some(info.sprite.clone()),
         }
     }
 }
@@ -277,10 +244,9 @@ pub struct WallInfo {
     pub name: String,
     pub description: String,
     pub grid_imprint: GridImprint,
-    pub sprite: Handle<Image>,
     pub validate: PlacementValidatorFn,
     pub annotate: PlacementAnnotatorFn,
-    pub placement: PlacementChannel,
+    pub placement: PlacementModes,
     pub presentation: ObjectPresentation,
 }
 
@@ -291,7 +257,6 @@ impl From<&WallInfo> for ObjectPlacementInfo {
             validate: info.validate,
             annotate: info.annotate,
             placement: info.placement,
-            preview_image: Some(info.sprite.clone()),
         }
     }
 }
@@ -305,11 +270,10 @@ pub struct DarkOreInfo {
     pub name: String,
     pub description: String,
     pub grid_imprint: GridImprint,
-    pub sprite: Handle<Image>,
     pub max_field_saturation: u32,
     pub validate: PlacementValidatorFn,
     pub annotate: PlacementAnnotatorFn,
-    pub placement: PlacementChannel,
+    pub placement: PlacementModes,
     pub presentation: ObjectPresentation,
 }
 
@@ -320,7 +284,6 @@ impl From<&DarkOreInfo> for ObjectPlacementInfo {
             validate: info.validate,
             annotate: info.annotate,
             placement: info.placement,
-            preview_image: Some(info.sprite.clone()),
         }
     }
 }
@@ -338,7 +301,7 @@ pub struct QuantumFieldInfo {
     pub default_size: i32,
     pub validate: PlacementValidatorFn,
     pub annotate: PlacementAnnotatorFn,
-    pub placement: PlacementChannel,
+    pub placement: PlacementModes,
     pub presentation: ObjectPresentation,
 }
 
@@ -349,7 +312,6 @@ impl From<&QuantumFieldInfo> for ObjectPlacementInfo {
             validate: info.validate,
             annotate: info.annotate,
             placement: info.placement,
-            preview_image: None,
         }
     }
 }
@@ -371,7 +333,7 @@ pub struct WispInfo {
     pub grid_imprint: GridImprint,
     pub validate: PlacementValidatorFn,
     pub annotate: PlacementAnnotatorFn,
-    pub placement: PlacementChannel,
+    pub placement: PlacementModes,
     pub presentation: ObjectPresentation,
 }
 
@@ -382,7 +344,6 @@ impl From<&WispInfo> for ObjectPlacementInfo {
             validate: info.validate,
             annotate: info.annotate,
             placement: info.placement,
-            preview_image: None,
         }
     }
 }

@@ -1,153 +1,186 @@
 # Grid Object Placer System
 
-Architecture documentation for placing and removing grid-based objects (buildings, walls, wisps, quantum fields, etc.).
+Architecture and extension guide for placing and removing grid-based objects.
 
 ## Overview
 
-The placer system separates **what to place** (domain knowledge in Almanach) from **how to place** (UI/input handling in GridObjectPlacer). Domain modules own their placement/removal logic via observers.
+The placer owns input, cursor tracking, validation feedback, and placement-session state. Domain modules own object metadata, rendering, validation, and the final placement or removal operation.
 
-## Architecture Layers
+Communication between the placer and domains uses non-generic events carrying a `MapObject`. Domain observers match the variants they support.
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  Input Sources                                                  │
-│  - Keyboard shortcuts (keyboard_input_system)                   │
-│  - UI buttons (construction_menu, etc.)                         │
-│  └──> GridObjectPlacerRequest                                   │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  GridObjectPlacer (grids_internal/src/placement.rs)             │
-│  - Singleton entity with GridCoords, GridImprint, Sprite        │
-│  - Follows mouse cursor                                         │
-│  - Runs validation and shows color feedback                     │
-│  - Emits PlaceRequest<T>/RemoveRequest<T> on mouse clicks       │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  Domain Observers (walls.rs, buildings/common_systems.rs, etc.) │
-│  - Listen for their specific PlaceRequest<T>/RemoveRequest<T>   │
-│  - Pull coords/imprint from placer entity                       │
-│  - Execute final validation and spawn/despawn entities          │
-└─────────────────────────────────────────────────────────────────┘
+## Architecture
+
+```text
+Input source
+    |
+    | sets GridObjectPlacerRequest(MapObject)
+    v
+GridObjectPlacer
+    |- stores GridCoords, GridImprint, and PlacementStyle
+    |- renders the validity overlay
+    |- owns a child entity containing the object preview
+    |- emits BeginPlacing, PlaceRequest, RemoveRequest, and StopPlacing
+    v
+Domain observers
+    |- match their MapObject variant
+    |- attach UI or world faces
+    |- provide optional placement controls
+    |- validate and spawn or remove domain entities
 ```
 
-## Key Components
+The Almanach connects the two sides. It supplies a generic `ObjectPlacementInfo` for each `MapObject` while retaining domain-specific metadata such as costs, sprites, and configuration.
 
-### grids/src/placement.rs
-Generic events and data structures:
-- **`PlaceRequest<T>`** - Trigger event for placement
-- **`RemoveRequest<T>`** - Trigger event for removal
-- **`BeginPlacing<T>`** - Trigger event when placement mode activates for type T (used for domain setup UI, e.g., QuantumField size selector)
-- **`StopPlacing`** - Trigger event when placement exits or switches type (used for domain cleanup)
-- **`PlacementChannel`** - Bundles the three placement-channel events (`place` / `remove` / `begin` as `fn(&mut Commands)` pointers) plus `place_mode` / `remove_mode` for one marker type `T`. Built via `PlacementChannel::of::<T>()` (modes default to `OnRelease`); call `.with_modes(PlacementMode::OnPress)` for burst/drag placement. All three events are always wired — triggering an event with no observers is a no-op, so whether a type supports removal / begin-placing is determined by whether the domain registers an observer for `RemoveRequest<T>` / `BeginPlacing<T>`.
-- **`GridPlacerChanged`** - Event to trigger revalidation
-- **`GridPlacerOverridePropertyRequest`** - Event to modify placer properties at runtime: `OverrideImprint` changes the footprint (e.g., quantum field size); `OverrideStyle` changes the opaque variant index carried by the placer.
-- **`PlacementStyle`** - Opaque variant index for the active placement. The placer does not interpret it; the domain converts it into its own variant (e.g., a wall style). It resets to `0` when a placement session begins.
-- **`PlacementValidatorFn`** - Static function pointer for validation: `fn(MapObject, GridCoords, GridImprint, &GridsCollectionParam) -> PlacementValidity`
-- **`GridsCollectionParam`** - Read-only grid data bundle for validators (ObstacleGrid, EnergySupplyGrid, ReservedCoords)
-- **`PlacementMode`** - OnRelease (single click) vs OnPress (burst/drag mode)
-- **`ObjectPlacementInfo`** - Complete placement config extracted from Almanach
+## Placement Types
 
-### almanach/src/lib.rs
-Central metadata store:
-- **`Almanach::get_placement_info_for(MapObject)`** - Returns `ObjectPlacementInfo` for any placeable type
-- Each `*Info` struct stores domain data (name, costs, stats) and a placement validator function
-- `From<&*Info> for ObjectPlacementInfo` impls construct the generic placement config (channel, imprint, preview) from domain info
+The public placement types are defined in `grids/src/placement.rs`.
 
-### grids_internal/src/placement.rs
-UI controller:
-- **`GridObjectPlacerRequest`** - Resource to request placement mode activation
-- **`ActivePlacement`** - Current session data (MapObject + ObjectPlacementInfo)
-- **`GridObjectPlacer`** - Singleton component that:
-  - Tracks cursor position (GridCoords)
-  - Stores current footprint (GridImprint)
-  - Carries the active domain-owned variant (`PlacementStyle`)
-  - Shows validation feedback via sprite color
-  - Emits place/remove requests based on the channel's `place_mode` / `remove_mode`
+### Requests and session events
 
-## Data Flow
+- **`GridObjectPlacerRequest`** stores a pending `MapObject`. UI and keyboard input set this resource to start or switch placement.
+- **`BeginPlacing(MapObject)`** is emitted once after a new placement session has been initialized. Domains use it to create controls such as the wall style picker or quantum-field size selector.
+- **`StopPlacing`** is emitted when placement ends or switches to another object. Domain placement controls use it for cleanup.
+- **`PlaceRequest(MapObject)`** asks the matching domain to place the object at the current placer coordinates.
+- **`RemoveRequest(MapObject)`** asks the matching domain to remove an object at the current placer coordinates. A type supports removal only when its domain registers a matching observer.
+- **`GridPlacerChanged`** requests validation feedback to be recalculated.
+- **`GridPlacerOverridePropertyRequest`** changes the active `GridImprint` or opaque `PlacementStyle` value.
 
-### Activation
-1. Input sets `GridObjectPlacerRequest` with target `MapObject`
-2. `begin_placement` triggers `StopPlacing` (cleanup for previous type), extracts `ObjectPlacementInfo` from Almanach
-3. Emits `BeginPlacing<T>` (via `PlacementChannel::begin`) for domain setup (e.g., QuantumField spawns its size selector UI) — no-op if no observer is registered for `BeginPlacing<T>`
-4. Placer stores `ActivePlacement`, updates imprint, enters `UiInteraction::PlaceGridObject` state
+These events are deliberately non-generic. A domain observer filters them by matching the carried `MapObject`:
 
-### Validation (continuous while placing)
-1. Mouse movement triggers `follow_mouse_system` → `GridPlacerChanged`
-2. `revalidate_placement` runs validator with current coords/imprint/grids
-3. Sprite color updated
+```rust
+fn on_wall_place_request(
+    trigger: On<PlaceRequest>,
+    mut commands: Commands,
+    mut grids: GridsCollectionParam,
+    placer: Single<(&GridCoords, &GridImprint, &PlacementStyle), With<GridObjectPlacer>>,
+) {
+    let PlaceRequest(MapObject::Wall) = *trigger else { return };
+    let (coords, imprint, style) = placer.into_inner();
+    // Validate and place the wall.
+}
+```
 
-### Placement/Removal
-1. Mouse click detected in `handle_placement_click`
-2. Based on `place_mode` / `remove_mode` (OnPress vs OnRelease), emits `PlaceRequest<T>` or `RemoveRequest<T>`
-3. Domain observer (e.g., `on_wall_place_request_do_so`) receives event
-4. Observer reads coords/imprint from placer entity, performs final validation, spawns/despawns
+### Placement configuration
 
-## Adding a New Placeable Type
+`ObjectPlacementInfo` is the domain-independent configuration stored by the active placer:
 
-1. **Define marker type** in game_core (e.g., `pub struct NewThing;`)
+- `imprint: GridImprint`
+- `validate: PlacementValidatorFn`
+- `annotate: PlacementAnnotatorFn`
+- `placement: PlacementModes`
 
-2. **Add to MapObject enum** in game_core/src/types.rs
+`PlacementModes` controls when place and remove requests are emitted:
 
-3. **Create *Info struct** in almanach/src/lib.rs with domain data and a `validate: PlacementValidatorFn` field
+- `PlacementModes::default()` emits each request once when its mouse button is released.
+- `PlacementModes::on_press()` emits while the button is held, supporting drag placement and removal.
 
-4. **Implement `From<&NewThingInfo> for ObjectPlacementInfo`** to wire up the placement channel:
-   ```rust
-   impl From<&NewThingInfo> for ObjectPlacementInfo {
-       fn from(info: &NewThingInfo) -> Self {
-           Self {
-               imprint: info.grid_imprint,
-               validate: info.validate,
-               placement: info.placement,
-           }
-       }
-   }
-   ```
-   The `placement` field on `*Info` is set at registration time via `PlacementChannel::of::<NewThing>()` (defaults to `OnRelease` modes; append `.with_modes(PlacementMode::OnPress)` for burst/drag placement).
+`PlacementStyle(u32)` is an opaque domain-owned selection. The placer stores and forwards it without interpreting it. Walls, for example, convert it to `WallStyleKey`.
 
-5. **Add to `Almanach::get_placement_info_for()`** match arm
+`GridsCollectionParam` provides validators and placement handlers with the obstacle, energy-supply, reserved-coordinate, and wisp grids. `reserved_coords` is mutable so successful placement handlers can reserve their footprint.
 
-6. **Create domain observers** in the feature module:
-   ```rust
-   fn on_new_thing_place_request_do_so(
-       _trigger: On<PlaceRequest<NewThing>>,
-       mut commands: Commands,
-       placer: Single<(&GridObjectPlacer, &GridCoords, &GridImprint)>,
-       // ... other resources
-   ) {
-       let (gop, coords, imprint) = placer.into_inner();
-       let Some(active_placement) = &gop.active_placement else { return };
-       // Validate and spawn...
-   }
-   ```
+## Object Faces and the Placement Preview
 
-7. **Register in plugin's `build()`** using `AlmanachAppExt`:
-   ```rust
-   .register_new_things(NewThingInfo {
-       // ... domain data ...
-       placement: PlacementChannel::of::<NewThing>(),
-       // For burst/drag placement, use:
-       // placement: PlacementChannel::of::<NewThing>().with_modes(PlacementMode::OnPress),
-   })  // via AlmanachAppExt
-   .add_observer(on_new_thing_place_request_do_so)
-   .add_observer(on_new_thing_remove_request_do_so)  // if removable
-   ```
-   Whether the type supports removal / begin-placing is determined by whether you register an observer for `RemoveRequest<T>` / `BeginPlacing<T>` — `PlacementChannel::of::<T>()` always wires all three triggers, and events with no observers are no-ops.
+Object rendering is requested through `ObjectFaceRequest` in `game_core/src/display.rs`:
 
-## Runtime Property Override
+- `ObjectFaceRequest::ui(entity, object)` requests an opaque UI face.
+- `ObjectFaceRequest::world(entity, object)` requests an opaque world-space face.
+- `ObjectFaceRequest::ghost(entity, object)` requests a world-space face using `GHOST_ALPHA`.
 
-Some placeable types need runtime configuration. Use `OverrideImprint` for a footprint change (e.g., the QuantumField size selector):
+Each domain registers an `ObjectFaceRequest` observer and matches the `MapObject` variants it renders. `FaceSurface::Ui` attaches UI components such as `ImageNode` or `MaterialNode`; `FaceSurface::World` attaches world components such as `Sprite` or `MeshMaterial2d`.
+
+The target entity already carries any context required by the renderer. Placement ghosts carry the active `GridImprint` and `PlacementStyle`; a wall renderer reads the style, while world-space renderers use the imprint to size their output.
+
+The placer consists of two visual layers:
+
+1. The placer entity renders the validity overlay at `ZDepth::GRID_PLACER`.
+2. Its child renders the object preview at `ZDepth::GRID_PLACER_GHOST`.
+
+The preview is rebuilt when the object, imprint, or style changes. This lets each domain use its normal rendering implementation instead of reducing all previews to image handles.
+
+Side-menu placement tiles use the same protocol: the tile creates a sized face node and sends `ObjectFaceRequest::ui` for its `MapObject`.
+
+## Validation Feedback
+
+A placement validator returns one of:
+
+- `PlacementValidity::Valid`
+- `PlacementValidity::ValidUnpowered`
+- `PlacementValidity::Invalid`
+
+The enum discriminants match the `VALIDITY_*` constants in `assets/shaders/grid_placer.wgsl`.
+
+The annotator returns `(GridCoords, CellHighlight)` pairs for cells that need more specific feedback:
+
+- `CellHighlight::Negative` identifies cells blocking placement.
+- `CellHighlight::Positive` identifies beneficial cells, such as dark ore covered by a mining complex.
+
+`build_cell_data` packs the footprint and annotations into two bits per bounding-box cell. The shader uses this data to draw the footprint outline, invalid-cell hatching, and positive-cell frames. The object preview is rendered independently below the overlay.
+
+Validation runs when the cursor moves, when a session starts, and after an imprint or style override. Placement handlers validate again before changing the game world.
+
+## Placement Flow
+
+### Starting or switching placement
+
+1. Input stores a `MapObject` in `GridObjectPlacerRequest`.
+2. `begin_placement` emits `StopPlacing` if another object is active.
+3. It obtains `ObjectPlacementInfo` from the Almanach.
+4. It resets the active imprint and style, then stores `ActivePlacement`.
+5. It rebuilds the preview and emits `BeginPlacing` and `GridPlacerChanged`.
+6. It transitions to `UiInteraction::PlaceGridObject`; entering that state shows the placer.
+
+### Cursor and validation
+
+1. `follow_mouse_system` copies `MouseInfo::grid_coords` to the placer when the cursor changes cells.
+2. It emits `GridPlacerChanged`.
+3. `revalidate_placement` runs the active validator and annotator.
+4. It updates the overlay mesh when the imprint bounds change and uploads the new validity data.
+
+### Placement and removal
+
+1. `handle_placement_click` applies the active `PlacementModes` to the left and right mouse buttons.
+2. It emits `PlaceRequest(map_object)` or `RemoveRequest(map_object)`.
+3. Domain observers match the object variant.
+4. The matching observer reads the current placer state, performs final validation, and spawns or removes domain entities.
+
+### Ending placement
+
+Leaving `UiInteraction::PlaceGridObject` hides the placer, clears `ActivePlacement`, and emits `StopPlacing` so domain controls can remove themselves.
+
+## Runtime Overrides
+
+Use `OverrideImprint` when domain controls change the active footprint:
+
 ```rust
 commands.trigger(GridPlacerOverridePropertyRequest::OverrideImprint(new_imprint));
 ```
 
-Use `OverrideStyle` for a domain-owned variant. The generic placer stores only the index; the domain converts it when it handles placement (e.g., a wall turns it into a `WallStyleKey`):
+Use `OverrideStyle` for a domain-owned variant:
+
 ```rust
 commands.trigger(GridPlacerOverridePropertyRequest::OverrideStyle(style_index));
 ```
 
-Both variants trigger `GridPlacerChanged`, allowing consumers to revalidate or redraw the placement UI.
+Both overrides rebuild the object preview and emit `GridPlacerChanged`.
+
+## Adding a Placeable Object
+
+1. Add the object to `MapObject` in `game_core/src/types.rs`.
+2. Add or extend its Almanach info type with an imprint, validator, annotator, and `PlacementModes`.
+3. Implement conversion from the domain info to `ObjectPlacementInfo`.
+4. Add the object to `Almanach::get_placement_info_for` and `Almanach::presentation_for`.
+5. Register the metadata through `AlmanachAppExt` in the domain plugin.
+6. Register `PlaceRequest` and, if supported, `RemoveRequest` observers. Each observer must match the domain's `MapObject` variant before acting.
+7. Register an `ObjectFaceRequest` observer for the surfaces the object supports.
+8. If the object needs placement controls, observe `BeginPlacing` to create them and `StopPlacing` to remove them. Controls update the placer through `GridPlacerOverridePropertyRequest`.
+9. Add the object to the appropriate side-menu offering or fixed section.
+
+A minimal registration uses release-on-click placement:
+
+```rust
+placement: PlacementModes::default(),
+presentation: ObjectPresentation {
+    tooltip: Some(new_thing_tooltip),
+},
+```
+
+Use `PlacementModes::on_press()` for objects intended to be painted across the grid.

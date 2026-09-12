@@ -26,6 +26,32 @@ pub(crate) fn building_validator(map_object: MapObject, origin: GridCoords, impr
     PlacementValidity::Valid
 }
 
+/// Attaches a building image to a UI node or world entity.
+pub(crate) fn on_object_face_request_draw_building(
+    trigger: On<ObjectFaceRequest>,
+    mut commands: Commands,
+    almanach: Res<Almanach>,
+    grid_imprints: Query<&GridImprint>,
+) {
+    let ObjectFaceRequest { entity, object: MapObject::Building(building_type), surface, alpha } = *trigger else { return };
+    let building_info = almanach.get_building_info(building_type);
+
+    match surface {
+        FaceSurface::Ui => {
+            commands.entity(entity).insert(ImageNode::new(building_info.sprite.clone()).with_color(Color::WHITE.with_alpha(alpha)));
+        }
+        FaceSurface::World => {
+            let Ok(grid_imprint) = grid_imprints.get(entity) else { return };
+            commands.entity(entity).insert(Sprite {
+                image: building_info.sprite.clone(),
+                custom_size: Some(grid_imprint.world_size()),
+                color: Color::WHITE.with_alpha(alpha),
+                ..default()
+            });
+        }
+    }
+}
+
 /// Common placement logic helper for building's `PlaceRequest` observer.
 ///
 /// Two entry points:

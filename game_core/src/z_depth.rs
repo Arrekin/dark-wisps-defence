@@ -57,4 +57,7 @@ define_z_indexes!(
     PROJECTILE_UNDER,
     PROJECTILE,
     ABOVE_ALL,
+    // Keep the placement ghost above the map and its validity overlay above the ghost.
+    GRID_PLACER_GHOST,
+    GRID_PLACER,
 );

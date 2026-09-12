@@ -13,7 +13,7 @@ use game_core::prelude::*;
 use grids::{
     emissions::{EmissionsType, EmitterEnergy, FloodEmissionsDetails, FloodEmissionsEvaluator, FloodEmissionsMode},
     energy_supply::{GeneratorEnergy, SupplierEnergy},
-    placement::{annotate_non_empty, PlacementChannel, PlaceRequest},
+    placement::{annotate_non_empty, PlacementModes, PlaceRequest},
     prelude::ObstacleGridObject,
 };
 use logging::prelude::*;
@@ -94,9 +94,8 @@ impl BuilderMainBase {
             ]),
             validate: building_validator,
             annotate: annotate_non_empty,
-            placement: PlacementChannel::of::<MainBase>(),
+            placement: PlacementModes::default(),
             presentation: ObjectPresentation {
-                face: ObjectFace::Image(asset_server.load("buildings/main_base.png")),
                 tooltip: Some(building_tooltip),
             },
         }
@@ -157,11 +156,12 @@ impl BuilderMainBase {
 }
 
 fn on_main_base_place_request_do_so(
-    _trigger: On<PlaceRequest<MainBase>>,
+    trigger: On<PlaceRequest>,
     mut commands: Commands,
     mut placement: BuildingPlacementManager,
     main_base: Single<Entity, With<MainBase>>,
 ) {
+    let PlaceRequest(MapObject::Building(BuildingType::MainBase)) = *trigger else { return };
     let Some(coords) = placement.claim_free(BuildingType::MainBase) else { return };
     // Remove/Insert ObstacleGridObject to trigger grid reprint
     commands.entity(*main_base)

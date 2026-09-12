@@ -43,11 +43,7 @@ pub enum WispChargeAttack {
 
 pub const WISP_GRID_IMPRINT: GridImprint = GridImprint::Rectangle { width: 1, height: 1 };
 
-/// Requests a stationary wisp UI material on an already-sized node.
-#[derive(Component, Clone, Copy, Debug)]
-pub struct BuilderWispFace(pub WispType);
-
-/// Requests a side-menu tooltip for `wisp_type`, anchored to `anchor`.
+/// Spawns a side-menu tooltip for `wisp_type`, anchored to `anchor`.
 #[derive(Component, Clone, Copy, Debug)]
 pub struct BuilderWispSideMenuTooltip {
     pub anchor: Entity,
@@ -62,7 +58,6 @@ pub struct WispDied(pub Entity);
 pub mod prelude {
     pub use super::{
         WISP_GRID_IMPRINT,
-        BuilderWispFace,
         BuilderWispSideMenuTooltip,
         Wisp,
         WispChargeAttack,

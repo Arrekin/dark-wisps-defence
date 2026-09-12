@@ -11,7 +11,7 @@ use alteration::{
 use almanach::prelude::*;
 use buildings::prelude::*;
 use game_core::{math::angle_difference, prelude::*};
-use grids::placement::{annotate_non_empty, PlacementChannel, PlaceRequest};
+use grids::placement::{annotate_non_empty, PlacementModes, PlaceRequest};
 use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
 use logging::prelude::*;
 use persistence::{
@@ -71,9 +71,8 @@ impl BuilderTowerRocketLauncher {
             ]),
             validate: building_validator,
             annotate: annotate_non_empty,
-            placement: PlacementChannel::of::<TowerRocketLauncher>(),
+            placement: PlacementModes::default(),
             presentation: ObjectPresentation {
-                face: ObjectFace::Image(asset_server.load("buildings/tower_rocket_launcher.png")),
                 tooltip: Some(building_tooltip),
             },
         }
@@ -171,10 +170,11 @@ impl BuilderTowerRocketLauncher {
 }
 
 fn on_tower_rocket_launcher_place_request_do_so(
-    _trigger: On<PlaceRequest<TowerRocketLauncher>>,
+    trigger: On<PlaceRequest>,
     mut commands: Commands,
     mut placement: BuildingPlacementManager,
 ) {
+    let PlaceRequest(MapObject::Building(BuildingType::Tower(TowerType::RocketLauncher))) = *trigger else { return };
     let Some(coords) = placement.claim(BuildingType::Tower(TowerType::RocketLauncher)) else { return };
     commands.spawn(BuilderTowerRocketLauncher::new(coords));
 }

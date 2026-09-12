@@ -1,7 +1,7 @@
 #import bevy_sprite::mesh2d_vertex_output::VertexOutput
 #import dwd::core::{CELL_SIZE, grid_contains, grid_index}
 #import dwd::map_light::MAP_SUN_GROUND_DIRECTION
-#import dwd::wall_style::{WallStyle, LIGHT_PROBE, eroded_distance, plate_noise, wall_shading}
+#import dwd::walls::{WallStyle, LIGHT_PROBE, eroded_distance, plate_noise, wall_shading}
 
 // Draws all walls in one pass over a quad covering the map grid. Each cell stores zero for open
 // ground or a one-based index into the style buffer.
@@ -11,7 +11,7 @@
 // shadows can extend beyond wall cells. Different wall styles form hard boundaries.
 //
 // The distance field has no stored normal, so lighting estimates edge facing with a finite
-// difference along the shared map-sun direction. Surface layers are defined in `dwd::wall_style`.
+// difference along the shared map-sun direction. Surface layers are defined in `dwd::walls`.
 
 // Field order and types mirror `WallCanvasSettings` in wall_canvas.rs.
 struct WallCanvasSettings {

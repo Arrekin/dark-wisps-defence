@@ -1,4 +1,4 @@
-#define_import_path dwd::dark_ore_crystals
+#define_import_path dwd::dark_ore
 #import dwd::core::TAU
 #import dwd::gradient_noise::dwd_gradient_fbm_2d
 #import dwd::hash::{DWD_HASH_GOLDEN, dwd_hash_coords, dwd_hash_mix, dwd_hash_unit}
@@ -253,6 +253,35 @@ fn ore_inset(world: vec2<f32>) -> f32 {
     let coarse = noise_blend(dwd_gradient_fbm_2d(world / INSET_SCALE, 3), 3, INSET_GAIN);
     let fine = noise_blend(dwd_gradient_fbm_2d(world / INSET_FINE_SCALE + vec2<f32>(11.3, 57.8), 2), 2, INSET_GAIN);
     return INSET_BASE + coarse * INSET_AMOUNT + fine * INSET_FINE_AMOUNT;
+}
+
+// --------------------------------------------------------------------------------------------
+// Deposit outline
+// --------------------------------------------------------------------------------------------
+
+// Outer-corner radius in cell units; 0.5 makes an isolated cell circular.
+const CORNER_ROUND: f32 = 0.45;
+
+// Continuous rounded-corner distance from the distances to its two incident cell edges.
+fn rounded_corner(a: f32, b: f32) -> f32 {
+    if a >= CORNER_ROUND || b >= CORNER_ROUND {
+        return min(a, b);
+    }
+    return CORNER_ROUND - length(vec2<f32>(CORNER_ROUND - a, CORNER_ROUND - b));
+}
+
+// Distance in cell units to the edge of a deposit one cell across, every side exposed. `p` is the
+// position inside the cell, in [-0.5, 0.5] on both axes.
+fn single_cell_distance(p: vec2<f32>) -> f32 {
+    let toward_positive = vec2<f32>(0.5) - p;
+    let toward_negative = vec2<f32>(0.5) + p;
+
+    var best = min(min(toward_positive.x, toward_negative.x), min(toward_positive.y, toward_negative.y));
+    best = min(best, rounded_corner(toward_positive.x, toward_positive.y));
+    best = min(best, rounded_corner(toward_positive.x, toward_negative.y));
+    best = min(best, rounded_corner(toward_negative.x, toward_positive.y));
+    best = min(best, rounded_corner(toward_negative.x, toward_negative.y));
+    return best;
 }
 
 // --------------------------------------------------------------------------------------------

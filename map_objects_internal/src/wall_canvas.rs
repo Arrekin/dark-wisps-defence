@@ -21,7 +21,7 @@ pub(crate) struct WallCanvasPlugin;
 impl Plugin for WallCanvasPlugin {
     fn build(&self, app: &mut App) {
         app
-            .register_shader_library("shaders/wall_style.wgsl")
+            .register_shader_library("shaders/walls/look.wgsl")
             .add_plugins(Material2dPlugin::<WallCanvasMaterial>::default())
             .init_resource::<WallCanvasRebuildRequested>()
             .init_resource::<WallCanvasDebug>()
@@ -39,7 +39,7 @@ impl Plugin for WallCanvasPlugin {
     }
 }
 
-/// Field order and types mirror `WallCanvasSettings` in `assets/shaders/wall_canvas.wgsl`.
+/// Field order and types mirror `WallCanvasSettings` in `assets/shaders/walls/canvas.wgsl`.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, ShaderType, Default)]
 struct WallCanvasSettings {
@@ -65,7 +65,7 @@ struct WallCanvasMaterial {
 }
 impl Material2d for WallCanvasMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/wall_canvas.wgsl".into()
+        "shaders/walls/canvas.wgsl".into()
     }
 
     fn alpha_mode(&self) -> AlphaMode2d {

@@ -1,9 +1,9 @@
 use bevy::prelude::*;
 
 use almanach::prelude::AlmanachAppExt;
-use almanach::{Almanach, DarkOreInfo, ObjectFace, ObjectPresentation};
+use almanach::{Almanach, DarkOreInfo, ObjectPresentation};
 use game_core::prelude::{GridCoords, GridImprint, MapObject, SSS};
-use grids::placement::{annotate_non_empty, GridObjectPlacer, GridsCollectionParam, PlacementChannel, PlacementMode, PlacementValidity, PlaceRequest, RemoveRequest, validator_all_empty};
+use grids::placement::{annotate_non_empty, GridObjectPlacer, GridsCollectionParam, PlacementModes, PlacementValidity, PlaceRequest, RemoveRequest, validator_all_empty};
 use grids::prelude::ObstacleGrid;
 use hud::prelude::BuilderSideMenuItemTooltip;
 use logging::prelude::*;
@@ -18,7 +18,6 @@ use states::prelude::MapLoadingStage;
 pub struct DarkOrePlugin;
 impl Plugin for DarkOrePlugin {
     fn build(&self, app: &mut App) {
-        let almanach_info = BuilderDarkOre::almanach_info(app.world().resource::<AssetServer>());
         app
             .add_systems(Update, remove_empty)
             .add_observer(BuilderDarkOre::on_builder_add_spawn_dark_ore)
@@ -30,7 +29,7 @@ impl Plugin for DarkOrePlugin {
             .add_observer(on_builder_add_spawn_dark_ore_tooltip)
             .add_systems(CollectSave, collect_dark_ores)
             .register_loader(MapLoadingStage::SpawnMapElements, "dark_ores", load_dark_ores)
-            .register_dark_ore(almanach_info)
+            .register_dark_ore(BuilderDarkOre::almanach_info())
             ;
     }
 }
@@ -45,18 +44,16 @@ pub(crate) struct BuilderDarkOre {
     pub amount: u32,
 }
 impl BuilderDarkOre {
-    pub fn almanach_info(asset_server: &AssetServer) -> DarkOreInfo {
+    pub fn almanach_info() -> DarkOreInfo {
         DarkOreInfo {
             name: "Dark Ore".to_string(),
             description: "A deposit of dark ore. A mining complex in range extracts it over time.".to_string(),
             grid_imprint: DARK_ORE_GRID_IMPRINT,
-            sprite: asset_server.load("map_objects/dark_ore_1.png"),
             max_field_saturation: 1000,
             validate: validator_all_empty,
             annotate: annotate_non_empty,
-            placement: PlacementChannel::of::<DarkOre>().with_modes(PlacementMode::OnPress),
+            placement: PlacementModes::on_press(),
             presentation: ObjectPresentation {
-                face: ObjectFace::Image(asset_server.load("map_objects/dark_ore_1.png")),
                 tooltip: Some(dark_ore_tooltip),
             },
         }
@@ -144,12 +141,13 @@ fn remove_empty(
 }
 
 fn on_dark_ore_place_request_do_so(
-    _trigger: On<PlaceRequest<DarkOre>>,
+    trigger: On<PlaceRequest>,
     mut commands: Commands,
     almanach: Res<Almanach>,
     mut grids: GridsCollectionParam,
     placer: Single<(&GridCoords, &GridImprint), With<GridObjectPlacer>>,
 ) {
+    let PlaceRequest(MapObject::DarkOre) = *trigger else { return };
     let (coords, grid_imprint) = placer.into_inner();
     let validity = {
         (almanach.dark_ore.validate)(MapObject::DarkOre, *coords, *grid_imprint, &grids)
@@ -160,11 +158,12 @@ fn on_dark_ore_place_request_do_so(
 }
 
 fn on_dark_ore_remove_request_do_so(
-    _trigger: On<RemoveRequest<DarkOre>>,
+    trigger: On<RemoveRequest>,
     mut commands: Commands,
     grids: GridsCollectionParam,
     placer: Single<&GridCoords, With<GridObjectPlacer>>,
 ) {
+    let RemoveRequest(MapObject::DarkOre) = *trigger else { return };
     let coords = placer.into_inner();
     if let Some(entity) = grids.obstacle_grid[*coords].dark_ore {
         commands.entity(entity).despawn();

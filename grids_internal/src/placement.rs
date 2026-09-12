@@ -7,12 +7,8 @@ use bevy::{
 };
 
 use almanach::prelude::Almanach;
-use game_core::prelude::{Bounds, BuildingType, CELL_SIZE, GridCoords, GridImprint, MapObject, TowerType};
-use grids::placement::{
-    ActivePlacement, CellHighlight, GridObjectPlacer, GridObjectPlacerRequest, GridPlacerChanged,
-    GridPlacerOverridePropertyRequest, GridsCollectionParam, PlacementMode, PlacementStyle,
-    PlacementValidity, StartPlacing, StopPlacing,
-};
+use game_core::prelude::{Bounds, BuildingType, CELL_SIZE, GridCoords, GridImprint, MapObject, ObjectFaceRequest, TowerType, ZDepth};
+use grids::placement::*;
 use states::prelude::UiInteraction;
 use viewport::MouseInfo;
 
@@ -35,6 +31,7 @@ impl Plugin for GridObjectPlacerPlugin {
             .add_systems(OnExit(UiInteraction::PlaceGridObject), hide_placer)
             .add_observer(revalidate_placement)
             .add_observer(on_modify_apply_placer_override)
+            .add_observer(on_ghost_stale_respawn_ghost)
             ;
     }
 }
@@ -45,15 +42,17 @@ impl Plugin for GridObjectPlacerPlugin {
 
 #[derive(ShaderType, Clone, Debug, Default)]
 struct GridPlacerUniform {
-    base_color: Vec4,
-    cell_data: UVec4,  // 2 bits/cell: 0=inactive, 1=active, 2=highlighted
+    cell_data: UVec4,
     cell_columns: u32,
     cell_rows: u32,
-    use_texture: u32,
+    /// One of the `VALIDITY_*` constants in `assets/shaders/grid_placer.wgsl`.
+    validity: u32,
 }
 impl GridPlacerUniform {
-    fn set_bounds(&mut self, bounds: Bounds) {
-        (self.cell_columns, self.cell_rows) = bounds.as_u32();
+    /// Updates the grid dimensions and clears all packed cell states.
+    fn reset_to_imprint(&mut self, imprint: GridImprint) {
+        (self.cell_columns, self.cell_rows) = Bounds::from(imprint).as_u32();
+        self.cell_data = UVec4::ZERO;
     }
     fn bounds_match(&self, bounds: Bounds) -> bool {
         (self.cell_columns, self.cell_rows) == bounds.as_u32()
@@ -65,9 +64,6 @@ impl GridPlacerUniform {
 pub(crate) struct GridPlacerMaterial {
     #[uniform(0)]
     uniform: GridPlacerUniform,
-    #[texture(1)]
-    #[sampler(2)]
-    preview_texture: Option<Handle<Image>>,
 }
 impl Material2d for GridPlacerMaterial {
     fn fragment_shader() -> ShaderRef {
@@ -78,14 +74,8 @@ impl Material2d for GridPlacerMaterial {
     }
 }
 
-fn update_material_imprint(material: &mut GridPlacerMaterial, imprint: GridImprint) {
-    material.uniform.set_bounds(Bounds::from(imprint));
-    material.uniform.cell_data = UVec4::ZERO;
-}
-
-/// Builds the packed cell_data for the shader from the imprint shape and annotations.
-/// 2 bits per cell (up to 64 cells): 0=inactive, 1=active, 2=highlighted.
-/// Annotated cells (positive or negative) map to state 2. The base_color already encodes validity.
+/// Packs the imprint shape and its annotations two bits per cell, up to 64 cells. The values are
+/// the `CELL_*` constants in `assets/shaders/grid_placer.wgsl`.
 fn build_cell_data(imprint: GridImprint, origin: GridCoords, annotations: &[(GridCoords, CellHighlight)]) -> UVec4 {
     let imprint_bounds = Bounds::from(imprint);
     let mut words = [0u32; 4];
@@ -94,7 +84,11 @@ fn build_cell_data(imprint: GridImprint, origin: GridCoords, annotations: &[(Gri
 
         let cell_coords = origin.shifted(local_coords.into());
         let state: u32 = if imprint.covers_coords(origin, cell_coords) {
-            if annotations.iter().any(|(c, _)| *c == cell_coords) { 2 } else { 1 }
+            match annotations.iter().find(|(coords, _)| *coords == cell_coords) {
+                Some((_, CellHighlight::Negative)) => 2,
+                Some((_, CellHighlight::Positive)) => 3,
+                None => 1,
+            }
         } else {
             0
         };
@@ -134,7 +128,34 @@ fn on_modify_apply_placer_override(
             placement_style.0 = style;
         }
     }
+
+    commands.trigger(PlacementGhostStale);
     commands.trigger(GridPlacerChanged);
+}
+
+/// Signals that the placement ghost must be rebuilt after its object, imprint, or style changes.
+#[derive(Event)]
+struct PlacementGhostStale;
+
+/// Replaces the placer's ghost child and requests its world-space face.
+///
+/// The ghost carries the current imprint and style required by domain renderers. This assumes the
+/// ghost is the placer's only child.
+fn on_ghost_stale_respawn_ghost(
+    _trigger: On<PlacementGhostStale>,
+    mut commands: Commands,
+    placer: Single<(Entity, &GridObjectPlacer, &GridImprint, &PlacementStyle)>,
+) {
+    let (placer_entity, grid_object_placer, grid_imprint, placement_style) = placer.into_inner();
+    let mut placer_commands = commands.entity(placer_entity);
+    placer_commands.despawn_children();
+
+    let Some(map_object) = grid_object_placer.map_object() else { return };
+    placer_commands.with_children(|placer| {
+        placer
+            .spawn((ZDepth::GRID_PLACER_GHOST, *grid_imprint, *placement_style))
+            .trigger(|ghost| ObjectFaceRequest::ghost(ghost, map_object));
+    });
 }
 
 fn revalidate_placement(
@@ -152,24 +173,13 @@ fn revalidate_placement(
     let imprint_bounds = Bounds::from(*grid_imprint);
     if !material.uniform.bounds_match(imprint_bounds) {
         commands.entity(placer_entity).insert(Mesh2d(meshes.add(Rectangle::from_size(grid_imprint.world_size()))));
-        update_material_imprint(&mut material, *grid_imprint);
-    }
-
-    let new_preview = active_placement.placement_info.preview_image.clone();
-    if material.preview_texture != new_preview {
-        material.uniform.use_texture = if new_preview.is_some() { 1 } else { 0 };
-        material.preview_texture = new_preview;
+        material.uniform.reset_to_imprint(*grid_imprint);
     }
 
     let validity = (active_placement.placement_info.validate)(active_placement.map_object, *grid_coords, *grid_imprint, &grids);
     let annotations = (active_placement.placement_info.annotate)(active_placement.map_object, *grid_coords, *grid_imprint, validity, &grids);
 
-    let base = match validity {
-        PlacementValidity::Valid          => LinearRgba::new(0.0, 1.0, 0.0, 0.2),
-        PlacementValidity::ValidUnpowered => LinearRgba::new(1.0, 1.0, 0.0, 0.2),
-        PlacementValidity::Invalid        => LinearRgba::new(1.0, 0.0, 0.0, 0.2),
-    };
-    material.uniform.base_color = Vec4::new(base.red, base.green, base.blue, base.alpha);
+    material.uniform.validity = validity.shader_index();
     material.uniform.cell_data = build_cell_data(*grid_imprint, *grid_coords, &annotations);
 }
 
@@ -248,14 +258,13 @@ fn begin_placement(
     *grid_imprint = placement_info.imprint;
     *placement_style = PlacementStyle::default();
 
-    let begin_for_domain = placement_info.placement.begin;
     grid_object_placer.active_placement = Some(ActivePlacement { map_object, placement_info });
-    (*ui_interaction_state).set_if_neq(UiInteraction::PlaceGridObject);
 
-    // General before specialized, so an observer of either sees the session already open.
-    commands.trigger(StartPlacing);
-    begin_for_domain(&mut commands);
+    commands.trigger(PlacementGhostStale);
+    commands.trigger(BeginPlacing(map_object));
     commands.trigger(GridPlacerChanged);
+
+    (*ui_interaction_state).set_if_neq(UiInteraction::PlaceGridObject);
 }
 
 fn handle_placement_click(
@@ -267,19 +276,20 @@ fn handle_placement_click(
     if mouse_info.is_over_ui { return; }
 
     let Some(ref active_placement) = placer.active_placement else { return };
+    let map_object = active_placement.map_object;
 
-    let should_place = match active_placement.placement_info.placement.place_mode {
+    let should_place = match active_placement.placement_info.placement.place {
         PlacementMode::OnRelease => mouse.just_released(MouseButton::Left),
         PlacementMode::OnPress => mouse.pressed(MouseButton::Left),
     };
-    let should_remove = match active_placement.placement_info.placement.remove_mode {
+    let should_remove = match active_placement.placement_info.placement.remove {
         PlacementMode::OnRelease => mouse.just_released(MouseButton::Right),
         PlacementMode::OnPress => mouse.pressed(MouseButton::Right),
     };
 
     if should_place {
-        (active_placement.placement_info.placement.place)(&mut commands);
+        commands.trigger(PlaceRequest(map_object));
     } else if should_remove {
-        (active_placement.placement_info.placement.remove)(&mut commands);
+        commands.trigger(RemoveRequest(map_object));
     }
 }

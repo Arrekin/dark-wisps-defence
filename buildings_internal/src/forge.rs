@@ -19,7 +19,7 @@ use alteration::{
 use almanach::prelude::*;
 use buildings::prelude::*;
 use game_core::prelude::*;
-use grids::placement::{annotate_non_empty, PlacementChannel, PlaceRequest};
+use grids::placement::{annotate_non_empty, PlacementModes, PlaceRequest};
 use hud::prelude::*;
 use logging::prelude::*;
 use persistence::{
@@ -224,9 +224,8 @@ impl BuilderForge {
             baseline: HashMap::from([(ModifierType::MaxIntegrityPoints, 100.)]),
             validate: building_validator,
             annotate: annotate_non_empty,
-            placement: PlacementChannel::of::<Forge>(),
+            placement: PlacementModes::default(),
             presentation: ObjectPresentation {
-                face: ObjectFace::Image(asset_server.load("buildings/forge.png")),
                 tooltip: Some(building_tooltip),
             },
         }
@@ -296,10 +295,11 @@ impl BuilderForge {
 }
 
 fn on_forge_place_request_do_so(
-    _trigger: On<PlaceRequest<Forge>>,
+    trigger: On<PlaceRequest>,
     mut commands: Commands,
     mut placement: BuildingPlacementManager,
 ) {
+    let PlaceRequest(MapObject::Building(BuildingType::Forge)) = *trigger else { return };
     let Some(coords) = placement.claim(BuildingType::Forge) else { return };
     commands.spawn(BuilderForge::new(coords));
 }

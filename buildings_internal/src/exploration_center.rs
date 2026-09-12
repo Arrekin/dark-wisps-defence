@@ -32,7 +32,7 @@ use alteration::{
 use almanach::prelude::*;
 use buildings::prelude::*;
 use game_core::prelude::*;
-use grids::placement::{annotate_non_empty, PlacementChannel, PlaceRequest};
+use grids::placement::{annotate_non_empty, PlacementModes, PlaceRequest};
 use hud::prelude::*;
 use logging::prelude::*;
 use map_objects::prelude::*;
@@ -124,9 +124,8 @@ impl BuilderExplorationCenter {
             baseline: HashMap::from([(ModifierType::MaxIntegrityPoints, 100.)]),
             validate: building_validator,
             annotate: annotate_non_empty,
-            placement: PlacementChannel::of::<ExplorationCenter>(),
+            placement: PlacementModes::default(),
             presentation: ObjectPresentation {
-                face: ObjectFace::Image(asset_server.load("buildings/exploration_center.png")),
                 tooltip: Some(building_tooltip),
             },
         }
@@ -193,10 +192,11 @@ impl BuilderExplorationCenter {
 }
 
 fn on_exploration_center_place_request_do_so(
-    _trigger: On<PlaceRequest<ExplorationCenter>>,
+    trigger: On<PlaceRequest>,
     mut commands: Commands,
     mut placement: BuildingPlacementManager,
 ) {
+    let PlaceRequest(MapObject::Building(BuildingType::ExplorationCenter)) = *trigger else { return };
     let Some(coords) = placement.claim(BuildingType::ExplorationCenter) else { return };
     commands.spawn(BuilderExplorationCenter::new(coords));
 }

@@ -1,4 +1,5 @@
-#define_import_path dwd::wall_style
+#define_import_path dwd::walls
+#import dwd::core::CELL_SIZE
 #import dwd::gradient_noise::dwd_gradient_fbm_2d
 
 // Binding-free wall style layout and shading functions. Callers own their material bindings, so the
@@ -38,6 +39,13 @@ const BODY_LIGHT: f32 = 0.10;
 const MIN_EDGE_TEXELS: f32 = 1.2;
 // Facing-probe distance in world pixels; also controls mitre smoothing width.
 const LIGHT_PROBE: f32 = 2.0;
+
+// Signed distance in world pixels to one isolated cell's box, positive inside.
+// Used where a single cell is drawn without the canvas's neighbor-derived field.
+fn single_cell_distance(world: vec2<f32>) -> f32 {
+    let from_centre = abs(world - vec2<f32>(CELL_SIZE * 0.5));
+    return CELL_SIZE * 0.5 - max(from_centre.x, from_centre.y);
+}
 // Body variation is exposed separately for the canvas noise diagnostic.
 fn plate_noise(world: vec2<f32>, style: WallStyle) -> f32 {
     return dwd_gradient_fbm_2d(world / max(style.surface.plate_noise_scale, 0.0001), 4);

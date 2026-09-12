@@ -1,6 +1,6 @@
 #import bevy_sprite::mesh2d_vertex_output::VertexOutput
 #import dwd::core::{CELL_SIZE, grid_contains, grid_index}
-#import dwd::dark_ore_crystals::{dark_ore_shading, ore_inset}
+#import dwd::dark_ore::{dark_ore_shading, ore_inset, rounded_corner}
 
 // Draws all dark ore in one pass over a quad covering the map grid. Each storage-buffer value is
 // both an occupancy mask (`fill > 0`) and a normalized ore amount.
@@ -24,9 +24,6 @@ struct DarkOreCanvasSettings {
 
 // Maximum distance in cell coordinates (0.5 is half a cell width). Deeper interior is flat.
 const DISTANCE_CAP: f32 = 0.5;
-
-// Outer-corner radius in cell units; 0.5 makes an isolated cell circular.
-const CORNER_ROUND: f32 = 0.45;
 
 fn cell_fill(coords: vec2<i32>) -> f32 {
     // Out of bounds reads as open ground, so map borders get an edge like any other.
@@ -77,14 +74,6 @@ fn dark_ore_distance(coords: vec2<i32>, p: vec2<f32>) -> f32 {
     if open_nx && open_ny { best = min(best, rounded_corner(toward_negative.x, toward_negative.y)); }
 
     return best;
-}
-
-// Continuous rounded-corner distance from the distances to its two incident cell edges.
-fn rounded_corner(a: f32, b: f32) -> f32 {
-    if a >= CORNER_ROUND || b >= CORNER_ROUND {
-        return min(a, b);
-    }
-    return CORNER_ROUND - length(vec2<f32>(CORNER_ROUND - a, CORNER_ROUND - b));
 }
 
 // Mask-weighted bilinear interpolation between cell centers. Empty cells contribute no weight, so

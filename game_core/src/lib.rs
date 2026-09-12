@@ -18,7 +18,7 @@ pub mod prelude {
     pub use lib_derive::{FromEntity, MomentKind, Property, SSS};
 
     pub use crate::components::{ContentId, DisabledByPlayer, FieldAffectable, IntegrityPoints, IsOperational, IsPowered, MapBound, NeedsPower};
-    pub use crate::display::{DisplayDescription, DisplayIcon, DisplayIconSwitcher, DisplayName, DisplayOrder};
+    pub use crate::display::{DisplayDescription, DisplayIcon, DisplayIconSwitcher, DisplayName, DisplayOrder, FaceSurface, GHOST_ALPHA, ObjectFaceRequest};
     pub use crate::events::{DamageMessage, TechnicalChange, TechnicalStateChanged};
     pub use crate::grid::{ALL_DIRECTIONS, Bounds, CARDINAL_DIRECTIONS, CELL_SIZE, GridCoords, GridImprint, MapInfo};
     pub use crate::moments::{

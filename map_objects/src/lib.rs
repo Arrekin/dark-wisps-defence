@@ -12,7 +12,7 @@ pub struct DarkOre {
     pub amount: i32,
 }
 
-/// Requests a dark-ore tooltip anchored to the contained tile entity.
+/// Spawns a dark-ore tooltip anchored to the contained tile entity.
 #[derive(Component, Clone, Copy, Debug)]
 pub struct BuilderDarkOreSideMenuTooltip(pub Entity);
 
@@ -21,19 +21,11 @@ pub struct BuilderDarkOreSideMenuTooltip(pub Entity);
 #[require(MapBound, ObstacleGridObject = ObstacleGridObject::Wall, EmissionsGridSpreadAffector)]
 pub struct Wall;
 
-/// Requests the wall UI material on an already-sized node.
-#[derive(Component, Clone, Copy, Debug, Default)]
-pub struct BuilderWallFace;
-
-/// Requests a wall tooltip anchored to the contained tile entity.
+/// Spawns a wall tooltip anchored to the contained tile entity.
 #[derive(Component, Clone, Copy, Debug)]
 pub struct BuilderWallSideMenuTooltip(pub Entity);
 
-/// Requests the quantum-field UI material on an already-sized node.
-#[derive(Component, Clone, Copy, Debug, Default)]
-pub struct BuilderQuantumFieldFace;
-
-/// Requests a quantum-field tooltip anchored to the contained tile entity.
+/// Spawns a quantum-field tooltip anchored to the contained tile entity.
 #[derive(Component, Clone, Copy, Debug)]
 pub struct BuilderQuantumFieldSideMenuTooltip(pub Entity);
 
@@ -86,9 +78,7 @@ pub struct DarkOreAreaScanner {
 pub mod prelude {
     pub use super::{
         BuilderDarkOreSideMenuTooltip,
-        BuilderQuantumFieldFace,
         BuilderQuantumFieldSideMenuTooltip,
-        BuilderWallFace,
         BuilderWallSideMenuTooltip,
         DarkOre, DarkOreAreaScanner, DarkOreInRange,
         ExpeditionZone,

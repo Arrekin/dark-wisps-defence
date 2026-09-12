@@ -7,7 +7,7 @@ use grids::{AutoGridTransformSync, prelude::{GridVersion, ObstacleGridObject}};
 #[derive(Component, Default)]
 pub struct Tower;
 
-/// Requests a side-menu tooltip for `building_type`, anchored to `anchor`.
+/// Spawns a side-menu tooltip for `building_type`, anchored to `anchor`.
 #[derive(Component, Clone, Copy, Debug)]
 pub struct BuilderBuildingSideMenuTooltip {
     pub anchor: Entity,

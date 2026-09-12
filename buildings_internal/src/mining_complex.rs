@@ -11,7 +11,7 @@ use alteration::{
 use almanach::prelude::*;
 use buildings::prelude::*;
 use game_core::prelude::*;
-use grids::placement::{CellHighlight, GridsCollectionParam, PlacementChannel, PlacementValidity, PlaceRequest};
+use grids::placement::{CellHighlight, GridsCollectionParam, PlacementModes, PlacementValidity, PlaceRequest};
 use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
 use logging::prelude::*;
 use map_objects::{
@@ -111,9 +111,8 @@ impl BuilderMiningComplex {
             baseline: HashMap::from([(ModifierType::MaxIntegrityPoints, 100.)]),
             validate: mining_complex_validator,
             annotate: mining_complex_annotator,
-            placement: PlacementChannel::of::<MiningComplex>(),
+            placement: PlacementModes::default(),
             presentation: ObjectPresentation {
-                face: ObjectFace::Image(asset_server.load("buildings/mining_complex.png")),
                 tooltip: Some(building_tooltip),
             },
         }
@@ -183,10 +182,11 @@ impl BuilderMiningComplex {
 }
 
 fn on_mining_complex_place_request_do_so(
-    _trigger: On<PlaceRequest<MiningComplex>>,
+    trigger: On<PlaceRequest>,
     mut commands: Commands,
     mut placement: BuildingPlacementManager,
 ) {
+    let PlaceRequest(MapObject::Building(BuildingType::MiningComplex)) = *trigger else { return };
     let Some(coords) = placement.claim(BuildingType::MiningComplex) else { return };
     commands.spawn(BuilderMiningComplex::new(coords));
 }

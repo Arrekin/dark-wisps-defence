@@ -13,7 +13,7 @@ use game_core::prelude::*;
 use grids::{
     emissions::{EmissionsType, EmitterEnergy, FloodEmissionsDetails, FloodEmissionsEvaluator, FloodEmissionsMode},
     energy_supply::SupplierEnergy,
-    placement::{annotate_non_empty, PlacementChannel, PlaceRequest},
+    placement::{annotate_non_empty, PlacementModes, PlaceRequest},
 };
 use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
 use logging::prelude::*;
@@ -66,9 +66,8 @@ impl BuilderEnergyRelay {
             ]),
             validate: building_validator,
             annotate: annotate_non_empty,
-            placement: PlacementChannel::of::<EnergyRelay>(),
+            placement: PlacementModes::default(),
             presentation: ObjectPresentation {
-                face: ObjectFace::Image(asset_server.load("buildings/energy_relay.png")),
                 tooltip: Some(building_tooltip),
             },
         }
@@ -145,10 +144,11 @@ impl BuilderEnergyRelay {
 }
 
 fn on_energy_relay_place_request_do_so(
-    _trigger: On<PlaceRequest<EnergyRelay>>,
+    trigger: On<PlaceRequest>,
     mut commands: Commands,
     mut placement: BuildingPlacementManager,
 ) {
+    let PlaceRequest(MapObject::Building(BuildingType::EnergyRelay)) = *trigger else { return };
     let Some(coords) = placement.claim(BuildingType::EnergyRelay) else { return };
     commands.spawn(BuilderEnergyRelay::new(coords));
 }

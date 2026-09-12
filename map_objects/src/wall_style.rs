@@ -22,7 +22,7 @@ pub struct WallStyleSurface {
 }
 
 /// GPU-side parameter set for wall shaders. Field order and types mirror the
-/// `WallStyle` struct in `assets/shaders/wall_style.wgsl` exactly; [`ShaderType`] supplies
+/// `WallStyle` struct in `assets/shaders/walls/look.wgsl` exactly; [`ShaderType`] supplies
 /// the matching storage-buffer layout.
 #[derive(ShaderType, Clone, Copy, Debug)]
 pub struct WallStyle {
@@ -138,10 +138,15 @@ impl WallStyles {
         self.entries.get(key.0 as usize).map(|entry| entry.name.as_str())
     }
 
+    /// The style drawn for `key`.
+    pub fn style_of(&self, key: WallStyleKey) -> Option<&WallStyle> {
+        self.entries.get(key.0 as usize).map(|entry| &entry.style)
+    }
+
 }
 
 /// Which term the wall shader draws instead of the finished wall. Discriminants are the
-/// `DEBUG_*` constants in `assets/shaders/wall_canvas.wgsl`; the two must stay in step.
+/// `DEBUG_*` constants in `assets/shaders/walls/canvas.wgsl`; the two must stay in step.
 #[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq, EnumIter, AsRefStr)]
 #[repr(u32)]
 pub enum WallCanvasDebug {

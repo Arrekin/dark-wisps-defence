@@ -35,6 +35,7 @@ impl Plugin for CommonSystemsPlugin {
             ))
             .add_observer(on_building_destroy_request_do_so)
             .add_observer(on_insert_attack_speed_sync_shooting_timer)
+            .add_observer(on_object_face_request_draw_building)
             ;
     }
 }

@@ -13,7 +13,7 @@ use alteration::{
 use almanach::prelude::*;
 use buildings::prelude::*;
 use game_core::prelude::*;
-use grids::placement::{annotate_non_empty, PlacementChannel, PlaceRequest};
+use grids::placement::{annotate_non_empty, PlacementModes, PlaceRequest};
 use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
 use logging::prelude::*;
 use persistence::{
@@ -75,9 +75,8 @@ impl BuilderTowerField {
             ]),
             validate: building_validator,
             annotate: annotate_non_empty,
-            placement: PlacementChannel::of::<TowerField>(),
+            placement: PlacementModes::default(),
             presentation: ObjectPresentation {
-                face: ObjectFace::Image(asset_server.load("buildings/tower_field.png")),
                 tooltip: Some(building_tooltip),
             },
         }
@@ -173,10 +172,11 @@ impl BuilderTowerField {
 }
 
 fn on_tower_field_place_request_do_so(
-    _trigger: On<PlaceRequest<TowerField>>,
+    trigger: On<PlaceRequest>,
     mut commands: Commands,
     mut placement: BuildingPlacementManager,
 ) {
+    let PlaceRequest(MapObject::Building(BuildingType::Tower(TowerType::Field))) = *trigger else { return };
     let Some(coords) = placement.claim(BuildingType::Tower(TowerType::Field)) else { return };
     commands.spawn(BuilderTowerField::new(coords));
 }

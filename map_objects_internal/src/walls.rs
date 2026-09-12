@@ -1,12 +1,12 @@
 use bevy::prelude::*;
 
-use almanach::{Almanach, AlmanachAppExt, ObjectFace, ObjectPresentation, WallInfo};
+use almanach::{Almanach, AlmanachAppExt, ObjectPresentation, WallInfo};
 use game_core::prelude::{GridCoords, GridImprint, MapObject, SSS};
 use grids::obstacles::GridStructureType;
-use grids::placement::{annotate_non_empty, GridObjectPlacer, GridsCollectionParam, PlacementChannel, PlacementMode, PlacementStyle, PlacementValidity, PlaceRequest, RemoveRequest, validator_all_empty};
+use grids::placement::{annotate_non_empty, GridObjectPlacer, GridsCollectionParam, PlacementModes, PlacementStyle, PlacementValidity, PlaceRequest, RemoveRequest, validator_all_empty};
 use hud::prelude::BuilderSideMenuItemTooltip;
 use logging::prelude::*;
-use map_objects::prelude::{BuilderWallFace, BuilderWallSideMenuTooltip, Wall};
+use map_objects::prelude::{BuilderWallSideMenuTooltip, Wall};
 use map_objects::wall_style::{WallStyleKey, WallStyles};
 use persistence::{
     prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveWriter},
@@ -18,7 +18,6 @@ use states::prelude::MapLoadingStage;
 pub struct WallPlugin;
 impl Plugin for WallPlugin {
     fn build(&self, app: &mut App) {
-        let almanach_info = BuilderWall::almanach_info(app.world().resource::<AssetServer>());
         app
             .add_systems(CollectSave, collect_walls)
             .register_loader(MapLoadingStage::SpawnMapElements, "walls", load_walls)
@@ -26,7 +25,7 @@ impl Plugin for WallPlugin {
             .add_observer(on_wall_place_request_do_so)
             .add_observer(on_wall_remove_request_do_so)
             .add_observer(on_builder_add_spawn_wall_tooltip)
-            .register_walls(almanach_info)
+            .register_walls(BuilderWall::almanach_info())
             ;
     }
 }
@@ -57,17 +56,15 @@ pub(crate) struct BuilderWall {
     pub style: WallStyleSource,
 }
 impl BuilderWall {
-    pub fn almanach_info(asset_server: &AssetServer) -> WallInfo {
+    pub fn almanach_info() -> WallInfo {
         WallInfo {
             name: "Wall".to_string(),
             description: "Blocks ground movement and shapes the paths wisps take.".to_string(),
             grid_imprint: WALL_GRID_IMPRINT,
-            sprite: asset_server.load("map_objects/wall_4side.png"),
             validate: validator_all_empty,
             annotate: annotate_non_empty,
-            placement: PlacementChannel::of::<Wall>().with_modes(PlacementMode::OnPress),
+            placement: PlacementModes::on_press(),
             presentation: ObjectPresentation {
-                face: ObjectFace::built::<BuilderWallFace>(),
                 tooltip: Some(wall_tooltip),
             },
         }
@@ -156,12 +153,13 @@ fn load_walls(ctx: &mut LoadContext) -> rusqlite::Result<()> {
 }
 
 fn on_wall_place_request_do_so(
-    _trigger: On<PlaceRequest<Wall>>,
+    trigger: On<PlaceRequest>,
     mut commands: Commands,
     almanach: Res<Almanach>,
     mut grids: GridsCollectionParam,
     placer: Single<(&GridCoords, &GridImprint, &PlacementStyle), With<GridObjectPlacer>>,
 ) {
+    let PlaceRequest(MapObject::Wall) = *trigger else { return };
     let (coords, grid_imprint, placement_style) = placer.into_inner();
     let validity = (almanach.walls.validate)(MapObject::Wall, *coords, *grid_imprint, &grids);
     if validity == PlacementValidity::Invalid { return; }
@@ -170,11 +168,12 @@ fn on_wall_place_request_do_so(
 }
 
 fn on_wall_remove_request_do_so(
-    _trigger: On<RemoveRequest<Wall>>,
+    trigger: On<RemoveRequest>,
     mut commands: Commands,
     grids: GridsCollectionParam,
     placer: Single<&GridCoords, With<GridObjectPlacer>>,
 ) {
+    let RemoveRequest(MapObject::Wall) = *trigger else { return };
     let coords = placer.into_inner();
     if let GridStructureType::Wall(entity) = grids.obstacle_grid[*coords].structure {
         commands.entity(entity).despawn();

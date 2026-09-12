@@ -44,7 +44,7 @@ pub struct QuantumFieldPostProcessPlugin;
 impl Plugin for QuantumFieldPostProcessPlugin {
     fn build(&self, app: &mut App) {
         app
-            .register_shader_library("shaders/quantum_field.wgsl")
+            .register_shader_library("shaders/quantum_field/look.wgsl")
             .add_plugins((
                 ExtractComponentPlugin::<QuantumFieldPostProcess>::default(),
                 UniformComponentPlugin::<QuantumFieldPostProcess>::default(),
@@ -356,7 +356,7 @@ fn init_quantum_field_pipeline(
     );
 
     let sampler = render_device.create_sampler(&SamplerDescriptor::default());
-    let shader = asset_server.load("shaders/quantum_field_post_process.wgsl");
+    let shader = asset_server.load("shaders/quantum_field/post_process.wgsl");
 
     let make_pipeline = |format| RenderPipelineDescriptor {
         label: Some("quantum_field_post_process_pipeline".into()),

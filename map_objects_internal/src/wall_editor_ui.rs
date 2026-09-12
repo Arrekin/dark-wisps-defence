@@ -3,11 +3,10 @@
 
 use bevy::prelude::*;
 
+use game_core::prelude::{CELL_SIZE, MapObject, ObjectFaceRequest};
 use grids::placement::{BeginPlacing, GridObjectPlacer, GridPlacerOverridePropertyRequest, PlacementStyle, StopPlacing};
-use map_objects::prelude::Wall;
 use map_objects::wall_style::{WallStyleKey, WallStyles};
 
-use super::wall_swatch::WallSwatch;
 
 pub(crate) struct WallEditorUiPlugin;
 impl Plugin for WallEditorUiPlugin {
@@ -66,20 +65,32 @@ impl GridPlacerUiForWall {
                         },
                         BorderColor::from(swatch_frame_color(key == selected)),
                         BackgroundColor(Color::BLACK),
-                        children![
-                            WallSwatch(key),
-                            (Text::new(entry.name.clone()), TextFont::default().with_font_size(10.0)),
-                        ],
                     ))
+                    .with_children(|button| {
+                        // The swatch node is sized here and carries the style it stands for; the
+                        // wall domain answers the request by drawing that style onto it.
+                        button
+                            .spawn((
+                                Node {
+                                    width: Val::Px(CELL_SIZE),
+                                    height: Val::Px(CELL_SIZE),
+                                    ..default()
+                                },
+                                PlacementStyle(key.0),
+                            ))
+                            .trigger(|entity| ObjectFaceRequest::ui(entity, MapObject::Wall));
+                        button.spawn((Text::new(entry.name.clone()), TextFont::default().with_font_size(10.0)));
+                    })
                     .observe(WallStyleButton::on_click_select_style);
                 }
             });
     }
 
     fn on_begin_placing_spawn_grid_placer_ui(
-        _trigger: On<BeginPlacing<Wall>>,
+        trigger: On<BeginPlacing>,
         mut commands: Commands,
     ) {
+        let BeginPlacing(MapObject::Wall) = *trigger else { return };
         commands.spawn(GridPlacerUiForWall);
     }
 

@@ -22,7 +22,7 @@ pub(crate) struct DarkOreCanvasPlugin;
 impl Plugin for DarkOreCanvasPlugin {
     fn build(&self, app: &mut App) {
         app
-            .register_shader_library("shaders/dark_ore_crystals.wgsl")
+            .register_shader_library("shaders/dark_ore/look.wgsl")
             .add_plugins(Material2dPlugin::<DarkOreCanvasMaterial>::default())
             .init_resource::<DarkOreCanvasRebuildRequested>()
             .add_systems(OnEnter(MapLoadingStage::LoadResources), DarkOreCanvas::create)
@@ -36,7 +36,7 @@ impl Plugin for DarkOreCanvasPlugin {
     }
 }
 
-/// Field order and types mirror `DarkOreCanvasSettings` in `dark_ore_canvas.wgsl`.
+/// Field order and types mirror `DarkOreCanvasSettings` in `assets/shaders/dark_ore/canvas.wgsl`.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, ShaderType, Default)]
 struct DarkOreCanvasSettings {
@@ -60,7 +60,7 @@ struct DarkOreCanvasMaterial {
 
 impl Material2d for DarkOreCanvasMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/dark_ore_canvas.wgsl".into()
+        "shaders/dark_ore/canvas.wgsl".into()
     }
 
     fn alpha_mode(&self) -> AlphaMode2d {

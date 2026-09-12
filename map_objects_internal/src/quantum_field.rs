@@ -22,9 +22,9 @@ use bevy::color::palettes::css::{AQUA, BLUE};
 use bevy::prelude::*;
 
 use almanach::prelude::AlmanachAppExt;
-use almanach::{Almanach, ObjectFace, ObjectPresentation, QuantumFieldInfo};
+use almanach::{Almanach, ObjectPresentation, QuantumFieldInfo};
 use game_core::prelude::{GridCoords, GridImprint, MapObject, SSS};
-use grids::placement::{BeginPlacing, CellHighlight, GridObjectPlacer, GridsCollectionParam, PlacementChannel, PlacementValidity, PlaceRequest, RemoveRequest};
+use grids::placement::{BeginPlacing, CellHighlight, GridObjectPlacer, GridsCollectionParam, PlacementModes, PlacementValidity, PlaceRequest, RemoveRequest};
 use hud::prelude::{BuilderSideMenuItemTooltip, DisplayPanelMainContentRoot, FocusedMapObject};
 use logging::prelude::*;
 use map_objects::prelude::*;
@@ -71,9 +71,8 @@ impl Plugin for QuantumFieldPlugin {
             default_size: 3,
             validate: quantum_field_validator,
             annotate: quantum_field_annotator,
-            placement: PlacementChannel::of::<QuantumField>(),
+            placement: PlacementModes::default(),
             presentation: ObjectPresentation {
-                face: ObjectFace::built::<BuilderQuantumFieldFace>(),
                 tooltip: Some(quantum_field_tooltip),
             },
         })
@@ -295,12 +294,13 @@ fn quantum_field_annotator(
 }
 
 fn on_quantum_field_place_request_do_so(
-    _trigger: On<PlaceRequest<QuantumField>>,
+    trigger: On<PlaceRequest>,
     mut commands: Commands,
     almanach: Res<Almanach>,
     mut grids: GridsCollectionParam,
     placer: Single<(&GridCoords, &GridImprint), With<GridObjectPlacer>>,
 ) {
+    let PlaceRequest(MapObject::QuantumField) = *trigger else { return };
     let (coords, grid_imprint) = placer.into_inner();
     let validity = (almanach.quantum_fields.validate)(MapObject::QuantumField, *coords, *grid_imprint, &grids);
     if validity == PlacementValidity::Invalid { return; }
@@ -309,11 +309,12 @@ fn on_quantum_field_place_request_do_so(
 }
 
 fn on_quantum_field_remove_request_do_so(
-    _trigger: On<RemoveRequest<QuantumField>>,
+    trigger: On<RemoveRequest>,
     mut commands: Commands,
     grids: GridsCollectionParam,
     placer: Single<&GridCoords, With<GridObjectPlacer>>,
 ) {
+    let RemoveRequest(MapObject::QuantumField) = *trigger else { return };
     let coords = placer.into_inner();
     if let Some(entity) = grids.obstacle_grid[*coords].quantum_field {
         commands.entity(entity).despawn();
@@ -405,10 +406,11 @@ impl GridPlacerUiForQuantumField {
     }
 
     fn on_begin_placing_spawn_grid_placer_ui(
-        _trigger: On<BeginPlacing<QuantumField>>,
+        trigger: On<BeginPlacing>,
         mut commands: Commands,
         almanach: Res<Almanach>,
     ) {
+        let BeginPlacing(MapObject::QuantumField) = *trigger else { return };
         let qf_config = &almanach.quantum_fields;
         commands.spawn(GridPlacerUiForQuantumField {
             imprint_selector: QuantumFieldImprintSelector::new(qf_config.min_size, qf_config.max_size, qf_config.default_size),

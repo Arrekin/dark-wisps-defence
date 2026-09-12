@@ -11,7 +11,7 @@ use almanach::prelude::*;
 use buildings::prelude::*;
 use game_core::prelude::*;
 use grids::{
-    placement::{annotate_non_empty, PlacementChannel, PlaceRequest},
+    placement::{annotate_non_empty, PlacementModes, PlaceRequest},
     prelude::*,
 };
 use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
@@ -73,9 +73,8 @@ impl BuilderTowerCannon {
             ]),
             validate: building_validator,
             annotate: annotate_non_empty,
-            placement: PlacementChannel::of::<TowerCannon>(),
+            placement: PlacementModes::default(),
             presentation: ObjectPresentation {
-                face: ObjectFace::Image(asset_server.load("buildings/tower_cannon.png")),
                 tooltip: Some(building_tooltip),
             },
         }
@@ -162,10 +161,11 @@ impl BuilderTowerCannon {
 }
 
 fn on_tower_cannon_place_request_do_so(
-    _trigger: On<PlaceRequest<TowerCannon>>,
+    trigger: On<PlaceRequest>,
     mut commands: Commands,
     mut placement: BuildingPlacementManager,
 ) {
+    let PlaceRequest(MapObject::Building(BuildingType::Tower(TowerType::Cannon))) = *trigger else { return };
     let Some(coords) = placement.claim(BuildingType::Tower(TowerType::Cannon)) else { return };
     commands.spawn(BuilderTowerCannon::new(coords));
 }

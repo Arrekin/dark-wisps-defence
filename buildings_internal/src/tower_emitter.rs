@@ -10,7 +10,7 @@ use alteration::{
 use almanach::prelude::*;
 use buildings::prelude::*;
 use game_core::prelude::*;
-use grids::placement::{annotate_non_empty, PlacementChannel, PlaceRequest};
+use grids::placement::{annotate_non_empty, PlacementModes, PlaceRequest};
 use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
 use logging::prelude::*;
 use persistence::{
@@ -70,9 +70,8 @@ impl BuilderTowerEmitter {
             ]),
             validate: building_validator,
             annotate: annotate_non_empty,
-            placement: PlacementChannel::of::<TowerEmitter>(),
+            placement: PlacementModes::default(),
             presentation: ObjectPresentation {
-                face: ObjectFace::Image(asset_server.load("buildings/tower_emitter.png")),
                 tooltip: Some(building_tooltip),
             },
         }
@@ -157,10 +156,11 @@ impl BuilderTowerEmitter {
 }
 
 fn on_tower_emitter_place_request_do_so(
-    _trigger: On<PlaceRequest<TowerEmitter>>,
+    trigger: On<PlaceRequest>,
     mut commands: Commands,
     mut placement: BuildingPlacementManager,
 ) {
+    let PlaceRequest(MapObject::Building(BuildingType::Tower(TowerType::Emitter))) = *trigger else { return };
     let Some(coords) = placement.claim(BuildingType::Tower(TowerType::Emitter)) else { return };
     commands.spawn(BuilderTowerEmitter::new(coords));
 }

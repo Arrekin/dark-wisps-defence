@@ -1,5 +1,3 @@
-use std::marker::PhantomData;
-
 use bevy::{ecs::system::SystemParam, prelude::*};
 
 use game_core::prelude::{GridCoords, GridImprint, MapObject, ZDepth};
@@ -11,12 +9,12 @@ use crate::{energy_supply::EnergySupplyGrid, obstacles::{ObstacleGrid, ReservedC
 #[derive(Event, Clone, Copy, Debug)]
 pub struct GridPlacerChanged;
 
-/// Non-generic event emitted when a placement session begins, whatever started it. Read the
-/// object being placed from [`GridObjectPlacer::map_object`], which is set before this fires.
+/// Emitted when placement begins for an object.
 ///
-/// [`BeginPlacing<T>`] carries the same moment for the domain that owns `T`.
+/// Domain UI observes this event to create controls such as size or style selectors. Imprint and
+/// style changes within the same session do not emit another event.
 #[derive(Event, Clone, Copy, Debug)]
-pub struct StartPlacing;
+pub struct BeginPlacing(pub MapObject);
 
 /// Non-generic event emitted when the placer deactivates or switches to a different object type.
 /// Domain UIs (e.g., QuantumField size selector) observe this to hide/cleanup.
@@ -33,94 +31,51 @@ pub enum GridPlacerOverridePropertyRequest {
     OverrideStyle(u32),
 }
 
-/// Generic placement request event. Domain observers listen for their specific T.
-#[derive(Event)]
-pub struct PlaceRequest<T>(PhantomData<T>);
-impl<T> Default for PlaceRequest<T> {fn default() -> Self { Self(PhantomData) } }
-impl<T> Clone for PlaceRequest<T> {fn clone(&self) -> Self { *self } }
-impl<T> Copy for PlaceRequest<T> {}
-
-/// Generic removal request event. Domain observers listen for their specific T.
-#[derive(Event)]
-pub struct RemoveRequest<T>(PhantomData<T>);
-impl<T> Default for RemoveRequest<T> {fn default() -> Self { Self(PhantomData) } }
-impl<T> Clone for RemoveRequest<T> {fn clone(&self) -> Self { *self } }
-impl<T> Copy for RemoveRequest<T> {}
-
-/// Generic event emitted when placement mode begins for a type.
-/// Used by domains that need setup UI (e.g., QuantumField size selector).
-#[derive(Event)]
-pub struct BeginPlacing<T>(PhantomData<T>);
-impl<T> Default for BeginPlacing<T> {fn default() -> Self { Self(PhantomData) } }
-impl<T> Clone for BeginPlacing<T> {fn clone(&self) -> Self { *self } }
-impl<T> Copy for BeginPlacing<T> {}
-
-/// Triggers `PlaceRequest<T>::default()` via `Commands`.
-fn trigger_place<T: Send + Sync + 'static>(commands: &mut Commands) {
-    commands.trigger(PlaceRequest::<T>::default());
-}
-/// Triggers `RemoveRequest<T>::default()` via `Commands`.
-fn trigger_remove<T: Send + Sync + 'static>(commands: &mut Commands) {
-    commands.trigger(RemoveRequest::<T>::default());
-}
-/// Triggers `BeginPlacing<T>::default()` via `Commands`.
-fn trigger_begin<T: Send + Sync + 'static>(commands: &mut Commands) {
-    commands.trigger(BeginPlacing::<T>::default());
-}
-
-/// Bundles the placement-channel events and click modes for one marker type `T`.
+/// Requests placement of the active object at the placer's current position.
 ///
-/// The three `fn(&mut Commands)` pointers trigger `PlaceRequest<T>` /
-/// `RemoveRequest<T>` / `BeginPlacing<T>`; they're `Copy + Clone`, so the
-/// descriptor lives directly on `*Info` and `ObjectPlacementInfo`. All three
-/// are always wired — triggering an event with no observers is a no-op in
-/// Bevy, so whether a type actually supports removal / begin-placing is
-/// determined by whether the domain registers an observer for
-/// `RemoveRequest<T>` / `BeginPlacing<T>`.
+/// Domain observers match the object variant:
 ///
-/// `place_mode` / `remove_mode` control whether the placer emits on press
-/// (burst/drag) or release (single click); both default to `OnRelease`.
-/// `begin` has no mode — it's emitted once at placement-session activation,
-/// unconditionally.
-#[derive(Clone, Copy)]
-pub struct PlacementChannel {
-    pub place: fn(&mut Commands),
-    pub remove: fn(&mut Commands),
-    pub begin: fn(&mut Commands),
-    pub place_mode: PlacementMode,
-    pub remove_mode: PlacementMode,
+/// ```ignore
+/// let PlaceRequest(MapObject::Wall) = *trigger else { return };
+/// ```
+#[derive(Event, Clone, Copy, Debug)]
+pub struct PlaceRequest(pub MapObject);
+
+/// Requests removal at the placer's current position.
+///
+/// Observers match the object as for [`PlaceRequest`]. Objects without a matching observer do not
+/// support removal.
+#[derive(Event, Clone, Copy, Debug)]
+pub struct RemoveRequest(pub MapObject);
+
+/// When the placer emits place and remove requests: on press for burst and drag placement,
+/// on release for a single click.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PlacementModes {
+    pub place: PlacementMode,
+    pub remove: PlacementMode,
 }
 
-impl PlacementChannel {
-    /// Builds the descriptor for a marker type `T`, with both click modes
-    /// defaulting to `OnRelease`. Registration sites call this to state intent:
-    /// "this object routes placement through the `T` channel."
-    pub fn of<T: Send + Sync + 'static>() -> Self {
-        Self {
-            place: trigger_place::<T>,
-            remove: trigger_remove::<T>,
-            begin: trigger_begin::<T>,
-            place_mode: PlacementMode::OnRelease,
-            remove_mode: PlacementMode::OnRelease,
-        }
-    }
-
-    /// Sets both `place_mode` and `remove_mode` to the same value. Use for
-    /// burst/drag placement (e.g. walls, dark ore) where both actions emit
-    /// on press.
-    pub fn with_modes(mut self, mode: PlacementMode) -> Self {
-        self.place_mode = mode;
-        self.remove_mode = mode;
-        self
+impl PlacementModes {
+    /// Both actions emit while the button is held, for objects placed in a stroke.
+    pub fn on_press() -> Self {
+        Self { place: PlacementMode::OnPress, remove: PlacementMode::OnPress }
     }
 }
 
-/// Placement validity state returned by validators.
+/// Placement validity state returned by validators. Discriminants are the `VALIDITY_*` constants
+/// in `assets/shaders/grid_placer.wgsl`; the two must stay in step.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u32)]
 pub enum PlacementValidity {
-    Valid,
-    ValidUnpowered,
-    Invalid,
+    Valid = 0,
+    ValidUnpowered = 1,
+    Invalid = 2,
+}
+impl PlacementValidity {
+    pub fn shader_index(self) -> u32 {
+        self as u32
+    }
 }
 
 /// Which kind of highlight a special cell carries.
@@ -167,9 +122,7 @@ pub struct ObjectPlacementInfo {
     pub imprint: GridImprint,
     pub validate: PlacementValidatorFn,
     pub annotate: PlacementAnnotatorFn,
-    pub placement: PlacementChannel,
-    /// Handle for the ghost preview image shown while placing. `None` falls back to a solid tinted shape.
-    pub preview_image: Option<Handle<Image>>,
+    pub placement: PlacementModes,
 }
 
 /// Active placement session data.
@@ -185,7 +138,7 @@ pub struct ActivePlacement {
 pub struct PlacementStyle(pub u32);
 
 #[derive(Component, Default)]
-#[require(GridImprint, GridCoords, PlacementStyle, ZDepth(10.), crate::AutoGridTransformSync)]
+#[require(GridImprint, GridCoords, PlacementStyle, ZDepth::GRID_PLACER, crate::AutoGridTransformSync)]
 pub struct GridObjectPlacer {
     pub active_placement: Option<ActivePlacement>,
 }

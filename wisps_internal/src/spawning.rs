@@ -17,7 +17,6 @@ use persistence::{
 use resources::prelude::*;
 use wisps::{WispElectricType, WispFireType, WispLightType, WispWaterType, prelude::*};
 
-use super::materials::WispMaterial;
 
 #[derive(Component, SSS)]
 pub(crate) struct BuilderWisp {
@@ -85,7 +84,8 @@ impl BuilderWisp {
                         (ModifierType::MovementSpeed, 60.),
                     ])), BaselineEffect),
                 ]],
-            ));
+            ))
+            .trigger(move |entity| ObjectFaceRequest::world(entity, MapObject::Wisp(builder.wisp_type)));
         wisps_grid.wisp_add(builder.grid_coords, entity);
     }
 }
@@ -173,48 +173,29 @@ pub(crate) fn wisp_validator(
     PlacementValidity::Valid
 }
 
-pub(crate) fn on_wisp_spawn_attach_material<WispT: Component, MaterialT: Asset + WispMaterial>(
-    trigger: On<Add, WispT>,
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<MaterialT>>,
-    wisps: Query<(), With<WispT>>,
-) {
-    let entity = trigger.entity;
-    if !wisps.contains(entity) { return; }
-    let wisp_world_size = WISP_GRID_IMPRINT.world_size() * MaterialT::mesh_scale();
-    let mesh = meshes.add(Rectangle::new(wisp_world_size.x, wisp_world_size.y));
-    let material = materials.add(MaterialT::make(&asset_server));
-    commands.entity(entity).insert((
-        Mesh2d(mesh),
-        MeshMaterial2d(material),
-    ));
-}
-
 pub(crate) fn on_wisp_place_request_do_so(
-    _trigger: On<PlaceRequest<WispType>>,
+    trigger: On<PlaceRequest>,
     mut commands: Commands,
     almanach: Res<Almanach>,
     grids: GridsCollectionParam,
-    placer: Single<(&GridObjectPlacer, &GridCoords, &GridImprint)>,
+    placer: Single<(&GridCoords, &GridImprint), With<GridObjectPlacer>>,
 ) {
-    let (grid_object_placer, coords, grid_imprint) = placer.into_inner();
-    let Some(active_placement) = &grid_object_placer.active_placement else { return };
-    let MapObject::Wisp(wisp_type) = active_placement.map_object else { return };
+    let PlaceRequest(MapObject::Wisp(wisp_type)) = *trigger else { return };
+    let (coords, grid_imprint) = placer.into_inner();
 
-    let validity = (almanach.wisps.validate)(active_placement.map_object, *coords, *grid_imprint, &grids);
+    let validity = (almanach.wisps.validate)(MapObject::Wisp(wisp_type), *coords, *grid_imprint, &grids);
     if validity == PlacementValidity::Invalid { return; }
     commands.spawn(BuilderWisp::new(wisp_type, *coords));
 }
 
 pub(crate) fn on_wisp_remove_request_do_so(
-    _trigger: On<RemoveRequest<WispType>>,
+    trigger: On<RemoveRequest>,
     mut commands: Commands,
     mut wisps_grid: ResMut<WispsGrid>,
     wisps: Query<Entity, With<Wisp>>,
     placer: Single<&GridCoords, With<GridObjectPlacer>>,
 ) {
+    let RemoveRequest(MapObject::Wisp(_)) = *trigger else { return };
     let coords = placer.into_inner();
     let wisp_entities = wisps_grid[*coords].clone();
     for wisp_entity in wisp_entities {
