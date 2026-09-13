@@ -167,6 +167,9 @@ fn fire_corona(p: vec2<f32>, t: f32, seed: f32, wind: vec2<f32>) -> f32 {
         let rel = p - slot_dir * BASE_RADIUS;   // base stays on the orb (uniform around it)
         let along = dot(rel, dir);              // distance outward from the root
         let lateral = dot(rel, perp);           // sideways from the lick's centreline
+        // `flame_mask` is zero outside this box: its teardrop needs |px| < 1 and |py| < 1, which
+        // bounds fy to (0.04, 0.96) and |fx| below 0.45.
+        if along < 0.0 || along > len || abs(lateral) > 0.5 * len { continue; }
         let fl = flame_mask(lateral / len, along / len, t, seed + fk * 7.3);
         best = max(best, fl);
     }

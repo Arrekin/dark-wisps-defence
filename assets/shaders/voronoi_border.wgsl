@@ -1,11 +1,14 @@
 #define_import_path dwd::voronoi_border
+#import dwd::hash::{DWD_HASH_GOLDEN, dwd_hash_coords, dwd_hash_mix, dwd_hash_unit}
 
+// Domain salt, so cell points stay independent of other consumers of the shared mixer.
+const DWD_VORONOI_SALT: u32 = 0x165667b1u;
+
+// Two deterministic values in [0, 1).
 fn dwd_voronoi_hash_2d(p: vec2<f32>) -> vec2<f32> {
-    let k = vec2<f32>(
-        dot(p, vec2<f32>(127.1, 311.7)),
-        dot(p, vec2<f32>(269.5, 183.3)),
-    );
-    return fract(sin(k) * 43758.5453123);
+    let base = dwd_hash_coords(p, DWD_VORONOI_SALT);
+    let second = dwd_hash_mix(base ^ DWD_HASH_GOLDEN);
+    return vec2<f32>(dwd_hash_unit(base), dwd_hash_unit(second));
 }
 
 // Distance to the nearest Voronoi cell border: approximately zero on an edge and larger inside.

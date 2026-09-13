@@ -252,7 +252,13 @@ fn init_ripple_pipeline(
         ),
     );
 
-    let sampler = render_device.create_sampler(&SamplerDescriptor::default());
+    // Displacement effects move the sample point by fractions of a pixel, so the screen is read
+    // with linear filtering.
+    let sampler = render_device.create_sampler(&SamplerDescriptor {
+        mag_filter: FilterMode::Linear,
+        min_filter: FilterMode::Linear,
+        ..default()
+    });
     let shader = asset_server.load("shaders/ripple_post_process.wgsl");
 
     let make_pipeline = |format| RenderPipelineDescriptor {

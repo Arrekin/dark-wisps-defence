@@ -1,6 +1,7 @@
 #define_import_path dwd::wisps::electric
 
 #import dwd::core::{PI, TAU}
+#import dwd::hash::{dwd_hash_coords, dwd_hash_unit}
 #import dwd::value_noise::{dwd_value_hash_2d, dwd_value_noise_2d}
 #import dwd::voronoi_border::dwd_voronoi_border_2d
 
@@ -29,8 +30,10 @@ const ARC_CORE: f32 = 0.05;   // hot core half-width (arc-length units)
 const ARC_GLOW: f32 = 0.42;   // soft halo half-width
 
 // ── Hashes / value noise ─────────────────────────────────────────────────────
+// Domain salt for the strike schedule draws.
+const STRIKE_SALT: u32 = 0x7f4a7c15u;
 fn hash11(x: f32) -> f32 {
-    return fract(sin(x * 127.1) * 43758.5453123);
+    return dwd_hash_unit(dwd_hash_coords(vec2<f32>(x, 0.0), STRIKE_SALT));
 }
 // Smallest signed angle a - b, wrapped to (-PI, PI].
 fn angle_diff(a: f32, b: f32) -> f32 {

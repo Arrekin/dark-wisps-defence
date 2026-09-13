@@ -80,6 +80,10 @@ members = [
 version = "0.2.0"
 edition = "2024"
 
+[workspace.lints.rust]
+# Warning across the stack due to new Rust's trait resolver - try removing after new Bevy version lands.
+recursion_depth_exceeding_limit = "allow"
+
 [workspace.lints.clippy]
 # Lints disabled because they don't fit a Bevy codebase:
 type_complexity = "allow"       # Bevy system param signatures are inherently long; factoring into type aliases hurts readability

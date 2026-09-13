@@ -130,13 +130,14 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
     let world = vec2<f32>(mesh.uv.x, 1.0 - mesh.uv.y) * grid_size * CELL_SIZE;
     let cell = clamp(vec2<i32>(floor(world / CELL_SIZE)), vec2<i32>(0), vec2<i32>(grid_size) - 1);
 
+    // World-coordinate span of one screen pixel at the quad's rendered size; evaluated before
+    // divergent control flow.
+    let texel = max(fwidth(world.x), 0.001);
+
     let state = cell_state(cell);
     if state == CELL_OUTSIDE {
         return vec4<f32>(0.0);
     }
-
-    // World-coordinate span of one screen pixel at the quad's rendered size.
-    let texel = max(fwidth(world.x), 0.001);
 
     let outline_color = validity_color();
     var mark_color = outline_color;

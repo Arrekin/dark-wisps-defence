@@ -178,6 +178,12 @@ fn fragment(in: UiVertexOutput) -> @location(0) vec4<f32> {
     let aa = fwidth(d) * 0.7;
     let coverage = 1.0 - smoothstep(-aa, aa, d);
 
+    // ---- Facet normals ----
+    // The SDF gradient is piecewise constant, one value per flat face of the octagon.
+    // That suits a 1px contour, which is where it is applied, rather than a gradient
+    // spread across the panel. Evaluated before divergent control flow.
+    let n = normalize(vec2<f32>(dpdx(d), dpdy(d)) + vec2<f32>(1e-6));
+
     if (coverage < 0.001) {
         return vec4<f32>(0.0);
     }
@@ -186,11 +192,6 @@ fn fragment(in: UiVertexOutput) -> @location(0) vec4<f32> {
     // them follow the chamfered silhouette.
     let inset = -d;
 
-    // ---- Facet normals ----
-    // The SDF gradient is piecewise constant, one value per flat face of the octagon.
-    // That suits a 1px contour, which is where it is applied, rather than a gradient
-    // spread across the panel.
-    let n = normalize(vec2<f32>(dpdx(d), dpdy(d)) + vec2<f32>(1e-6));
     let n_dot_l = dot(n, LIGHT_DIR);
     // Directional contour lighting. With range 0.5, brightness is approximately 1.45 on the top
     // edge and 0.55 on the bottom edge before applying edge_brightness.

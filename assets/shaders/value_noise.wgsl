@@ -1,8 +1,11 @@
 #define_import_path dwd::value_noise
+#import dwd::hash::{dwd_hash_coords, dwd_hash_unit}
+
+// Domain salt, so lattice values stay independent of other consumers of the shared mixer.
+const DWD_VALUE_SALT: u32 = 0x3c6ef372u;
 
 fn dwd_value_hash_2d(p: vec2<f32>) -> f32 {
-    let h = dot(p, vec2<f32>(127.1, 311.7));
-    return fract(sin(h) * 43758.5453123);
+    return dwd_hash_unit(dwd_hash_coords(p, DWD_VALUE_SALT));
 }
 
 fn dwd_value_noise_2d(p: vec2<f32>) -> f32 {
