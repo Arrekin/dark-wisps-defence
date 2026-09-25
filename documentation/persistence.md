@@ -64,7 +64,7 @@ see `with_db_connection`'s doc comment).
 carrier + completion signal in one. The repack observer inserts it (one place requests become
 plans); the finalize system removes it on IO completion (success or error — else one bad write
 blocks saving forever). Collectors read `save_as_scenario` to choose between real state and
-scenario defaults (see Save as Scenario below). `SaveTarget::{ Quick, Scenario(String) }` makes
+scenario defaults (see Save as Scenario below). `SaveTarget::{ Quick, Scenario(MapFileName) }` makes
 destination + scenario-ness one decision — a bool+path pair would allow scenario-saving to
 `test_save.dwd`.
 
@@ -127,6 +127,8 @@ moments `fired_count` → `0`. `activated_by` is NOT reset (it's authoring, not 
 
 ```
 LoadGameSignal (observer; dev keybind A)
+    │  rejected (LoadGameReport, nothing touched): already Loading · GameState transition
+    │  queued · File source missing
     │  migrations (sync) · LoadRunner + fresh LoadProgress
     │  despawn MapBound · GameState::Loading · MapLoadingStage::Init
     ▼
@@ -136,7 +138,10 @@ MapLoadingStage state machine (stages are ordering barriers)
     ├─► LoadResources        global state (stats, stock, clock, objectives, ...)
     ├─► SpawnMapElements     entities (walls, buildings, wisps, projectiles, ...)
     ├─► SpawnEffectInstances effects referencing entities (brittle, shard slots)
-    └─► Ready                on_map_load_ready
+    └─► Ready                on_map_load_ready (queues game_start_state, admin mode)
+    ▼
+OnExit(GameState::Loading)   finish_map_load: LoadGameReport { Loaded } ·
+                             remove LoadMapConfig + LoadRunner
 ```
 
 Per stage: `OnEnter` spawns **one IO task per registered loader**. Each task opens its own
@@ -156,8 +161,11 @@ It is exclusive on purpose: deferred `Commands` inserts would be invisible to
 `SELECT COUNT(*)` over every registered table at load start; `done_rows` is bumped per pushed
 mutation. `fraction()` drives a determinate progress bar (approximate by design).
 
-**Cancellation:** a new `LoadGameSignal` during an in-flight load flags the old runner's cancel
-`AtomicBool` and replaces it; in-flight loaders drain harmlessly (`push` no-ops when cancelled).
+**One load at a time:** `on_load_game_signal_do_so` rejects a `LoadGameSignal` while the game is `Loading`, while
+any `GameState` transition is queued, and when a `File` source does not exist
+(`Connection::open` would create it). Each signal gets exactly one `LoadGameReport` on its
+`LoadMapConfig::response`: the rejection reason, or `Loaded { map, game_start_state }` from
+`finish_map_load` once `game_start_state` is in effect.
 
 ### New Map Source
 
@@ -165,7 +173,7 @@ mutation. `fraction()` drives a determinate progress bar (approximate by design)
 (build a blank map in memory). The new-map path reuses the same pipeline — same stages, same
 `LoadGameSignal`, same `on_map_load_ready` — with three guards that skip disk I/O:
 
-1. **`LoadGameSignal::on_trigger`** skips synchronous migrations for `New`. `rusqlite::Connection::open`
+1. **`LoadGameSignal::on_load_game_signal_do_so`** skips synchronous migrations for `New`. `rusqlite::Connection::open`
    creates the file; running migrations against a path that doesn't exist yet would litter
    `maps/<name>.dwd` on disk before the user has saved anything.
 
@@ -195,17 +203,40 @@ fn load_my_entities(ctx: &mut LoadContext) -> rusqlite::Result<()> {
 ```
 
 `LoadContext` API: `entity(old_id) -> Option<Entity>` (warn + `continue` on `None`),
-`insert(entity, bundle)`, `insert_resource(res)`, `push(FnOnce(&mut World))` as the escape hatch,
-`cancelled()` for optional early-exit in long loops. The context runs on an IO thread — it never
+`insert(entity, bundle)`, `insert_resource(res)`, `push(FnOnce(&mut World))` as the escape hatch.
+The context runs on an IO thread — it never
 touches the World directly; everything is deferred through the channel. The `table` argument of
 `register_loader` feeds the progress totals — use the primary table the loader reads. For moment
 kinds, use `register_moment_persistence::<M>()` instead, which combines the collector and loader
 in one call (all moments load at `SpawnEffectInstances`).
 
+## Map Catalog
+
+`GameMapList` lists every `.dwd` in `maps/` with its header:
+`MapListEntry { file_name: MapFileName, info: MapInfo }`. `MapFileName` (the file name without
+`.dwd`) is the unique key; `MapInfo::name` is the display name and need not be unique.
+`MapFileName::path()` is the one place that builds `maps/<file_name>.dwd`.
+
+The catalog starts empty and reads every header on first use (`entries()`), so a session that never
+shows the list pays nothing. `finalize_save` calls `refresh()` after a scenario save, the one
+place the game writes to `maps/`. Nothing reads headers at app build: an unmigrated map would
+panic there before the migration launch action could run.
+
+Headers are read with `CATALOG_MIGRATIONS` (`Migrations::Skip`), so listing never writes
+in-development migrations into the maps, and a header that cannot be read panics. Bring the maps
+up to date with `LaunchAction::ApplySQLMigrations`, which lists `maps/` with
+`list_map_file_names()` and never reads headers. Flip `CATALOG_MIGRATIONS` to `Apply` once
+migrations are final and players bring older maps.
+
+`with_db_connection(path, migrations, f)` applies migrations first when `migrations` is `Apply`
+(map load, save); everything else passes `Skip`.
+
 ## Where Code Lives
 
-- **`persistence` crate** — infrastructure only: `CollectSave` + `SaveWriter` + driver,
-  `LoadContext` + registry + runner systems, `LoadProgress`, `GameDbHelpers`, migrations. Only
+- **`persistence` crate** — infrastructure: `CollectSave` + `SaveWriter` + driver,
+  `LoadContext` + registry + runner systems, `LoadProgress`, `GameDbHelpers`, migrations — plus
+  the tables `persistence` itself reads: the map header (`map_info`: collector, loader,
+  `read_map_info`) behind the catalog, and shared moments. Only
   `_internal` crates (plus `session`, `hud_internal`, the binary) depend on it. **Api crates must
   never depend on `persistence`.**
 - **`<domain>_internal`** — collector systems and loader fns, owning their SQL end-to-end.
@@ -315,14 +346,3 @@ saves are corrupted by this — for released builds, don't.
    app once, then switch back to `LaunchAction::StartMap`.
 
 Since all saves already have the final schema, re-running V1 with `IF NOT EXISTS` is a data no-op.
-
-## File Locations
-
-- `persistence/src/save.rs` — `CollectSave`, `SaveWriter`, `SaveContext`, `SaveGameSignal`,
-  `SaveTarget`, repack observer, driver, finalize, atomic write
-- `persistence/src/load.rs` — `LoadContext`, registry, runner systems, `LoadProgress`,
-  `LoadGameSignal` observer
-- `persistence/src/common.rs` — `with_db_connection`, `GameDbHelpers`, `register_loader`
-  + `register_moment_persistence` extension, migration helpers
-- `persistence/migrations/` — SQLite schema
-- `states/src/map_loading_stage.rs` — `MapLoadingStage` definitions

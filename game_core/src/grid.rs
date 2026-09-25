@@ -1,6 +1,7 @@
 use std::borrow::Borrow;
 
 use bevy::prelude::*;
+use serde::Serialize;
 
 use crate::prelude::SSS;
 
@@ -12,7 +13,7 @@ pub const ALL_DIRECTIONS: [(i32, i32); 8] = [
     (1, 1), (1, -1), (-1, 1), (-1, -1) // Diagonal directions
 ];
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize)]
 pub struct Bounds {
     pub width: i32,
     pub height: i32,
@@ -65,7 +66,7 @@ fn world_size_of_cells(width: i32, height: i32) -> Vec2 {
 }
 
 /// Shared map identity and dimensions, used to size grids and position the camera.
-#[derive(Resource, Default, Clone, SSS)]
+#[derive(Resource, Default, Clone, SSS, Serialize)]
 pub struct MapInfo {
     pub grid_bounds: Bounds,
     pub name: String,

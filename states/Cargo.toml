@@ -5,6 +5,8 @@ edition.workspace = true
 
 [dependencies]
 bevy = { workspace = true, features = ["ui"] }
+game_core = { workspace = true }
+serde = { workspace = true }
 
 [lints]
 workspace = true

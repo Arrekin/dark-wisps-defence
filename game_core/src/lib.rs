@@ -8,6 +8,7 @@ pub mod grid;
 pub mod types;
 pub mod motion;
 pub mod moments;
+pub mod response_request;
 
 pub mod prelude {
     // Foundation vocabulary shared across domain crates. Narrow utilities stay out — e.g.
@@ -24,6 +25,7 @@ pub mod prelude {
     pub use crate::moments::{
         HasMoments, Moment, MomentHappened, MomentKind, MomentOf, MomentOfInterest, MomentWatchers,
     };
+    pub use crate::response_request::ResponseRequest;
     pub use crate::traits::{Property, SSS};
     pub use crate::types::{BuildingType, MapObject, ShardType, TowerType, WispType};
     pub use crate::z_depth::*;          // ZDepth + associated layer constants

@@ -11,7 +11,7 @@ use bevy_egui::{EguiPrimaryContextPass, egui};
 use strum::{AsRefStr, EnumIter, IntoEnumIterator};
 
 use game_core::prelude::{MapInfo, ShardType};
-use persistence::{LoadGameSignal, LoadMapConfig};
+use persistence::{LoadGameSignal, LoadMapConfig, MapFileName};
 use shards::prelude::*;
 use states::AdminMode;
 
@@ -43,7 +43,7 @@ pub struct EditorState {
     pub selected_objective: Option<Entity>,
     pub selected_research: Option<Entity>,
     pub scenario_filename: Option<String>,
-    pub pending_overwrite_confirm: Option<String>,
+    pub pending_overwrite_confirm: Option<MapFileName>,
     pub new_map_form: NewMapForm,
 }
 impl EditorState {
@@ -154,12 +154,12 @@ fn tab_general(ui: &mut egui::Ui, world: &mut World) {
         if ui.button("Save as Scenario").clicked()
             && let Some(ref name) = filename
         {
-            let path = format!("maps/{}.dwd", name);
-            if std::path::Path::new(&path).exists() {
-                world.resource_mut::<EditorState>().pending_overwrite_confirm = Some(name.clone());
+            let file_name = MapFileName::new(name.clone());
+            if std::path::Path::new(&file_name.path()).exists() {
+                world.resource_mut::<EditorState>().pending_overwrite_confirm = Some(file_name);
             } else {
                 world.commands().trigger(persistence::SaveGameSignal {
-                    target: persistence::SaveTarget::Scenario(name.clone()),
+                    target: persistence::SaveTarget::Scenario(file_name),
                 });
             }
         }
@@ -167,12 +167,12 @@ fn tab_general(ui: &mut egui::Ui, world: &mut World) {
 
     // Overwrite confirm dialog
     let pending = world.resource::<EditorState>().pending_overwrite_confirm.clone();
-    if let Some(pending_name) = pending {
+    if let Some(pending_file_name) = pending {
         ui.horizontal(|ui| {
-            ui.colored_label(egui::Color32::RED, format!("'{}.dwd' exists. Overwrite?", pending_name));
+            ui.colored_label(egui::Color32::RED, format!("'{}.dwd' exists. Overwrite?", pending_file_name.as_str()));
             if ui.button("Yes, overwrite").clicked() {
                 world.commands().trigger(persistence::SaveGameSignal {
-                    target: persistence::SaveTarget::Scenario(pending_name),
+                    target: persistence::SaveTarget::Scenario(pending_file_name),
                 });
                 world.resource_mut::<EditorState>().pending_overwrite_confirm = None;
             }

@@ -1,8 +1,11 @@
 use bevy::prelude::*;
+use serde::Serialize;
 
-use crate::game_state::GameState;
+use game_core::prelude::*;
 
-#[derive(Default, Clone, Copy, Debug, States, PartialEq, Eq, Hash)]
+use crate::game_state::SetGamePaused;
+
+#[derive(Default, Clone, Copy, Debug, States, PartialEq, Eq, Hash, Serialize)]
 pub enum AdminMode {
     #[default]
     Disabled,
@@ -13,19 +16,18 @@ impl AdminMode {
         matches!(self, AdminMode::Enabled)
     }
     pub(crate) fn toggle_admin_mode(
+        mut commands: Commands,
         mut next_admin_mode: ResMut<NextState<AdminMode>>,
-        mut next_game_state: ResMut<NextState<GameState>>,
         current_admin_mode: Res<State<AdminMode>>,
     ) {
-        // TODO: There is a risk of changing game state when loading etc.
         match current_admin_mode.get() {
             AdminMode::Disabled => {
                 next_admin_mode.set(AdminMode::Enabled);
-                next_game_state.set(GameState::Paused);
+                commands.trigger(SetGamePaused { paused: true, response: ResponseRequest::not_needed() });
             },
             AdminMode::Enabled => {
                 next_admin_mode.set(AdminMode::Disabled);
-                next_game_state.set(GameState::Running);
+                commands.trigger(SetGamePaused { paused: false, response: ResponseRequest::not_needed() });
             },
         }
     }

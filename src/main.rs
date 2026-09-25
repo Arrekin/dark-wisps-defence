@@ -1,6 +1,6 @@
 use bevy::{ecs::message::Messages, prelude::*};
 
-use persistence::{GameMapList, LoadGameSignal, LoadMapConfig, MapSource, run_migrations_on_paths};
+use persistence::{LoadGameSignal, LoadMapConfig, MapFileName, MapSource, list_map_file_names, run_migrations_on_paths};
 use states::{AdminMode, prelude::*};
 
 fn main() {
@@ -40,6 +40,7 @@ fn main() {
         ))
         .add_plugins(editor::EditorPlugin)
         .add_plugins(visuals_internal::VisualsPlugin)
+        .add_plugins(byoaic::ByoaicPlugin)
         .add_systems(PostStartup, |mut commands: Commands| { commands.queue(LaunchAction::default()); })
         .run();
 }
@@ -56,6 +57,7 @@ impl Default for LaunchAction {
             source: MapSource::File("maps/test_map.dwd".into()),
             game_start_state: GameState::Running,
             admin_mode: AdminMode::Disabled,
+            response: default(),
         })
     }
 }
@@ -64,12 +66,12 @@ impl Command for LaunchAction {
     fn apply(self, world: &mut World) {
         match self {
             LaunchAction::ApplySQLMigrations => {
-                let paths = Self::all_dwd_paths(world);
+                let paths = Self::all_dwd_paths();
                 run_migrations_on_paths(&paths, false);
                 world.resource_mut::<Messages<bevy::app::AppExit>>().write(bevy::app::AppExit::Success);
             }
             LaunchAction::RebuildSQLMigrationsMetadata => {
-                let paths = Self::all_dwd_paths(world);
+                let paths = Self::all_dwd_paths();
                 run_migrations_on_paths(&paths, true);
                 world.resource_mut::<Messages<bevy::app::AppExit>>().write(bevy::app::AppExit::Success);
             }
@@ -80,8 +82,8 @@ impl Command for LaunchAction {
     }
 }
 impl LaunchAction {
-    fn all_dwd_paths(world: &World) -> Vec<String> {
-        let mut paths = world.resource::<GameMapList>().paths();
+    fn all_dwd_paths() -> Vec<String> {
+        let mut paths: Vec<String> = list_map_file_names().iter().map(MapFileName::path).collect();
         paths.push("test_save.dwd".to_string());
         paths
     }

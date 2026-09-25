@@ -6,3 +6,5 @@
 /*.dwd
 
 /workdoc_*.md
+/workdoc_*/
+/screenshots/

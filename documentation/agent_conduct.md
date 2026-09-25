@@ -1,6 +1,6 @@
 # Agent Conduct
 
-How to work. For architecture, patterns and code style see [notes_for_ai_agents.md](notes_for_ai_agents.md).
+How to work. For architecture, patterns and code style see [AGENTS.md](../AGENTS.md).
 
 The five rules below are one mistake wearing different clothes: **adding something that was never
 there, then treating it as real.** An option nobody asked for. A comment about a conversation the

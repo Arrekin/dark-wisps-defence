@@ -12,6 +12,7 @@ resources = { workspace = true }
 states = { workspace = true }
 logging = { workspace = true }
 crossbeam-channel = { workspace = true }
+serde = { workspace = true }
 
 [lints]
 workspace = true

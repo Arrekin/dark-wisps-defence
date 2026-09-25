@@ -28,6 +28,7 @@ almanach = { workspace = true }
 research_internal = { workspace = true }
 widgets_internal = { workspace = true }
 visuals_internal = { workspace = true }
+byoaic = { workspace = true }
 
 [lints]
 workspace = true
@@ -74,6 +75,7 @@ members = [
   "visuals",
   "visuals_internal",
   "lib-derive",
+  "byoaic",
 ]
 
 [workspace.package]
@@ -100,6 +102,11 @@ nanorand = "0.8"
 rusqlite = { version = "0.39.*", features = ["bundled"] }
 refinery = { version = "0.9.*", features = ["rusqlite"] }
 crossbeam-channel = "0.5.*"
+axum = { version = "0.8.*", default-features = false, features = ["tokio", "http1", "json"] }
+tokio = { version = "1.*", features = ["rt", "net"] }
+async-channel = "2.*"
+serde = { version = "1.*", features = ["derive"] }
+serde_json = "1.*"
 bytemuck = "1.*"
 syn = { version = "3.0.*", features = ["full"] }
 quote = "1.0"
@@ -145,6 +152,7 @@ widgets_internal = { path = "widgets_internal" }
 visuals = { path = "visuals" }
 visuals_internal = { path = "visuals_internal" }
 lib-derive = { path = "lib-derive" }
+byoaic = { path = "byoaic" }
 
 [profile.release]
 codegen-units = 1

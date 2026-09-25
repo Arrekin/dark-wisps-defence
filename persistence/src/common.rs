@@ -9,18 +9,29 @@ use crate::load::GameLoadRegistry;
 use crate::moments::{load_moments, save_moments};
 use crate::save::CollectSave;
 
-/// Run `f` against a freshly opened SQLite connection to `path`.
+/// Whether [`with_db_connection`] brings the file up to the current schema before running `f`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Migrations {
+    Apply,
+    Skip,
+}
+
+/// Run `f` against a freshly opened SQLite connection to `path`, after applying schema
+/// migrations when `migrations` is [`Migrations::Apply`].
 ///
 /// The connection is scoped to this call and dropped the instant `f` returns,
 /// releasing the OS file handle. Do NOT cache it across calls: SQLite on Windows
 /// opens without FILE_SHARE_DELETE, so any lingering handle blocks the save
 /// path's `remove_file`. Loads stay parallel because each worker thread opens
 /// its own short-lived connection.
-pub(crate) fn with_db_connection<F>(path: &str, f: F) -> Result<(), Box<dyn std::error::Error>>
+pub(crate) fn with_db_connection<T, F>(path: &str, migrations: Migrations, f: F) -> Result<T, Box<dyn std::error::Error>>
 where
-    F: FnOnce(&mut rusqlite::Connection) -> Result<(), Box<dyn std::error::Error>>,
+    F: FnOnce(&mut rusqlite::Connection) -> Result<T, Box<dyn std::error::Error>>,
 {
     let mut conn = rusqlite::Connection::open(path)?;
+    if migrations == Migrations::Apply {
+        db_migrations::migrations::runner().run(&mut conn)?;
+    }
     f(&mut conn)
 }
 
@@ -40,7 +51,7 @@ pub fn run_migrations_on_paths(paths: &[String], rebuild_metadata: bool) {
         } else {
             Log::info().dev().tag(Tag::GameLoad).message(format!("Applying migrations to '{path}'"));
         }
-        if let Err(e) = with_db_connection(path, |conn| {
+        if let Err(e) = with_db_connection(path, Migrations::Skip, |conn| {
             if rebuild_metadata {
                 conn.execute("DELETE FROM refinery_schema_history;", [])?;
             }

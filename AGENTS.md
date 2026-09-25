@@ -6,7 +6,7 @@ Architectural hints and patterns to maintain consistency across the codebase.
 
 Entities are saved via collector systems in the `CollectSave` schedule and loaded via plain `LoaderFn`s registered per `MapLoadingStage`. All persistence logic lives in `_internal` crates; api crates carry none of it. Builders serve as cross-domain spawn contracts for both fresh spawns and loads.
 
-See [persistence.md](persistence.md) for full details.
+See [persistence.md](documentation/persistence.md) for full details.
 
 ## Builder Pattern for Persistable Entities
 
@@ -261,3 +261,8 @@ Five groups, separated by blank lines, alphabetical within each:
 5. `super::` / `self::` paths
 
 Merge duplicate imports from the same crate into a single `use` statement.
+
+## BYOAIC / Remote Control
+
+Where feasible, test changes through the game's built-in HTTP server. See [BYOAIC](documentation/BYOAIC.md) for the available endpoints.
+You can temporarily add endpoints for testing (spawning things, running and returning queries, etc.). Remove test-only endpoints when finished.

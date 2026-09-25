@@ -1,6 +1,7 @@
 use bevy::prelude::*;
+use serde::Serialize;
 
-#[derive(Default, Clone, Debug, States, PartialEq, Eq, Hash)]
+#[derive(Default, Clone, Debug, States, PartialEq, Eq, Hash, Serialize)]
 pub enum UiInteraction {
     #[default]
     Free, // No interaction

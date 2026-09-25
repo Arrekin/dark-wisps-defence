@@ -94,6 +94,7 @@ pub enum Tag {
     Resources,
     Forge,
     Research,
+    Byoaic,
 }
 
 // ── LogEntryData ──────────────────────────────────────────────────────────────

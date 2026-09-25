@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use serde::Serialize;
 
 use game_core::prelude::SSS;
 use persistence::{
@@ -24,7 +25,7 @@ impl Plugin for GameClockPlugin {
 ///
 /// Timed effects store absolute expiry timestamps relative to this clock.
 /// Save and restore `elapsed` to preserve effect timing across sessions.
-#[derive(Resource, Default, SSS, Clone)]
+#[derive(Resource, Default, SSS, Clone, Serialize)]
 pub struct GameClock {
     pub elapsed: f64,
 }

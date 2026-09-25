@@ -1,3 +1,22 @@
+//! # Map loading
+//!
+//! A file load runs migrations, replaces map-bound entities, and enters `GameState::Loading`.
+//! Requests during a load or a pending state transition are rejected. New maps use the same
+//! stages without reading a file.
+//!
+//! Loaders run on IO threads and send batches of world changes to the main thread. Each
+//! `MapLoadingStage` waits for its loaders and their queued changes before advancing, so later
+//! stages can use entities and resources created earlier. The game drains batches over multiple
+//! frames instead of waiting for all IO to finish before processing them.
+//!
+//! At `Ready`, the game queues the requested start state. It sends a `LoadGameReport` when it
+//! leaves `Loading`, after that state takes effect.
+
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
+};
+
 use bevy::{
     ecs::world::CommandQueue,
     input::common_conditions::input_just_released,
@@ -5,18 +24,17 @@ use bevy::{
     prelude::*,
     tasks::IoTaskPool,
 };
-
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::Arc;
-
 use crossbeam_channel::{Receiver, Sender, unbounded};
+use serde::Serialize;
 
 use game_core::prelude::*;
 use logging::prelude::*;
 use states::{AdminMode, prelude::*};
 
 use crate::{
-    common::{db_migrations, with_db_connection},
+    common::{Migrations, with_db_connection},
+    map_file_name::MapFileName,
+    map_list::GameMapList,
 };
 
 pub struct MapLoadPlugin;
@@ -26,9 +44,6 @@ impl Plugin for MapLoadPlugin {
             .init_resource::<GameLoadRegistry>()
             .init_resource::<LoadProgress>()
             .init_resource::<GameMapList>()
-            // build_entity_id_map is exclusive, runs first in LoadMapInfo.
-            // spawn_stage_loaders runs .after() it for LoadMapInfo, and standalone
-            // for the other stages.
             .add_systems(
                 OnEnter(MapLoadingStage::LoadMapInfo),
                 (
@@ -49,6 +64,7 @@ impl Plugin for MapLoadPlugin {
                 spawn_stage_loaders,
             )
             .add_systems(OnEnter(MapLoadingStage::Ready), on_map_load_ready)
+            .add_systems(OnExit(GameState::Loading), finish_map_load)
             .add_systems(Update, (
                 apply_load_queues.run_if(in_state(GameState::Loading)),
                 advance_stage
@@ -56,19 +72,18 @@ impl Plugin for MapLoadPlugin {
                     .after(apply_load_queues),
                 LoadGameSignal::emit.run_if(input_just_released(KeyCode::KeyA)),
             ))
-            .add_observer(LoadGameSignal::on_trigger);
+            .add_observer(LoadGameSignal::on_load_game_signal_do_so);
     }
 }
 
-// --- Load pipeline types -----------------------------------------------------
+// --- Loaders -----------------------------------------------------------------
 
-/// A loader is a plain fn, not a trait impl. It runs on an IO thread with its own
-/// connection. It must stream ONE pass over its table(s) — no LIMIT/OFFSET, no
-/// resumability — and push world mutations through the context.
+/// Read each table in one pass and send world changes through `LoadContext`. The context batches
+/// those changes across frames; loaders should not paginate their queries.
 pub type LoaderFn = fn(&mut LoadContext) -> rusqlite::Result<()>;
 
 pub(crate) struct LoaderDescriptor {
-    /// Primary table; used for `SELECT COUNT(*)` progress totals.
+    /// Table counted for the progress bar; loaders can read additional tables.
     pub table: &'static str,
     pub run: LoaderFn,
 }
@@ -78,13 +93,14 @@ pub(crate) struct GameLoadRegistry {
     pub loaders: HashMap<MapLoadingStage, Vec<LoaderDescriptor>>,
 }
 
-/// Old-id -> new-Entity map. Built once per load on the main thread, shared into
-/// loader tasks.
+/// Maps saved IDs to entities allocated before loading begins, including entities populated in
+/// later stages.
 #[derive(Resource, Clone)]
 pub struct EntityIdMap(pub Arc<HashMap<i64, Entity>>);
 
 const CHUNK_ROWS: usize = 128;
 
+/// Queues loader changes for the main thread; flushes every `CHUNK_ROWS` changes and on drop.
 pub struct LoadContext<'a> {
     pub conn: &'a rusqlite::Connection,
     entity_map: Arc<HashMap<i64, Entity>>,
@@ -92,16 +108,14 @@ pub struct LoadContext<'a> {
     rows_since_flush: usize,
     sender: Sender<CommandQueue>,
     done_rows: Arc<AtomicUsize>,
-    cancel: Arc<AtomicBool>,
 }
 impl LoadContext<'_> {
-    /// Map a saved entity id to the pre-spawned Entity. None => log a dev warn in
-    /// the loader and `continue` (same policy as today).
+    /// Resolves a saved ID; missing IDs have no allocated entity.
     pub fn entity(&self, old_id: i64) -> Option<Entity> {
         self.entity_map.get(&old_id).copied()
     }
 
-    /// `insert(bundle)` on a mapped entity. Sugar over `push()`.
+    /// Inserts only if the entity still exists when the batch is applied.
     pub fn insert(&mut self, entity: Entity, bundle: impl Bundle) {
         self.push(move |world: &mut World| {
             if let Ok(mut e) = world.get_entity_mut(entity) {
@@ -110,20 +124,14 @@ impl LoadContext<'_> {
         });
     }
 
-    /// Insert/replace a resource. Sugar over `push()`.
     pub fn insert_resource(&mut self, resource: impl Resource) {
         self.push(move |world: &mut World| {
             world.insert_resource(resource);
         });
     }
 
-    /// Escape hatch: arbitrary deferred world mutation. Increments `done_rows`,
-    /// pushes into the current `CommandQueue`, flushes to the channel every
-    /// `CHUNK_ROWS` (128). No-ops (drops `f`) when cancelled.
+    /// Queues a world change and counts it toward loading progress.
     pub fn push(&mut self, f: impl FnOnce(&mut World) + Send + 'static) {
-        if self.cancelled() {
-            return;
-        }
         self.queue.push(f);
         self.done_rows.fetch_add(1, Ordering::Relaxed);
         self.rows_since_flush += 1;
@@ -132,14 +140,6 @@ impl LoadContext<'_> {
         }
     }
 
-    /// Loaders MAY check this in long loops to early-return `Ok(())`. Not required.
-    pub fn cancelled(&self) -> bool {
-        self.cancel.load(Ordering::Relaxed)
-    }
-
-    /// Send the current (possibly partial) `CommandQueue` to the applier channel
-    /// and start a fresh one. Called automatically every `CHUNK_ROWS` by `push`,
-    /// and once more on `Drop` for the tail.
     fn flush(&mut self) {
         if self.queue.is_empty() {
             self.rows_since_flush = 0;
@@ -152,25 +152,24 @@ impl LoadContext<'_> {
 }
 impl Drop for LoadContext<'_> {
     fn drop(&mut self) {
-        // Flush the remaining partial queue. Don't lose the tail.
         self.flush();
     }
 }
 
-/// Per-load runtime state. Created on `LoadGameSignal`, dropped on reaching
-/// `Ready`. MUST exist before `Init`'s first `Update` frame — `advance_stage`
-/// runs on that frame (zero loaders) and reads `LoadRunner.tasks` /
-/// `LoadRunner.receiver`.
+// --- Load in progress --------------------------------------------------------
+
+/// Holds loader tasks and their batch channel until the game leaves `Loading`.
+/// It must exist before the first `Update`: the empty `Init` stage advances immediately.
 #[derive(Resource)]
 pub(crate) struct LoadRunner {
-    /// Keep handles: dropping a `Task` cancels it.
+    /// Kept until finished: dropping a `Task` cancels it.
     pub tasks: Vec<bevy::tasks::Task<()>>,
     pub sender: Sender<CommandQueue>,
     pub receiver: Receiver<CommandQueue>,
-    pub cancel: Arc<AtomicBool>,
 }
 
-/// Public — HUD reads this for a progress bar.
+/// Progress is approximate: `done_rows` counts queued changes, while `total_rows` counts rows
+/// in registered tables. The counts need not match, and queued changes may not yet be applied.
 #[derive(Resource, Default)]
 pub struct LoadProgress {
     pub total_rows: usize,
@@ -189,42 +188,28 @@ impl LoadProgress {
     }
 }
 
-/// Command queued by the `LoadGameSignal` observer to set up the load runner.
-/// Runs at the observer's sync point — before state transitions and before
-/// `advance_stage`'s first `Update` run.
+/// Installs a fresh runner and progress counter before the load's first `Update`.
 struct InitLoadRunner;
 impl Command for InitLoadRunner {
     type Out = ();
     fn apply(self, world: &mut World) {
-        // Cancel-and-replace: if a previous LoadRunner exists (e.g. re-load
-        // during an in-flight load), flag it cancelled before replacing.
-        if let Some(existing) = world.get_resource::<LoadRunner>() {
-            existing.cancel.store(true, Ordering::Relaxed);
-        }
         let (sender, receiver) = unbounded();
         world.insert_resource(LoadRunner {
             tasks: Vec::new(),
             sender,
             receiver,
-            cancel: Arc::new(AtomicBool::new(false)),
         });
-        // Fresh done_rows Arc per load — never reuse the previous load's counter.
         world.insert_resource(LoadProgress::default());
     }
 }
 
-// --- Runner systems ----------------------------------------------------------
-
-/// `OnEnter(MapLoadingStage::LoadMapInfo)`. **Exclusive system** — uses
-/// `world.spawn_empty()` / `world.insert_resource(...)` directly, NOT `Commands`:
-/// deferred `Commands` inserts land at the `OnEnter` schedule's end sync point
-/// and would be invisible to `spawn_stage_loaders` running `.after()` it in the
-/// same schedule.
+/// Allocates entities for saved IDs and counts loader rows before the first loader starts.
+/// Runs exclusively because the loaders in this `OnEnter` schedule need the ID map immediately;
+/// deferred commands would apply too late.
 pub(crate) fn build_entity_id_map(world: &mut World) {
     let config = world.resource::<LoadMapConfig>().clone();
 
     let map_path = match &config.source {
-        // New map: no DB, no entities, no rows.
         MapSource::New(_) => {
             world.insert_resource(EntityIdMap(Arc::new(HashMap::new())));
             world.resource_mut::<LoadProgress>().total_rows = 0;
@@ -236,13 +221,10 @@ pub(crate) fn build_entity_id_map(world: &mut World) {
         }
         MapSource::File(map_path) => map_path.clone(),
     };
-    let registry = world.resource::<GameLoadRegistry>();
-
-    // Compute progress totals by summing COUNT(*) over every registered table
-    // (all stages).
     let mut total_rows: usize = 0;
-    let _ = with_db_connection(&map_path, |conn| {
-        for loaders in registry.loaders.values() {
+    let mut map: HashMap<i64, Entity> = HashMap::new();
+    with_db_connection(&map_path, Migrations::Skip, |conn| {
+        for loaders in world.resource::<GameLoadRegistry>().loaders.values() {
             for desc in loaders {
                 let count: i64 = conn
                     .query_row(&format!("SELECT COUNT(*) FROM {}", desc.table), [], |row| {
@@ -252,13 +234,7 @@ pub(crate) fn build_entity_id_map(world: &mut World) {
                 total_rows += count as usize;
             }
         }
-        Ok(())
-    });
 
-    // Build the entity id map: read `entities` table, spawn an empty entity per
-    // row, map old_id -> new Entity.
-    let mut map: HashMap<i64, Entity> = HashMap::new();
-    let _ = with_db_connection(&map_path, |conn| {
         let mut stmt = conn.prepare("SELECT id FROM entities")?;
         let rows = stmt.query_map([], |row| row.get::<_, i64>(0))?;
         for row in rows {
@@ -267,7 +243,8 @@ pub(crate) fn build_entity_id_map(world: &mut World) {
             map.insert(old_id, new_entity);
         }
         Ok(())
-    });
+    })
+    .expect("Failed to read entity IDs from the map file");
 
     let count = map.len();
     Log::debug()
@@ -278,14 +255,12 @@ pub(crate) fn build_entity_id_map(world: &mut World) {
     let entity_id_map = Arc::new(map);
     world.insert_resource(EntityIdMap(entity_id_map));
 
-    // Set progress totals.
     let mut progress = world.resource_mut::<LoadProgress>();
     progress.total_rows = total_rows;
 }
 
-/// `OnEnter(...)` for each load stage. For each descriptor of the entered stage:
-/// spawn an `IoTaskPool` task that opens its own connection, builds a
-/// `LoadContext`, calls `run`, logs `Err` with the table name, flushes the tail.
+/// Starts one IO task and database connection per loader in this stage. Loader errors are
+/// logged, but do not stop the load.
 pub(crate) fn spawn_stage_loaders(
     stage: Res<State<MapLoadingStage>>,
     mut runner: ResMut<LoadRunner>,
@@ -295,8 +270,6 @@ pub(crate) fn spawn_stage_loaders(
     progress: Res<LoadProgress>,
 ) {
     let map_path = match &load_config.source {
-        // New map: no loaders to spawn. The stage machine advances on its own
-        // (zero tasks ⇒ one stage per frame).
         MapSource::New(_) => return,
         MapSource::File(map_path) => map_path.clone(),
     };
@@ -312,7 +285,6 @@ pub(crate) fn spawn_stage_loaders(
     let entity_map = entity_id_map.0.clone();
     let sender = runner.sender.clone();
     let done_rows = progress.done_rows.clone();
-    let cancel = runner.cancel.clone();
 
     Log::debug()
         .dev()
@@ -326,10 +298,9 @@ pub(crate) fn spawn_stage_loaders(
         let entity_map = entity_map.clone();
         let sender = sender.clone();
         let done_rows = done_rows.clone();
-        let cancel = cancel.clone();
 
         let task = IoTaskPool::get().spawn(async move {
-            let result = with_db_connection(&map_path, |conn| {
+            let result = with_db_connection(&map_path, Migrations::Skip, |conn| {
                 let mut ctx = LoadContext {
                     conn,
                     entity_map,
@@ -337,10 +308,8 @@ pub(crate) fn spawn_stage_loaders(
                     rows_since_flush: 0,
                     sender,
                     done_rows,
-                    cancel,
                 };
                 run(&mut ctx)?;
-                // Drop flushes the tail queue.
                 Ok(())
             });
             if let Err(e) = result {
@@ -354,10 +323,8 @@ pub(crate) fn spawn_stage_loaders(
     }
 }
 
-/// `Update`, `run_if(in_state(GameState::Loading))`. Drains the channel within a
-/// time budget and merges `CommandQueue`s into the frame via
-/// `commands.append(&mut queue)`. Disk I/O never sits inside the frame; the
-/// budget only bounds ECS application.
+/// Drains loader batches for up to 4 ms, appending them to this frame's commands. The budget
+/// limits time spent draining, not the later cost of applying those commands.
 pub(crate) fn apply_load_queues(mut commands: Commands, runner: Res<LoadRunner>) {
     let start = std::time::Instant::now();
     let budget = std::time::Duration::from_millis(4);
@@ -371,14 +338,13 @@ pub(crate) fn apply_load_queues(mut commands: Commands, runner: Res<LoadRunner>)
     }
 }
 
-/// `Update`, `.after(apply_load_queues)`. Advances to `stage.next()` only when:
-/// all loader tasks are finished and the channel is drained.
+/// Advances only after all tasks finish and the batch channel is empty. Runs after
+/// `apply_load_queues`, whose commands are applied before the next stage starts.
 pub(crate) fn advance_stage(
     mut runner: ResMut<LoadRunner>,
     stage: Res<State<MapLoadingStage>>,
     mut next_stage: ResMut<NextState<MapLoadingStage>>,
 ) {
-    // Drop finished tasks (retain unfinished ones — dropping cancels).
     runner.tasks.retain(|t| !t.is_finished());
 
     if !runner.tasks.is_empty() {
@@ -398,74 +364,38 @@ pub(crate) fn advance_stage(
     next_stage.set(next);
 }
 
-/// Public accessor for the `LoadGameSignal` observer to queue the runner setup
-/// command.
-pub(crate) fn queue_init_load_runner(commands: &mut Commands) {
-    commands.queue(InitLoadRunner);
-}
+// --- Load request ------------------------------------------------------------
 
-// --- Shared infrastructure ---------------------------------------------------
-
-/// All .dwd map files found in the maps/ directory at startup.
-#[derive(Resource)]
-pub struct GameMapList {
-    pub names: Vec<String>,
-}
-impl Default for GameMapList {
-    fn default() -> Self {
-        let mut list = Self { names: vec![] };
-        list.refresh();
-        list
-    }
-}
-impl GameMapList {
-    pub fn paths(&self) -> Vec<String> {
-        self.names.iter().map(|name| format!("maps/{}.dwd", name)).collect()
-    }
-
-    /// Re-scans the `maps/` directory. Called by the finalize system after a
-    /// scenario save so the new map appears in the menu without restarting.
-    pub fn refresh(&mut self) {
-        self.names = std::fs::read_dir("maps")
-            .ok()
-            .into_iter()
-            .flat_map(|rd| rd.filter_map(|e| e.ok()))
-            .filter_map(|e| {
-                let path = e.path();
-                if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("dwd") {
-                    path.file_stem().and_then(|s| s.to_str()).map(|s| s.to_string())
-                } else {
-                    None
-                }
-            })
-            .collect();
-    }
-}
-
-/// Where the map being loaded comes from.
-///
-/// `File` loads an existing `.dwd` file.
-/// `New` builds a blank map from `MapInfo` without reading or creating a file.
+/// An existing `.dwd` file or a blank map built from `MapInfo` without creating a file.
 #[derive(Clone)]
 pub enum MapSource {
     File(String),
     New(MapInfo),
 }
 
+/// Load settings kept as a resource until the game leaves `Loading`.
 #[derive(Resource, Clone)]
 pub struct LoadMapConfig {
     pub source: MapSource,
     pub game_start_state: GameState,
     pub admin_mode: AdminMode,
+    /// Recipient of the `LoadGameReport`.
+    pub response: ResponseRequest,
 }
 impl LoadMapConfig {
-    /// Load an existing `.dwd` file. Running + admin disabled — the normal play path.
+    /// Load a file into normal play (running, admin disabled).
     pub fn file(map_path: impl Into<String>) -> Self {
         Self {
             source: MapSource::File(map_path.into()),
             game_start_state: GameState::Running,
             admin_mode: AdminMode::Disabled,
+            response: ResponseRequest::not_needed(),
         }
+    }
+
+    /// Load a file from `maps/` using the normal play settings.
+    pub fn map(file_name: &MapFileName) -> Self {
+        Self::file(file_name.path())
     }
 
     /// Build a blank map in memory. Paused + admin enabled — ready to author.
@@ -474,70 +404,109 @@ impl LoadMapConfig {
             source: MapSource::New(map_info),
             game_start_state: GameState::Paused,
             admin_mode: AdminMode::Enabled,
+            response: ResponseRequest::not_needed(),
         }
+    }
+
+    pub fn with_response(mut self, response: ResponseRequest) -> Self {
+        self.response = response;
+        self
     }
 }
 
-/// True while the in-flight map build is a fresh map rather than a file load.
-///
-/// Only valid inside the map build window — `OnEnter(Init)` through
-/// `OnEnter(Ready)` inclusive. `LoadMapConfig` does not exist outside it, so
-/// registering this condition outside that window panics when it runs.
+/// Run condition for systems used only while building a new map. Requires `LoadMapConfig`,
+/// which is absent outside an active load.
 pub fn creating_new_map(config: Res<LoadMapConfig>) -> bool {
     matches!(config.source, MapSource::New(_))
 }
 
+/// Requests a map load; if a response is requested, reports rejection or completion.
 #[derive(Event)]
 pub struct LoadGameSignal(pub LoadMapConfig);
 impl LoadGameSignal {
+    /// Dev keybind: loads the quick save, `test_save.dwd`.
     fn emit(mut commands: Commands) {
         Log::debug().dev().tag(Tag::GameLoad).message("Triggering load signal");
         commands.trigger(LoadGameSignal(LoadMapConfig::file("test_save.dwd")));
     }
-    fn on_trigger(
+
+    /// Rejects conflicting requests before changing the current map. Accepted file loads run
+    /// migrations before starting the loader stages.
+    fn on_load_game_signal_do_so(
         trigger: On<LoadGameSignal>,
         mut commands: Commands,
         mut next_game_state: ResMut<NextState<GameState>>,
         mut next_map_loading_stage: ResMut<NextState<MapLoadingStage>>,
         mut next_ui_state: ResMut<NextState<UiInteraction>>,
+        current_game_state: Res<State<GameState>>,
         map_bound_entities: Query<Entity, With<MapBound>>,
     ) {
         let config = trigger.event().0.clone();
 
+        if *current_game_state.get() == GameState::Loading {
+            Log::warn().player().tag(Tag::GameLoad).message("Load already in progress — skipping");
+            config.response.report(&mut commands, |entity| LoadGameReport { entity, result: LoadGameResult::AlreadyLoading });
+            return;
+        }
+        if let NextState::Pending(state) | NextState::PendingIfNeq(state) = *next_game_state {
+            Log::warn().dev().tag(Tag::GameLoad).message(format!("Transition to {state:?} already queued — skipping load"));
+            config.response.report(&mut commands, |entity| LoadGameReport { entity, result: LoadGameResult::OtherTransitionAlreadyQueued { state } });
+            return;
+        }
+        if let MapSource::File(map_path) = &config.source
+            && !std::path::Path::new(map_path).exists()
+        {
+            Log::warn().player().tag(Tag::GameLoad).message(format!("Map file '{map_path}' not found — skipping"));
+            let path = map_path.clone();
+            config.response.report(&mut commands, |entity| LoadGameReport { entity, result: LoadGameResult::MapNotFound { path } });
+            return;
+        }
+
         match &config.source {
             MapSource::File(map_path) => {
                 Log::info().dev().tag(Tag::GameLoad).message(format!("Loading '{map_path}'"));
-                // Run migrations synchronously on main thread before parallel loading starts.
-                // Skipped for New: rusqlite::Connection::open *creates* the file, which would
-                // litter maps/<name>.dwd on disk before the user has saved anything.
-                with_db_connection(map_path, |conn| {
-                    //conn.execute("DELETE FROM refinery_schema_history;", [])?; // Used to clear refinery migrations history, uncomment when in need.
-                    db_migrations::migrations::runner().run(conn)?;
-                    Ok(())
-                }).expect("Failed to run migrations on load");
+                // A new map skips this: opening a SQLite connection would create a file.
+                with_db_connection(map_path, Migrations::Apply, |_| Ok(()))
+                    .expect("Failed to run migrations on load");
             }
             MapSource::New(map_info) => {
                 Log::info().dev().tag(Tag::GameLoad).message(format!("Creating new map '{}'", map_info.name));
             }
         }
 
-        // Set up the load runner (channel, LoadRunner, fresh LoadProgress)
-        // before state transitions. Runs at the observer's sync point — before
-        // advance_stage's first Update run on the Init stage.
-        queue_init_load_runner(&mut commands);
+        commands.queue(InitLoadRunner);
 
         commands.insert_resource(config);
         next_game_state.set(GameState::Loading);
         next_map_loading_stage.set(MapLoadingStage::Init);
         next_ui_state.set(UiInteraction::Free);
 
-        // Despawn all existing map elements
         map_bound_entities.iter().for_each(|entity| commands.entity(entity).despawn());
     }
 }
 
+/// Outcome of a `LoadGameSignal`: sent once, on rejection or when the game leaves `Loading`.
+#[derive(EntityEvent, Serialize)]
+pub struct LoadGameReport {
+    #[serde(skip)]
+    pub entity: Entity,
+    pub result: LoadGameResult,
+}
+
+#[derive(Serialize)]
+pub enum LoadGameResult {
+    /// The map is loaded and `game_start_state` is in effect.
+    Loaded { map: MapInfo, game_start_state: GameState },
+    /// Another load is in progress.
+    AlreadyLoading,
+    /// A `GameState` transition is already queued; loading would overwrite it.
+    OtherTransitionAlreadyQueued { state: GameState },
+    /// The map file does not exist.
+    MapNotFound { path: String },
+}
+
+/// All loader stages have finished; transition to the requested play and admin states.
 fn on_map_load_ready(
-    mut commands: Commands,
     load_config: Res<LoadMapConfig>,
     mut next_admin_mode: ResMut<NextState<AdminMode>>,
     mut next_game_state: ResMut<NextState<GameState>>,
@@ -545,5 +514,19 @@ fn on_map_load_ready(
     Log::info().player().tag(Tag::GameLoad).message("Game loaded");
     next_game_state.set(load_config.game_start_state);
     (*next_admin_mode).set_if_neq(load_config.admin_mode);
+}
+
+/// On leaving `Loading`, report the map and release the load config and runner.
+fn finish_map_load(
+    mut commands: Commands,
+    load_config: Res<LoadMapConfig>,
+    map_info: Res<MapInfo>,
+) {
+    let game_start_state = load_config.game_start_state;
+    load_config.response.report(&mut commands, |entity| LoadGameReport {
+        entity,
+        result: LoadGameResult::Loaded { map: map_info.clone(), game_start_state },
+    });
     commands.remove_resource::<LoadMapConfig>();
+    commands.remove_resource::<LoadRunner>();
 }

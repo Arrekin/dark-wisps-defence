@@ -1,16 +1,20 @@
 [package]
-name = "session"
+name = "byoaic"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
 bevy = { workspace = true }
-game_core = { workspace = true }
 logging = { workspace = true }
 states = { workspace = true }
+game_core = { workspace = true }
+session = { workspace = true }
 persistence = { workspace = true }
-wisps = { workspace = true }
+axum = { workspace = true }
+tokio = { workspace = true }
+async-channel = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 
 [lints]
 workspace = true

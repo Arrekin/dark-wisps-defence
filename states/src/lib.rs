@@ -5,7 +5,7 @@ mod admin_mode;
 mod ui_interaction;
 mod map_loading_stage;
 
-pub use game_state::GameState;
+pub use game_state::{GameState, SetGamePaused, SetGamePausedReport, SetGamePausedResult};
 pub use admin_mode::AdminMode;
 pub use ui_interaction::UiInteraction;
 pub use map_loading_stage::MapLoadingStage;
@@ -18,11 +18,12 @@ impl Plugin for StatesPlugin {
             .init_state::<UiInteraction>()
             .init_state::<MapLoadingStage>()
             .init_state::<AdminMode>()
+            .add_observer(GameState::on_set_game_paused_do_so)
             .add_systems(PreUpdate, (
                 UiInteraction::on_escape.run_if(input_just_pressed(KeyCode::Escape)),
             ))
             .add_systems(Update, (
-                GameState::pause_resume_game.run_if(input_just_pressed(KeyCode::Space)),
+                GameState::toggle_pause.run_if(input_just_pressed(KeyCode::Space)),
                 AdminMode::toggle_admin_mode.run_if(input_just_pressed(KeyCode::Tab)),
             ));
     }

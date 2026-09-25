@@ -8,6 +8,7 @@ bevy = { workspace = true, features = ["ui"] }
 nanorand = { workspace = true, features = ["tls"] }
 strum = { workspace = true }
 lib-derive = { workspace = true }
+serde = { workspace = true }
 
 [lints]
 workspace = true

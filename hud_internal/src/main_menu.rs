@@ -1,8 +1,9 @@
 use bevy::prelude::*;
 
+use game_core::prelude::ResponseRequest;
 use logging::prelude::*;
-use persistence::{GameMapList, LoadGameSignal, LoadMapConfig};
-use states::prelude::*;
+use persistence::{GameMapList, LoadGameSignal, LoadMapConfig, MapFileName};
+use states::{SetGamePaused, prelude::*};
 
 pub struct MainMenuPlugin;
 impl Plugin for MainMenuPlugin {
@@ -76,7 +77,7 @@ impl LoadMapButton {
     fn on_click_toggle_map_list(
         _trigger: On<Pointer<Click>>,
         mut commands: Commands,
-        map_list: Res<GameMapList>,
+        mut map_list: ResMut<GameMapList>,
         map_list_container: Single<(Entity, &mut Node), With<MapListContainer>>,
     ) {
         let (container_entity, mut node) = map_list_container.into_inner();
@@ -87,11 +88,11 @@ impl LoadMapButton {
         }
 
         node.display = Display::Flex;
-        commands.entity(container_entity).despawn_related::<Children>();
+        commands.entity(container_entity).despawn_children();
 
         commands.entity(container_entity).with_children(|parent| {
-            for name in &map_list.names {
-                parent.spawn(MapEntryButton { name: name.clone() });
+            for entry in map_list.entries() {
+                parent.spawn(MapEntryButton { file_name: entry.file_name.clone(), name: entry.info.name.clone() });
             }
         });
     }
@@ -116,7 +117,10 @@ impl MapListContainer {
 
 #[derive(Component)]
 #[require(Button)]
-struct MapEntryButton { name: String }
+struct MapEntryButton {
+    file_name: MapFileName,
+    name: String,
+}
 impl MapEntryButton {
     fn on_add_build_map_entry_button(trigger: On<Add, MapEntryButton>, mut commands: Commands, entries: Query<&MapEntryButton>) {
         let entity = trigger.entity;
@@ -141,26 +145,23 @@ impl MapEntryButton {
     fn on_click_load_selected_map(trigger: On<Pointer<Click>>, mut commands: Commands, entries: Query<&MapEntryButton>) {
         let entity = trigger.entity;
         let Ok(entry) = entries.get(entity) else { return; };
-        Log::debug().dev().tag(Tag::Ui).message(format!("Map selected: {}", entry.name));
-        commands.trigger(LoadGameSignal(LoadMapConfig::file(format!("maps/{}.dwd", entry.name))));
+        Log::debug().dev().tag(Tag::Ui).message(format!("Map selected: {} ({})", entry.name, entry.file_name.as_str()));
+        commands.trigger(LoadGameSignal(LoadMapConfig::map(&entry.file_name)));
     }
 }
 
 fn show_main_menu(
-    mut next_game_state: ResMut<NextState<GameState>>,
+    mut commands: Commands,
     menu: Single<&mut Visibility, With<MainMenuRoot>>,
 ) {
     *menu.into_inner() = Visibility::Inherited;
-    next_game_state.set(GameState::Paused);
+    commands.trigger(SetGamePaused { paused: true, response: ResponseRequest::not_needed() });
 }
 
 fn hide_main_menu(
-    mut next_game_state: ResMut<NextState<GameState>>,
-    current_game_state: Res<State<GameState>>,
+    mut commands: Commands,
     menu: Single<&mut Visibility, With<MainMenuRoot>>,
 ) {
     *menu.into_inner() = Visibility::Hidden;
-    if matches!(current_game_state.get(), GameState::Paused) {
-        next_game_state.set(GameState::Running);
-    }
+    commands.trigger(SetGamePaused { paused: false, response: ResponseRequest::not_needed() });
 }

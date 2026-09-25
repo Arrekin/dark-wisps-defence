@@ -1,6 +1,9 @@
 use bevy::prelude::*;
+use serde::Serialize;
 
-#[derive(Default, Clone, Copy, Debug, States, PartialEq, Eq, Hash)]
+use game_core::prelude::*;
+
+#[derive(Default, Clone, Copy, Debug, States, PartialEq, Eq, Hash, Serialize)]
 pub enum GameState {
     #[default]
     Init,
@@ -9,15 +12,65 @@ pub enum GameState {
     Loading,
 }
 impl GameState {
-    pub(crate) fn pause_resume_game(
-        mut next_game_state: ResMut<NextState<GameState>>,
-        current_game_state: Res<State<GameState>>
+    pub(crate) fn toggle_pause(
+        mut commands: Commands,
+        current_game_state: Res<State<GameState>>,
     ) {
-        match current_game_state.get() {
-            GameState::Init => {}
-            GameState::Paused => next_game_state.set(GameState::Running),
-            GameState::Running => next_game_state.set(GameState::Paused),
-            GameState::Loading => {}
-        }
+        commands.trigger(SetGamePaused {
+            paused: !matches!(current_game_state.get(), GameState::Paused),
+            response: ResponseRequest::not_needed(),
+        });
     }
+
+    pub(crate) fn on_set_game_paused_do_so(
+        trigger: On<SetGamePaused>,
+        mut commands: Commands,
+        mut next_game_state: ResMut<NextState<GameState>>,
+        current_game_state: Res<State<GameState>>,
+    ) {
+        let requested_paused = trigger.paused;
+        if let NextState::Pending(state) | NextState::PendingIfNeq(state) = *next_game_state {
+            let result = SetGamePausedResult::OtherTransitionAlreadyQueued { state };
+            trigger.response.report(&mut commands, |entity| SetGamePausedReport { entity, requested_paused, result });
+            return;
+        }
+        let result = match (current_game_state.get(), requested_paused) {
+            (GameState::Running, true) => {
+                next_game_state.set(GameState::Paused);
+                SetGamePausedResult::Applied
+            }
+            (GameState::Paused, false) => {
+                next_game_state.set(GameState::Running);
+                SetGamePausedResult::Applied
+            }
+            (GameState::Running, false) | (GameState::Paused, true) => SetGamePausedResult::AlreadyInState,
+            (state, _) => SetGamePausedResult::Rejected { state: *state },
+        };
+        trigger.response.report(&mut commands, |entity| SetGamePausedReport { entity, requested_paused, result });
+    }
+}
+
+/// Requests `GameState::Paused` (`paused: true`) or `GameState::Running` (`paused: false`).
+/// Rejected while the game is not in one of these states, or while another `GameState`
+/// transition is already queued, so a pause never overrides a transition such as a map switch.
+#[derive(Event)]
+pub struct SetGamePaused {
+    pub paused: bool,
+    pub response: ResponseRequest,
+}
+
+#[derive(EntityEvent, Serialize)]
+pub struct SetGamePausedReport {
+    #[serde(skip)]
+    pub entity: Entity,
+    pub requested_paused: bool,
+    pub result: SetGamePausedResult,
+}
+
+#[derive(Clone, Copy, Debug, Serialize)]
+pub enum SetGamePausedResult {
+    Applied,
+    AlreadyInState,
+    Rejected { state: GameState },
+    OtherTransitionAlreadyQueued { state: GameState },
 }

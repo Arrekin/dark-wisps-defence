@@ -4,13 +4,10 @@ use alteration::modifiers::prelude::IncomingDamageMultiplier;
 use game_core::{motion::{Locomotion, MotionSystems}, prelude::*};
 use grids::{energy_supply::EnergySupplyGrid, prelude::{EnergySupplySystems, GridVersion}};
 
-mod map_info;
-
 pub struct GameCorePlugin;
 impl Plugin for GameCorePlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_plugins(map_info::MapInfoPlugin)
             .add_observer(on_insert_zdepth_apply_zdepth)
             .add_systems(
                 PostUpdate,

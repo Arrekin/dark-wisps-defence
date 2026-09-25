@@ -1,12 +1,14 @@
 use bevy::prelude::*;
 
 use game_core::prelude::MapInfo;
-use persistence::{
-    creating_new_map,
-    prelude::{AppGameLoadSaveExtension, CollectSave, LoadContext, SaveWriter},
-    rusqlite, LoadMapConfig, MapSource,
-};
 use states::prelude::MapLoadingStage;
+
+use crate::{
+    common::AppGameLoadSaveExtension,
+    load::{LoadContext, LoadMapConfig, MapSource, creating_new_map},
+    rusqlite,
+    save::{CollectSave, SaveWriter},
+};
 
 pub(crate) struct MapInfoPlugin;
 impl Plugin for MapInfoPlugin {
@@ -18,6 +20,16 @@ impl Plugin for MapInfoPlugin {
             .add_systems(OnEnter(MapLoadingStage::LoadMapInfo), insert_new_map_info.run_if(creating_new_map))
             ;
     }
+}
+
+/// Reads the map header — the single `map_info` row every `.dwd` carries.
+pub(crate) fn read_map_info(conn: &rusqlite::Connection) -> rusqlite::Result<MapInfo> {
+    conn.query_row("SELECT name, width, height FROM map_info WHERE id = 1", [], |row| {
+        let name: String = row.get(0)?;
+        let width: i32 = row.get(1)?;
+        let height: i32 = row.get(2)?;
+        Ok(MapInfo::new(name, (width, height)))
+    })
 }
 
 fn collect_map_info(
@@ -37,17 +49,7 @@ fn collect_map_info(
 }
 
 fn load_map_info(ctx: &mut LoadContext) -> rusqlite::Result<()> {
-    let mut stmt = ctx.conn.prepare("SELECT name, width, height FROM map_info WHERE id = 1")?;
-    let result = stmt.query_row([], |row| {
-        let name: String = row.get(0)?;
-        let width: i32 = row.get(1)?;
-        let height: i32 = row.get(2)?;
-        Ok((name, width, height))
-    });
-
-    let (name, width, height) = result?;
-    let map_info = MapInfo::new(name, (width, height));
-
+    let map_info = read_map_info(ctx.conn)?;
     ctx.insert_resource(map_info);
     Ok(())
 }

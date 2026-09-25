@@ -11,8 +11,9 @@ use bevy::{
 
 use logging::prelude::*;
 
-use crate::common::{db_migrations, with_db_connection};
-use crate::load::GameMapList;
+use crate::common::{Migrations, with_db_connection};
+use crate::map_file_name::MapFileName;
+use crate::map_list::GameMapList;
 
 pub struct MapSavePlugin;
 impl Plugin for MapSavePlugin {
@@ -78,8 +79,8 @@ impl Command for QueueSaveJob {
 pub enum SaveTarget {
     /// `test_save.dwd` (dev keybind; future: named slots as File(path))
     Quick,
-    /// `maps/<name>.dwd` + scenario mode (reset playthrough metadata on write)
-    Scenario(String),
+    /// `maps/<file_name>.dwd` + scenario mode (reset playthrough metadata on write)
+    Scenario(MapFileName),
 }
 
 #[derive(Event, Debug, Clone)]
@@ -122,7 +123,7 @@ fn on_save_game_signal(
     let target = trigger.event().target.clone();
     let (path, save_as_scenario) = match target {
         SaveTarget::Quick => ("test_save.dwd".to_string(), false),
-        SaveTarget::Scenario(name) => (format!("maps/{}.dwd", name), true),
+        SaveTarget::Scenario(file_name) => (file_name.path(), true),
     };
     commands.insert_resource(SaveContext {
         path,
@@ -198,8 +199,7 @@ fn write_save_inner(path: &str, jobs: Vec<SaveJob>) -> Result<(), Box<dyn std::e
     // Open, migrate, run all jobs in one transaction, then DROP the connection
     // before the atomic rename (Windows file-handle semantics — see
     // `with_db_connection`'s doc comment).
-    if let Err(e) = with_db_connection(&tmp, |conn| {
-        db_migrations::migrations::runner().run(conn)?;
+    if let Err(e) = with_db_connection(&tmp, Migrations::Apply, |conn| {
         let tx = conn.transaction()?;
         for job in jobs {
             job(&tx)?;
