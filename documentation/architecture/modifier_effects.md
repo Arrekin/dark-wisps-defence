@@ -1,22 +1,8 @@
 # Modifiers & Effects
 
-Every stat on every entity — a tower's attack range, a wisp's movement speed, a damage
-multiplier from a debuff — is produced by the same mechanism: a set of **effect instance
-entities** contribute values into a **modifier bank**, which aggregates them and writes the
-result into **derived components** that gameplay systems read.
+Effects determine the stats of towers, wisps, and other entities, including their starting values and changes from shards, auras, or debuffs. A tower's attack range and a wisp's movement speed both use this system.
 
-This document covers how the system works and why it is designed this way.
-
-## Why a Unified System
-
-Before this system, stats were set directly on entities and modified through ad-hoc
-mechanisms. Each modifier source (upgrades, auras, debuffs) had its own way of reading and
-writing stat values, which meant every new modifier type required touching multiple systems.
-
-The unified approach means:
-- Adding a new effect type requires no changes to existing effects or the bank itself.
-- Any entity with a `ModifierBank` can receive any stat modification.
-- Cleanup is automatic — despawning an effect instance removes its contribution.
+Each effect instance contributes one or more stat values to a target. The target's `ModifierBank` aggregates those contributions by `ModifierType` and writes the resulting stat components for gameplay systems to read.
 
 ## The Three Layers
 
@@ -35,11 +21,11 @@ Lifecycle is controlled by optional, composable additional components:
 | Component | Purpose |
 |-----------|---------|
 | `ExpiresAt(f64)` | Despawn at this absolute `GameClock` time |
-| `EffectSource(Entity)` | Cascade-despawn when the source entity despawns |
+| `EffectSource(Entity)` | Link to the source so its domain can find and clean up the effects it spawned |
 | Custom markers | Any condition, managed by a dedicated system |
 
 These compose freely. A temporary aura uses `EffectSource` + `ExpiresAt`. A fire-and-forget
-debuff uses only `ExpiresAt`. An indefinite aura uses only `EffectSource`.
+debuff uses only `ExpiresAt`. An indefinite aura uses `EffectSource` and source-specific cleanup.
 
 ### Layer 2: ModifierBank
 
@@ -102,7 +88,6 @@ Baseline effects:
 - Carry a `BaselineEffect` marker component
 - Have no `ExpiresAt` or `EffectSource` — they are permanent
 - Are never saved; they are reconstructed when the entity spawns or loads
-- Are spawned using the `related!` macro through the `EffectInstances` relationship
 
 ## Game Clock and Expiry
 
@@ -132,31 +117,12 @@ ExpiryQueue pops entry → despawn effect instance
   → observer removes from bank, re-aggregates, materializes
 ```
 
-**Target entity despawned:**
+**Source force field despawned:**
 ```
-target despawned
-  → EffectInstances linked_spawn cascades → all effect instances despawned
-  → their On<Remove> observers fire (bank entries cleaned up, though the bank
-    itself is also being despawned)
+ForceField despawned
+  → On<Despawn, ForceField> reads EffectSourceOf to find its FieldEffect instances
+  → domain observer despawns those effects
+  → On<Remove, ModifierContributions> removes their values from each target's ModifierBank
+  → affected stat components are recalculated
 ```
-
-## Save / Load
-
-- **Timed effects** (those with `ExpiresAt`): saved via their own `Builder*` component,
-  loaded in `MapLoadingStage::SpawnEffectInstances` (after map elements).
-- **Baseline effects**: never saved — reconstructed at entity spawn.
-- **Source-coupled effects** (no `ExpiresAt`): not saved — re-applied by the system that
-  manages them when the source entity is reloaded.
-
-## Adding a New Effect Type
-
-1. Define a marker component (e.g., `struct SlowEffect`).
-2. Choose lifecycle: `ExpiresAt`, `EffectSource`, custom marker + system, or a combination.
-3. At the application site, `commands.spawn(...)` the effect entity with `EffectTarget`,
-   `ModifierContributions`, the marker, and any lifecycle components.
-4. If custom condition: write one lifecycle system that queries the marker and despawns when
-   the condition is no longer met.
-5. If the effect has `ExpiresAt` and must survive save/load: add a `Builder*` following the
-   standard persistence pattern, with a DB migration for the effect table.
-
-Nothing in `ModifierBank`, `ModifierType`, or existing effect types changes.
+`EffectSource` is a lookup relationship, not a despawn cascade; each source domain decides how to remove its effects.

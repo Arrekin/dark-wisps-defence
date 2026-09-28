@@ -62,7 +62,21 @@ Older previews:
 - **TAB**: Toggle editor(admin) mode
 
 # Documentation
-- [Persistence(Save & Load)](documentation/persistence.md)
+`/documentation` folder is an Obsidian vault.
+
+## Architecture
+- [Grid Object Placer](documentation/architecture/grid_placer.md)
+- [Modifiers & Effects](documentation/architecture/modifier_effects.md)
+- [Moments](documentation/architecture/moments.md)
+- [Persistence(Save & Load)](documentation/architecture/persistence.md)
+- [Post-Process Effects](documentation/architecture/post_process_effects.md)
+- [Research](documentation/architecture/research.md)
+
+## Direction
+- [Art Direction & UI Design Principles](documentation/direction/art_direction.md)
+
+## Tooling
+- [BYOAIC (Bring Your Own AI Companion)](documentation/BYOAIC.md)
 
 # License
 

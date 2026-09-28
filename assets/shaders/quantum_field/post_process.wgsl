@@ -5,7 +5,7 @@
 
 // Quantum field anomaly. Screen-space pass over the already-rendered frame, so it can
 // distort / ghost the walls, wisps and towers sitting on top of a field's rectangle.
-// See documentation/post_process_effects.md for the architecture + GPU data contract.
+// See documentation/architecture/post_process_effects.md for the architecture + GPU data contract.
 
 @group(0) @binding(0) var screen_texture: texture_2d<f32>;
 @group(0) @binding(1) var screen_sampler: sampler;

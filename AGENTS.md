@@ -6,7 +6,7 @@ Architectural hints and patterns to maintain consistency across the codebase.
 
 Entities are saved via collector systems in the `CollectSave` schedule and loaded via plain `LoaderFn`s registered per `MapLoadingStage`. All persistence logic lives in `_internal` crates; api crates carry none of it. Builders serve as cross-domain spawn contracts for both fresh spawns and loads.
 
-See [persistence.md](documentation/persistence.md) for full details.
+See [persistence.md](documentation/architecture/persistence.md) for full details.
 
 ## Builder Pattern for Persistable Entities
 
@@ -194,6 +194,16 @@ move |trigger: On<Remove, T>, mut commands: Commands, indicators: Query<&Indicat
 - **Think before implementing.** When asked to fix a bug or add a feature, first consider whether the change reveals a deeper architectural issue. Prefer fixing the root cause over patching symptoms.
 - **Avoid tunnel vision.** Don't just implement the literal request — evaluate whether it fits the existing patterns. If it doesn't, flag it and suggest an approach that does.
 - **Run `cargo clippy` before completing any delivery.** The workspace has a `[workspace.lints.clippy]` config in the root `Cargo.toml` that suppresses lints that don't fit a Bevy codebase. Any warnings that remain are genuine and must be fixed before the work is considered done.
+
+### Conduct
+
+- **Ground claims and decisions.** Separate what the request, code, and prior decisions establish from your assumptions and proposals. Do not present an inference as a fact, a local choice as a project-wide rule, or silence as approval.
+- **Resolve only consequential questions.** Check whether an existing decision settles the issue and whether the answer changes the work. If settled, follow it; if inconsequential, move on. Make ordinary implementation choices and state them plainly when relevant. When a consequential choice belongs to the user, ask in plain prose, recommend an option with a reason, and wait for an answer. A missing or unclear reply is not consent; proceed without one only if the user has delegated the choice or a standing preference covers it.
+- **Respect the kind of document.** Goals and design direction may describe work not yet built. Do not report that gap as a defect or rewrite the intent to match the current implementation. Keep implementation guidance in appropriate technical documentation or alongside the code. If an intent statement itself needs revision, identify the passage and ask.
+- **Investigate before calling an absence a problem.** Missing tests, abstractions, error handling, or documentation may be deliberate. Do not repeatedly challenge a known choice without new evidence or changed requirements. If the user dismisses an issue, drop it.
+- **Write for readers without this conversation.** Comments and documentation should explain lasting behavior or constraints using concrete names, not defend a choice against an approach the reader never saw. Avoid redundant comments where the code is clear.
+
+These are defaults; follow explicit user overrides.
 
 ## Code Style
 - Query variables use plural form (e.g., `tabs`, `segments`), not `_q` suffix(singular when using Single<>)

@@ -8,3 +8,11 @@
 /workdoc_*.md
 /workdoc_*/
 /screenshots/
+
+# Obsidian: per-user state
+/documentation/.obsidian/workspace*.json
+/documentation/.obsidian/graph.json
+/documentation/.obsidian/hotkeys.json
+/documentation/.obsidian/plugins/*/data.json
+/documentation/.obsidian/cache
+/documentation/.trash/
