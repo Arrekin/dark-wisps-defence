@@ -42,7 +42,7 @@ pub struct EffectInstances(Vec<Entity>);
 ////////////////////////////
 
 /// Relationship from an effect instance entity to the entity that spawned it.
-#[derive(Component)]
+#[derive(Component, Clone, Copy)]
 #[relationship(relationship_target = EffectSourceOf)]
 pub struct EffectSource(pub Entity);
 

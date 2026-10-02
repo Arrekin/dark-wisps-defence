@@ -26,7 +26,7 @@ pub mod prelude {
         HasMoments, Moment, MomentHappened, MomentKind, MomentOf, MomentOfInterest, MomentWatchers,
     };
     pub use crate::response_request::ResponseRequest;
-    pub use crate::traits::{Property, SSS};
+    pub use crate::traits::{InsertSome, Property, SSS};
     pub use crate::types::{BuildingType, MapObject, ShardType, TowerType, WispType};
     pub use crate::z_depth::*;          // ZDepth + associated layer constants
 }

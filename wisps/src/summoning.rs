@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use nanorand::Rng;
 use strum::{AsRefStr, EnumIter, EnumString};
 
-use game_core::prelude::{Bounds, FromEntity, GridCoords, MapBound, Moment, MomentKind, SSS, WispType};
+use game_core::prelude::{Bounds, FromEntity, GridCoords, MapBound, Moment, MomentKind, MomentOfInterest, SSS, WispType};
 use grids::prelude::ObstacleGrid;
 
 #[derive(Component, Clone, Debug)]
@@ -179,7 +179,7 @@ pub struct MomentSummoningExhausted;
 #[derive(Component, SSS)]
 pub struct BuilderSummoning {
     pub summoning: Summoning,
-    pub activated_by: Option<Entity>,
+    pub activated_by: Option<MomentOfInterest>,
     pub state: SummoningState,
     pub runtime: SummoningRuntime,
 }
@@ -195,7 +195,7 @@ impl BuilderSummoning {
     }
 
     pub fn with_activated_by(mut self, activated_by: impl Into<Option<Entity>>) -> Self {
-        self.activated_by = activated_by.into();
+        self.activated_by = activated_by.into().map(MomentOfInterest);
         self
     }
 

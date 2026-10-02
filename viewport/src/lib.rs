@@ -18,7 +18,7 @@ use bevy::{
 };
 use bevy_egui::PrimaryEguiContext;
 
-use game_core::prelude::{CELL_SIZE, GridCoords};
+use game_core::prelude::{CELL_SIZE, GridCoords, InsertSome};
 
 const ZOOM_MIN: f32 = 1.;
 const ZOOM_MAX: f32 = 4.;
@@ -189,7 +189,7 @@ pub struct BuilderPreviewCamera {
     /// Orthographic scale (zoom level). Higher values = more zoomed out.
     pub scale: f32,
     /// If Entity is provided, adds CameraAutoFollowEntity component to the camera.
-    pub auto_follow_entity: Option<Entity>,
+    pub auto_follow_entity: Option<CameraAutoFollowEntity>,
 }
 impl BuilderPreviewCamera {
     /// Creates a new preview camera builder.
@@ -209,7 +209,7 @@ impl BuilderPreviewCamera {
     ///
     /// * `entity` - Entity to follow with the camera
     pub fn with_auto_follow_entity(mut self, entity: Entity) -> Self {
-        self.auto_follow_entity = Some(entity);
+        self.auto_follow_entity = Some(CameraAutoFollowEntity(entity));
         self
     }
 
@@ -239,10 +239,8 @@ impl BuilderPreviewCamera {
             TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST | TextureUsages::RENDER_ATTACHMENT;
         let image_handle = images.add(image);
 
-        let mut entity_commands = commands.entity(trigger.entity);
-
         // Spawn camera with linked ownership
-        entity_commands
+        commands.entity(trigger.entity)
             .remove::<BuilderPreviewCamera>()
             .insert((
                 Camera2d,
@@ -261,16 +259,13 @@ impl BuilderPreviewCamera {
                 }),
                 Transform::from_xyz(builder.position.x, builder.position.y, 0.),
                 CameraOf(builder.owner),
-            ));
-
-        if let Some(entity) = builder.auto_follow_entity {
-            entity_commands.insert(CameraAutoFollowEntity(entity));
-        }
+            ))
+            .insert_some(builder.auto_follow_entity);
     }
 }
 
 /// Keeps a camera centred on an entity's position.
-#[derive(Component)]
+#[derive(Component, Clone, Copy)]
 pub struct CameraAutoFollowEntity(pub Entity);
 impl CameraAutoFollowEntity {
     fn update(

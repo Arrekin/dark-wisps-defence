@@ -20,7 +20,7 @@ impl From<&str> for ContentId {
     fn from(s: &str) -> Self { Self(s.to_string()) }
 }
 
-#[derive(Component)]
+#[derive(Component, Clone, Copy)]
 pub struct IntegrityPoints {
     pub current: f32,
     pub max: f32, // A helper, source of truth is in MaxIntegrityPoints component
@@ -82,5 +82,5 @@ pub struct IsPowered;
 pub struct IsOperational;
 
 /// Player chose to disable this entity.
-#[derive(Component, Default)]
+#[derive(Component, Default, Clone, Copy)]
 pub struct DisabledByPlayer;

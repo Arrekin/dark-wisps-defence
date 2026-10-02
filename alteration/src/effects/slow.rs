@@ -1,5 +1,7 @@
 use bevy::prelude::*;
 
+use super::EffectSource;
+
 /// Marker for the Slow debuff. Applied to entities inside an active force field's Voronoi cell.
 /// Persists as long as the entity remains in the same cell; no expiry.
 /// Not saved — fully derived from field state, re-applied after load.
@@ -9,7 +11,7 @@ pub struct SlowEffect;
 #[derive(Component)]
 pub struct BuilderSlowEffect {
     pub target_entity: Entity,
-    pub source_entity: Option<Entity>,
+    pub source_entity: Option<EffectSource>,
     pub slow_amount: f32,
 }
 impl BuilderSlowEffect {
@@ -18,7 +20,7 @@ impl BuilderSlowEffect {
     }
 
     pub fn with_source(mut self, source_entity: Entity) -> Self {
-        self.source_entity = Some(source_entity);
+        self.source_entity = Some(EffectSource(source_entity));
         self
     }
 }

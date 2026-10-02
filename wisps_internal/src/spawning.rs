@@ -21,7 +21,7 @@ pub(crate) struct BuilderWisp {
     pub grid_coords: GridCoords,
     /// Saved integrity points. `None` ⇒ defer to baseline (fresh spawn);
     /// `Some` ⇒ override (restore).
-    pub integrity_points: Option<f32>,
+    pub integrity_points: Option<IntegrityPoints>,
     /// Saved world position. `None` ⇒ compute from grid_coords (fresh spawn);
     /// `Some` ⇒ use as-is (restore mid-flight wisp).
     pub world_position: Option<Vec2>,
@@ -32,7 +32,7 @@ impl BuilderWisp {
         Self { wisp_type, grid_coords, integrity_points: None, world_position: None }
     }
     pub fn with_integrity_points(mut self, integrity_points: f32) -> Self {
-        self.integrity_points = Some(integrity_points);
+        self.integrity_points = Some(IntegrityPoints::new(integrity_points));
         self
     }
     pub fn with_world_position(mut self, world_position: Vec2) -> Self {
@@ -50,10 +50,9 @@ impl BuilderWisp {
         let Ok(builder) = builders.get(entity) else { return; };
 
         let mut entity_commands = commands.entity(entity);
-
-        if let Some(integrity_points) = builder.integrity_points {
-            entity_commands.insert(IntegrityPoints::new(integrity_points));
-        }
+        entity_commands
+            .remove::<BuilderWisp>()
+            .insert_some(builder.integrity_points);
 
         let translation = builder.world_position
             .unwrap_or_else(|| builder.grid_coords.to_world_position_centered(WISP_GRID_IMPRINT))
@@ -66,7 +65,6 @@ impl BuilderWisp {
             WispType::Electric => entity_commands.insert((WispElectricType, EssencesContainer::from(EssenceContainer::new(EssenceType::Electric, 1)))),
         };
         entity_commands
-            .remove::<BuilderWisp>()
             .insert((
                 builder.grid_coords,
                 Transform::from_translation(translation),

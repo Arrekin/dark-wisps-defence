@@ -44,9 +44,9 @@ pub(crate) struct BuilderTowerBlaster {
     pub grid_position: GridCoords,
     /// Saved integrity points. `None` ⇒ defer to baseline (fresh spawn);
     /// `Some` ⇒ override with saved value (restore).
-    pub integrity_points: Option<f32>,
-    /// Whether the player disabled this building. False on fresh spawn.
-    pub disabled_by_player: bool,
+    pub integrity_points: Option<IntegrityPoints>,
+    /// Set when the player disabled this building. `None` on fresh spawn.
+    pub disabled_by_player: Option<DisabledByPlayer>,
 }
 impl BuilderTowerBlaster {
     pub fn almanach_info(asset_server: &AssetServer) -> BuildingInfo {
@@ -73,14 +73,14 @@ impl BuilderTowerBlaster {
     }
 
     pub fn new(grid_position: GridCoords) -> Self {
-        Self { grid_position, integrity_points: None, disabled_by_player: false }
+        Self { grid_position, integrity_points: None, disabled_by_player: None }
     }
     pub fn with_integrity_points(mut self, integrity_points: f32) -> Self {
-        self.integrity_points = Some(integrity_points);
+        self.integrity_points = Some(IntegrityPoints::new(integrity_points));
         self
     }
     pub fn with_disabled_by_player(mut self, disabled_by_player: bool) -> Self {
-        self.disabled_by_player = disabled_by_player;
+        self.disabled_by_player = disabled_by_player.then_some(DisabledByPlayer);
         self
     }
 
@@ -96,16 +96,10 @@ impl BuilderTowerBlaster {
         let building_info = almanach.get_building_info(BuildingType::Tower(TowerType::Blaster));
         let grid_imprint = building_info.grid_imprint;
 
-        let mut entity_commands = commands.entity(entity);
-        if let Some(integrity_points) = builder.integrity_points {
-            entity_commands.insert(IntegrityPoints::new(integrity_points));
-        }
-        if builder.disabled_by_player {
-            entity_commands.insert(DisabledByPlayer);
-        }
-
-        entity_commands
+        commands.entity(entity)
             .remove::<BuilderTowerBlaster>()
+            .insert_some(builder.integrity_points)
+            .insert_some(builder.disabled_by_player)
             .insert((
                 TowerBlaster,
                 Sprite {

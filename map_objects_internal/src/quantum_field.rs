@@ -164,9 +164,9 @@ impl BuilderQuantumField {
         let entity = trigger.entity;
         let Ok(builder) = builders.get(entity) else { return; };
 
-        let mut quantum_field = QuantumFieldLayers {
-            current_layer: 0,
-            current_layer_progress: 0.0,
+        let quantum_field = QuantumFieldLayers {
+            current_layer: builder.current_layer.unwrap_or(0),
+            current_layer_progress: builder.current_layer_progress.unwrap_or(0.0),
             layers: vec![
                 QuantumFieldLayer {
                     value: 15000.0,
@@ -182,13 +182,6 @@ impl BuilderQuantumField {
                 },
             ],
         };
-
-        if let Some(current_layer) = builder.current_layer {
-            quantum_field.current_layer = current_layer;
-        }
-        if let Some(current_layer_progress) = builder.current_layer_progress {
-            quantum_field.current_layer_progress = current_layer_progress;
-        }
 
         if (builder.current_layer.is_some() || builder.current_layer_progress.is_some()) && quantum_field.is_solved() {
             commands.entity(entity).insert(QuantumFieldSolved);

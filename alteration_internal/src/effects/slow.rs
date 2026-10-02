@@ -4,6 +4,7 @@ use alteration::{
     effects::{prelude::*, slow::SlowEffect},
     modifiers::ModifierType,
 };
+use game_core::prelude::InsertSome;
 
 pub(crate) struct SlowEffectPlugin;
 impl Plugin for SlowEffectPlugin {
@@ -21,16 +22,13 @@ fn on_builder_add_spawn_slow_effect(
     let entity = trigger.entity;
     let Ok(builder) = builders.get(entity) else { return; };
 
-    let mut entity_commands = commands.entity(entity);
-    entity_commands
+    commands.entity(entity)
         .remove::<BuilderSlowEffect>()
         .insert((
             EffectTarget(builder.target_entity),
             ModifierContributions(HashMap::from([(ModifierType::MovementSpeed, -builder.slow_amount)])),
             SlowEffect,
             FieldEffect,
-        ));
-    if let Some(source_entity) = builder.source_entity {
-        entity_commands.insert(EffectSource(source_entity));
-    }
+        ))
+        .insert_some(builder.source_entity);
 }

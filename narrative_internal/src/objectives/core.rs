@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use game_core::prelude::{MomentHappened, MomentOfInterest};
+use game_core::prelude::{InsertSome, MomentHappened, MomentOfInterest};
 use logging::prelude::*;
 use narrative::prelude::*;
 use persistence::{
@@ -19,15 +19,13 @@ pub(crate) fn on_builder_add_spawn_objective(
 ) {
     let entity = trigger.entity;
     let Ok(builder) = builders.get(entity) else { return };
-    let mut entity_commands = commands.entity(entity);
-    entity_commands.remove::<BuilderObjective>()
+    commands.entity(entity)
+        .remove::<BuilderObjective>()
         .insert((
             ObjectiveDetails { id_name: builder.id_name.clone() },
             builder.state,
-        ));
-    if let Some(moment_entity) = builder.activated_by {
-        entity_commands.insert(MomentOfInterest(moment_entity));
-    }
+        ))
+        .insert_some(builder.activated_by);
 }
 
 // ============================================================================

@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use bevy_egui::egui;
-use game_core::prelude::{MapBound, SSS};
+use game_core::prelude::{MapBound, MomentOfInterest, SSS};
 use strum::{AsRefStr, EnumString};
 
 /// Builder for objective roots. Carries config + restore data.
@@ -10,7 +10,7 @@ use strum::{AsRefStr, EnumString};
 pub struct BuilderObjective {
     pub id_name: String,
     pub state: ObjectiveState,
-    pub activated_by: Option<Entity>,
+    pub activated_by: Option<MomentOfInterest>,
 }
 
 impl BuilderObjective {
@@ -22,7 +22,7 @@ impl BuilderObjective {
         self
     }
     pub fn with_activated_by(mut self, activated_by: impl Into<Option<Entity>>) -> Self {
-        self.activated_by = activated_by.into();
+        self.activated_by = activated_by.into().map(MomentOfInterest);
         self
     }
 }

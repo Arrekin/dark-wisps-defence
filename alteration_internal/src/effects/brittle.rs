@@ -4,6 +4,7 @@ use alteration::{
     effects::{brittle::BrittleEffect, prelude::*},
     modifiers::ModifierType,
 };
+use game_core::prelude::InsertSome;
 use logging::prelude::*;
 use persistence::{
     prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveWriter},
@@ -94,18 +95,13 @@ fn on_builder_add_spawn_brittle_effect(
     let entity = trigger.entity;
     let Ok(builder) = builders.get(entity) else { return; };
 
-    let mut entity_commands = commands.entity(entity);
-    entity_commands
+    commands.entity(entity)
         .remove::<BuilderBrittleEffect>()
         .insert((
             EffectTarget(builder.target_entity),
             ModifierContributions(HashMap::from([(ModifierType::IncomingDamageMultiplier, builder.damage_multiplier)])),
             BrittleEffect,
-        ));
-    if let Some(source_entity) = builder.source_entity {
-        entity_commands.insert(EffectSource(source_entity));
-    }
-    if let Some(expires_at) = builder.expires_at {
-        entity_commands.insert(expires_at);
-    }
+        ))
+        .insert_some(builder.source_entity)
+        .insert_some(builder.expires_at);
 }

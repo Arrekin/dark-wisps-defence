@@ -58,7 +58,7 @@ pub struct HasMoments(Vec<Entity>);
 /// Linked despawn OFF — watching is a reference, not ownership. When the
 /// moment despawns, the relationship is removed (firing `On<Remove>`), but
 /// the watcher is NOT despawned (lost-watcher rule, handled by each domain).
-#[derive(Component)]
+#[derive(Component, Clone, Copy)]
 #[relationship(relationship_target = MomentWatchers)]
 pub struct MomentOfInterest(pub Entity);
 

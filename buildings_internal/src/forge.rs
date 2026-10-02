@@ -204,9 +204,9 @@ pub(crate) struct BuilderForge {
     pub grid_position: GridCoords,
     /// Saved integrity points. `None` ⇒ defer to baseline (fresh spawn);
     /// `Some` ⇒ override with saved value (restore).
-    pub integrity_points: Option<f32>,
-    /// Whether the player disabled this building. False on fresh spawn.
-    pub disabled_by_player: bool,
+    pub integrity_points: Option<IntegrityPoints>,
+    /// Set when the player disabled this building. `None` on fresh spawn.
+    pub disabled_by_player: Option<DisabledByPlayer>,
     /// In-progress craft to restore, or `None` when idle.
     pub forging: Option<(ShardType, f32)>,
 }
@@ -230,10 +230,10 @@ impl BuilderForge {
     }
 
     pub fn new(grid_position: GridCoords) -> Self {
-        Self { grid_position, integrity_points: None, disabled_by_player: false, forging: None }
+        Self { grid_position, integrity_points: None, disabled_by_player: None, forging: None }
     }
-    pub fn with_integrity_points(mut self, integrity_points: f32) -> Self { self.integrity_points = Some(integrity_points); self }
-    pub fn with_disabled_by_player(mut self, disabled_by_player: bool) -> Self { self.disabled_by_player = disabled_by_player; self }
+    pub fn with_integrity_points(mut self, integrity_points: f32) -> Self { self.integrity_points = Some(IntegrityPoints::new(integrity_points)); self }
+    pub fn with_disabled_by_player(mut self, disabled_by_player: bool) -> Self { self.disabled_by_player = disabled_by_player.then_some(DisabledByPlayer); self }
     pub fn with_forging(mut self, shard_type: ShardType, remaining_secs: f32) -> Self {
         self.forging = Some((shard_type, remaining_secs));
         self
@@ -253,12 +253,10 @@ impl BuilderForge {
         let grid_imprint = building_info.grid_imprint;
 
         let mut entity_commands = commands.entity(entity);
-        if let Some(integrity_points) = builder.integrity_points {
-            entity_commands.insert(IntegrityPoints::new(integrity_points));
-        }
-        if builder.disabled_by_player {
-            entity_commands.insert(DisabledByPlayer);
-        }
+        entity_commands
+            .remove::<BuilderForge>()
+            .insert_some(builder.integrity_points)
+            .insert_some(builder.disabled_by_player);
         if let Some((shard_type, remaining_secs)) = builder.forging {
             match &almanach.get_shard_info(shard_type).recipe {
                 #[debug_dev("Forge {entity} resumed forging {shard_type} ({remaining_secs:.1}s left)")]
@@ -268,7 +266,6 @@ impl BuilderForge {
         }
 
         entity_commands
-            .remove::<BuilderForge>()
             .insert((
                 Forge,
                 Sprite {

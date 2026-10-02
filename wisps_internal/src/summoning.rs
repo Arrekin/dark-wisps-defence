@@ -292,15 +292,10 @@ fn on_builder_add_spawn_summoning(
     let entity = trigger.entity;
     let Ok(builder) = builders.get(entity) else { return; };
 
-    let mut entity_commands = commands.entity(entity);
-
-    entity_commands
+    commands.entity(entity)
         .remove::<BuilderSummoning>()
-        .insert((builder.summoning.clone(), builder.runtime, builder.state));
-
-    if let Some(moment_entity) = builder.activated_by {
-        entity_commands.insert(MomentOfInterest(moment_entity));
-    }
+        .insert((builder.summoning.clone(), builder.runtime, builder.state))
+        .insert_some(builder.activated_by);
 }
 
 #[log_tags(Tag::Wave)]

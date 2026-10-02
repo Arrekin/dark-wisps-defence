@@ -70,7 +70,7 @@ fn center_camera_on_main_base(
 #[derive(Component, SSS)]
 pub(crate) struct BuilderMainBase {
     pub grid_position: GridCoords,
-    pub integrity_points: Option<f32>,
+    pub integrity_points: Option<IntegrityPoints>,
 }
 impl BuilderMainBase {
     pub fn almanach_info(asset_server: &AssetServer) -> BuildingInfo {
@@ -98,7 +98,7 @@ impl BuilderMainBase {
         Self { grid_position, integrity_points: None }
     }
     pub fn with_integrity_points(mut self, integrity_points: f32) -> Self {
-        self.integrity_points = Some(integrity_points);
+        self.integrity_points = Some(IntegrityPoints::new(integrity_points));
         self
     }
 
@@ -114,12 +114,9 @@ impl BuilderMainBase {
         let building_info = almanach.get_building_info(BuildingType::MainBase);
         let grid_imprint = building_info.grid_imprint;
 
-        let mut entity_commands = commands.entity(entity);
-        if let Some(integrity_points) = builder.integrity_points {
-            entity_commands.insert(IntegrityPoints::new(integrity_points));
-        }
-        entity_commands
+        commands.entity(entity)
             .remove::<BuilderMainBase>()
+            .insert_some(builder.integrity_points)
             .insert((
                 Sprite {
                     image: building_info.sprite.clone(),
