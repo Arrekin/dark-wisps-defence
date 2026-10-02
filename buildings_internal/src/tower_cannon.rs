@@ -83,8 +83,8 @@ impl BuilderTowerCannon {
         self.integrity_points = Some(integrity_points);
         self
     }
-    pub fn with_disabled_by_player(mut self) -> Self {
-        self.disabled_by_player = true;
+    pub fn with_disabled_by_player(mut self, disabled_by_player: bool) -> Self {
+        self.disabled_by_player = disabled_by_player;
         self
     }
 
@@ -210,11 +210,9 @@ fn load_tower_cannons(ctx: &mut LoadContext) -> rusqlite::Result<()> {
 
         #[warn_dev("TowerCannon with old ID {old_id} has no corresponding new entity")]
         let Some(entity) = ctx.entity(old_id) else { continue };
-        let mut builder = BuilderTowerCannon::new(grid_position)
-            .with_integrity_points(integrity_points);
-        if disabled_by_player {
-            builder = builder.with_disabled_by_player();
-        }
+        let builder = BuilderTowerCannon::new(grid_position)
+            .with_integrity_points(integrity_points)
+            .with_disabled_by_player(disabled_by_player);
         ctx.insert(entity, builder);
     }
     Ok(())

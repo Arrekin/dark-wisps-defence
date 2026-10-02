@@ -23,13 +23,13 @@ impl BuilderBrittleEffect {
         Self { target_entity, source_entity: None, damage_multiplier, expires_at: None }
     }
 
-    pub fn with_source(mut self, source_entity: Entity) -> Self {
-        self.source_entity = Some(source_entity);
+    pub fn with_source(mut self, source_entity: impl Into<Option<Entity>>) -> Self {
+        self.source_entity = source_entity.into();
         self
     }
 
-    pub fn with_expiry(mut self, expires_at: ExpiresAt) -> Self {
-        self.expires_at = Some(expires_at);
+    pub fn with_expiry(mut self, expires_at: impl Into<Option<ExpiresAt>>) -> Self {
+        self.expires_at = expires_at.into();
         self
     }
 }

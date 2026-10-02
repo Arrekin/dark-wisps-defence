@@ -21,8 +21,8 @@ impl BuilderObjective {
         self.state = state;
         self
     }
-    pub fn with_activated_by(mut self, entity: Entity) -> Self {
-        self.activated_by = Some(entity);
+    pub fn with_activated_by(mut self, activated_by: impl Into<Option<Entity>>) -> Self {
+        self.activated_by = activated_by.into();
         self
     }
 }

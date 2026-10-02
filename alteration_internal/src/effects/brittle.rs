@@ -78,13 +78,9 @@ fn load_brittle_effects(ctx: &mut LoadContext) -> rusqlite::Result<()> {
             new_source
         });
 
-        let mut builder = BuilderBrittleEffect::new(new_target, damage_multiplier);
-        if let Some(source) = new_source {
-            builder = builder.with_source(source);
-        }
-        if let Some(expires_at) = expires_at {
-            builder = builder.with_expiry(ExpiresAt(expires_at));
-        }
+        let builder = BuilderBrittleEffect::new(new_target, damage_multiplier)
+            .with_source(new_source)
+            .with_expiry(expires_at.map(ExpiresAt));
         ctx.insert(entity, builder);
     }
     Ok(())

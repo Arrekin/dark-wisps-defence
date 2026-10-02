@@ -22,10 +22,7 @@ pub fn tab_objectives(ui: &mut egui::Ui, world: &mut World) {
                 let mut query = world.query_filtered::<Entity, With<MomentGameStart>>();
                 query.single(world).ok()
             };
-            let mut builder = BuilderObjective::new(format!("objective_{count}"));
-            if let Some(trigger) = start_game {
-                builder = builder.with_activated_by(trigger);
-            }
+            let builder = BuilderObjective::new(format!("objective_{count}")).with_activated_by(start_game);
             let objective = world.spawn(builder).id();
             world.resource_mut::<EditorState>().selected_objective = Some(objective);
         }

@@ -233,7 +233,7 @@ impl BuilderForge {
         Self { grid_position, integrity_points: None, disabled_by_player: false, forging: None }
     }
     pub fn with_integrity_points(mut self, integrity_points: f32) -> Self { self.integrity_points = Some(integrity_points); self }
-    pub fn with_disabled_by_player(mut self) -> Self { self.disabled_by_player = true; self }
+    pub fn with_disabled_by_player(mut self, disabled_by_player: bool) -> Self { self.disabled_by_player = disabled_by_player; self }
     pub fn with_forging(mut self, shard_type: ShardType, remaining_secs: f32) -> Self {
         self.forging = Some((shard_type, remaining_secs));
         self
@@ -359,10 +359,8 @@ fn load_forges(ctx: &mut LoadContext) -> rusqlite::Result<()> {
         #[warn_dev("Forge with old ID {old_id} has no corresponding new entity")]
         let Some(entity) = ctx.entity(old_id) else { continue };
         let mut builder = BuilderForge::new(grid_position)
-            .with_integrity_points(integrity_points);
-        if disabled_by_player {
-            builder = builder.with_disabled_by_player();
-        }
+            .with_integrity_points(integrity_points)
+            .with_disabled_by_player(disabled_by_player);
         if let (Some(shard_str), Some(remaining_secs)) = (forging_shard_type, forging_remaining_secs) {
             match shard_str.parse::<ShardType>() {
                 Ok(shard_type) => builder = builder.with_forging(shard_type, remaining_secs),

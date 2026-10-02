@@ -152,8 +152,8 @@ impl BuilderExpeditionDrone {
         self.state = state;
         self
     }
-    pub fn with_mission_target(mut self, mission_target: Entity) -> Self {
-        self.mission_target = Some(mission_target);
+    pub fn with_mission_target(mut self, mission_target: impl Into<Option<Entity>>) -> Self {
+        self.mission_target = mission_target.into();
         self
     }
     pub fn with_world_position(mut self, world_position: Vec2) -> Self {

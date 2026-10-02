@@ -618,15 +618,13 @@ fn load_expedition_drones(ctx: &mut LoadContext) -> rusqlite::Result<()> {
             .inspect_err(|_| warn_dev!("ExpeditionDrone with old ID {old_id} has unknown state '{state_str}' — loading as Stationed"))
             .unwrap_or(DroneState::Stationed);
 
-        let mut builder = BuilderExpeditionDrone::new(home_base)
+        let builder = BuilderExpeditionDrone::new(home_base)
             .with_state(state)
             .with_heading(heading)
             .with_waypoint(Vec2::new(waypoint_x, waypoint_y))
             .with_fuel(fuel_current, fuel_max)
-            .with_world_position(world_position);
-        if let Some(target) = mission_target {
-            builder = builder.with_mission_target(target);
-        }
+            .with_world_position(world_position)
+            .with_mission_target(mission_target);
         ctx.insert(entity, builder);
     }
     Ok(())

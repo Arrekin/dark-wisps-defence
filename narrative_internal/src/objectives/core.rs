@@ -239,10 +239,7 @@ pub(crate) fn load_objectives(ctx: &mut LoadContext) -> rusqlite::Result<()> {
             (state, None)
         };
 
-        let mut builder = BuilderObjective::new(id_name).with_state(state);
-        if let Some(moment_entity) = activated_by {
-            builder = builder.with_activated_by(moment_entity);
-        }
+        let builder = BuilderObjective::new(id_name).with_state(state).with_activated_by(activated_by);
         ctx.insert(entity, builder);
     }
     Ok(())
