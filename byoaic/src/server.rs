@@ -74,39 +74,34 @@ impl ServerState {
     }
 }
 
+#[log_tags(Tag::Byoaic)]
 pub(crate) fn start_server(mut commands: Commands) {
     let (sender, receiver) = async_channel::unbounded();
     commands.insert_resource(ByoaicIngress { receiver });
     let state = ServerState { ingress: sender };
-    let spawned = std::thread::Builder::new()
+    let _ = std::thread::Builder::new()
         .name("byoaic-server".into())
-        .spawn(move || run_server(state));
-    if let Err(error) = spawned {
-        Log::error().dev().tag(Tag::Byoaic).message(format!("Failed to spawn server thread: {error}"));
-    }
+        .spawn(move || run_server(state))
+        .inspect_err(|error| error_dev!("Failed to spawn server thread: {error}"));
 }
 
 /// Server thread body. Returns (leaving the game running without the server) when the runtime or
 /// the listener cannot be created.
+#[log_tags(Tag::Byoaic)]
 fn run_server(state: ServerState) {
     let runtime = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
         Ok(runtime) => runtime,
-        Err(error) => {
-            Log::error().dev().tag(Tag::Byoaic).message(format!("Failed to build server runtime: {error}"));
-            return;
-        }
+        #[error_dev("Failed to build server runtime: {error}")]
+        Err(error) => return,
     };
     runtime.block_on(async move {
+        #[info_dev("Listening on http://{SERVER_ADDRESS}")]
         let listener = match tokio::net::TcpListener::bind(SERVER_ADDRESS).await {
             Ok(listener) => listener,
-            Err(error) => {
-                Log::error().dev().tag(Tag::Byoaic).message(format!("Failed to bind {SERVER_ADDRESS}: {error}"));
-                return;
-            }
+            #[error_dev("Failed to bind {SERVER_ADDRESS}: {error}")]
+            Err(error) => return,
         };
-        Log::info().dev().tag(Tag::Byoaic).message(format!("Listening on http://{SERVER_ADDRESS}"));
-        if let Err(error) = axum::serve(listener, endpoints::router(state)).await {
-            Log::error().dev().tag(Tag::Byoaic).message(format!("Server stopped: {error}"));
-        }
+        let _ = axum::serve(listener, endpoints::router(state)).await
+            .inspect_err(|error| error_dev!("Server stopped: {error}"));
     });
 }

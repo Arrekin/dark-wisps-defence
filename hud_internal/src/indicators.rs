@@ -1,18 +1,18 @@
-use bevy::ecs::entity_disabling::Disabled;
-use bevy::prelude::*;
+use bevy::{
+    ecs::{entity_disabling::Disabled, event::EntityComponentsTrigger},
+    prelude::*,
+};
 
 use game_core::prelude::{DisabledByPlayer, IsPowered, NeedsPower};
 use hud::prelude::*;
 use map_objects::prelude::{HasOreInScannerRange, NoOreInScannerRange};
 
-pub struct IndicatorsPlugin;
+pub(crate) struct IndicatorsPlugin;
 impl Plugin for IndicatorsPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_systems(Update, (
-                cycle_indicators_system,
-            ))
-            .add_observer(on_insert_update_sprite_handle);
+            .add_systems(Update, cycle_indicators_system)
+            .add_observer(on_insert_indicator_type_configure);
     }
 }
 
@@ -20,17 +20,18 @@ const PERIOD_SECONDS: f32 = 3.;
 const MIN_ALPHA: f32 = 0.;
 const MAX_ALPHA: f32 = 1.;
 
-fn on_insert_update_sprite_handle(
+fn on_insert_indicator_type_configure(
     trigger: On<Insert, IndicatorType>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
+    // `Has<Disabled>` lets the query match indicators, which start disabled.
     mut indicators: Query<(&IndicatorType, &mut IndicatorSpriteHandle, &IndicatorOf, Has<Disabled>)>,
     parents_with_no_power: Query<(), (With<NeedsPower>, Without<IsPowered>)>,
     parents_with_no_ore: Query<(), With<NoOreInScannerRange>>,
     parents_disabled_by_player: Query<(), With<DisabledByPlayer>>,
 ) {
     let entity = trigger.entity;
-    let (indicator_type, mut sprite_handle, indicator_of, _) = indicators.get_mut(entity).unwrap();
+    let Ok((indicator_type, mut sprite_handle, indicator_of, _)) = indicators.get_mut(entity) else { return };
     let path = match indicator_type {
         IndicatorType::NoPower => "indicators/no_power.png",
         IndicatorType::OreDepleted => "indicators/no_dark_ore.png",
@@ -42,24 +43,24 @@ fn on_insert_update_sprite_handle(
     match indicator_type {
         IndicatorType::NoPower => {
             commands.entity(parent)
-                .observe(disable_on_power_gained(entity))
-                .observe(enable_on_power_lost(entity));
+                .observe(hide_indicator_on::<Insert, IsPowered>(entity))
+                .observe(show_indicator_on::<Remove, IsPowered>(entity));
             if parents_with_no_power.contains(parent) {
                 commands.entity(entity).remove::<Disabled>();
             }
         }
         IndicatorType::OreDepleted => {
             commands.entity(parent)
-                .observe(disable_on_ore_gained(entity))
-                .observe(enable_on_ore_lost(entity));
+                .observe(hide_indicator_on::<Insert, HasOreInScannerRange>(entity))
+                .observe(show_indicator_on::<Insert, NoOreInScannerRange>(entity));
             if parents_with_no_ore.contains(parent) {
                 commands.entity(entity).remove::<Disabled>();
             }
         }
         IndicatorType::DisabledByPlayer => {
             commands.entity(parent)
-                .observe(enable_on_disabled_by_player(entity))
-                .observe(disable_on_enabled_by_player(entity));
+                .observe(show_indicator_on::<Insert, DisabledByPlayer>(entity))
+                .observe(hide_indicator_on::<Remove, DisabledByPlayer>(entity));
             if parents_disabled_by_player.contains(parent) {
                 commands.entity(entity).remove::<Disabled>();
             }
@@ -67,66 +68,43 @@ fn on_insert_update_sprite_handle(
     }
 }
 
-fn disable_on_power_gained(entity: Entity) -> impl Fn(On<Insert, IsPowered>, Commands, Query<&IndicatorType>) {
+/// Parent observer that hides `indicator` when the event fires. Despawns itself once the
+/// indicator is gone, unless the parent is being despawned. The query mentions `Disabled` so it
+/// also finds indicators that are currently hidden.
+fn hide_indicator_on<E, B>(indicator: Entity) -> impl Fn(On<E, B>, Commands, Query<Has<Disabled>, With<IndicatorType>>)
+where
+    E: for<'a> EntityEvent<Trigger<'a> = EntityComponentsTrigger<'a>>,
+    B: Bundle,
+{
     move |trigger, mut commands, indicators| {
-        if trigger.trigger().new_archetype.is_some() && indicators.get(entity).is_err() {
+        if trigger.trigger().new_archetype.is_some() && !indicators.contains(indicator) {
             commands.entity(trigger.observer()).try_despawn();
             return;
         }
-        commands.entity(entity).try_insert(Disabled);
-    }
-}
-fn enable_on_power_lost(entity: Entity) -> impl Fn(On<Remove, IsPowered>, Commands, Query<&IndicatorType>) {
-    move |trigger, mut commands, indicators| {
-        if trigger.trigger().new_archetype.is_some() && indicators.get(entity).is_err() {
-            commands.entity(trigger.observer()).try_despawn();
-            return;
-        }
-        commands.entity(entity).try_remove::<Disabled>();
-    }
-}
-fn disable_on_ore_gained(entity: Entity) -> impl Fn(On<Insert, HasOreInScannerRange>, Commands, Query<&IndicatorType>) {
-    move |trigger, mut commands, indicators| {
-        if trigger.trigger().new_archetype.is_some() && indicators.get(entity).is_err() {
-            commands.entity(trigger.observer()).try_despawn();
-            return;
-        }
-        commands.entity(entity).try_insert(Disabled);
-    }
-}
-fn enable_on_ore_lost(entity: Entity) -> impl Fn(On<Insert, NoOreInScannerRange>, Commands, Query<&IndicatorType>) {
-    move |trigger, mut commands, indicators| {
-        if trigger.trigger().new_archetype.is_some() && indicators.get(entity).is_err() {
-            commands.entity(trigger.observer()).try_despawn();
-            return;
-        }
-        commands.entity(entity).try_remove::<Disabled>();
-    }
-}
-fn enable_on_disabled_by_player(entity: Entity) -> impl Fn(On<Insert, DisabledByPlayer>, Commands, Query<&IndicatorType>) {
-    move |trigger, mut commands, indicators| {
-        if trigger.trigger().new_archetype.is_some() && indicators.get(entity).is_err() {
-            commands.entity(trigger.observer()).try_despawn();
-            return;
-        }
-        commands.entity(entity).try_remove::<Disabled>();
-    }
-}
-fn disable_on_enabled_by_player(entity: Entity) -> impl Fn(On<Remove, DisabledByPlayer>, Commands, Query<&IndicatorType>) {
-    move |trigger, mut commands, indicators| {
-        if trigger.trigger().new_archetype.is_some() && indicators.get(entity).is_err() {
-            commands.entity(trigger.observer()).try_despawn();
-            return;
-        }
-        commands.entity(entity).try_insert(Disabled);
+        commands.entity(indicator).try_insert(Disabled);
     }
 }
 
-// Cycle through indicators and animate fade in/out.
+/// Parent observer that shows `indicator` when the event fires; see [`hide_indicator_on`].
+fn show_indicator_on<E, B>(indicator: Entity) -> impl Fn(On<E, B>, Commands, Query<Has<Disabled>, With<IndicatorType>>)
+where
+    E: for<'a> EntityEvent<Trigger<'a> = EntityComponentsTrigger<'a>>,
+    B: Bundle,
+{
+    move |trigger, mut commands, indicators| {
+        if trigger.trigger().new_archetype.is_some() && !indicators.contains(indicator) {
+            commands.entity(trigger.observer()).try_despawn();
+            return;
+        }
+        commands.entity(indicator).try_remove::<Disabled>();
+    }
+}
+
+/// Cycles through each display's indicators and animates their fade in and out.
 fn cycle_indicators_system(
     time: Res<Time>,
     parents: Query<&Indicators>,
-    indicators_sprites: Query<&IndicatorSpriteHandle>,
+    sprite_handles: Query<&IndicatorSpriteHandle>,
     mut displays: Query<(&mut IndicatorDisplay, &mut Sprite, &mut Visibility, &ChildOf)>,
 ) {
     for (mut display, mut sprite, mut visibility, child_of) in displays.iter_mut() {
@@ -146,7 +124,7 @@ fn cycle_indicators_system(
         }
 
         // Get active indicator and update sprite
-        let Ok(sprite_handle) = indicators_sprites.get(indicators.entities()[display.active_index]) else {
+        let Ok(sprite_handle) = sprite_handles.get(indicators.entities()[display.active_index]) else {
             // Indicator Disabled, cycle
             *visibility = Visibility::Hidden;
             display.active_index = (display.active_index + 1) % indicator_count;

@@ -9,8 +9,10 @@ use wisps::summoning::{
     SpawnTempo, Summoning,
 };
 
-use super::EditorState;
-use super::moment_picker::{ui_moment_picker, find_moment_child};
+use super::{
+    EditorState,
+    moment_picker::{find_moment_child, ui_moment_picker},
+};
 
 pub fn tab_summonings(ui: &mut egui::Ui, world: &mut World) {
     ui.horizontal(|ui| {
@@ -19,15 +21,12 @@ pub fn tab_summonings(ui: &mut egui::Ui, world: &mut World) {
                 let mut query = world.query::<&Summoning>();
                 query.iter(world).count() + 1
             };
-            let new_summoning = Summoning { id_name: format!("summoning_{}", count), ..Default::default() };
+            let new_summoning = Summoning { id_name: format!("summoning_{count}"), ..Default::default() };
             let game_start = {
                 let mut query = world.query_filtered::<Entity, With<MomentGameStart>>();
                 query.single(world).ok()
             };
-            let mut builder = BuilderSummoning::new(new_summoning);
-            if let Some(moment_entity) = game_start {
-                builder = builder.with_activated_by(moment_entity);
-            }
+            let builder = BuilderSummoning::new(new_summoning).with_activated_by(game_start);
             let entity: Entity = world.spawn(builder).id();
             world.resource_mut::<EditorState>().selected_summoning = Some(entity);
         }
@@ -37,7 +36,7 @@ pub fn tab_summonings(ui: &mut egui::Ui, world: &mut World) {
 
     let summoning_list: Vec<_> = {
         let mut query = world.query::<(Entity, &Summoning)>();
-        query.iter(world).map(|(e, s)| (e, s.id_name.clone())).collect()
+        query.iter(world).map(|(entity, summoning)| (entity, summoning.id_name.clone())).collect()
     };
 
     egui::ScrollArea::vertical().max_height(150.0).show(ui, |ui| {
@@ -67,7 +66,7 @@ pub fn tab_summonings(ui: &mut egui::Ui, world: &mut World) {
 fn ui_summoning_editor(ui: &mut egui::Ui, world: &mut World, entity: Entity) {
     ui.horizontal(|ui| {
         ui.label("ID:");
-        let current = world.entity(entity).get::<Summoning>().map(|s| s.id_name.clone());
+        let current = world.entity(entity).get::<Summoning>().map(|summoning| summoning.id_name.clone());
         if let Some(mut id_name) = current {
             ui.text_edit_singleline(&mut id_name);
             if let Some(mut summoning) = world.entity_mut(entity).get_mut::<Summoning>()
@@ -104,14 +103,14 @@ fn ui_summoning_editor(ui: &mut egui::Ui, world: &mut World, entity: Entity) {
                         summoning.wisp_types.push(wisp_type);
                     }
                 } else if summoning.wisp_types.len() > 1 {
-                    summoning.wisp_types.retain(|t| *t != wisp_type);
+                    summoning.wisp_types.retain(|kept| *kept != wisp_type);
                 }
             }
         }
     });
 
     ui.collapsing("Spawn Area", |ui| {
-        let original = world.entity(entity).get::<Summoning>().map(|s| s.area.clone()).unwrap_or_default();
+        let original = world.entity(entity).get::<Summoning>().map(|summoning| summoning.area.clone()).unwrap_or_default();
         let mut area = original.clone();
         ui_spawn_area(ui, &mut area);
         if area != original
@@ -122,7 +121,7 @@ fn ui_summoning_editor(ui: &mut egui::Ui, world: &mut World, entity: Entity) {
     });
 
     ui.collapsing("Spawn Tempo", |ui| {
-        let original = world.entity(entity).get::<Summoning>().map(|s| s.tempo).unwrap_or_default();
+        let original = world.entity(entity).get::<Summoning>().map(|summoning| summoning.tempo).unwrap_or_default();
         let mut tempo = original;
         ui_spawn_tempo(ui, &mut tempo);
         if tempo != original
@@ -133,7 +132,7 @@ fn ui_summoning_editor(ui: &mut egui::Ui, world: &mut World, entity: Entity) {
     });
 
     ui.horizontal(|ui| {
-        let mut has_limit = world.entity(entity).get::<Summoning>().and_then(|s| s.limit_count).is_some();
+        let mut has_limit = world.entity(entity).get::<Summoning>().and_then(|summoning| summoning.limit_count).is_some();
         if ui.checkbox(&mut has_limit, "Limit Count").changed()
             && let Some(mut summoning) = world.entity_mut(entity).get_mut::<Summoning>()
         {
@@ -208,20 +207,20 @@ fn ui_spawn_area(ui: &mut egui::Ui, area: &mut SpawnArea) {
             let mut to_remove = None;
             let can_remove = coords.len() > 1;
             egui::ScrollArea::vertical().max_height(100.0).show(ui, |ui| {
-                for (i, coord) in coords.iter_mut().enumerate() {
+                for (index, coord) in coords.iter_mut().enumerate() {
                     ui.horizontal(|ui| {
-                        ui.label(format!("{}:", i));
+                        ui.label(format!("{index}:"));
                         ui.add(egui::DragValue::new(&mut coord.x).prefix("x:"));
                         ui.add(egui::DragValue::new(&mut coord.y).prefix("y:"));
                         if can_remove && ui.button("🗑").clicked() {
-                            to_remove = Some(i);
+                            to_remove = Some(index);
                         }
                     });
                 }
             });
 
-            if let Some(i) = to_remove {
-                coords.remove(i);
+            if let Some(index) = to_remove {
+                coords.remove(index);
             }
         }
         SpawnArea::Rect { origin, width, height } => {
@@ -242,9 +241,9 @@ fn ui_spawn_area(ui: &mut egui::Ui, area: &mut SpawnArea) {
             egui::ComboBox::from_label("Side")
                 .selected_text(side.as_ref())
                 .show_ui(ui, |ui| {
-                    for s in EdgeSide::iter() {
-                        if ui.selectable_label(*side == s, s.as_ref()).clicked() {
-                            *side = s;
+                    for edge_side in EdgeSide::iter() {
+                        if ui.selectable_label(*side == edge_side, edge_side.as_ref()).clicked() {
+                            *side = edge_side;
                         }
                     }
                 });

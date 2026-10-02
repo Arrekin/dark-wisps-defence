@@ -11,7 +11,7 @@ use bevy_egui::{EguiPrimaryContextPass, egui};
 use strum::{AsRefStr, EnumIter, IntoEnumIterator};
 
 use game_core::prelude::{MapInfo, ShardType};
-use persistence::{LoadGameSignal, LoadMapConfig, MapFileName};
+use persistence::{LoadGameSignal, LoadMapConfig, MapFileName, SaveGameSignal, SaveTarget};
 use shards::prelude::*;
 use states::AdminMode;
 
@@ -31,8 +31,7 @@ impl Plugin for EditorPlugin {
             })
             .add_plugins(console::LogConsolePlugin)
             .init_resource::<EditorState>()
-            .add_systems(EguiPrimaryContextPass, editor_ui.run_if(in_state(AdminMode::Enabled)))
-            ;
+            .add_systems(EguiPrimaryContextPass, editor_ui.run_if(in_state(AdminMode::Enabled)));
     }
 }
 
@@ -135,8 +134,7 @@ fn tab_general(ui: &mut egui::Ui, world: &mut World) {
     ui.heading("Save as Scenario");
 
     // Filename input
-    let filename = world.resource::<EditorState>().scenario_filename.clone().unwrap_or_default();
-    let mut filename = filename;
+    let mut filename = world.resource::<EditorState>().scenario_filename.clone().unwrap_or_default();
     let filename_changed = ui.horizontal(|ui| {
         ui.label("Filename:");
         ui.text_edit_singleline(&mut filename)
@@ -149,7 +147,7 @@ fn tab_general(ui: &mut egui::Ui, world: &mut World) {
 
     // Save-as-scenario button
     let filename = world.resource::<EditorState>().scenario_filename.clone();
-    let can_save = filename.as_ref().map(|n| !n.is_empty()).unwrap_or(false);
+    let can_save = filename.as_ref().is_some_and(|name| !name.is_empty());
     ui.add_enabled_ui(can_save, |ui| {
         if ui.button("Save as Scenario").clicked()
             && let Some(ref name) = filename
@@ -158,8 +156,8 @@ fn tab_general(ui: &mut egui::Ui, world: &mut World) {
             if std::path::Path::new(&file_name.path()).exists() {
                 world.resource_mut::<EditorState>().pending_overwrite_confirm = Some(file_name);
             } else {
-                world.commands().trigger(persistence::SaveGameSignal {
-                    target: persistence::SaveTarget::Scenario(file_name),
+                world.commands().trigger(SaveGameSignal {
+                    target: SaveTarget::Scenario(file_name),
                 });
             }
         }
@@ -171,8 +169,8 @@ fn tab_general(ui: &mut egui::Ui, world: &mut World) {
         ui.horizontal(|ui| {
             ui.colored_label(egui::Color32::RED, format!("'{}.dwd' exists. Overwrite?", pending_file_name.as_str()));
             if ui.button("Yes, overwrite").clicked() {
-                world.commands().trigger(persistence::SaveGameSignal {
-                    target: persistence::SaveTarget::Scenario(pending_file_name),
+                world.commands().trigger(SaveGameSignal {
+                    target: SaveTarget::Scenario(pending_file_name),
                 });
                 world.resource_mut::<EditorState>().pending_overwrite_confirm = None;
             }
@@ -205,12 +203,12 @@ fn tab_general(ui: &mut egui::Ui, world: &mut World) {
         });
         (form.name.clone(), form.width, form.height)
     };
-    let name_valid = !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
+    let name_valid = !name.is_empty() && name.chars().all(|character| character.is_ascii_alphanumeric() || character == '_' || character == '-');
 
     if pending_confirm {
         let current_name = world.resource::<MapInfo>().name.clone();
         ui.horizontal(|ui| {
-            ui.colored_label(egui::Color32::RED, format!("Abandon '{}' and create a new map?", current_name));
+            ui.colored_label(egui::Color32::RED, format!("Abandon '{current_name}' and create a new map?"));
             if ui.button("Yes").clicked() {
                 create_new_map(world, &name, width, height);
             }
@@ -251,12 +249,11 @@ fn tab_shards(ui: &mut egui::Ui, world: &mut World) {
         egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
             for (shard_type, count) in shards {
                 ui.horizontal(|ui| {
-                    ui.label(format!("{}: {}", shard_type, count));
+                    ui.label(format!("{shard_type}: {count}"));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("−").clicked()
-                            && world.resource::<ShardInventory>().has(shard_type) {
-                                world.resource_mut::<ShardInventory>().remove(shard_type);
-                            }
+                        if ui.button("−").clicked() && world.resource::<ShardInventory>().has(shard_type) {
+                            world.resource_mut::<ShardInventory>().remove(shard_type);
+                        }
                         if ui.button("+").clicked() {
                             world.resource_mut::<ShardInventory>().add(shard_type, 1);
                         }

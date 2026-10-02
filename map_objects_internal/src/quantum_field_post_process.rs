@@ -11,10 +11,11 @@
 //! rectangles (located in-shader via a box SDF), they never overlap, intensity is driven by
 //! `solve_progress` derived from `QuantumFieldLayers`, and drone scan beams collapse the
 //! superposition locally around their ground spot. Pass ordering is defined centrally in
-//! `visuals::post_process::PostProcessOrderingPlugin`.
+//! `visuals_internal::post_process::PostProcessOrderingPlugin`.
 
 use bevy::{
     core_pipeline::{FullscreenShader, schedule::Core2d},
+    prelude::*,
     render::{
         Render, RenderApp, RenderStartup, RenderSystems,
         camera::ExtractedCamera,
@@ -31,7 +32,6 @@ use bevy::{
         view::ViewTarget,
     },
 };
-use bevy::prelude::*;
 
 use game_core::prelude::GridImprint;
 use units::expedition_drone::{ExpeditionDrone, ScanSpot, ScanningBeam};
@@ -40,7 +40,7 @@ use visuals::prelude::{QuantumFieldPostProcessSet, ShaderLibraryAppExt};
 
 use crate::quantum_field::QuantumFieldLayers;
 
-pub struct QuantumFieldPostProcessPlugin;
+pub(crate) struct QuantumFieldPostProcessPlugin;
 impl Plugin for QuantumFieldPostProcessPlugin {
     fn build(&self, app: &mut App) {
         app
@@ -55,12 +55,11 @@ impl Plugin for QuantumFieldPostProcessPlugin {
             .init_resource::<CollapsePoints>()
             .add_observer(QuantumFieldPostProcess::on_add_camera_attach_post_process)
             // `gather` runs before `update` so the per-camera `collapse_count` matches the points
-            // uploaded this frame. Both ungated (run every frame) — empty queries are cheap.
+            // uploaded this frame.
             .add_systems(Update, (
                 gather_collapse_points,
                 QuantumFieldPostProcess::update,
-            ).chain())
-            ;
+            ).chain());
 
         let Some(render_app) = app.get_sub_app_mut(RenderApp) else { return; };
         render_app
@@ -72,7 +71,7 @@ impl Plugin for QuantumFieldPostProcessPlugin {
                 GpuCollapsePointStorage::prepare.in_set(RenderSystems::PrepareResources),
             ))
             // Ordering against the other post-process passes lives in the
-            // visuals crate's PostProcessOrderingPlugin (added after all effect plugins).
+            // visuals_internal's PostProcessOrderingPlugin (added after all effect plugins).
             .add_systems(Core2d, quantum_field_post_process_pass.in_set(QuantumFieldPostProcessSet));
     }
 }
@@ -202,45 +201,30 @@ impl QuantumFieldPostProcess {
             entries.0.push(GpuQuantumFieldEntry {
                 center: transform.translation.xy(),
                 half_extent: imprint.world_size() * 0.5,
-                solve_progress: solve_progress(layers),
+                solve_progress: layers.solve_progress(),
                 // Stable per-field offset; decorrelates noise between fields.
                 seed: entity.index_u32() as f32 * 0.37,
             });
         }
 
-        let count = entries.0.len() as u32;
+        let field_count = entries.0.len() as u32;
         let collapse_count = collapse_points.0.len() as u32;
         let global_time = time.elapsed_secs();
         for (mut post_process, transform, projection) in cameras.iter_mut() {
-            let Projection::Orthographic(ortho) = projection else { continue; };
+            let Projection::Orthographic(orthographic) = projection else { continue; };
             post_process.camera_world_pos = transform.translation.xy();
-            post_process.viewport_world_size = Vec2::new(ortho.area.width(), ortho.area.height());
+            post_process.viewport_world_size = Vec2::new(orthographic.area.width(), orthographic.area.height());
             post_process.global_time = global_time;
-            post_process.field_count = count;
+            post_process.field_count = field_count;
             post_process.collapse_count = collapse_count;
         }
     }
-}
-
-/// Single 0→1 "tamed" scalar across all layers. 1.0 once the field is solved.
-fn solve_progress(layers: &QuantumFieldLayers) -> f32 {
-    let total = layers.layers.len().max(1) as f32;
-    let partial = if layers.is_solved() {
-        0.0
-    } else {
-        let target = layers.layers[layers.current_layer].value;
-        if target > 0.0 { layers.current_layer_progress / target } else { 0.0 }
-    };
-    ((layers.current_layer as f32 + partial) / total).clamp(0.0, 1.0)
 }
 
 /// Collects the ground spot of every drone whose scan beam is currently active into the shared
 /// `CollapsePoints` buffer. The shader calms the field locally around each (the "observation
 /// collapses the wavefunction" effect). Spots always sit inside their target field, so no
 /// field association is needed — the shader only processes field interiors anyway.
-///
-/// Each spot collapses at full strength. To soften the on/off pop as a beam toggles during
-/// patrol, add a per-point intensity field here and multiply it into `collapse` in the shader.
 fn gather_collapse_points(
     mut points: ResMut<CollapsePoints>,
     beams: Query<&ScanningBeam>,
@@ -265,12 +249,12 @@ fn quantum_field_post_process_pass(
         &QuantumFieldPostProcess,
         &ExtractedCamera,
     )>,
-    pipeline_res: Res<QuantumFieldPostProcessPipeline>,
+    post_process_pipeline: Res<QuantumFieldPostProcessPipeline>,
     pipeline_cache: Res<PipelineCache>,
     settings_uniforms: Res<ComponentUniforms<QuantumFieldPostProcess>>,
     field_storage: Res<GpuQuantumFieldStorage>,
     collapse_storage: Res<GpuCollapsePointStorage>,
-    mut ctx: RenderContext,
+    mut render_context: RenderContext,
 ) {
     let (view_target, settings_index, settings, camera) = view.into_inner();
 
@@ -284,7 +268,7 @@ fn quantum_field_post_process_pass(
         "quantum field post-process requires an HDR camera; this PostProcessCamera lacks `Hdr`. \
          Add the `Hdr` component, or add a pipeline variant for its target format."
     );
-    let pipeline_id = pipeline_res.pipeline_id;
+    let pipeline_id = post_process_pipeline.pipeline_id;
     let Some(pipeline) = pipeline_cache.get_render_pipeline(pipeline_id) else { return; };
     let Some(settings_binding) = settings_uniforms.uniforms().binding() else { return; };
     let Some(field_binding) = field_storage.buffer.binding() else { return; };
@@ -292,19 +276,19 @@ fn quantum_field_post_process_pass(
 
     let post_process = view_target.post_process_write();
 
-    let bind_group = ctx.render_device().create_bind_group(
+    let bind_group = render_context.render_device().create_bind_group(
         "quantum_field_post_process_bind_group",
-        &pipeline_cache.get_bind_group_layout(&pipeline_res.layout),
+        &pipeline_cache.get_bind_group_layout(&post_process_pipeline.layout),
         &BindGroupEntries::sequential((
             post_process.source,
-            &pipeline_res.sampler,
+            &post_process_pipeline.sampler,
             settings_binding.clone(),
             field_binding.clone(),
             collapse_binding.clone(),
         )),
     );
 
-    let mut render_pass = ctx
+    let mut render_pass = render_context
         .command_encoder()
         .begin_render_pass(&RenderPassDescriptor {
             label: Some("quantum_field_post_process_pass"),

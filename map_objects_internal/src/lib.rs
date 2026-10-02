@@ -11,7 +11,6 @@ pub(crate) mod wall_materials;
 
 use bevy::prelude::*;
 
-
 pub struct MapObjectsPlugin;
 impl Plugin for MapObjectsPlugin {
     fn build(&self, app: &mut App) {

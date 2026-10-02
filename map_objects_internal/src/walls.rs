@@ -2,20 +2,26 @@ use bevy::prelude::*;
 
 use almanach::{Almanach, AlmanachAppExt, ObjectPresentation, WallInfo};
 use game_core::prelude::{GridCoords, GridImprint, MapObject, SSS};
-use grids::obstacles::GridStructureType;
-use grids::placement::{annotate_non_empty, GridObjectPlacer, GridsCollectionParam, PlacementModes, PlacementStyle, PlacementValidity, PlaceRequest, RemoveRequest, validator_all_empty};
+use grids::{
+    obstacles::GridStructureType,
+    placement::{
+        annotate_non_empty, GridObjectPlacer, GridsCollectionParam, PlacementModes, PlacementStyle, PlacementValidity,
+        PlaceRequest, RemoveRequest, validator_all_empty,
+    },
+};
 use hud::prelude::BuilderSideMenuItemTooltip;
 use logging::prelude::*;
-use map_objects::prelude::{BuilderWallSideMenuTooltip, Wall};
-use map_objects::wall_style::{WallStyleKey, WallStyles};
+use map_objects::{
+    prelude::{BuilderWallSideMenuTooltip, Wall},
+    wall_style::{WallStyleKey, WallStyles},
+};
 use persistence::{
     prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveWriter},
     rusqlite,
 };
 use states::prelude::MapLoadingStage;
 
-
-pub struct WallPlugin;
+pub(crate) struct WallPlugin;
 impl Plugin for WallPlugin {
     fn build(&self, app: &mut App) {
         app
@@ -25,8 +31,7 @@ impl Plugin for WallPlugin {
             .add_observer(on_wall_place_request_do_so)
             .add_observer(on_wall_remove_request_do_so)
             .add_observer(on_builder_add_spawn_wall_tooltip)
-            .register_walls(BuilderWall::almanach_info())
-            ;
+            .register_walls(BuilderWall::almanach_info());
     }
 }
 
@@ -74,11 +79,12 @@ impl BuilderWall {
         Self { grid_position, style: style.into() }
     }
 
+    #[log_tags(Tag::GameLoad)]
     fn on_builder_add_spawn_wall(
         trigger: On<Add, BuilderWall>,
         mut commands: Commands,
-        builders: Query<&BuilderWall>,
         styles: Res<WallStyles>,
+        builders: Query<&BuilderWall>,
     ) {
         let entity = trigger.entity;
         let Ok(builder) = builders.get(entity) else { return; };
@@ -86,7 +92,7 @@ impl BuilderWall {
         let style = match &builder.style {
             WallStyleSource::Key(key) => *key,
             WallStyleSource::Name(name) => styles.key_of(name).unwrap_or_else(|| {
-                Log::warn().dev().tag(Tag::GameLoad).message(format!("Wall style '{name}' is not in this map's table; drawing it with the default"));
+                #[warn_dev("Wall style '{name}' is not in this map's table; drawing it with the default")]
                 WallStyleKey::default()
             }),
         };
@@ -94,47 +100,49 @@ impl BuilderWall {
         commands.entity(entity)
             .remove::<BuilderWall>()
             .insert((
-            builder.grid_position,
-            WALL_GRID_IMPRINT,
-            Wall,
-            style,
-        ));
+                builder.grid_position,
+                WALL_GRID_IMPRINT,
+                Wall,
+                style,
+            ));
     }
 }
 
+#[log_tags(Tag::GameSave)]
 fn collect_walls(
     walls: Query<(Entity, &GridCoords, &WallStyleKey), With<Wall>>,
     styles: Res<WallStyles>,
     mut save: SaveWriter,
 ) {
     if walls.is_empty() { return; }
-    let rows: Vec<(i64, i32, i32, String)> = walls
+
+    #[debug_dev("Saving {} walls", rows.len())]
+    let rows: Vec<(i64, GridCoords, String)> = walls
         .iter()
         .map(|(entity, coords, key)| {
             (
                 entity.index_u32() as i64,
-                coords.x,
-                coords.y,
+                *coords,
                 // An out-of-range key means the style table shrank under a live wall. The empty
                 // name loads back as the default, with a warn.
                 styles.name_of(*key).unwrap_or_default().to_string(),
             )
         })
         .collect();
-    Log::debug().dev().tag(Tag::GameSave).message(format!("Saving {} walls", rows.len()));
     save.submit(move |tx| {
-        for (id, gx, gy, style) in rows {
+        for (id, coords, style) in rows {
             tx.register_entity(id)?;
             tx.execute(
                 "INSERT OR REPLACE INTO walls (id, style) VALUES (?1, ?2)",
                 rusqlite::params![id, style],
             )?;
-            tx.save_grid_coords(id, GridCoords { x: gx, y: gy })?;
+            tx.save_grid_coords(id, coords)?;
         }
         Ok(())
     });
 }
 
+#[log_tags(Tag::GameLoad)]
 fn load_walls(ctx: &mut LoadContext) -> rusqlite::Result<()> {
     let mut stmt = ctx.conn.prepare("SELECT id, style FROM walls")?;
     let mut rows = stmt.query([])?;
@@ -143,15 +151,14 @@ fn load_walls(ctx: &mut LoadContext) -> rusqlite::Result<()> {
         let style: String = row.get(1)?;
         let grid_position = ctx.conn.get_grid_coords(old_id)?;
 
-        let Some(entity) = ctx.entity(old_id) else {
-            Log::warn().dev().tag(Tag::GameLoad).message(format!("Wall with old ID {old_id} has no corresponding new entity"));
-            continue;
-        };
+        #[warn_dev("Wall with old ID {old_id} has no corresponding new entity")]
+        let Some(entity) = ctx.entity(old_id) else { continue };
         ctx.insert(entity, BuilderWall::new(grid_position, style));
     }
     Ok(())
 }
 
+#[log_tags(Tag::MapObjects)]
 fn on_wall_place_request_do_so(
     trigger: On<PlaceRequest>,
     mut commands: Commands,
@@ -163,10 +170,12 @@ fn on_wall_place_request_do_so(
     let (coords, grid_imprint, placement_style) = placer.into_inner();
     let validity = (almanach.walls.validate)(MapObject::Wall, *coords, *grid_imprint, &grids);
     if validity == PlacementValidity::Invalid { return; }
+    #[debug_dev("Wall placed at ({}, {})", coords.x, coords.y)]
     commands.spawn(BuilderWall::new(*coords, *placement_style));
     grids.reserved_coords.reserve(*coords, *grid_imprint);
 }
 
+#[log_tags(Tag::MapObjects)]
 fn on_wall_remove_request_do_so(
     trigger: On<RemoveRequest>,
     mut commands: Commands,
@@ -175,6 +184,7 @@ fn on_wall_remove_request_do_so(
 ) {
     let RemoveRequest(MapObject::Wall) = *trigger else { return };
     let coords = placer.into_inner();
+    #[debug_dev("Wall removed at ({}, {})", coords.x, coords.y)]
     if let GridStructureType::Wall(entity) = grids.obstacle_grid[*coords].structure {
         commands.entity(entity).despawn();
     }

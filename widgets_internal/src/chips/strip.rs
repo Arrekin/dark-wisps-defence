@@ -5,7 +5,7 @@ use widgets::prelude::BuilderChipStrip;
 const STRIP_HEIGHT: f32 = 28.0;
 const STRIP_COLUMN_GAP: f32 = 4.0;
 
-pub struct ChipStripPlugin;
+pub(crate) struct ChipStripPlugin;
 impl Plugin for ChipStripPlugin {
     fn build(&self, app: &mut App) {
         app.add_observer(on_builder_add_spawn_chip_strip);

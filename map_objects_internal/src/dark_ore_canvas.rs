@@ -31,8 +31,7 @@ impl Plugin for DarkOreCanvasPlugin {
                     rebuild_dark_ore_canvas.run_if(DarkOreCanvasRebuildRequested::is_requested),
                 ).chain(),
             )
-            .add_observer(on_dark_ore_remove_request_rebuild)
-            ;
+            .add_observer(on_dark_ore_remove_request_rebuild);
     }
 }
 

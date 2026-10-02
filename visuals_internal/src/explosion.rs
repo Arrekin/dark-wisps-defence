@@ -5,14 +5,12 @@ use visuals::prelude::BuilderExplosion;
 
 use crate::common::AnimationController;
 
-pub struct ExplosionPlugin;
+pub(crate) struct ExplosionPlugin;
 impl Plugin for ExplosionPlugin {
     fn build(&self, app: &mut App) {
         app
             .init_resource::<ExplosionAtlas>()
-            .add_systems(Update, (
-                remove_explosions_system,
-            ))
+            .add_systems(Update, remove_explosions_system)
             .add_observer(on_builder_add_spawn_explosion);
     }
 }
@@ -64,9 +62,9 @@ fn on_builder_add_spawn_explosion(
                 texture_atlas: Some(TextureAtlas {
                     layout: explosion_atlas.atlas_handle.clone(),
                     index: 0,
-                    ..Default::default()
+                    ..default()
                 }),
-                custom_size: Some(GridImprint::default().world_size()), // Adjust to CELL_SIZE
+                custom_size: Some(GridImprint::default().world_size()),
                 ..default()
             },
             Transform {
@@ -82,7 +80,7 @@ fn remove_explosions_system(
     mut commands: Commands,
     explosions: Query<(Entity, &AnimationController), With<Explosion>>,
 ) {
-    for (explosion_entity, animation_controller) in &explosions {
+    for (explosion_entity, animation_controller) in explosions.iter() {
         if animation_controller.has_finished {
             commands.entity(explosion_entity).despawn();
         }

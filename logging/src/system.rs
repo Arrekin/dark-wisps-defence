@@ -7,24 +7,26 @@
 //!
 //! ## Usage
 //!
-//! ```rust
+//! ```ignore
 //! Log::info().dev().tag(Tag::GameLoad).message("EntityMap populated");
 //!
 //! Log::warn().player()
 //!     .tags([Tag::Wave, Tag::Resources])
 //!     .message(format!("Wave {} started with {} enemies", wave, count));
 //! ```
+//!
+//! Inside functions, logs tied to a statement read better as annotations: `#[log_tags]`
+//! sets the tags once and `#[warn_dev("...")]`-style attributes mark the statements that
+//! log. Its documentation lists what each annotated statement shape expands to.
+//!
+//! Changes to `#[log_tags]` (in `lib-derive`) must keep `cargo test -p lib-derive -p logging`
+//! passing: `lib-derive` checks each shape's expansion, `logging` checks which branch logs.
 
-use std::borrow::Cow;
-use std::collections::VecDeque;
-use std::fmt;
-use std::sync::OnceLock;
-use std::time::SystemTime;
+use std::{borrow::Cow, collections::VecDeque, fmt, sync::OnceLock, time::SystemTime};
 
-use bevy::platform::collections::HashSet;
 use bevy::prelude::*;
 use crossbeam_channel::{Receiver, Sender};
-use strum::{AsRefStr, EnumIter};
+use strum::{AsRefStr, EnumCount, EnumIter, IntoEnumIterator};
 
 const MAX_LOG_ENTRIES: usize = 1000;
 
@@ -39,8 +41,7 @@ impl Plugin for LoggingPlugin {
         LOG_SENDER.set(sender).ok();
         app
             .insert_resource(LogBuffer::new(receiver, MAX_LOG_ENTRIES))
-            .add_systems(PreUpdate, LogBuffer::drain_system)
-            ;
+            .add_systems(PreUpdate, LogBuffer::drain_system);
     }
 }
 
@@ -54,8 +55,8 @@ pub enum LogLevel {
     Error,
 }
 impl fmt::Display for LogLevel {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
             Self::Debug => "DEBUG",
             Self::Info  => "INFO ",
             Self::Warn  => "WARN ",
@@ -72,8 +73,8 @@ pub enum Audience {
     Player,
 }
 impl fmt::Display for Audience {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
             Self::Developer => "Dev   ",
             Self::Player    => "Player",
         })
@@ -82,7 +83,7 @@ impl fmt::Display for Audience {
 
 // ── Tag ───────────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumIter, AsRefStr)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumIter, EnumCount, AsRefStr)]
 pub enum Tag {
     GameLoad,
     GameSave,
@@ -95,6 +96,75 @@ pub enum Tag {
     Forge,
     Research,
     Byoaic,
+    Units,
+    Shards,
+    MapObjects,
+}
+
+// ── TagSet ────────────────────────────────────────────────────────────────────
+
+const _: () = assert!(Tag::COUNT <= u32::BITS as usize, "TagSet holds one bit per Tag in a u32: widen it");
+
+/// A set of [`Tag`]s, one bit per variant: it never allocates, and adding a tag twice
+/// keeps one.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct TagSet(u32);
+impl TagSet {
+    fn bit(tag: Tag) -> u32 {
+        1 << tag as u32
+    }
+
+    pub fn insert(&mut self, tag: Tag) {
+        self.0 |= Self::bit(tag);
+    }
+
+    pub fn remove(&mut self, tag: Tag) {
+        self.0 &= !Self::bit(tag);
+    }
+
+    pub fn contains(self, tag: Tag) -> bool {
+        self.0 & Self::bit(tag) != 0
+    }
+
+    pub fn is_empty(self) -> bool {
+        self.0 == 0
+    }
+
+    /// Whether the two sets share at least one tag.
+    pub fn intersects(self, other: Self) -> bool {
+        self.0 & other.0 != 0
+    }
+
+    /// Tags in declaration order.
+    pub fn iter(self) -> impl Iterator<Item = Tag> {
+        Tag::iter().filter(move |tag| self.contains(*tag))
+    }
+}
+impl Extend<Tag> for TagSet {
+    fn extend<I: IntoIterator<Item = Tag>>(&mut self, tags: I) {
+        for tag in tags {
+            self.insert(tag);
+        }
+    }
+}
+/// `Tag, Tag` in declaration order, the order [`Tag::iter`] yields.
+impl fmt::Display for TagSet {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (index, tag) in self.iter().enumerate() {
+            if index > 0 {
+                formatter.write_str(", ")?;
+            }
+            formatter.write_str(tag.as_ref())?;
+        }
+        Ok(())
+    }
+}
+impl FromIterator<Tag> for TagSet {
+    fn from_iter<I: IntoIterator<Item = Tag>>(tags: I) -> Self {
+        let mut set = Self::default();
+        set.extend(tags);
+        set
+    }
 }
 
 // ── LogEntryData ──────────────────────────────────────────────────────────────
@@ -102,18 +172,51 @@ pub enum Tag {
 pub struct LogEntryData {
     pub level: LogLevel,
     pub audience: Audience,
-    pub tags: HashSet<Tag>,
+    pub tags: TagSet,
     pub message: Cow<'static, str>,
     pub timestamp: SystemTime,
 }
 impl LogEntryData {
-    pub fn tags_sorted_as_string(&self) -> String {
-        if self.tags.is_empty() {
-            return String::new();
+    fn emit_to_bevy_log(&self) {
+        match self.level {
+            LogLevel::Debug => bevy::log::debug!("{self}"),
+            LogLevel::Info  => bevy::log::info!("{self}"),
+            LogLevel::Warn  => bevy::log::warn!("{self}"),
+            LogLevel::Error => bevy::log::error!("{self}"),
         }
-        let mut sorted: Vec<&str> = self.tags.iter().map(|tag| tag.as_ref()).collect();
-        sorted.sort_unstable();
-        sorted.join(", ")
+    }
+}
+/// `[Audience][Tag, Tag] message`. The level is left out: `bevy::log` prints it.
+impl fmt::Display for LogEntryData {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "[{}]", self.audience)?;
+        if !self.tags.is_empty() {
+            write!(formatter, "[{}]", self.tags)?;
+        }
+        write!(formatter, " {}", self.message)
+    }
+}
+
+// ── LogMessage ────────────────────────────────────────────────────────────────
+
+/// Anything [`Log::message`] accepts. A message known at compile time — a `&'static str`,
+/// or `format_args!` without placeholders — is stored borrowed, without allocating.
+pub struct LogMessage(Cow<'static, str>);
+impl From<&'static str> for LogMessage {
+    fn from(message: &'static str) -> Self { Self(Cow::Borrowed(message)) }
+}
+impl From<String> for LogMessage {
+    fn from(message: String) -> Self { Self(Cow::Owned(message)) }
+}
+impl From<Cow<'static, str>> for LogMessage {
+    fn from(message: Cow<'static, str>) -> Self { Self(message) }
+}
+impl From<fmt::Arguments<'_>> for LogMessage {
+    fn from(arguments: fmt::Arguments<'_>) -> Self {
+        match arguments.as_str() {
+            Some(literal) => Self(Cow::Borrowed(literal)),
+            None => Self(Cow::Owned(arguments.to_string())),
+        }
     }
 }
 
@@ -131,7 +234,7 @@ impl Log {
             inner: Some(LogEntryData {
                 level,
                 audience: Audience::Developer,
-                tags: HashSet::new(),
+                tags: TagSet::default(),
                 message: Cow::Borrowed(""),
                 timestamp: SystemTime::now(),
             }),
@@ -144,47 +247,47 @@ impl Log {
     pub fn error() -> Self { Self::new(LogLevel::Error) }
 
     pub fn dev(mut self) -> Self {
-        if let Some(ref mut entry) = self.inner {
+        if let Some(entry) = &mut self.inner {
             entry.audience = Audience::Developer;
         }
         self
     }
 
     pub fn player(mut self) -> Self {
-        if let Some(ref mut entry) = self.inner {
+        if let Some(entry) = &mut self.inner {
             entry.audience = Audience::Player;
         }
         self
     }
 
-    /// Accepts both `&'static str` (zero allocation) and `String` (e.g. from `format!()`).
-    pub fn message(mut self, message: impl Into<Cow<'static, str>>) -> Self {
-        if let Some(ref mut entry) = self.inner {
-            entry.message = message.into();
+    /// Accepts `&'static str`, `String`, `Cow<'static, str>` and `format_args!(..)`.
+    /// `format_args!` allocates only when the message has something to format.
+    pub fn message(mut self, message: impl Into<LogMessage>) -> Self {
+        if let Some(entry) = &mut self.inner {
+            entry.message = message.into().0;
         }
         self
     }
 
     pub fn tag(mut self, tag: Tag) -> Self {
-        if let Some(ref mut entry) = self.inner {
+        if let Some(entry) = &mut self.inner {
             entry.tags.insert(tag);
         }
         self
     }
 
-    pub fn tags(mut self, iter: impl IntoIterator<Item = Tag>) -> Self {
-        if let Some(ref mut entry) = self.inner {
-            entry.tags.extend(iter);
+    pub fn tags(mut self, tags: impl IntoIterator<Item = Tag>) -> Self {
+        if let Some(entry) = &mut self.inner {
+            entry.tags.extend(tags);
         }
         self
     }
 }
 impl Drop for Log {
     fn drop(&mut self) {
-        if let Some(entry) = self.inner.take()
-            && let Some(sender) = LOG_SENDER.get() {
-                sender.send(entry).ok();
-            }
+        if let Some(entry) = self.inner.take() && let Some(sender) = LOG_SENDER.get() {
+            sender.send(entry).ok();
+        }
     }
 }
 
@@ -218,30 +321,29 @@ impl LogBuffer {
 
     fn drain_system(mut log_buffer: ResMut<Self>) {
         while let Ok(entry) = log_buffer.receiver.try_recv() {
-            emit_to_bevy_log(&entry);
+            entry.emit_to_bevy_log();
             log_buffer.push(entry);
         }
     }
 }
 
-fn emit_to_bevy_log(entry: &LogEntryData) {
-    let message = format_entry_for_display(entry);
-    match entry.level {
-        LogLevel::Debug => bevy::log::debug!("{}", message),
-        LogLevel::Info  => bevy::log::info!("{}", message),
-        LogLevel::Warn  => bevy::log::warn!("{}", message),
-        LogLevel::Error => bevy::log::error!("{}", message),
-    }
-}
+#[cfg(test)]
+mod tests {
+    use super::{Tag, TagSet};
 
-fn format_entry_for_display(entry: &LogEntryData) -> String {
-    if entry.tags.is_empty() {
-        format!("[{}] {}", entry.audience, entry.message)
-    } else {
-        let tags_display = entry.tags.iter()
-            .map(|tag| tag.as_ref())
-            .collect::<Vec<_>>()
-            .join(", ");
-        format!("[{}][{}] {}", entry.audience, tags_display, entry.message)
+    #[test]
+    fn tag_set_behaves_as_a_set() {
+        let mut tags: TagSet = [Tag::Wave, Tag::Build, Tag::Wave].into_iter().collect();
+        assert_eq!(tags.iter().collect::<Vec<_>>(), [Tag::Build, Tag::Wave]);
+        assert!(tags.contains(Tag::Wave) && !tags.contains(Tag::Ui));
+
+        tags.remove(Tag::Wave);
+        assert_eq!(tags.iter().collect::<Vec<_>>(), [Tag::Build]);
+        assert!(tags.intersects([Tag::Build, Tag::Ui].into_iter().collect()));
+        assert!(!tags.intersects([Tag::Ui].into_iter().collect()));
+        assert!(!tags.intersects(TagSet::default()));
+
+        tags.remove(Tag::Build);
+        assert!(tags.is_empty());
     }
 }

@@ -15,27 +15,24 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use bevy::{input::common_conditions::input_just_pressed, platform::collections::HashSet, prelude::*};
+use bevy::{input::common_conditions::input_just_pressed, prelude::*};
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use strum::IntoEnumIterator;
 
-use logging::{Audience, LogBuffer, LogEntryData, LogLevel, prelude::*};
+use logging::{Audience, LogBuffer, LogEntryData, LogLevel, TagSet, prelude::*};
 
-const TIME_COL_WIDTH: f32     = 70.0;
-const LEVEL_COL_WIDTH: f32    = 48.0;
-const AUDIENCE_COL_WIDTH: f32 = 58.0;
-const TAGS_COL_WIDTH: f32     = 160.0;
+const TIME_COLUMN_WIDTH: f32     = 70.0;
+const LEVEL_COLUMN_WIDTH: f32    = 48.0;
+const AUDIENCE_COLUMN_WIDTH: f32 = 58.0;
+const TAGS_COLUMN_WIDTH: f32     = 160.0;
 
 pub struct LogConsolePlugin;
 impl Plugin for LogConsolePlugin {
     fn build(&self, app: &mut App) {
         app
             .init_resource::<LogConsoleState>()
-            .add_systems(Update, (
-                LogConsoleState::toggle_visibility.run_if(input_just_pressed(KeyCode::Backquote)),
-            ))
-            .add_systems(EguiPrimaryContextPass, LogConsoleState::render)
-            ;
+            .add_systems(Update, LogConsoleState::toggle_visibility.run_if(input_just_pressed(KeyCode::Backquote)))
+            .add_systems(EguiPrimaryContextPass, LogConsoleState::render);
     }
 }
 
@@ -50,7 +47,7 @@ pub struct LogConsoleState {
     show_error: bool,
     show_developer: bool,
     show_player: bool,
-    active_tags: HashSet<Tag>,  // empty = no tag filter
+    active_tags: TagSet,  // empty = no tag filter
     text_filter: String,
     auto_scroll: bool,
 }
@@ -64,7 +61,7 @@ impl Default for LogConsoleState {
             show_error: true,
             show_developer: true,
             show_player: true,
-            active_tags: HashSet::new(),
+            active_tags: TagSet::default(),
             text_filter: String::new(),
             auto_scroll: true,
         }
@@ -82,7 +79,7 @@ impl LogConsoleState {
             Audience::Developer => self.show_developer,
             Audience::Player    => self.show_player,
         };
-        let tag_ok = self.active_tags.is_empty() || !entry.tags.is_disjoint(&self.active_tags);
+        let tag_ok = self.active_tags.is_empty() || entry.tags.intersects(self.active_tags);
         let text_ok = text_filter_lower.is_empty() || entry.message.to_lowercase().contains(text_filter_lower);
         level_ok && audience_ok && tag_ok && text_ok
     }
@@ -128,10 +125,10 @@ impl LogConsoleState {
                 ui.horizontal(|ui| {
                     ui.label("Tags:");
                     for tag in Tag::iter() {
-                        let mut active = state.active_tags.contains(&tag);
+                        let mut active = state.active_tags.contains(tag);
                         if ui.toggle_value(&mut active, tag.as_ref()).changed() {
                             if active { state.active_tags.insert(tag); }
-                            else      { state.active_tags.remove(&tag); }
+                            else      { state.active_tags.remove(tag); }
                         }
                     }
                 });
@@ -140,10 +137,10 @@ impl LogConsoleState {
 
                 let row_height = ui.text_style_height(&egui::TextStyle::Body);
                 ui.horizontal(|ui| {
-                    ui.add_sized([TIME_COL_WIDTH, row_height],     egui::Label::new(egui::RichText::new("Time").strong()));
-                    ui.add_sized([LEVEL_COL_WIDTH, row_height],    egui::Label::new(egui::RichText::new("Level").strong()));
-                    ui.add_sized([AUDIENCE_COL_WIDTH, row_height], egui::Label::new(egui::RichText::new("Audience").strong()));
-                    ui.add_sized([TAGS_COL_WIDTH, row_height],     egui::Label::new(egui::RichText::new("Tags").strong()));
+                    ui.add_sized([TIME_COLUMN_WIDTH, row_height],     egui::Label::new(egui::RichText::new("Time").strong()));
+                    ui.add_sized([LEVEL_COLUMN_WIDTH, row_height],    egui::Label::new(egui::RichText::new("Level").strong()));
+                    ui.add_sized([AUDIENCE_COLUMN_WIDTH, row_height], egui::Label::new(egui::RichText::new("Audience").strong()));
+                    ui.add_sized([TAGS_COLUMN_WIDTH, row_height],     egui::Label::new(egui::RichText::new("Tags").strong()));
                     ui.label(egui::RichText::new("Message").strong());
                 });
                 ui.separator();
@@ -163,17 +160,17 @@ impl LogConsoleState {
                             let entry = filtered[index];
                             let color = entry.level.egui_color();
                             ui.horizontal(|ui| {
-                                ui.add_sized([TIME_COL_WIDTH, row_height],
+                                ui.add_sized([TIME_COLUMN_WIDTH, row_height],
                                     egui::Label::new(egui::RichText::new(format_timestamp(entry.timestamp)).color(color)).truncate()
                                 );
-                                ui.add_sized([LEVEL_COL_WIDTH, row_height],
-                                    egui::Label::new(egui::RichText::new(format!("{}", entry.level)).color(color)).truncate()
+                                ui.add_sized([LEVEL_COLUMN_WIDTH, row_height],
+                                    egui::Label::new(egui::RichText::new(entry.level.to_string()).color(color)).truncate()
                                 );
-                                ui.add_sized([AUDIENCE_COL_WIDTH, row_height],
-                                    egui::Label::new(egui::RichText::new(format!("{}", entry.audience)).color(color)).truncate()
+                                ui.add_sized([AUDIENCE_COLUMN_WIDTH, row_height],
+                                    egui::Label::new(egui::RichText::new(entry.audience.to_string()).color(color)).truncate()
                                 );
-                                ui.add_sized([TAGS_COL_WIDTH, row_height],
-                                    egui::Label::new(egui::RichText::new(entry.tags_sorted_as_string()).color(color)).truncate()
+                                ui.add_sized([TAGS_COLUMN_WIDTH, row_height],
+                                    egui::Label::new(egui::RichText::new(entry.tags.to_string()).color(color)).truncate()
                                 );
                                 ui.add(
                                     egui::Label::new(egui::RichText::new(entry.message.as_ref()).color(color)).truncate()

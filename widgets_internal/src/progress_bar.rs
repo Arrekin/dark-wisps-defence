@@ -17,8 +17,8 @@ impl Plugin for ProgressBarPlugin {
 fn on_builder_add_spawn_progress_bar(
     trigger: On<Add, BuilderProgressBar>,
     mut commands: Commands,
-    builders: Query<&BuilderProgressBar>,
     mut materials: ResMut<Assets<ProgressBarMaterial>>,
+    builders: Query<&BuilderProgressBar>,
 ) {
     let entity = trigger.entity;
     let Ok(builder) = builders.get(entity) else { return };
@@ -33,8 +33,8 @@ fn on_builder_add_spawn_progress_bar(
 
 fn sync_progress_bars(
     time: Res<Time>,
-    mut bars: Query<(&mut ProgressBar, &MaterialNode<ProgressBarMaterial>), Changed<ProgressBar>>,
     mut materials: ResMut<Assets<ProgressBarMaterial>>,
+    mut bars: Query<(&mut ProgressBar, &MaterialNode<ProgressBarMaterial>), Changed<ProgressBar>>,
 ) {
     let now = time.elapsed_secs();
     for (mut bar, material_handle) in bars.iter_mut() {

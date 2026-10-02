@@ -66,8 +66,7 @@ use crate::{
     tooltip::building_tooltip,
 };
 
-
-pub struct ExplorationCenterPlugin;
+pub(crate) struct ExplorationCenterPlugin;
 impl Plugin for ExplorationCenterPlugin {
     fn build(&self, app: &mut App) {
         let almanach_info = BuilderExplorationCenter::almanach_info(app.world().resource::<AssetServer>());
@@ -80,7 +79,7 @@ impl Plugin for ExplorationCenterPlugin {
             .add_observer(BuilderExplorationCenter::on_builder_add_spawn_exploration_center)
             .add_observer(on_exploration_center_place_request_do_so)
             .add_observer(ExplorationCenterInfoPanel::on_building_info_panel_enabled_toggle_subpanel_visibility)
-            .add_observer(ExplorationCenterInfoPanel::on_rebuild_drone_slots)
+            .add_observer(ExplorationCenterInfoPanel::on_rebuild_drone_slots_ui_do_so)
             .add_observer(DroneSlotRow::on_add_construct_drone_slot_row)
             .add_observer(BuilderDroneSlot::on_builder_add_spawn_drone_slot)
             .add_observer(BuilderDroneActionButton::on_builder_add_spawn_drone_action_button)
@@ -90,18 +89,15 @@ impl Plugin for ExplorationCenterPlugin {
             .add_observer(TargetSelectionPanel::on_add_construct_target_selection_panel)
             .add_observer(TargetSelectionPanel::on_open_target_selection_panel_do_so)
             .add_observer(TargetSelectionPanel::on_select_target_deploy_drone_to_target)
-            .add_observer(TargetSelectionPanel::on_map_object_focused_close_panel)
-            .add_observer(TargetSelectionPanel::on_map_object_unfocused_close_panel)
+            .add_observer(TargetSelectionPanel::on_insert_focused_map_object_close_panel)
+            .add_observer(TargetSelectionPanel::on_remove_focused_map_object_close_panel)
             .add_observer(TargetListItem::on_add_construct_target_list_item)
             .add_observer(TargetListItemCameraPreview::on_add_construct_target_camera_preview)
             .add_systems(CollectSave, collect_exploration_centers)
             .register_loader(MapLoadingStage::SpawnMapElements, "exploration_centers", load_exploration_centers)
-            .register_building(BuildingType::ExplorationCenter, almanach_info)
-            ;
+            .register_building(BuildingType::ExplorationCenter, almanach_info);
     }
 }
-
-
 
 #[derive(Component, SSS)]
 pub(crate) struct BuilderExplorationCenter {
@@ -156,8 +152,8 @@ impl BuilderExplorationCenter {
         let grid_imprint = building_info.grid_imprint;
 
         let mut entity_commands = commands.entity(entity);
-        if let Some(ip) = builder.integrity_points {
-            entity_commands.insert(IntegrityPoints::new(ip));
+        if let Some(integrity_points) = builder.integrity_points {
+            entity_commands.insert(IntegrityPoints::new(integrity_points));
         }
         if builder.disabled_by_player {
             entity_commands.insert(DisabledByPlayer);
@@ -170,7 +166,7 @@ impl BuilderExplorationCenter {
                 Sprite {
                     image: building_info.sprite.clone(),
                     custom_size: Some(grid_imprint.world_size()),
-                    ..Default::default()
+                    ..default()
                 },
                 builder.grid_position,
                 grid_imprint,
@@ -201,28 +197,29 @@ fn on_exploration_center_place_request_do_so(
     commands.spawn(BuilderExplorationCenter::new(coords));
 }
 
+#[log_tags(Tag::GameSave)]
 fn collect_exploration_centers(
     exploration_centers: Query<(Entity, &GridCoords, &IntegrityPoints, Has<DisabledByPlayer>), With<ExplorationCenter>>,
     mut save: SaveWriter,
 ) {
     if exploration_centers.is_empty() { return; }
-    let rows: Vec<(i64, i32, i32, f32, bool)> = exploration_centers
+
+    #[debug_dev("Saving {} exploration centers", rows.len())]
+    let rows: Vec<(i64, GridCoords, f32, bool)> = exploration_centers
         .iter()
         .map(|(entity, coords, integrity_points, disabled_by_player)| {
             (
                 entity.index_u32() as i64,
-                coords.x,
-                coords.y,
+                *coords,
                 integrity_points.get_current(),
                 disabled_by_player,
             )
         })
         .collect();
-    Log::debug().dev().tag(Tag::GameSave).message(format!("Saving {} exploration centers", rows.len()));
     save.submit(move |tx| {
-        for (id, gx, gy, integrity_points, disabled_by_player) in rows {
+        for (id, coords, integrity_points, disabled_by_player) in rows {
             tx.save_marker("exploration_centers", id)?;
-            tx.save_grid_coords(id, GridCoords { x: gx, y: gy })?;
+            tx.save_grid_coords(id, coords)?;
             tx.save_integrity_points(id, integrity_points)?;
             if disabled_by_player {
                 tx.save_disabled_by_player(id)?;
@@ -232,6 +229,7 @@ fn collect_exploration_centers(
     });
 }
 
+#[log_tags(Tag::GameLoad)]
 fn load_exploration_centers(ctx: &mut LoadContext) -> rusqlite::Result<()> {
     let mut stmt = ctx.conn.prepare("SELECT id FROM exploration_centers")?;
     let mut rows = stmt.query([])?;
@@ -241,10 +239,8 @@ fn load_exploration_centers(ctx: &mut LoadContext) -> rusqlite::Result<()> {
         let integrity_points = ctx.conn.get_integrity_points(old_id)?;
         let disabled_by_player = ctx.conn.get_disabled_by_player(old_id)?;
 
-        let Some(entity) = ctx.entity(old_id) else {
-            Log::warn().dev().tag(Tag::GameLoad).message(format!("ExplorationCenter with old ID {old_id} has no corresponding new entity"));
-            continue;
-        };
+        #[warn_dev("ExplorationCenter with old ID {old_id} has no corresponding new entity")]
+        let Some(entity) = ctx.entity(old_id) else { continue };
         let mut builder = BuilderExplorationCenter::new(grid_position)
             .with_integrity_points(integrity_points);
         if disabled_by_player {
@@ -291,7 +287,7 @@ impl ExplorationCenterInfoPanel {
         }
     }
 
-    fn on_rebuild_drone_slots(
+    fn on_rebuild_drone_slots_ui_do_so(
         _trigger: On<RebuildDroneSlotsUi>,
         mut commands: Commands,
         focused_center: Single<(&ExplorationCenter, Option<&HomeBaseLinkedObjects>), With<FocusedMapObject>>,
@@ -311,15 +307,14 @@ impl ExplorationCenterInfoPanel {
         }
 
         // Get drone entities via HomeBaseLinkedObjects (all linked objects are drones)
-        let drone_count = linked_objects.map(|lo| lo.len()).unwrap_or_default();
+        let drone_count = linked_objects.map(|linked_objects| linked_objects.len()).unwrap_or_default();
         let max_slots = center.max_drone_slots;
 
         // Update drone count text
-        drone_count_text.into_inner().0 = format!("Drones: {}/{}", drone_count, max_slots);
-
+        drone_count_text.into_inner().0 = format!("Drones: {drone_count}/{max_slots}");
 
         // Spawn drone slot rows (slot + action button) for each owned drone
-        for drone_entity in linked_objects.map(|lo| lo.iter()).unwrap_or_default() {
+        for drone_entity in linked_objects.map(|linked_objects| linked_objects.iter()).unwrap_or_default() {
             commands.entity(*slots_container).with_child(DroneSlotRow::new(drone_entity));
         }
 
@@ -439,7 +434,7 @@ impl DroneSlot {
                 if let Ok(mut image) = icons.get_mut(child) {
                     // Update tooltip data and background if changed(TODO: there is weird coupling here where slot image is changes based on tooltip data)
                     let Some(tooltip_entity) = tooltips.iter().next() else { continue };
-                    let new_data: SlotTooltipData = SlotTooltipData::DroneState { state: *drone_state, drone_entity: slot.drone_entity };
+                    let new_data = SlotTooltipData::DroneState { state: *drone_state, drone_entity: slot.drone_entity };
                     let needs_update = tooltip_data.get(tooltip_entity)
                         .map(|current| *current != new_data)
                         .unwrap_or(true);
@@ -536,7 +531,7 @@ struct DroneSlotIcon;
 
 #[derive(Component)]
 struct DroneSlotFuelFill {
-    drone_entity: Entity
+    drone_entity: Entity,
 }
 impl DroneSlotFuelFill {
     fn update(
@@ -624,8 +619,8 @@ impl DroneActionButton {
             let Ok((drone_state, drone)) = drones.get(button.drone_entity) else { continue };
             let (text, is_active) = Self::button_state(*drone_state, drone.mission_target.is_some());
 
-            let Ok((mut t, mut color)) = texts.get_mut(button.text_entity) else { continue };
-            t.0 = text.to_string();
+            let Ok((mut button_text, mut color)) = texts.get_mut(button.text_entity) else { continue };
+            button_text.0 = text.to_string();
             *color = TextColor::from(if is_active { Color::WHITE } else { Color::srgba(0.6, 0.6, 0.6, 1.) });
         }
     }
@@ -680,7 +675,7 @@ impl SlotTooltipData {
     fn text(&self) -> String {
         match self {
             Self::DroneState { state, .. } => state.to_string(),
-            Self::BuyCost(cost) => format!("Cost: {} ore", cost),
+            Self::BuyCost(cost) => format!("Cost: {cost} ore"),
         }
     }
 
@@ -777,7 +772,7 @@ impl SlotTooltip {
         drones: Query<&Transform>,
     ) {
         let entity = trigger.entity;
-        let Ok((mut tooltip, data, maybe_owned_cameras)) = tooltips.get_mut(entity) else { return };
+        let Ok((mut tooltip, data, owned_cameras)) = tooltips.get_mut(entity) else { return };
 
         // Update text
         if let Ok(mut text) = texts.get_mut(tooltip.text_entity) {
@@ -786,7 +781,7 @@ impl SlotTooltip {
 
         // Check if we need camera preview (drone on mission)
         let needs_camera = data.drone_outside_home_base().is_some();
-        let has_camera = maybe_owned_cameras.is_some();
+        let has_camera = owned_cameras.is_some();
 
         if needs_camera && !has_camera {
             // Add camera preview
@@ -816,16 +811,9 @@ impl SlotTooltip {
             }
         }
 
-        let Ok(mut preview_node) = nodes.get_mut(tooltip.preview_node_entity) else { return; };
-        // Show/hide camera preview
-        if needs_camera {
-            preview_node.display = Display::Flex;
-        } else {
-            preview_node.display = Display::None;
-        }
+        let Ok(mut camera_preview_node) = nodes.get_mut(tooltip.preview_node_entity) else { return; };
+        camera_preview_node.display = if needs_camera { Display::Flex } else { Display::None };
     }
-
-    // Note: on_remove not needed - CameraOf relationship auto-despawns cameras when tooltip despawns
 }
 
 /// A square button for buying a new drone
@@ -860,6 +848,7 @@ impl BuyDroneSlot {
         .observe(recolor_background_on::<Pointer<Out>>(Color::srgba(0.1, 0.2, 0.4, 0.8)));
     }
 
+    #[log_tags(Tag::Units)]
     fn on_click_buy_drone(
         _trigger: On<Pointer<Click>>,
         mut commands: Commands,
@@ -869,14 +858,16 @@ impl BuyDroneSlot {
         let (focused_entity, center, linked_objects) = focused_center.into_inner();
 
         // Check slot availability
-        let owned_count = linked_objects.map(|lo| lo.len()).unwrap_or(0);
+        let owned_count = linked_objects.map(|linked_objects| linked_objects.len()).unwrap_or(0);
         if owned_count >= center.max_drone_slots { return; }
 
         // Check cost
         let cost = Cost { resource_type: ResourceType::DarkOre, amount: DRONE_COST_ORE as i32 };
+        #[info_player("Not enough resources to buy a drone")]
         if !stock.try_pay_cost(cost) { return; }
 
         // Spawn new drone and trigger UI rebuild
+        #[info_player("Expedition drone bought")]
         commands.spawn(BuilderExpeditionDrone::new(focused_entity));
         commands.trigger(RebuildDroneSlotsUi);
     }
@@ -888,11 +879,10 @@ impl BuyDroneSlot {
 
 /// Event triggered when a target is selected for a drone
 #[derive(Event)]
-struct OpenTargetSelectionForDrone {
+struct TargetSelectedForDrone {
     drone: Entity,
     target: Entity,
 }
-
 
 /// Modal panel for selecting a target for a drone
 #[derive(Component)]
@@ -919,20 +909,20 @@ impl TargetSelectionPanel {
         // Get drone's home base position and fuel for distance calculations
         let Ok((home_base, drone_fuel)) = drones.get(drone_entity) else { return };
         let Ok(home_transform) = home_bases.get(home_base.0) else { return };
-        let home_pos = home_transform.translation.xy();
+        let home_position = home_transform.translation.xy();
 
         // Build list of target items with fuel cost data, sorted by effectiveness
         let mut target_data: Vec<_> = targets.iter()
             .map(|(target_entity, name, coords, imprint)| {
-                let target_pos = coords.to_world_position_centered(*imprint);
-                let distance = (target_pos - home_pos).length();
+                let target_position = coords.to_world_position_centered(*imprint);
+                let distance = (target_position - home_position).length();
                 let fuel_percent = drone_fuel.fuel_percent_for_distance(distance);
                 (target_entity, name.as_str().to_string(), *coords, fuel_percent)
             })
             .collect();
 
         // Sort by fuel percentage (most effective = lowest fuel cost first)
-        target_data.sort_by(|a, b| a.3.partial_cmp(&b.3).unwrap_or(std::cmp::Ordering::Equal));
+        target_data.sort_by(|a, b| a.3.total_cmp(&b.3));
 
         let target_items: Vec<_> = target_data.iter()
             .map(|(target_entity, name, coords, fuel_percent)| {
@@ -997,7 +987,7 @@ impl TargetSelectionPanel {
         }
 
         // Cancel button
-        let cancel_btn = commands.spawn((
+        let cancel_button = commands.spawn((
             Button,
             Node {
                 margin: UiRect::top(Val::Px(8.)),
@@ -1013,7 +1003,7 @@ impl TargetSelectionPanel {
                 TextFont::default().with_font_size(12.0),
             )],
         )).observe(Self::on_cancel_click_close_target_selection_panel).id();
-        commands.entity(entity).add_child(cancel_btn);
+        commands.entity(entity).add_child(cancel_button);
     }
 
     /// Opens the target selection panel centered on screen
@@ -1047,7 +1037,7 @@ impl TargetSelectionPanel {
     }
 
     fn on_select_target_deploy_drone_to_target(
-        trigger: On<OpenTargetSelectionForDrone>,
+        trigger: On<TargetSelectedForDrone>,
         mut commands: Commands,
         panels: Query<Entity, With<TargetSelectionPanel>>,
     ) {
@@ -1065,20 +1055,20 @@ impl TargetSelectionPanel {
         }
     }
 
-    fn on_map_object_focused_close_panel(
+    fn on_insert_focused_map_object_close_panel(
         _trigger: On<Insert, FocusedMapObject>,
         mut commands: Commands,
-        selection_panels: Single<Entity, With<TargetSelectionPanel>>,
+        selection_panel: Single<Entity, With<TargetSelectionPanel>>,
     ) {
-        commands.entity(selection_panels.into_inner()).despawn();
+        commands.entity(selection_panel.into_inner()).despawn();
     }
 
-    fn on_map_object_unfocused_close_panel(
+    fn on_remove_focused_map_object_close_panel(
         _trigger: On<Remove, FocusedMapObject>,
         mut commands: Commands,
-        selection_panels: Single<Entity, With<TargetSelectionPanel>>,
+        selection_panel: Single<Entity, With<TargetSelectionPanel>>,
     ) {
-        commands.entity(selection_panels.into_inner()).despawn();
+        commands.entity(selection_panel.into_inner()).despawn();
     }
 }
 
@@ -1191,7 +1181,7 @@ impl TargetListItem {
         items: Query<&TargetListItem>,
     ) {
         let Ok(item) = items.get(trigger.entity) else { return };
-        commands.trigger(OpenTargetSelectionForDrone {
+        commands.trigger(TargetSelectedForDrone {
             drone: item.drone_entity,
             target: item.target_entity,
         });
@@ -1215,10 +1205,10 @@ impl TargetListItemCameraPreview {
         let Ok((coords, imprint)) = targets.get(preview.target_entity) else { return };
 
         // Add camera preview centered on the target
-        let world_pos = coords.to_world_position_centered(*imprint);
+        let world_position = coords.to_world_position_centered(*imprint);
         let camera = commands.spawn(BuilderPreviewCamera::new(
             entity,
-            world_pos,
+            world_position,
             3., // Zoom level
         )).id();
 

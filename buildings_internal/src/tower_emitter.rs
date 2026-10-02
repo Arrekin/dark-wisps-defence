@@ -23,23 +23,19 @@ use states::prelude::*;
 use weaponry::prelude::*;
 use wisps::prelude::*;
 
-use crate::common::*;
-use crate::tooltip::building_tooltip;
+use crate::{common::*, tooltip::building_tooltip};
 
-pub struct TowerEmitterPlugin;
+pub(crate) struct TowerEmitterPlugin;
 impl Plugin for TowerEmitterPlugin {
     fn build(&self, app: &mut App) {
         let almanach_info = BuilderTowerEmitter::almanach_info(app.world().resource::<AssetServer>());
         app
             .add_observer(BuilderTowerEmitter::on_builder_add_spawn_tower_emitter)
             .add_observer(on_tower_emitter_place_request_do_so)
-            .add_systems(Update, (
-                shooting_system.run_if(in_state(GameState::Running)),
-            ))
+            .add_systems(Update, shooting_system.run_if(in_state(GameState::Running)))
             .add_systems(CollectSave, collect_tower_emitters)
             .register_loader(MapLoadingStage::SpawnMapElements, "tower_emitters", load_tower_emitters)
-            .register_building(BuildingType::Tower(TowerType::Emitter), almanach_info)
-            ;
+            .register_building(BuildingType::Tower(TowerType::Emitter), almanach_info);
     }
 }
 
@@ -100,8 +96,8 @@ impl BuilderTowerEmitter {
         let grid_imprint = building_info.grid_imprint;
 
         let mut entity_commands = commands.entity(entity);
-        if let Some(ip) = builder.integrity_points {
-            entity_commands.insert(IntegrityPoints::new(ip));
+        if let Some(integrity_points) = builder.integrity_points {
+            entity_commands.insert(IntegrityPoints::new(integrity_points));
         }
         if builder.disabled_by_player {
             entity_commands.insert(DisabledByPlayer);
@@ -114,7 +110,7 @@ impl BuilderTowerEmitter {
                 Sprite {
                     image: building_info.sprite.clone(),
                     custom_size: Some(grid_imprint.world_size()),
-                    ..Default::default()
+                    ..default()
                 },
                 builder.grid_position,
                 grid_imprint,
@@ -165,28 +161,29 @@ fn on_tower_emitter_place_request_do_so(
     commands.spawn(BuilderTowerEmitter::new(coords));
 }
 
+#[log_tags(Tag::GameSave)]
 fn collect_tower_emitters(
     towers: Query<(Entity, &GridCoords, &IntegrityPoints, Has<DisabledByPlayer>), With<TowerEmitter>>,
     mut save: SaveWriter,
 ) {
     if towers.is_empty() { return; }
-    let rows: Vec<(i64, i32, i32, f32, bool)> = towers
+
+    #[debug_dev("Saving {} tower emitters", rows.len())]
+    let rows: Vec<(i64, GridCoords, f32, bool)> = towers
         .iter()
         .map(|(entity, coords, integrity_points, disabled_by_player)| {
             (
                 entity.index_u32() as i64,
-                coords.x,
-                coords.y,
+                *coords,
                 integrity_points.get_current(),
                 disabled_by_player,
             )
         })
         .collect();
-    Log::debug().dev().tag(Tag::GameSave).message(format!("Saving {} tower emitters", rows.len()));
     save.submit(move |tx| {
-        for (id, gx, gy, integrity_points, disabled_by_player) in rows {
+        for (id, coords, integrity_points, disabled_by_player) in rows {
             tx.save_marker("tower_emitters", id)?;
-            tx.save_grid_coords(id, GridCoords { x: gx, y: gy })?;
+            tx.save_grid_coords(id, coords)?;
             tx.save_integrity_points(id, integrity_points)?;
             if disabled_by_player {
                 tx.save_disabled_by_player(id)?;
@@ -196,6 +193,7 @@ fn collect_tower_emitters(
     });
 }
 
+#[log_tags(Tag::GameLoad)]
 fn load_tower_emitters(ctx: &mut LoadContext) -> rusqlite::Result<()> {
     let mut stmt = ctx.conn.prepare("SELECT id FROM tower_emitters")?;
     let mut rows = stmt.query([])?;
@@ -205,10 +203,8 @@ fn load_tower_emitters(ctx: &mut LoadContext) -> rusqlite::Result<()> {
         let integrity_points = ctx.conn.get_integrity_points(old_id)?;
         let disabled_by_player = ctx.conn.get_disabled_by_player(old_id)?;
 
-        let Some(entity) = ctx.entity(old_id) else {
-            Log::warn().dev().tag(Tag::GameLoad).message(format!("TowerEmitter with old ID {old_id} has no corresponding new entity"));
-            continue;
-        };
+        #[warn_dev("TowerEmitter with old ID {old_id} has no corresponding new entity")]
+        let Some(entity) = ctx.entity(old_id) else { continue };
         let mut builder = BuilderTowerEmitter::new(grid_position)
             .with_integrity_points(integrity_points);
         if disabled_by_player {
@@ -232,7 +228,7 @@ fn shooting_system(
             // Target wisp does not exist anymore
             *target = TowerWispTarget::SearchForNewTarget;
             continue;
-        };
+        }
 
         commands.spawn(BuilderRipple::new(transform.translation.xy(), range.get() * CELL_SIZE));
         timer.0.reset();

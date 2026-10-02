@@ -20,7 +20,7 @@ use visuals::prelude::{ForceFieldPostProcessSet, QuantumFieldPostProcessSet, Rip
 ///
 /// **Must be added after** the three effect plugins: the system sets must already be
 /// configured by each effect plugin before the ordering constraints are applied here.
-pub struct PostProcessOrderingPlugin;
+pub(crate) struct PostProcessOrderingPlugin;
 impl Plugin for PostProcessOrderingPlugin {
     fn build(&self, app: &mut App) {
         let Some(render_app) = app.get_sub_app_mut(RenderApp) else {

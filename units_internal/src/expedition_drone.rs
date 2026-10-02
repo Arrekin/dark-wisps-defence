@@ -41,7 +41,7 @@
 //! - Fuel depletes during Deploying and Scanning states only
 //! - Return flight is "free" (no fuel cost)—ensures drones always make it home
 //! - Refueling only occurs when home base (ExplorationCenter) is powered and enabled
-//! - After refueling, drone auto-redeploys if `mission_target` is still set
+//! - After refueling, drone auto-redeploys if `mission_target` is still set and still an ExpeditionZone
 //!
 //! ## Scanning Mechanics
 //!
@@ -112,13 +112,22 @@ impl Plugin for ExpeditionDronePlugin {
             .add_observer(on_recall_drone_do_so)
             .add_observer(on_state_changed_handle_drone_state_change)
             .add_systems(CollectSave, collect_expedition_drones)
-            .register_loader(MapLoadingStage::SpawnMapElements, "expedition_drones", load_expedition_drones)
-            ;
+            .register_loader(MapLoadingStage::SpawnMapElements, "expedition_drones", load_expedition_drones);
     }
 }
 
+// Flight
+const HOME_ARRIVAL_DISTANCE: f32 = 10.0;
+
+// Scan visuals
+const SCAN_SPOT_REACH_DISTANCE: f32 = 2.0;
+/// Fraction of the target diagonal beyond which the spot snaps back onto the target.
+const SCAN_SPOT_SNAP_FACTOR: f32 = 0.75;
+/// Pulse cycles per second on the beam and the spot.
+const SCAN_PULSE_SPEED: f32 = 0.8;
+
 /// Refuels drones at home base. Transitions to Deploying when full (auto-redeploy).
-/// The state observer handles the Deploying→Stationed fallback if mission_target is None.
+/// The state observer handles the Deploying→Stationed fallback if there is no valid mission.
 fn refueling_system(
     mut commands: Commands,
     time: Res<Time>,
@@ -127,14 +136,14 @@ fn refueling_system(
 ) {
     for (entity, drone_state, mut drone_fuel, home_base) in drones.iter_mut() {
         if !matches!(drone_state, DroneState::Refueling) { continue; }
-        
+
         // Only refuel if home base is operational
         if !exploration_centers.contains(home_base.0) { continue; }
-        
+
         // Refuel over time
         drone_fuel.refuel(REFUEL_RATE * time.delta_secs());
-        
-        // When full, redeploy. If there is no mission, reinsertion observer will check for that and set it to Stationed
+
+        // When full, redeploy. Deployment validates whether the mission is still valid.
         if drone_fuel.is_full() {
             commands.entity(entity).insert(DroneState::Deploying);
         }
@@ -142,6 +151,7 @@ fn refueling_system(
 }
 
 /// Initiates deployment: sets mission_target, positions at home base, and transitions to Deploying.
+#[log_tags(Tag::Units)]
 fn on_deployment_request_drone_do_so(
     trigger: On<ExpeditionDroneDeploymentRequest>,
     mut commands: Commands,
@@ -152,68 +162,67 @@ fn on_deployment_request_drone_do_so(
 ) {
     let event = trigger.event();
     let Ok((mut transform, drone_state, mut drone, home_base)) = drones.get_mut(event.drone) else { return };
-    
+
     // Only deploy if home base is operational
+    #[info_player("Drone not sent: its exploration center is not operational")]
     if !exploration_centers.contains(home_base.0) { return; }
-    
+
     // Only stationed drones can be sent out
     if !matches!(drone_state, DroneState::Stationed) { return; }
 
-    drone.mission_target = Some(event.target);
-
     let Ok(home_transform) = home_bases.get(home_base.0) else { return; };
     let Ok(target_transform) = targets.get(event.target) else { return; };
-    
-    let home_pos = home_transform.translation.xy();
-    
-    transform.translation.x = home_pos.x;
-    transform.translation.y = home_pos.y;
-    
+
+    drone.mission_target = Some(event.target);
+
+    let home_position = home_transform.translation.xy();
+
+    transform.translation.x = home_position.x;
+    transform.translation.y = home_position.y;
+
     // Point toward target
-    let to_target = target_transform.translation.xy() - home_pos;
+    let to_target = target_transform.translation.xy() - home_position;
     drone.heading = to_target.y.atan2(to_target.x);
     transform.rotation = Quat::from_rotation_z(drone.heading);
 
     commands.entity(event.drone).insert(DroneState::Deploying);
 }
 
+#[log_tags(Tag::Units)]
 fn on_state_changed_handle_drone_state_change(
     trigger: On<Insert, DroneState>,
     mut commands: Commands,
     mut drones: Query<(&DroneState, &mut ExpeditionDrone, &mut Visibility)>,
     targets: Query<&Transform>,
+    zones: Query<(), With<ExpeditionZone>>,
 ) {
     let drone_entity = trigger.entity;
     let Ok((drone_state, mut drone, mut visibility)) = drones.get_mut(drone_entity) else { return; };
-    
+    debug_dev!("Expedition drone {drone_entity} is now {drone_state}");
+
     match drone_state {
-        DroneState::Stationed => {
-            *visibility = Visibility::Hidden;
-        }
-        DroneState::Refueling => {
+        DroneState::Stationed | DroneState::Refueling => {
             *visibility = Visibility::Hidden;
         }
         DroneState::Deploying => {
-            if drone.mission_target.is_none() {
+            let has_valid_mission = drone.mission_target.is_some_and(|target| zones.contains(target));
+            if !has_valid_mission {
+                drone.mission_target = None;
                 commands.entity(drone_entity).insert(DroneState::Stationed);
                 return;
-            };
-            
+            }
             *visibility = Visibility::Inherited;
         }
         DroneState::Scanning => {
-            let mut rng = nanorand::tls_rng();
-
             let Some(target_entity) = drone.mission_target else {
                 commands.entity(drone_entity).insert(DroneState::Returning);
                 return;
             };
             let Ok(target_transform) = targets.get(target_entity) else { return; };
-            drone.set_new_waypoint(target_transform.translation.xy(), &mut rng);
+            drone.set_new_waypoint(target_transform.translation.xy(), &mut nanorand::tls_rng());
         }
         _ => {}
     }
-    
 }
 
 /// Manual recall: sends drone home and clears mission_target.
@@ -225,21 +234,15 @@ fn on_recall_drone_do_so(
 ) {
     let drone_entity = trigger.0;
     let Ok((drone_state, mut drone)) = drones.get_mut(drone_entity) else { return; };
-    
-    match drone_state {
-        DroneState::Deploying | DroneState::Scanning => {
-            commands.entity(drone_entity).insert(DroneState::Returning);
-            drone.mission_target = None; // Clear mission on manual recall
-        }
-        DroneState::Refueling | DroneState::Returning => {
-            // Clear mission so when refuelling is done it will go into stationed mode
-            drone.mission_target = None;
-        }
-        _ => {}
+
+    if matches!(drone_state, DroneState::Deploying | DroneState::Scanning) {
+        commands.entity(drone_entity).insert(DroneState::Returning);
     }
+    drone.mission_target = None; // Clear mission on manual recall
 }
 
 /// Moves drones toward destination with smooth turning (DRONE_TURN_RATE).
+#[log_tags(Tag::Units)]
 fn travel_system(
     mut commands: Commands,
     time: Res<Time>,
@@ -248,32 +251,33 @@ fn travel_system(
     targets: Query<&Transform, (With<ExpeditionZone>, Without<ExplorationCenter>, Without<ExpeditionDrone>)>,
 ) {
     for (entity, drone_state, mut drone, mut transform, maybe_home_base) in drones.iter_mut() {
-        let (destination, arrival_dist) = match drone_state {
+        let (destination, arrival_distance) = match drone_state {
             DroneState::Deploying => {
                 let Some(target_entity) = drone.mission_target else { continue; };
                 let Ok(target_transform) = targets.get(target_entity) else {
                     commands.entity(entity).insert(DroneState::Returning);
-                    continue; 
+                    continue;
                 };
                 (target_transform.translation.xy(), PATROL_RADIUS)
             }
             DroneState::Returning => {
                 let Some(home_base) = maybe_home_base else {
+                    #[debug_dev("Expedition drone {entity} despawned on return: it has no home base")]
                     commands.entity(entity).despawn();
                     continue;
                 };
                 let Ok(home_transform) = home_bases.get(home_base.0) else { continue; };
-                (home_transform.translation.xy(), 10.0)
+                (home_transform.translation.xy(), HOME_ARRIVAL_DISTANCE)
             }
             _ => continue,
         };
-        
-        let drone_pos = transform.translation.xy();
-        let to_dest = destination - drone_pos;
-        let distance = to_dest.length();
-        
+
+        let drone_position = transform.translation.xy();
+        let to_destination = destination - drone_position;
+        let distance = to_destination.length();
+
         // Check arrival
-        if distance < arrival_dist {
+        if distance < arrival_distance {
             match drone_state {
                 DroneState::Deploying => { commands.entity(entity).insert(DroneState::Scanning); }
                 DroneState::Returning => { commands.entity(entity).insert(DroneState::Refueling); }
@@ -281,16 +285,16 @@ fn travel_system(
             }
             continue;
         }
-        
+
         // Fly toward destination
-        let desired_heading = to_dest.y.atan2(to_dest.x);
-        let heading_diff = angle_difference(desired_heading, drone.heading);
+        let desired_heading = to_destination.y.atan2(to_destination.x);
+        let heading_delta = angle_difference(desired_heading, drone.heading);
         let max_turn = DRONE_TURN_RATE * time.delta_secs();
-        drone.heading += heading_diff.clamp(-max_turn, max_turn);
-        
+        drone.heading += heading_delta.clamp(-max_turn, max_turn);
+
         let forward = Vec2::new(drone.heading.cos(), drone.heading.sin());
-        let move_dist = (DRONE_SPEED * time.delta_secs()).min(distance);
-        transform.translation += (forward * move_dist).extend(0.0);
+        let move_distance = (DRONE_SPEED * time.delta_secs()).min(distance);
+        transform.translation += (forward * move_distance).extend(0.0);
         transform.rotation = Quat::from_rotation_z(drone.heading);
     }
 }
@@ -302,16 +306,12 @@ fn fuel_consumption_system(
     mut drones: Query<(Entity, &DroneState, &mut DroneFuel)>,
 ) {
     for (entity, drone_state, mut fuel) in drones.iter_mut() {
-        match drone_state {
-            DroneState::Deploying | DroneState::Scanning => {
-                fuel.consume(FUEL_CONSUMPTION_RATE * time.delta_secs());
+        if !matches!(drone_state, DroneState::Deploying | DroneState::Scanning) { continue; }
 
-                if fuel.is_empty() {
-                    // Fuel depleted - return but keep mission (will redeploy after refuel)
-                    commands.entity(entity).insert(DroneState::Returning);
-                }
-            }
-            _ => {}
+        fuel.consume(FUEL_CONSUMPTION_RATE * time.delta_secs());
+        if fuel.is_empty() {
+            // Fuel depleted - return but keep mission (will redeploy after refuel)
+            commands.entity(entity).insert(DroneState::Returning);
         }
     }
 }
@@ -320,52 +320,52 @@ fn fuel_consumption_system(
 fn patrol_system(
     mut commands: Commands,
     time: Res<Time>,
-    targets: Query<&Transform, Without<ExpeditionDrone>>,
+    targets: Query<&Transform, (With<ExpeditionZone>, Without<ExpeditionDrone>)>,
     mut drones: Query<(Entity, &DroneState, &mut Transform, &mut ExpeditionDrone)>,
 ) {
     let mut rng = nanorand::tls_rng();
-    
+
     for (entity, drone_state, mut transform, mut drone) in drones.iter_mut() {
         // Reset beam state each frame (will be set true if conditions met)
         drone.is_beam_active = false;
-        
-        if !matches!(drone_state,  DroneState::Scanning) { continue; }
-        
+
+        if !matches!(drone_state, DroneState::Scanning) { continue; }
+
         let Some(target_entity) = drone.mission_target else { continue; };
         let Ok(target_transform) = targets.get(target_entity) else {
             commands.entity(entity).insert(DroneState::Returning);
             continue;
         };
         let center = target_transform.translation.xy();
-        let drone_pos = transform.translation.xy();
-        
+        let drone_position = transform.translation.xy();
+
         // Check angle to target center
-        let to_target = center - drone_pos;
+        let to_target = center - drone_position;
         let angle_to_target = to_target.y.atan2(to_target.x);
-        let angle_diff = angle_difference(angle_to_target, drone.heading);
-        let target_in_front = angle_diff.abs() < SCAN_ANGLE_LIMIT;
-        
+        let target_angle_delta = angle_difference(angle_to_target, drone.heading);
+        let target_in_front = target_angle_delta.abs() < SCAN_ANGLE_LIMIT;
+
         // Set beam active when target is in front
         drone.is_beam_active = target_in_front;
-        
+
         // Determine desired heading based on whether target is in front
         let desired_heading = if target_in_front {
             angle_to_target
         } else {
-            let to_waypoint = drone.waypoint - drone_pos;
-            let dist_to_waypoint = to_waypoint.length();
-            
+            let to_waypoint = drone.waypoint - drone_position;
+            let distance_to_waypoint = to_waypoint.length();
+
             // Pick new waypoint when reached
-            if dist_to_waypoint < WAYPOINT_REACH_DIST {
+            if distance_to_waypoint < WAYPOINT_REACH_DIST {
                 drone.set_new_waypoint(center, &mut rng);
             }
             to_waypoint.y.atan2(to_waypoint.x)
         };
-        
-        let heading_diff = angle_difference(desired_heading, drone.heading);
+
+        let heading_delta = angle_difference(desired_heading, drone.heading);
         let max_turn = DRONE_TURN_RATE * time.delta_secs();
-        drone.heading += heading_diff.clamp(-max_turn, max_turn);
-        
+        drone.heading += heading_delta.clamp(-max_turn, max_turn);
+
         let forward = Vec2::new(drone.heading.cos(), drone.heading.sin());
         transform.translation += (forward * DRONE_SPEED * time.delta_secs()).extend(0.0);
         transform.rotation = Quat::from_rotation_z(drone.heading);
@@ -390,6 +390,7 @@ fn zone_scan_progress_system(
 /// - Hides beam when drone beam is inactive
 /// - Stretches beam from drone front to scan spot
 /// - Animates pulse effect traveling down the beam
+#[log_tags(Tag::Units)]
 fn scanning_beam_update(
     mut commands: Commands,
     mut beam_materials: ResMut<Assets<ScanningBeamMaterial>>,
@@ -405,34 +406,35 @@ fn scanning_beam_update(
             commands.entity(beam.spot).despawn();
             continue;
         };
-        let Ok(spot_transform) = spots.get(beam.spot) else { unreachable!(); };
-        
+        #[error_dev("Scanning beam {beam_entity} has no scan spot {}", beam.spot)]
+        let Ok(spot_transform) = spots.get(beam.spot) else { continue };
+
         if !drone.is_beam_active {
             beam_transform.scale = Vec3::ZERO;
             continue;
         }
-        
-        let drone_pos = drone_transform.translation.xy();
+
+        let drone_position = drone_transform.translation.xy();
         let drone_forward = (drone_transform.rotation * Vec3::X).xy().normalize();
-        let beam_start = drone_pos + drone_forward * DRONE_FRONT_OFFSET;
+        let beam_start = drone_position + drone_forward * DRONE_FRONT_OFFSET;
         let target_point = spot_transform.translation.xy();
-        
+
         let beam_vec = target_point - beam_start;
         let beam_length = beam_vec.length();
         let beam_angle = beam_vec.y.atan2(beam_vec.x);
-        
+
         let beam_center = (beam_start + target_point) / 2.0;
         beam_transform.translation.x = beam_center.x;
         beam_transform.translation.y = beam_center.y;
         beam_transform.rotation = Quat::from_rotation_z(beam_angle);
-        
+
         let spot_diameter = SPOT_RADIUS * 2.0;
         beam_transform.scale = Vec3::new(beam_length, spot_diameter, 1.0);
-        
+
         if let Some(mut material) = beam_materials.get_mut(material_handle) {
             material.start_width = BEAM_START_WIDTH / spot_diameter;
             material.end_width = 1.0;
-            material.pulse = (material.pulse + time.delta_secs() * 0.8) % 1.0;
+            material.pulse = (material.pulse + time.delta_secs() * SCAN_PULSE_SPEED) % 1.0;
         }
     }
 }
@@ -453,65 +455,64 @@ fn scan_spot_update(
     for beam in beams.iter() {
         let Ok((mut spot_transform, mut spot, material_handle)) = spots.get_mut(beam.spot) else { continue; };
         let Ok((drone_transform, drone)) = drones.get(beam.drone) else { continue; };
-        
+
         if !drone.is_beam_active {
             spot_transform.scale = Vec3::ZERO;
             continue;
         }
-        
+
         let Some(target_entity) = drone.mission_target else { continue; };
         let Ok((target_coords, target_imprint)) = targets.get(target_entity) else { continue; };
-        
-        let drone_pos = drone_transform.translation.xy();
-        
+
+        let drone_position = drone_transform.translation.xy();
+
         // Snap spot to target if too far (e.g. after switching targets)
-        let spot_world_pos = {
-            let spot_world_pos = spot_transform.translation.xy();
+        let spot_world_position = {
+            let spot_world_position = spot_transform.translation.xy();
             let target_world_center = target_coords.to_world_position_centered(target_imprint);
-            let dist_to_target_center = (spot_world_pos - target_world_center).length();
-            let max_target_dist = target_imprint.world_size().length() * 0.75;
-            if dist_to_target_center > max_target_dist {
-                let new_pos = target_coords.to_world_position() + target_imprint.random_local_offset();
-                spot.destination = new_pos;
-                spot_transform.translation.x = new_pos.x;
-                spot_transform.translation.y = new_pos.y;
-                new_pos
+            let distance_to_target_center = (spot_world_position - target_world_center).length();
+            let max_target_distance = target_imprint.world_size().length() * SCAN_SPOT_SNAP_FACTOR;
+            if distance_to_target_center > max_target_distance {
+                let new_position = target_coords.to_world_position() + target_imprint.random_local_offset();
+                spot.destination = new_position;
+                spot_transform.translation.x = new_position.x;
+                spot_transform.translation.y = new_position.y;
+                new_position
             } else {
-                spot_world_pos
+                spot_world_position
             }
         };
-        
+
         // Move spot toward destination
-        let to_destination = spot.destination - spot_world_pos;
-        let distance_to_dest = to_destination.length();
-        
-        if distance_to_dest < 2.0 {
+        let to_destination = spot.destination - spot_world_position;
+        let distance_to_destination = to_destination.length();
+
+        if distance_to_destination < SCAN_SPOT_REACH_DISTANCE {
             spot.destination = target_coords.to_world_position() + target_imprint.random_local_offset();
         } else {
             let move_amount = SCAN_POINT_SPEED * time.delta_secs();
-            let new_world_pos = if move_amount >= distance_to_dest {
+            let new_world_position = if move_amount >= distance_to_destination {
                 spot.destination
             } else {
-                spot_world_pos + to_destination.normalize() * move_amount
+                spot_world_position + to_destination.normalize() * move_amount
             };
-            spot_transform.translation.x = new_world_pos.x;
-            spot_transform.translation.y = new_world_pos.y;
+            spot_transform.translation.x = new_world_position.x;
+            spot_transform.translation.y = new_world_position.y;
         }
-        
+
         // Elongate spot based on distance to drone (perspective effect)
-        let to_drone = drone_pos - spot_transform.translation.xy();
+        let to_drone = drone_position - spot_transform.translation.xy();
         let distance = to_drone.length();
         let angle_to_drone = to_drone.y.atan2(to_drone.x);
         spot_transform.rotation = Quat::from_rotation_z(angle_to_drone);
         let elongation = 1.0 + distance * SPOT_ELONGATION_FACTOR;
         spot_transform.scale = Vec3::new(SPOT_RADIUS * elongation, SPOT_RADIUS, 1.0);
-        
+
         if let Some(mut material) = spot_materials.get_mut(material_handle) {
-            material.pulse = (material.pulse + time.delta_secs() * 0.8) % 1.0;
+            material.pulse = (material.pulse + time.delta_secs() * SCAN_PULSE_SPEED) % 1.0;
         }
     }
 }
-
 
 /// Shader material for the tapered beam effect. Width interpolates from narrow (drone) to wide (spot).
 #[derive(Asset, TypePath, Debug, Clone, AsBindGroup)]
@@ -554,57 +555,51 @@ impl Material2d for ScanSpotMaterial {
     }
 }
 
+#[log_tags(Tag::GameSave)]
 fn collect_expedition_drones(
     drones: Query<(Entity, &ExpeditionDrone, &DroneState, &HomeBase, &DroneFuel, &Transform)>,
     mut save: SaveWriter,
 ) {
     if drones.is_empty() { return; }
-    let rows: Vec<(i64, i64, u8, Option<i64>, f32, f32, f32, f32, f32, f32, f32)> = drones
+
+    #[debug_dev("Saving {} expedition drones", rows.len())]
+    let rows: Vec<(i64, i64, DroneState, Option<i64>, f32, Vec2, f32, f32, Vec2)> = drones
         .iter()
         .map(|(entity, drone, drone_state, home_base, fuel, transform)| {
-            let state_u8: u8 = match drone_state {
-                DroneState::Stationed => 0,
-                DroneState::Refueling => 1,
-                DroneState::Deploying => 2,
-                DroneState::Scanning => 3,
-                DroneState::Returning => 4,
-            };
             (
                 entity.index_u32() as i64,
                 home_base.0.index_u32() as i64,
-                state_u8,
+                *drone_state,
                 drone.mission_target.map(|e| e.index_u32() as i64),
                 drone.heading,
-                drone.waypoint.x,
-                drone.waypoint.y,
+                drone.waypoint,
                 fuel.current,
                 fuel.max,
-                transform.translation.x,
-                transform.translation.y,
+                transform.translation.xy(),
             )
         })
         .collect();
-    Log::debug().dev().tag(Tag::GameSave).message(format!("Saving {} expedition drones", rows.len()));
     save.submit(move |tx| {
-        for (id, home_base_id, state_u8, mission_target_id, heading, waypoint_x, waypoint_y, fuel_current, fuel_max, pos_x, pos_y) in rows {
+        for (id, home_base_id, state, mission_target_id, heading, waypoint, fuel_current, fuel_max, position) in rows {
             tx.register_entity(id)?;
-            tx.save_world_position(id, Vec2::new(pos_x, pos_y))?;
+            tx.save_world_position(id, position)?;
             tx.execute(
                 "INSERT OR REPLACE INTO expedition_drones (id, home_base_id, state, mission_target_id, heading, waypoint_x, waypoint_y, fuel_current, fuel_max) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-                rusqlite::params![id, home_base_id, state_u8, mission_target_id, heading, waypoint_x, waypoint_y, fuel_current, fuel_max],
+                rusqlite::params![id, home_base_id, state.as_ref(), mission_target_id, heading, waypoint.x, waypoint.y, fuel_current, fuel_max],
             )?;
         }
         Ok(())
     });
 }
 
+#[log_tags(Tag::GameLoad)]
 fn load_expedition_drones(ctx: &mut LoadContext) -> rusqlite::Result<()> {
     let mut stmt = ctx.conn.prepare("SELECT id, home_base_id, state, mission_target_id, heading, waypoint_x, waypoint_y, fuel_current, fuel_max FROM expedition_drones")?;
     let mut rows = stmt.query([])?;
     while let Some(row) = rows.next()? {
         let old_id: i64 = row.get(0)?;
         let home_base_old_id: i64 = row.get(1)?;
-        let state_u8: u8 = row.get(2)?;
+        let state_str: String = row.get(2)?;
         let mission_target_old_id: Option<i64> = row.get(3)?;
         let heading: f32 = row.get(4)?;
         let waypoint_x: f32 = row.get(5)?;
@@ -613,24 +608,15 @@ fn load_expedition_drones(ctx: &mut LoadContext) -> rusqlite::Result<()> {
         let fuel_max: f32 = row.get(8)?;
         let world_position = ctx.conn.get_world_position(old_id)?;
 
-        let Some(entity) = ctx.entity(old_id) else {
-            Log::warn().dev().tag(Tag::GameLoad).message(format!("ExpeditionDrone with old ID {old_id} has no corresponding new entity"));
-            continue;
-        };
-        let Some(home_base) = ctx.entity(home_base_old_id) else {
-            Log::warn().dev().tag(Tag::GameLoad).message(format!("ExpeditionDrone home base with old ID {home_base_old_id} has no corresponding new entity"));
-            continue;
-        };
+        #[warn_dev("ExpeditionDrone with old ID {old_id} has no corresponding new entity")]
+        let Some(entity) = ctx.entity(old_id) else { continue };
+        #[warn_dev("ExpeditionDrone home base with old ID {home_base_old_id} has no corresponding new entity")]
+        let Some(home_base) = ctx.entity(home_base_old_id) else { continue };
         let mission_target = mission_target_old_id.and_then(|id| ctx.entity(id));
 
-        let state = match state_u8 {
-            0 => DroneState::Stationed,
-            1 => DroneState::Refueling,
-            2 => DroneState::Deploying,
-            3 => DroneState::Scanning,
-            4 => DroneState::Returning,
-            _ => DroneState::Stationed,
-        };
+        let state = state_str.parse::<DroneState>()
+            .inspect_err(|_| warn_dev!("ExpeditionDrone with old ID {old_id} has unknown state '{state_str}' — loading as Stationed"))
+            .unwrap_or(DroneState::Stationed);
 
         let mut builder = BuilderExpeditionDrone::new(home_base)
             .with_state(state)
@@ -648,6 +634,7 @@ fn load_expedition_drones(ctx: &mut LoadContext) -> rusqlite::Result<()> {
 
 /// Spawns drone with linked visual components (ScanSpot + ScanningBeam as separate entities).
 /// Visual entities hold references to drone; beam also references spot for positioning.
+#[log_tags(Tag::Units)]
 fn on_builder_add_spawn_expedition_drone(
     trigger: On<Add, BuilderExpeditionDrone>,
     mut commands: Commands,
@@ -660,49 +647,33 @@ fn on_builder_add_spawn_expedition_drone(
 ) {
     let entity = trigger.entity;
     let Ok(builder) = builders.get(entity) else { return; };
-    
-    // Extract data - use defaults for new drones, saved data for loaded ones
-    let state = builder.state;
-    let mission_target = builder.mission_target;
-    let heading = builder.heading;
-    let waypoint = builder.waypoint;
-    let fuel_current = builder.fuel_current;
-    let fuel_max = builder.fuel_max;
-    
-    // Determine world position: use saved position if available, otherwise compute from home base
-    let world_position = builder.world_position.unwrap_or_else(|| {
-        home_bases.get(builder.home_base)
-            .map(|t| t.translation.xy())
-            .unwrap_or(Vec2::ZERO)
-    });
-    
-    // For stationed drones, position at home base (hidden)
-    let (final_position, visibility) = if state == DroneState::Stationed {
-        let home_pos = home_bases.get(builder.home_base)
-            .map(|t| t.translation.xy())
-            .unwrap_or(world_position);
-        (home_pos, Visibility::Hidden)
-    } else {
-        (world_position, Visibility::Inherited)
+
+    // Restored drones carry their saved position; fresh drones start at their home base.
+    #[error_dev("Expedition drone {entity} has neither a saved position nor a home base position — not spawned")]
+    let Some(position) = builder.world_position
+        .or_else(|| home_bases.get(builder.home_base).ok().map(|home_transform| home_transform.translation.xy()))
+    else {
+        commands.entity(entity).despawn();
+        return;
     };
-    
+
     // Create scanning visual materials
     let beam_mesh = meshes.add(Rectangle::new(1.0, 1.0));
     let beam_material = beam_materials.add(ScanningBeamMaterial::default());
     let spot_mesh = meshes.add(Circle::new(1.0));
     let spot_material = spot_materials.add(ScanSpotMaterial::default());
-    
+
     // Spawn scan spot
     let spot_entity = commands.spawn((
         Mesh2d(spot_mesh),
         MeshMaterial2d(spot_material),
         Transform {
-            translation: final_position.extend(0.),
+            translation: position.extend(0.),
             scale: Vec3::ZERO, // Start hidden
             ..default()
         },
         ScanSpot {
-            destination: final_position,
+            destination: position,
         },
     )).id();
 
@@ -724,23 +695,21 @@ fn on_builder_add_spawn_expedition_drone(
                 ..default()
             },
             Transform {
-                translation: final_position.extend(0.),
+                translation: position.extend(0.),
                 scale: Vec3::new(1.5, 1.5, 1.0),
-                rotation: Quat::from_rotation_z(heading),
+                rotation: Quat::from_rotation_z(builder.heading),
             },
-            visibility,
             ExpeditionDrone {
-                mission_target,
-                heading,
-                waypoint,
+                mission_target: builder.mission_target,
+                heading: builder.heading,
+                waypoint: builder.waypoint,
                 is_beam_active: false,
             },
-            state,
+            builder.state,
             HomeBase(builder.home_base),
             DroneFuel {
-                current: fuel_current,
-                max: fuel_max,
+                current: builder.fuel_current,
+                max: builder.fuel_max,
             },
-            Pickable{ should_block_lower: false, is_hoverable: true },
         ));
 }

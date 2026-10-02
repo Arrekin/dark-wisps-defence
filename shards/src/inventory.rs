@@ -3,7 +3,7 @@ use bevy::prelude::*;
 
 use game_core::prelude::ShardType;
 
-#[derive(Resource, Default)]
+#[derive(Resource, Default, Clone)]
 pub struct ShardInventory {
     shards: HashMap<ShardType, usize>,
 }

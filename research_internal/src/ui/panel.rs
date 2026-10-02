@@ -32,7 +32,7 @@ impl Plugin for ResearchPanelPlugin {
             .add_systems(Startup, spawn_research_panel)
             .add_systems(OnEnter(UiInteraction::ResearchPanel), show_panel)
             .add_systems(OnExit(UiInteraction::ResearchPanel), hide_panel)
-            .add_observer(on_research_tiles_need_ordering);
+            .add_observer(on_research_tiles_need_ordering_do_so);
     }
 }
 
@@ -196,24 +196,24 @@ fn hide_panel(root: Single<&mut Node, With<ResearchPanelRoot>>) {
 // TILE ORDERING — grid positions tiles by DisplayName
 // ============================================================================
 
-fn on_research_tiles_need_ordering(
+fn on_research_tiles_need_ordering_do_so(
     _: On<ResearchTilesNeedOrdering>,
     mut commands: Commands,
     grid: Single<(Entity, &Children), With<ResearchTileGrid>>,
-    tile_ofs: Query<&ResearchTileOf>,
+    tiles: Query<&ResearchTileOf>,
     research_names: Query<&DisplayName>,
 ) {
     let (grid_entity, grid_children) = grid.into_inner();
 
-    let mut sorted: Vec<(String, Entity)> = grid_children.iter()
+    let mut named_tiles: Vec<(&str, Entity)> = grid_children.iter()
         .filter_map(|child| {
-            let tile_of = tile_ofs.get(child).ok()?;
-            let name = research_names.get(tile_of.0).map(|name| name.0.clone()).unwrap_or_default();
+            let tile_of = tiles.get(child).ok()?;
+            let name = research_names.get(tile_of.0).map(|name| name.0.as_str()).unwrap_or_default();
             Some((name, child))
         })
         .collect();
-    sorted.sort_by(|a, b| a.0.cmp(&b.0));
+    named_tiles.sort_by_key(|(name, _)| *name);
 
-    let sorted_entities: Vec<Entity> = sorted.into_iter().map(|(_, entity)| entity).collect();
+    let sorted_entities: Vec<Entity> = named_tiles.into_iter().map(|(_, entity)| entity).collect();
     commands.entity(grid_entity).replace_children(&sorted_entities);
 }

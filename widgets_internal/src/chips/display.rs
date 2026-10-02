@@ -1,11 +1,13 @@
 use bevy::prelude::*;
 
 use game_core::prelude::{DisplayDescription, DisplayIcon, DisplayName};
-use widgets::prelude::{
-    BuilderChip, BuilderDisplayChip, BuilderTooltip, ChipChildren, DisplayChipChildren,
-    DisplayChipOf, DisplayChips,
+use widgets::{
+    common::utils::set_text_if_changed,
+    prelude::{
+        BuilderChip, BuilderDisplayChip, BuilderTooltip, ChipChildren, DisplayChipChildren,
+        DisplayChipOf, DisplayChips,
+    },
 };
-use widgets::common::utils::set_text_if_changed;
 
 use super::chip::CHIP_FONT_SIZE;
 
@@ -16,7 +18,7 @@ const TOOLTIP_BODY_FONT_SIZE: f32 = 11.0;
 const TOOLTIP_TITLE_COLOR: Color = Color::srgb_u8(0xEA, 0xF4, 0xFF);
 const TOOLTIP_BODY_COLOR: Color = Color::srgb_u8(0x8B, 0xA8, 0xCC);
 
-pub struct DisplayChipPlugin;
+pub(crate) struct DisplayChipPlugin;
 impl Plugin for DisplayChipPlugin {
     fn build(&self, app: &mut App) {
         app

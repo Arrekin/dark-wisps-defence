@@ -1,5 +1,7 @@
 use bevy::prelude::*;
 
+use game_core::prelude::DisplayName;
+use logging::prelude::*;
 use outcomes::prelude::{FulfillOutcome, HasOutcomes};
 use research::prelude::*;
 use resources::prelude::{Cost, Stock};
@@ -7,32 +9,36 @@ use resources::prelude::{Cost, Stock};
 /// Start or switch the active research. Parks the incumbent (back to
 /// `Available`, progress retained) and sets the target `Active`. Only an
 /// `Available` research can be started — one with no state cannot be targeted.
+#[log_tags(Tag::Research)]
 pub(crate) fn on_set_active_research(
     trigger: On<SetActiveResearch>,
     mut commands: Commands,
     current_active: Option<Single<Entity, With<ResearchActive>>>,
-    target: Query<(), With<ResearchAvailable>>,
+    available: Query<&DisplayName, With<ResearchAvailable>>,
 ) {
     let target_entity = trigger.event().research;
-    if target.get(target_entity).is_err() { return; }
+    let Ok(name) = available.get(target_entity) else { return };
 
     if let Some(current) = current_active
         && *current != target_entity
     {
         commands.entity(*current).insert(ResearchState::Available);
     }
+    #[info_player("Research '{}' started", name.0)]
     commands.entity(target_entity).insert(ResearchState::Active);
 }
 
 /// Park an active research: set it back to `Available`, progress retained.
 /// No-ops on a research which is not active.
+#[log_tags(Tag::Research)]
 pub(crate) fn on_stop_research(
     trigger: On<StopResearch>,
     mut commands: Commands,
-    active: Query<&ResearchState, With<ResearchActive>>,
+    active: Query<&DisplayName, With<ResearchActive>>,
 ) {
     let target = trigger.event().research;
-    if active.get(target).is_err() { return; }
+    let Ok(name) = active.get(target) else { return };
+    #[info_player("Research '{}' paused", name.0)]
     commands.entity(target).insert(ResearchState::Available);
 }
 
@@ -41,13 +47,14 @@ pub(crate) fn on_stop_research(
 /// pay, which makes the research stall (no error) when stock runs dry and resume
 /// when it returns. Runs only while the game is running and exactly one research
 /// is active.
+#[log_tags(Tag::Research)]
 pub(crate) fn research_tick(
     mut commands: Commands,
     time: Res<Time>,
     mut stock: ResMut<Stock>,
-    active: Single<(Entity, &Research, &mut ResearchRuntime), With<ResearchActive>>,
+    active: Single<(Entity, &Research, &DisplayName, &mut ResearchRuntime), With<ResearchActive>>,
 ) {
-    let (entity, research, mut runtime) = active.into_inner();
+    let (entity, research, name, mut runtime) = active.into_inner();
     let duration_secs = research.duration.as_secs_f32();
 
     // Nothing moves unless the next whole unit of every outstanding cost is
@@ -62,6 +69,7 @@ pub(crate) fn research_tick(
     pay_crossed_units(&mut commands, entity, runtime.progress, target, &research.cost, &mut stock);
     runtime.progress = target;
 
+    #[info_player("Research '{}' completed", name.0)]
     if runtime.progress >= 1.0 {
         commands.entity(entity)
             .remove::<ResearchRuntime>()
@@ -85,7 +93,7 @@ pub(crate) fn on_research_finished(
     }
 }
 
-// ---- Pure helpers (ported verbatim from the pre-rebuild implementation) ----
+// ---- Pure helpers ----
 
 /// The fraction reached after `delta_secs` of unobstructed progress. A non-positive
 /// duration means "instant": the fraction jumps to 1.0, with cost still charged

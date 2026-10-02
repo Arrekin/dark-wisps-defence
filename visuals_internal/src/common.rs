@@ -1,13 +1,14 @@
 use bevy::prelude::*;
 
-// Determines which part of the sprite sheet to use
+/// Determines which part of the sprite sheet to use.
 #[derive(Component)]
 pub(crate) struct AnimationController {
     pub atlas_first_frame: usize,
     pub atlas_last_frame: usize,
     pub timer: Timer,
     pub repeating: bool,
-    pub has_finished: bool, // Only if repeating is false
+    /// Set once a non-repeating animation reaches its last frame.
+    pub has_finished: bool,
 }
 impl AnimationController {
     pub fn new(atlas_first_frame: usize, atlas_last_frame: usize, duration: f32, repeating: bool) -> Self {
@@ -25,7 +26,7 @@ pub(crate) fn animate_sprite_system(
     time: Res<Time>,
     mut animations: Query<(&mut AnimationController, &mut Sprite)>,
 ) {
-    for (mut controller, mut sprite) in &mut animations {
+    for (mut controller, mut sprite) in animations.iter_mut() {
         let Some(atlas) = &mut sprite.texture_atlas else { continue; };
         controller.timer.tick(time.delta());
         if controller.timer.just_finished() {

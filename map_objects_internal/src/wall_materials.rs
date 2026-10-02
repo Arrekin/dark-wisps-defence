@@ -11,6 +11,7 @@ use bevy::{
 
 use game_core::prelude::{FaceSurface, GridImprint, MapObject, ObjectFaceRequest};
 use grids::placement::PlacementStyle;
+use logging::prelude::*;
 use map_objects::wall_style::{WallStyle, WallStyleKey, WallStyles};
 
 pub(crate) struct WallMaterialsPlugin;
@@ -54,6 +55,7 @@ impl Material2d for WallQuadMaterial {
 /// Attaches a wall face for UI or placement preview use.
 ///
 /// Placed walls are rendered separately by the grid-wide wall canvas.
+#[log_tags(Tag::MapObjects)]
 fn on_object_face_request_draw_wall(
     trigger: On<ObjectFaceRequest>,
     mut commands: Commands,
@@ -68,6 +70,7 @@ fn on_object_face_request_draw_wall(
 
     // Targets may select a wall style through `PlacementStyle`; otherwise use the default.
     let key = placement_styles.get(entity).map_or_else(|_| WallStyleKey::default(), |style| (*style).into());
+    #[warn_dev("Wall face requested for {entity} with style {}, which is not in this map's table", key.0)]
     let Some(style) = styles.style_of(key) else { return; };
 
     match surface {
@@ -75,6 +78,7 @@ fn on_object_face_request_draw_wall(
             commands.entity(entity).insert(MaterialNode(swatch_materials.add(WallSwatchMaterial { style: *style })));
         }
         FaceSurface::World => {
+            #[warn_dev("Wall face requested in the world for {entity}, which has no GridImprint or no longer exists")]
             let Ok(grid_imprint) = grid_imprints.get(entity) else { return; };
             commands.entity(entity).insert((
                 Mesh2d(meshes.add(Rectangle::from_size(grid_imprint.world_size()))),

@@ -34,8 +34,7 @@ impl Plugin for GameCorePlugin {
             ))
             .add_observer(on_add_needs_power_init_power_state)
             .add_observer(on_moment_happened_propagate_to_watchers)
-            .add_observer(on_add_display_icon_switcher_load_display_icon)
-            ;
+            .add_observer(on_add_display_icon_switcher_load_display_icon);
     }
 }
 
@@ -69,9 +68,9 @@ fn on_insert_zdepth_apply_zdepth(
 
 fn on_add_display_icon_switcher_load_display_icon(
     trigger: On<Add, DisplayIconSwitcher>,
-    switchers: Query<&DisplayIconSwitcher>,
-    asset_server: Res<AssetServer>,
     mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    switchers: Query<&DisplayIconSwitcher>,
 ) {
     let entity = trigger.entity;
     let Ok(switcher) = switchers.get(entity) else { return };
@@ -81,8 +80,8 @@ fn on_add_display_icon_switcher_load_display_icon(
 /// See `ZDepth` docs. Runs after propagation so it sees final world transforms;
 /// the equality guard keeps unchanged entities from dirtying `GlobalTransform`
 /// (and re-triggering render extraction) every frame.
-fn enforce_zdepth_world_z(mut query: Query<(&mut GlobalTransform, &ZDepth)>) {
-    for (mut global_transform, z_depth) in query.iter_mut() {
+fn enforce_zdepth_world_z(mut transforms: Query<(&mut GlobalTransform, &ZDepth)>) {
+    for (mut global_transform, z_depth) in transforms.iter_mut() {
         let mut affine = global_transform.affine();
         if affine.translation.z != z_depth.0 {
             affine.translation.z = z_depth.0;
@@ -95,9 +94,9 @@ fn track_locomotion(
     time: Res<Time>,
     mut movers: Query<(&GlobalTransform, &mut Locomotion)>,
 ) {
-    let dt = time.delta_secs();
+    let delta_seconds = time.delta_secs();
     for (global_transform, mut locomotion) in movers.iter_mut() {
-        locomotion.advance(global_transform.translation().truncate(), dt);
+        locomotion.advance(global_transform.translation().truncate(), delta_seconds);
     }
 }
 
@@ -138,10 +137,10 @@ fn on_add_needs_power_init_power_state(
     trigger: On<Add, NeedsPower>,
     mut commands: Commands,
     energy_supply_grid: Res<EnergySupplyGrid>,
-    power_query: Query<(&GridCoords, &GridImprint), With<NeedsPower>>,
+    consumers: Query<(&GridCoords, &GridImprint), With<NeedsPower>>,
 ) {
     let entity = trigger.entity;
-    let Ok((grid_coords, grid_imprint)) = power_query.get(entity) else { return; };
+    let Ok((grid_coords, grid_imprint)) = consumers.get(entity) else { return; };
 
     let has_power = energy_supply_grid.is_imprint_powered(*grid_coords, *grid_imprint);
     if has_power {
@@ -155,10 +154,10 @@ fn on_insert_needs_power_coords_refresh_power_state(
     trigger: On<Insert, (GridCoords, GridImprint)>,
     mut commands: Commands,
     energy_supply_grid: Res<EnergySupplyGrid>,
-    power_query: Query<(&GridCoords, &GridImprint, Has<IsPowered>), With<NeedsPower>>,
+    consumers: Query<(&GridCoords, &GridImprint, Has<IsPowered>), With<NeedsPower>>,
 ) {
     let entity = trigger.entity;
-    let Ok((grid_coords, grid_imprint, has_is_powered)) = power_query.get(entity) else { return; };
+    let Ok((grid_coords, grid_imprint, has_is_powered)) = consumers.get(entity) else { return; };
 
     let has_power = energy_supply_grid.is_imprint_powered(*grid_coords, *grid_imprint);
     if has_power != has_is_powered {

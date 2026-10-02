@@ -2,7 +2,7 @@ use bevy::prelude::*;
 
 use widgets::prelude::{BuilderHealthbar, FillBar, FillBarChildren, Healthbar};
 
-pub struct HealthbarPlugin;
+pub(crate) struct HealthbarPlugin;
 impl Plugin for HealthbarPlugin {
     fn build(&self, app: &mut App) {
         app
@@ -85,13 +85,13 @@ fn sync_healthbar_display(
         fill_color.0 = healthbar.color;
         // Update text
         let Ok(mut text) = texts.get_mut(children.value_text) else { continue };
-        let format_value = |v: f32| {
-            if v.fract() == 0.0 {
-                format!("{:.0}", v)
-            } else if (v * 10.0).fract() == 0.0 {
-                format!("{:.1}", v)
+        let format_value = |value: f32| {
+            if value.fract() == 0.0 {
+                format!("{value:.0}")
+            } else if (value * 10.0).fract() == 0.0 {
+                format!("{value:.1}")
             } else {
-                format!("{:.2}", v)
+                format!("{value:.2}")
             }
         };
         text.0 = format!("{} / {}", format_value(healthbar.value), format_value(healthbar.max_value));

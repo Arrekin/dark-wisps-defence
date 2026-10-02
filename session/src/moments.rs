@@ -10,8 +10,7 @@ impl Plugin for SessionMomentsPlugin {
         app
             .register_moment_persistence::<MomentGameStart>()
             .add_systems(OnEnter(GameState::Running), fire_start_game_once)
-            .add_systems(OnEnter(MapLoadingStage::SpawnMapElements), seed_moment_game_start.run_if(creating_new_map))
-            ;
+            .add_systems(OnEnter(MapLoadingStage::SpawnMapElements), seed_moment_game_start.run_if(creating_new_map));
     }
 }
 

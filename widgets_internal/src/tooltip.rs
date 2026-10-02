@@ -1,9 +1,8 @@
-use bevy::prelude::*;
-use bevy::ui::UiGlobalTransform;
+use bevy::{prelude::*, ui::UiGlobalTransform};
 
 use widgets::prelude::{BuilderTooltip, TooltipLeftLimit, TooltipOf, TooltipOffsetAbove, Tooltips};
 
-pub struct TooltipPlugin;
+pub(crate) struct TooltipPlugin;
 impl Plugin for TooltipPlugin {
     fn build(&self, app: &mut App) {
         app

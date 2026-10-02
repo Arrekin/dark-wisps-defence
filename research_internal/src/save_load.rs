@@ -14,6 +14,7 @@ use resources::prelude::Cost;
 /// started or completed). Scenario saves drop runtime entirely: an in-progress
 /// research saved as a scenario becomes Available with no progress — "reset
 /// to not started." A completed one stays Completed with no runtime.
+#[log_tags(Tag::GameSave)]
 pub(crate) fn collect_researches(
     save_ctx: Res<SaveContext>,
     researches: Query<(
@@ -38,20 +39,20 @@ pub(crate) fn collect_researches(
         icon_path: String,
         duration_secs: f32,
         progress: Option<f32>,
-        state: Option<String>,
+        state: Option<ResearchState>,
         costs: Vec<Cost>,
     }
 
+    #[debug_dev("Saving {} researches", snapshots.len())]
     let snapshots: Vec<Snapshot> = researches
         .iter()
         .map(|(entity, research, content_id, name, description, icon, state, runtime)| {
-            let state_str = state.map(|s| s.as_ref().to_string());
             // Scenario saves drop runtime: progress becomes NULL regardless of
             // current progress. Non-scenario saves keep it when present.
             let progress = if save_ctx.save_as_scenario {
                 None
             } else {
-                runtime.map(|rt| rt.progress)
+                runtime.map(|runtime| runtime.progress)
             };
             Snapshot {
                 id: entity.index_u32() as i64,
@@ -61,7 +62,7 @@ pub(crate) fn collect_researches(
                 icon_path: icon.0.clone(),
                 duration_secs: research.duration.as_secs_f32(),
                 progress,
-                state: state_str,
+                state: state.copied(),
                 costs: research.cost.clone(),
             }
         })
@@ -80,7 +81,7 @@ pub(crate) fn collect_researches(
                     snap.icon_path,
                     snap.duration_secs,
                     snap.progress,
-                    snap.state,
+                    snap.state.as_ref().map(|state| state.as_ref()),
                 ],
             )?;
             tx.save_costs(snap.id, &snap.costs)?;
@@ -89,6 +90,7 @@ pub(crate) fn collect_researches(
     });
 }
 
+#[log_tags(Tag::GameLoad)]
 pub(crate) fn load_researches(ctx: &mut LoadContext) -> rusqlite::Result<()> {
     let mut stmt = ctx.conn.prepare(
         "SELECT id, content_id, name, description, icon_path, duration_secs, progress, state FROM researches",
@@ -104,10 +106,8 @@ pub(crate) fn load_researches(ctx: &mut LoadContext) -> rusqlite::Result<()> {
         let progress: Option<f32> = row.get(6)?;
         let state_str: Option<String> = row.get(7)?;
 
-        let Some(entity) = ctx.entity(old_id) else {
-            Log::warn().dev().tag(Tag::GameLoad).message(format!("Research with old ID {old_id} has no corresponding new entity"));
-            continue;
-        };
+        #[warn_dev("Research with old ID {old_id} has no corresponding new entity")]
+        let Some(entity) = ctx.entity(old_id) else { continue };
 
         let costs = ctx.conn.get_costs(old_id)?;
 
@@ -123,24 +123,19 @@ pub(crate) fn load_researches(ctx: &mut LoadContext) -> rusqlite::Result<()> {
             DisplayIconSwitcher(icon_path),
         ));
 
-        // State is the enablement signal: present = enabled, NULL = disabled.
+        // State is the enablement signal: present = enabled, NULL = disabled
+        // (nothing more to insert).
         // Progress is optional even when state is present (not-yet-started or
         // completed). Insert state first; if progress is present, insert
         // runtime after — the require on ResearchAvailable would auto-insert
         // a default runtime, but we insert the saved one explicitly to
         // overwrite it.
-        match state_str {
-            None => { /* disabled — nothing to insert */ }
-            Some(state_str) => {
-                let Ok(state) = state_str.parse::<ResearchState>() else {
-                    Log::warn().dev().tag(Tag::GameLoad).message(format!("Research with old ID {old_id} has unknown state '{state_str}' — treating as disabled"));
-                    continue;
-                };
-                ctx.insert(entity, state);
-                if let Some(progress) = progress {
-                    ctx.insert(entity, ResearchRuntime { progress });
-                }
-            }
+        let Some(state_str) = state_str else { continue };
+        #[warn_dev("Research with old ID {old_id} has unknown state '{state_str}' — treating as disabled")]
+        let Ok(state) = state_str.parse::<ResearchState>() else { continue };
+        ctx.insert(entity, state);
+        if let Some(progress) = progress {
+            ctx.insert(entity, ResearchRuntime { progress });
         }
     }
     Ok(())

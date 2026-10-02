@@ -230,7 +230,7 @@ CREATE TABLE IF NOT EXISTS brittle_effects (
 CREATE TABLE IF NOT EXISTS expedition_drones (
     id INTEGER PRIMARY KEY,
     home_base_id INTEGER NOT NULL,
-    state INTEGER NOT NULL,
+    state TEXT NOT NULL,
     mission_target_id INTEGER,
     heading REAL NOT NULL,
     waypoint_x REAL NOT NULL,

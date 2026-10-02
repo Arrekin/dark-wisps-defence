@@ -3,19 +3,22 @@
 //! Each icon owns one strip. Sections with fixed content provide its tiles directly; offering-backed
 //! sections populate it from the Almanach.
 
-use bevy::color::palettes::css::WHITE;
-use bevy::ecs::component::ComponentIdFor;
-use bevy::picking::hover::Hovered;
-use bevy::prelude::*;
+use bevy::{
+    color::palettes::css::WHITE,
+    ecs::component::ComponentIdFor,
+    picking::hover::Hovered,
+    prelude::*,
+};
 
 use game_core::prelude::MapObject;
 use grids::placement::{BeginPlacing, StopPlacing};
 use states::{AdminMode, prelude::UiInteraction};
-
 use widgets::prelude::{BuilderVoidPanel, VoidPanel};
 
-use super::strip::{STRIP_EDGE_BRIGHTNESS, STRIP_TILE_INSET, SideMenuStrip};
-use super::tile::{PlacementTile, Tile};
+use super::{
+    strip::{STRIP_EDGE_BRIGHTNESS, STRIP_TILE_INSET, SideMenuStrip},
+    tile::{PlacementTile, Tile},
+};
 
 // Section frame
 const NOT_HOVERED_ALPHA: f32 = 0.2;

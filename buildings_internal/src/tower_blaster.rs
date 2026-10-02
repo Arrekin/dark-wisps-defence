@@ -23,23 +23,19 @@ use states::prelude::*;
 use weaponry::prelude::*;
 use wisps::prelude::*;
 
-use crate::common::*;
-use crate::tooltip::building_tooltip;
+use crate::{common::*, tooltip::building_tooltip};
 
-pub struct TowerBlasterPlugin;
+pub(crate) struct TowerBlasterPlugin;
 impl Plugin for TowerBlasterPlugin {
     fn build(&self, app: &mut App) {
         let almanach_info = BuilderTowerBlaster::almanach_info(app.world().resource::<AssetServer>());
         app
             .add_observer(BuilderTowerBlaster::on_builder_add_spawn_tower_blaster)
             .add_observer(on_tower_blaster_place_request_do_so)
-            .add_systems(Update, (
-                shooting_system.run_if(in_state(GameState::Running)),
-            ))
+            .add_systems(Update, shooting_system.run_if(in_state(GameState::Running)))
             .add_systems(CollectSave, collect_tower_blasters)
             .register_loader(MapLoadingStage::SpawnMapElements, "tower_blasters", load_tower_blasters)
-            .register_building(BuildingType::Tower(TowerType::Blaster), almanach_info)
-            ;
+            .register_building(BuildingType::Tower(TowerType::Blaster), almanach_info);
     }
 }
 
@@ -96,26 +92,26 @@ impl BuilderTowerBlaster {
     ) {
         let entity = trigger.entity;
         let Ok(builder) = builders.get(entity) else { return; };
-        
+
         let building_info = almanach.get_building_info(BuildingType::Tower(TowerType::Blaster));
         let grid_imprint = building_info.grid_imprint;
 
         let mut entity_commands = commands.entity(entity);
-        if let Some(ip) = builder.integrity_points {
-            entity_commands.insert(IntegrityPoints::new(ip));
+        if let Some(integrity_points) = builder.integrity_points {
+            entity_commands.insert(IntegrityPoints::new(integrity_points));
         }
         if builder.disabled_by_player {
             entity_commands.insert(DisabledByPlayer);
         }
 
-        let tower_base_entity = entity_commands
+        entity_commands
             .remove::<BuilderTowerBlaster>()
             .insert((
                 TowerBlaster,
                 Sprite {
                     image: building_info.sprite.clone(),
                     custom_size: Some(grid_imprint.world_size()),
-                    ..Default::default()
+                    ..default()
                 },
                 builder.grid_position,
                 grid_imprint,
@@ -134,16 +130,15 @@ impl BuilderTowerBlaster {
                 ],
             ))
             .observe(Self::on_shard_apply_do_so)
-            .observe(on_technical_state_changed_recompute_operational)
-            .id();
+            .observe(on_technical_state_changed_recompute_operational);
         let world_size = grid_imprint.world_size();
         let tower_top = commands.spawn((
             Sprite {
-                image: building_info.top_sprite.clone().unwrap(),
+                image: building_info.top_sprite.clone().expect("Blaster Tower defines a top sprite"),
                 custom_size: Some(Vec2::new(world_size.x * 1.52 * 0.5, world_size.y * 0.5)),
-                ..Default::default()
+                ..default()
             },
-            MarkerTowerRotationalTop(tower_base_entity),
+            MarkerTowerRotationalTop(entity),
         )).id();
         commands.entity(entity).add_child(tower_top);
         commands.trigger(TechnicalStateChanged { entity, kind: TechnicalChange::JustSpawned });
@@ -178,28 +173,29 @@ fn on_tower_blaster_place_request_do_so(
     commands.spawn(BuilderTowerBlaster::new(coords));
 }
 
+#[log_tags(Tag::GameSave)]
 fn collect_tower_blasters(
     towers: Query<(Entity, &GridCoords, &IntegrityPoints, Has<DisabledByPlayer>), With<TowerBlaster>>,
     mut save: SaveWriter,
 ) {
     if towers.is_empty() { return; }
-    let rows: Vec<(i64, i32, i32, f32, bool)> = towers
+
+    #[debug_dev("Saving {} tower blasters", rows.len())]
+    let rows: Vec<(i64, GridCoords, f32, bool)> = towers
         .iter()
         .map(|(entity, coords, integrity_points, disabled_by_player)| {
             (
                 entity.index_u32() as i64,
-                coords.x,
-                coords.y,
+                *coords,
                 integrity_points.get_current(),
                 disabled_by_player,
             )
         })
         .collect();
-    Log::debug().dev().tag(Tag::GameSave).message(format!("Saving {} tower blasters", rows.len()));
     save.submit(move |tx| {
-        for (id, gx, gy, integrity_points, disabled_by_player) in rows {
+        for (id, coords, integrity_points, disabled_by_player) in rows {
             tx.save_marker("tower_blasters", id)?;
-            tx.save_grid_coords(id, GridCoords { x: gx, y: gy })?;
+            tx.save_grid_coords(id, coords)?;
             tx.save_integrity_points(id, integrity_points)?;
             if disabled_by_player {
                 tx.save_disabled_by_player(id)?;
@@ -209,6 +205,7 @@ fn collect_tower_blasters(
     });
 }
 
+#[log_tags(Tag::GameLoad)]
 fn load_tower_blasters(ctx: &mut LoadContext) -> rusqlite::Result<()> {
     let mut stmt = ctx.conn.prepare("SELECT id FROM tower_blasters")?;
     let mut rows = stmt.query([])?;
@@ -218,10 +215,8 @@ fn load_tower_blasters(ctx: &mut LoadContext) -> rusqlite::Result<()> {
         let integrity_points = ctx.conn.get_integrity_points(old_id)?;
         let disabled_by_player = ctx.conn.get_disabled_by_player(old_id)?;
 
-        let Some(entity) = ctx.entity(old_id) else {
-            Log::warn().dev().tag(Tag::GameLoad).message(format!("TowerBlaster with old ID {old_id} has no corresponding new entity"));
-            continue;
-        };
+        #[warn_dev("TowerBlaster with old ID {old_id} has no corresponding new entity")]
+        let Some(entity) = ctx.entity(old_id) else { continue };
         let mut builder = BuilderTowerBlaster::new(grid_position)
             .with_integrity_points(integrity_points);
         if disabled_by_player {
@@ -254,10 +249,7 @@ fn shooting_system(
 
         // Calculate transform offset in the direction we are aiming
         let tower_world_width = grid_imprint.world_size().x;
-        let offset = Vec2::new(
-            top_rotation.current_angle.cos() * tower_world_width * 0.4,
-            top_rotation.current_angle.sin() * tower_world_width * 0.4,
-        );
+        let offset = Vec2::from_angle(top_rotation.current_angle) * tower_world_width * 0.4;
         let spawn_position = transform.translation.xy() + offset;
 
         commands.spawn(BuilderLaserDart::new(spawn_position, target_wisp, (wisp_position - spawn_position).normalize(), *attack_damage));

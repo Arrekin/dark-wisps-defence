@@ -34,8 +34,7 @@ impl Plugin for WallCanvasPlugin {
                 ),
             )
             .add_observer(on_style_insert_request_wall_canvas_rebuild)
-            .add_observer(on_style_remove_request_wall_canvas_rebuild)
-            ;
+            .add_observer(on_style_remove_request_wall_canvas_rebuild);
     }
 }
 
@@ -93,7 +92,7 @@ impl WallCanvas {
         let map_bounds = map_info.grid_bounds;
         let cell_count = map_bounds.area();
         let cells = buffers.add(ShaderBuffer::from(vec![0u32; cell_count].as_slice()));
-        let style_values: Vec<WallStyle> = styles.entries.iter().map(|e| e.style).collect();
+        let style_values: Vec<WallStyle> = styles.entries.iter().map(|entry| entry.style).collect();
         let style_buffer = buffers.add(ShaderBuffer::from(style_values.as_slice()));
 
         let material = materials.add(WallCanvasMaterial {
@@ -166,7 +165,7 @@ fn apply_wall_canvas_styles(
 ) -> Result<()> {
     let material = materials.get(wall_canvas.into_inner())
         .ok_or("WallCanvas material asset missing")?;
-    let style_values: Vec<WallStyle> = styles.entries.iter().map(|e| e.style).collect();
+    let style_values: Vec<WallStyle> = styles.entries.iter().map(|entry| entry.style).collect();
     let mut buffer = buffers.get_mut(&material.styles)
         .ok_or("WallCanvas styles buffer asset missing")?;
     buffer.set_data(&style_values);
@@ -190,6 +189,7 @@ fn on_style_insert_request_wall_canvas_rebuild(
 ) {
     rebuild_requested.request();
 }
+
 fn on_style_remove_request_wall_canvas_rebuild(
     _trigger: On<Remove, WallStyleKey>,
     mut rebuild_requested: ResMut<WallCanvasRebuildRequested>,

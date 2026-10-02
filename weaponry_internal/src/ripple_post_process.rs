@@ -28,7 +28,7 @@ use viewport::PostProcessCamera;
 use visuals::post_process::RipplePostProcessSet;
 use weaponry::prelude::Ripple;
 
-pub struct RipplePostProcessPlugin;
+pub(crate) struct RipplePostProcessPlugin;
 impl Plugin for RipplePostProcessPlugin {
     fn build(&self, app: &mut App) {
         app
@@ -39,8 +39,7 @@ impl Plugin for RipplePostProcessPlugin {
             ))
             .init_resource::<RippleEntries>()
             .add_observer(RipplePostProcess::on_add_camera_attach_post_process)
-            .add_systems(Update, RipplePostProcess::update)
-            ;
+            .add_systems(Update, RipplePostProcess::update);
 
         let Some(render_app) = app.get_sub_app_mut(RenderApp) else { return; };
         render_app
@@ -48,7 +47,7 @@ impl Plugin for RipplePostProcessPlugin {
             .add_systems(RenderStartup, init_ripple_pipeline)
             .add_systems(Render, GpuRippleStorage::prepare.in_set(RenderSystems::PrepareResources))
             // Ordering against the other post-process passes lives in the
-            // visuals crate's PostProcessOrderingPlugin (added after all effect plugins).
+            // visuals_internal's PostProcessOrderingPlugin (added after all effect plugins).
             .add_systems(Core2d, ripple_post_process_pass.in_set(RipplePostProcessSet));
     }
 }
@@ -136,15 +135,15 @@ impl RipplePostProcess {
             });
         }
 
-        let count = entries.0.len() as u32;
+        let ripple_count = entries.0.len() as u32;
         for (mut post_process, transform, projection) in cameras.iter_mut() {
-            let Projection::Orthographic(ortho) = projection else { continue; };
+            let Projection::Orthographic(orthographic) = projection else { continue; };
             post_process.camera_world_pos = transform.translation.xy();
             post_process.viewport_world_size = Vec2::new(
-                ortho.area.width(),
-                ortho.area.height(),
+                orthographic.area.width(),
+                orthographic.area.height(),
             );
-            post_process.ripple_count = count;
+            post_process.ripple_count = ripple_count;
         }
     }
 }
@@ -158,11 +157,11 @@ fn ripple_post_process_pass(
         &RipplePostProcess,
         &ExtractedCamera,
     )>,
-    pipeline_res: Res<RipplePostProcessPipeline>,
+    post_process_pipeline: Res<RipplePostProcessPipeline>,
     pipeline_cache: Res<PipelineCache>,
     settings_uniforms: Res<ComponentUniforms<RipplePostProcess>>,
     ripple_storage: Res<GpuRippleStorage>,
-    mut ctx: RenderContext,
+    mut render_context: RenderContext,
 ) {
     let (view_target, settings_index, settings, camera) = view.into_inner();
 
@@ -177,7 +176,7 @@ fn ripple_post_process_pass(
         "ripple post-process requires an HDR camera; this PostProcessCamera lacks `Hdr`. \
          Add the `Hdr` component, or add a pipeline variant for its target format."
     );
-    let pipeline_id = pipeline_res.pipeline_id;
+    let pipeline_id = post_process_pipeline.pipeline_id;
     // Shaders compile asynchronously; skip gracefully while still compiling.
     let Some(pipeline) = pipeline_cache.get_render_pipeline(pipeline_id) else { return; };
     let Some(settings_binding) = settings_uniforms.uniforms().binding() else { return; };
@@ -187,18 +186,18 @@ fn ripple_post_process_pass(
     // next post-process pass in the chain.
     let post_process = view_target.post_process_write();
 
-    let bind_group = ctx.render_device().create_bind_group(
+    let bind_group = render_context.render_device().create_bind_group(
         "ripple_post_process_bind_group",
-        &pipeline_cache.get_bind_group_layout(&pipeline_res.layout),
+        &pipeline_cache.get_bind_group_layout(&post_process_pipeline.layout),
         &BindGroupEntries::sequential((
             post_process.source,
-            &pipeline_res.sampler,
+            &post_process_pipeline.sampler,
             settings_binding.clone(),
             storage_binding.clone(),
         )),
     );
 
-    let mut render_pass = ctx
+    let mut render_pass = render_context
         .command_encoder()
         .begin_render_pass(&RenderPassDescriptor {
             label: Some("ripple_post_process_pass"),

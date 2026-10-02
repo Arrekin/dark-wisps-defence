@@ -3096,6 +3096,7 @@ dependencies = [
  "buildings",
  "game_core",
  "grids",
+ "logging",
  "states",
  "viewport",
 ]
@@ -3781,6 +3782,7 @@ version = "0.2.0"
 dependencies = [
  "bevy",
  "crossbeam-channel",
+ "lib-derive",
  "strum",
 ]
 
@@ -5018,6 +5020,7 @@ name = "resources_internal"
 version = "0.2.0"
 dependencies = [
  "bevy",
+ "logging",
  "persistence",
  "resources",
  "states",
@@ -5500,6 +5503,7 @@ version = "0.2.0"
 dependencies = [
  "bevy",
  "game_core",
+ "logging",
  "serde",
 ]
 
@@ -7055,6 +7059,7 @@ dependencies = [
  "nanorand",
  "persistence",
  "resources",
+ "session",
  "states",
  "visuals",
  "wisps",

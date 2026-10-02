@@ -63,7 +63,7 @@ pub enum MapObject {
     Wisp(WispType),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display, EnumString, EnumIter, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display, EnumString, EnumIter, AsRefStr, Default)]
 pub enum ShardType {
     #[default]
     Range,

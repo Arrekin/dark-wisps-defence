@@ -18,7 +18,7 @@ use wisps::prelude::*;
 
 use crate::common::*;
 
-pub struct CommonSystemsPlugin;
+pub(crate) struct CommonSystemsPlugin;
 impl Plugin for CommonSystemsPlugin {
     fn build(&self, app: &mut App) {
         app
@@ -26,17 +26,14 @@ impl Plugin for CommonSystemsPlugin {
                 tick_shooting_timers_system,
                 damage_control_system,
             ).run_if(in_state(GameState::Running)))
-            .add_systems(Update,(
-                (
-                    targeting_system,
-                    rotate_tower_top_system,
-                    rotational_aiming_system,
-                ).run_if(in_state(GameState::Running)),
-            ))
+            .add_systems(Update, (
+                targeting_system,
+                rotate_tower_top_system,
+                rotational_aiming_system,
+            ).run_if(in_state(GameState::Running)))
             .add_observer(on_building_destroy_request_do_so)
             .add_observer(on_insert_attack_speed_sync_shooting_timer)
-            .add_observer(on_object_face_request_draw_building)
-            ;
+            .add_observer(on_object_face_request_draw_building);
     }
 }
 
@@ -63,15 +60,15 @@ fn targeting_system(
                     // Check if wisp is still in range. For now we use Manhattan distance to check. This may not be correct for all tower types.
                     if coords.manhattan_distance(wisp_coords) <= range.get() as i32 { continue; }
                 }
-            },
+            }
             TowerWispTarget::NoValidTargets(grid_version) => {
                 if grid_version == wisps_grid.version {
                     continue;
                 }
-            },
-            TowerWispTarget::SearchForNewTarget => {},
+            }
+            TowerWispTarget::SearchForNewTarget => {}
         }
-        if let Some((_a, target_wisp)) = target_find_closest_wisp(
+        if let Some((_, target_wisp)) = target_find_closest_wisp(
             &obstacle_grid,
             &wisps_grid,
             grid_imprint.iter(*coords),
@@ -104,14 +101,11 @@ fn damage_control_system(
 }
 
 fn rotate_tower_top_system(
-    mut tower_rotational_top: Query<(&MarkerTowerRotationalTop, &mut Transform)>,
+    mut tower_tops: Query<(&MarkerTowerRotationalTop, &mut Transform)>,
     towers: Query<&TowerTopRotation, With<Tower>>,
 ) {
-    for (tower_rotational_top, mut tower_top_transform) in tower_rotational_top.iter_mut() {
-        let parent_building = tower_rotational_top.0;
-        let tower_top_rotation = towers.get(parent_building).unwrap();
-
-        // Offset due to image naturally pointing downwards
+    for (tower_top, mut tower_top_transform) in tower_tops.iter_mut() {
+        let Ok(tower_top_rotation) = towers.get(tower_top.0) else { continue };
         tower_top_transform.rotation = Quat::from_rotation_z(tower_top_rotation.current_angle);
     }
 }
@@ -128,13 +122,14 @@ fn rotational_aiming_system(
         let direction_to_target = wisp_position - tower_transform.translation.xy();
         let target_angle = direction_to_target.y.atan2(direction_to_target.x);
 
-        let angle_diff = angle_difference(target_angle, rotation.current_angle);
+        let angle_delta = angle_difference(target_angle, rotation.current_angle);
 
         let rotation_delta = rotation.speed * time.delta_secs();
-        rotation.current_angle += angle_diff.clamp(-rotation_delta, rotation_delta);
+        rotation.current_angle += angle_delta.clamp(-rotation_delta, rotation_delta);
     }
 }
 
+#[log_tags(Tag::Build)]
 fn on_building_destroy_request_do_so(
     trigger: On<BuildingDestroyRequest>,
     mut commands: Commands,
@@ -144,8 +139,8 @@ fn on_building_destroy_request_do_so(
     let building_to_destroy = trigger.0;
     let Ok((grid_imprint, grid_coords, building_type)) = buildings.get(building_to_destroy) else { return; };
 
+    #[info_player("'{}' destroyed at ({}, {})", almanach.get_building_info(*building_type).name, grid_coords.x, grid_coords.y)]
     commands.entity(building_to_destroy).despawn();
-    Log::info().player().tag(Tag::Build).message(format!("'{}' destroyed at ({}, {})", almanach.get_building_info(*building_type).name, grid_coords.x, grid_coords.y));
     grid_imprint.iter(*grid_coords).for_each(|coords| {
         commands.spawn(BuilderExplosion(coords));
     });

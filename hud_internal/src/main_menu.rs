@@ -5,7 +5,7 @@ use logging::prelude::*;
 use persistence::{GameMapList, LoadGameSignal, LoadMapConfig, MapFileName};
 use states::{SetGamePaused, prelude::*};
 
-pub struct MainMenuPlugin;
+pub(crate) struct MainMenuPlugin;
 impl Plugin for MainMenuPlugin {
     fn build(&self, app: &mut App) {
         app
@@ -15,8 +15,7 @@ impl Plugin for MainMenuPlugin {
             .add_observer(MainMenuRoot::on_add_build_main_menu)
             .add_observer(LoadMapButton::on_add_build_load_map_button)
             .add_observer(MapListContainer::on_add_build_map_list_container)
-            .add_observer(MapEntryButton::on_add_build_map_entry_button)
-            ;
+            .add_observer(MapEntryButton::on_add_build_map_entry_button);
     }
 }
 
@@ -122,9 +121,14 @@ struct MapEntryButton {
     name: String,
 }
 impl MapEntryButton {
-    fn on_add_build_map_entry_button(trigger: On<Add, MapEntryButton>, mut commands: Commands, entries: Query<&MapEntryButton>) {
+    fn on_add_build_map_entry_button(
+        trigger: On<Add, MapEntryButton>,
+        mut commands: Commands,
+        entries: Query<&MapEntryButton>,
+    ) {
         let entity = trigger.entity;
-        let name = entries.get(entity).unwrap().name.clone();
+        let Ok(entry) = entries.get(entity) else { return };
+        let name = entry.name.clone();
 
         commands.entity(entity)
             .apply_scene(bsn! {
@@ -142,10 +146,11 @@ impl MapEntryButton {
             });
     }
 
+    #[log_tags(Tag::Ui)]
     fn on_click_load_selected_map(trigger: On<Pointer<Click>>, mut commands: Commands, entries: Query<&MapEntryButton>) {
         let entity = trigger.entity;
         let Ok(entry) = entries.get(entity) else { return; };
-        Log::debug().dev().tag(Tag::Ui).message(format!("Map selected: {} ({})", entry.name, entry.file_name.as_str()));
+        #[debug_dev("Map selected: {} ({})", entry.name, entry.file_name.as_str())]
         commands.trigger(LoadGameSignal(LoadMapConfig::map(&entry.file_name)));
     }
 }

@@ -9,17 +9,17 @@ use logging::prelude::*;
 use resources::prelude::Stock;
 use states::AdminMode;
 
-pub(crate) fn building_validator(map_object: MapObject, origin: GridCoords, imprint: GridImprint, map_data: &GridsCollectionParam) -> PlacementValidity {
+pub(crate) fn building_validator(map_object: MapObject, origin: GridCoords, imprint: GridImprint, grids: &GridsCollectionParam) -> PlacementValidity {
     let MapObject::Building(building_type) = map_object else {
         return PlacementValidity::Invalid;
     };
 
-    if validator_all_empty(map_object, origin, imprint, map_data) == PlacementValidity::Invalid {
+    if validator_all_empty(map_object, origin, imprint, grids) == PlacementValidity::Invalid {
         return PlacementValidity::Invalid;
     }
 
     let needs_power = !matches!(building_type, BuildingType::MainBase | BuildingType::EnergyRelay);
-    if needs_power && !map_data.energy_supply_grid.is_imprint_powered(origin, imprint) {
+    if needs_power && !grids.energy_supply_grid.is_imprint_powered(origin, imprint) {
         return PlacementValidity::ValidUnpowered;
     }
 
@@ -27,6 +27,7 @@ pub(crate) fn building_validator(map_object: MapObject, origin: GridCoords, impr
 }
 
 /// Attaches a building image to a UI node or world entity.
+#[log_tags(Tag::Build)]
 pub(crate) fn on_object_face_request_draw_building(
     trigger: On<ObjectFaceRequest>,
     mut commands: Commands,
@@ -41,6 +42,7 @@ pub(crate) fn on_object_face_request_draw_building(
             commands.entity(entity).insert(ImageNode::new(building_info.sprite.clone()).with_color(Color::WHITE.with_alpha(alpha)));
         }
         FaceSurface::World => {
+            #[warn_dev("Building face requested in the world for {entity}, which has no GridImprint or no longer exists")]
             let Ok(grid_imprint) = grid_imprints.get(entity) else { return };
             commands.entity(entity).insert(Sprite {
                 image: building_info.sprite.clone(),
@@ -80,48 +82,49 @@ impl<'w, 's> BuildingPlacementManager<'w, 's> {
     /// `None` means refused or unaffordable; nothing is charged in that case.
     ///
     /// In admin mode placement is free. Validation still runs.
+    #[log_tags(Tag::Build)]
     pub(crate) fn claim(&mut self, building_type: BuildingType) -> Option<GridCoords> {
         if self.admin_mode.get().is_enabled() {
             return self.claim_free(building_type);
         }
 
         let (coords, imprint) = (self.coords(), self.imprint());
+        let building_info = self.almanach.get_building_info(building_type);
+
+        #[info_player("'{}' cannot be placed at ({}, {})", building_info.name, coords.x, coords.y)]
         if !self.is_site_valid(building_type, coords, imprint) { return None; }
+        #[info_player("Not enough resources")]
+        if !self.stock.try_pay_costs(&building_info.cost) { return None; }
 
-        let costs = &self.almanach.get_building_info(building_type).cost;
-        if !self.stock.try_pay_costs(costs) {
-            Log::info().player().tag(Tag::Build).message("Not enough resources");
-            return None;
-        }
-
-        self.reserve_and_log(building_type, coords, imprint);
+        #[info_player("'{}' placed at ({}, {})", building_info.name, coords.x, coords.y)]
+        self.grids.reserved_coords.reserve(coords, imprint);
         Some(coords)
     }
 
     /// Validate the site and reserve the cells, charging nothing.
+    #[log_tags(Tag::Build)]
     pub(crate) fn claim_free(&mut self, building_type: BuildingType) -> Option<GridCoords> {
         let (coords, imprint) = (self.coords(), self.imprint());
+        let building_info = self.almanach.get_building_info(building_type);
+
+        #[info_player("'{}' cannot be placed at ({}, {})", building_info.name, coords.x, coords.y)]
         if !self.is_site_valid(building_type, coords, imprint) { return None; }
 
-        self.reserve_and_log(building_type, coords, imprint);
+        #[info_player("'{}' placed at ({}, {})", building_info.name, coords.x, coords.y)]
+        self.grids.reserved_coords.reserve(coords, imprint);
         Some(coords)
     }
 
     fn is_site_valid(&self, building_type: BuildingType, coords: GridCoords, imprint: GridImprint) -> bool {
         let validate = self.almanach.get_building_info(building_type).validate;
-        (validate)(MapObject::Building(building_type), coords, imprint, &self.grids) != PlacementValidity::Invalid
-    }
-
-    fn reserve_and_log(&mut self, building_type: BuildingType, coords: GridCoords, imprint: GridImprint) {
-        self.grids.reserved_coords.reserve(coords, imprint);
-        let name = &self.almanach.get_building_info(building_type).name;
-        Log::info().player().tag(Tag::Build).message(format!("'{name}' placed at ({}, {})", coords.x, coords.y));
+        validate(MapObject::Building(building_type), coords, imprint, &self.grids) != PlacementValidity::Invalid
     }
 }
 
 /// Default observer for `TechnicalStateChanged`. Buildings that want default
 /// "powered && !disabled → operational" behavior attach this. Buildings with
 /// custom needs attach their own observer instead.
+#[log_tags(Tag::Build)]
 pub(crate) fn on_technical_state_changed_recompute_operational(
     trigger: On<TechnicalStateChanged>,
     mut commands: Commands,
@@ -131,23 +134,26 @@ pub(crate) fn on_technical_state_changed_recompute_operational(
     let should_be_operational = has_power && !is_disabled;
     if should_be_operational != has_is_operational {
         if should_be_operational {
+            #[debug_dev("Building {} became operational", trigger.entity)]
             commands.entity(trigger.entity).insert(IsOperational);
         } else {
+            #[debug_dev("Building {} stopped being operational (powered: {has_power}, disabled: {is_disabled})", trigger.entity)]
             commands.entity(trigger.entity).remove::<IsOperational>();
         }
     }
 }
 
-// Building sub-parts markers
+/// Marks a tower's rotating top sprite; holds the tower it belongs to.
 #[derive(Component)]
 #[require(ZDepth::TOWER_TOP)]
 pub(crate) struct MarkerTowerRotationalTop(pub Entity);
 
-
 #[derive(Component)]
 pub(crate) struct TowerTopRotation {
-    pub speed: f32, // in radians per second
+    /// Radians per second.
+    pub speed: f32,
     pub current_angle: f32,
 }
+
 #[derive(EntityEvent)]
 pub(crate) struct BuildingDestroyRequest(pub Entity);

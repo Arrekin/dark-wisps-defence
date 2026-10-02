@@ -12,7 +12,6 @@ use bevy::{
 };
 
 use game_core::prelude::{FaceSurface, MapObject, ObjectFaceRequest, WispType};
-
 use wisps::prelude::WISP_GRID_IMPRINT;
 
 use super::materials::{WispElectricMaterial, WispFireMaterial, WispLightMaterial, WispMaterial, WispWaterMaterial};
@@ -71,11 +70,10 @@ fn attach_wisp_world_face<M: Asset + WispMaterial>(
     commands: &mut Commands,
     entity: Entity,
     alpha: f32,
-    asset_server: &AssetServer,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<M>,
 ) {
-    let mut material = M::make(asset_server);
+    let mut material = M::make();
     material.set_alpha(alpha);
     let world_size = WISP_GRID_IMPRINT.world_size() * M::mesh_scale();
     let mesh = meshes.add(Rectangle::new(world_size.x, world_size.y));
@@ -88,7 +86,6 @@ fn attach_wisp_world_face<M: Asset + WispMaterial>(
 fn on_object_face_request_draw_wisp(
     trigger: On<ObjectFaceRequest>,
     mut commands: Commands,
-    asset_server: Res<AssetServer>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut fire_materials: ResMut<Assets<WispFireFaceMaterial>>,
     mut water_materials: ResMut<Assets<WispWaterFaceMaterial>>,
@@ -115,10 +112,10 @@ fn on_object_face_request_draw_wisp(
         // materials remain in the default state.
         FaceSurface::World => {
             match wisp_type {
-                WispType::Fire => attach_wisp_world_face(&mut commands, entity, alpha, &asset_server, &mut meshes, &mut fire_world_materials),
-                WispType::Water => attach_wisp_world_face(&mut commands, entity, alpha, &asset_server, &mut meshes, &mut water_world_materials),
-                WispType::Light => attach_wisp_world_face(&mut commands, entity, alpha, &asset_server, &mut meshes, &mut light_world_materials),
-                WispType::Electric => attach_wisp_world_face(&mut commands, entity, alpha, &asset_server, &mut meshes, &mut electric_world_materials),
+                WispType::Fire => attach_wisp_world_face(&mut commands, entity, alpha, &mut meshes, &mut fire_world_materials),
+                WispType::Water => attach_wisp_world_face(&mut commands, entity, alpha, &mut meshes, &mut water_world_materials),
+                WispType::Light => attach_wisp_world_face(&mut commands, entity, alpha, &mut meshes, &mut light_world_materials),
+                WispType::Electric => attach_wisp_world_face(&mut commands, entity, alpha, &mut meshes, &mut electric_world_materials),
             }
         }
     }

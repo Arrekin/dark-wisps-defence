@@ -17,6 +17,7 @@ almanach = { workspace = true }
 states = { workspace = true }
 persistence = { workspace = true }
 resources = { workspace = true }
+session = { workspace = true }
 buildings = { workspace = true }
 
 [lints]

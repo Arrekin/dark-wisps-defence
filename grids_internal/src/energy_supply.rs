@@ -9,7 +9,7 @@ use grids::{
 };
 use states::prelude::MapLoadingStage;
 
-pub struct EnergySupplyPlugin;
+pub(crate) struct EnergySupplyPlugin;
 impl Plugin for EnergySupplyPlugin {
     fn build(&self, app: &mut App) {
         app
@@ -23,8 +23,7 @@ impl Plugin for EnergySupplyPlugin {
                     recalculate_power_coverage.run_if(resource_changed::<EnergySupplyRecalculatePower>),
                 ).chain().in_set(EnergySupplySystems),
             ))
-            .add_observer(on_add_supplier_energy_register_supplier)
-            ;
+            .add_observer(on_add_supplier_energy_register_supplier);
     }
 }
 

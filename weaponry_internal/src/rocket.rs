@@ -4,10 +4,11 @@ use bevy::{
 };
 
 use alteration::modifiers::prelude::AttackDamage;
-use game_core::prelude::{ALL_DIRECTIONS, DamageMessage, GridCoords, Property};
-use grids::{
-    wisps::WispsGrid,
+use game_core::{
+    math::angle_difference,
+    prelude::{ALL_DIRECTIONS, DamageMessage, GridCoords, Property},
 };
+use grids::wisps::WispsGrid;
 use logging::prelude::*;
 use persistence::{
     prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveWriter},
@@ -19,7 +20,7 @@ use weaponry::prelude::*;
 use wisps::prelude::Wisp;
 
 /// Plugin for the Rocket projectile
-pub struct RocketPlugin;
+pub(crate) struct RocketPlugin;
 impl Plugin for RocketPlugin {
     fn build(&self, app: &mut App) {
         app
@@ -32,28 +33,35 @@ impl Plugin for RocketPlugin {
             ))
             .add_observer(on_builder_add_spawn_rocket)
             .add_systems(CollectSave, collect_rockets)
-            .register_loader(MapLoadingStage::SpawnMapElements, "rockets", load_rockets)
-            ;
+            .register_loader(MapLoadingStage::SpawnMapElements, "rockets", load_rockets);
     }
 }
 
 pub(crate) const ROCKET_BASE_IMAGE: &str = "projectiles/rocket.png";
 pub(crate) const ROCKET_EXHAUST_IMAGE: &str = "projectiles/rocket_exhaust.png";
 
+// Flight tuning
+const ROCKET_SPEED: f32 = 400.0;
+/// Radians per second.
+const ROCKET_TURN_SPEED: f32 = 1.5;
+const ROCKET_HIT_DISTANCE: f32 = 6.0;
+
+#[log_tags(Tag::GameSave)]
 fn collect_rockets(
     rockets: Query<(Entity, &Transform, &RocketTarget, &AttackDamage), With<Rocket>>,
     mut save: SaveWriter,
 ) {
     if rockets.is_empty() { return; }
-    let rows: Vec<(i64, f32, f32, Option<i64>, f32, f32)> = rockets
+
+    #[debug_dev("Saving {} rockets", rows.len())]
+    let rows: Vec<(i64, Vec2, Option<i64>, f32, f32)> = rockets
         .iter()
         .map(|(entity, transform, target, damage)| {
             let (axis, angle) = transform.rotation.to_axis_angle();
             let rotation_z = if axis.z > 0.0 { angle } else { -angle };
             (
                 entity.index_u32() as i64,
-                transform.translation.x,
-                transform.translation.y,
+                transform.translation.xy(),
                 Some(target.0.index_u32() as i64),
                 rotation_z,
                 damage.get(),
@@ -61,9 +69,9 @@ fn collect_rockets(
         })
         .collect();
     save.submit(move |tx| {
-        for (id, pos_x, pos_y, target_wisp_id, rotation_z, damage) in rows {
+        for (id, position, target_wisp_id, rotation_z, damage) in rows {
             tx.register_entity(id)?;
-            tx.save_world_position(id, Vec2::new(pos_x, pos_y))?;
+            tx.save_world_position(id, position)?;
             tx.execute(
                 "INSERT OR REPLACE INTO rockets (id, target_wisp_id, rotation_z, damage) VALUES (?1, ?2, ?3, ?4)",
                 rusqlite::params![id, target_wisp_id, rotation_z, damage],
@@ -73,6 +81,7 @@ fn collect_rockets(
     });
 }
 
+#[log_tags(Tag::GameLoad)]
 fn load_rockets(ctx: &mut LoadContext) -> rusqlite::Result<()> {
     let mut stmt = ctx.conn.prepare("SELECT id, target_wisp_id, rotation_z, damage FROM rockets")?;
     let mut rows = stmt.query([])?;
@@ -80,15 +89,11 @@ fn load_rockets(ctx: &mut LoadContext) -> rusqlite::Result<()> {
         let old_id: i64 = row.get(0)?;
         let target_wisp_old_id: Option<i64> = row.get(1)?;
         let rotation_z: f32 = row.get(2)?;
-        let damage_val: f32 = row.get(3)?;
+        let damage: f32 = row.get(3)?;
         let world_position = ctx.conn.get_world_position(old_id)?;
 
-        let Some(entity) = ctx.entity(old_id) else {
-            Log::warn().dev().tag(Tag::GameLoad).message(format!(
-                "rockets: unmapped id for row {old_id}"
-            ));
-            continue;
-        };
+        #[warn_dev("Rocket with old ID {old_id} has no corresponding new entity")]
+        let Some(entity) = ctx.entity(old_id) else { continue };
         let new_target_wisp = target_wisp_old_id
             .and_then(|id| ctx.entity(id))
             .unwrap_or(Entity::PLACEHOLDER);
@@ -97,7 +102,7 @@ fn load_rockets(ctx: &mut LoadContext) -> rusqlite::Result<()> {
             world_position,
             Quat::from_rotation_z(rotation_z),
             new_target_wisp,
-            AttackDamage::new(damage_val),
+            AttackDamage::new(damage),
         );
         ctx.insert(entity, builder);
     }
@@ -119,7 +124,7 @@ fn on_builder_add_spawn_rocket(
             Sprite {
                 image: asset_server.load(ROCKET_BASE_IMAGE),
                 custom_size: Some(Vec2::new(40.0, 20.0)),
-                ..Default::default()
+                ..default()
             },
             Transform {
                 translation: builder.world_position.extend(0.),
@@ -142,7 +147,6 @@ fn on_builder_add_spawn_rocket(
         ));
 }
 
-
 fn rocket_move_system(
     time: Res<Time>,
     mut rockets: Query<(&mut Transform, &mut RocketTarget), With<Rocket>>,
@@ -162,30 +166,23 @@ fn rocket_move_system(
         // Calculate the direction vector to the target
         let direction_vector = (target_position - transform.translation.xy()).normalize();
 
-        // Calculate the current forward direction (assuming it's the local y-axis)
+        // Calculate the current forward direction (the local x-axis)
         let current_direction = transform.local_x().xy();
 
-        // Move the entity forward (along the local y-axis)
-        transform.translation += (current_direction * time.delta_secs() * 400.0).extend(0.0);
+        // Move the entity forward (along the local x-axis)
+        transform.translation += (current_direction * time.delta_secs() * ROCKET_SPEED).extend(0.0);
 
         // Calculate the target angle
         let target_angle = direction_vector.y.atan2(direction_vector.x);
         let current_angle = current_direction.y.atan2(current_direction.x);
 
         // Calculate the shortest rotation to the target angle
-        let mut angle_diff = target_angle - current_angle;
-        if angle_diff > std::f32::consts::PI {
-            angle_diff -= 2.0 * std::f32::consts::PI;
-        } else if angle_diff < -std::f32::consts::PI {
-            angle_diff += 2.0 * std::f32::consts::PI;
-        }
+        let angle_delta = angle_difference(target_angle, current_angle);
 
         // Apply the rotation smoothly
-        let rotation_speed = 1.5; // radians per second
-        let max_rotation_speed = rotation_speed * time.delta_secs();
-        let rotation_amount = angle_diff.clamp(-max_rotation_speed, max_rotation_speed);
+        let max_rotation_speed = ROCKET_TURN_SPEED * time.delta_secs();
+        let rotation_amount = angle_delta.clamp(-max_rotation_speed, max_rotation_speed);
         transform.rotate(Quat::from_rotation_z(rotation_amount));
-
     }
 }
 
@@ -204,11 +201,10 @@ fn rocket_hit_system(
         }
 
         let Ok(wisp_transform) = wisps_transforms.get(target.0) else { continue };
-        if rocket_transform.translation.xy().distance(wisp_transform.translation.xy()) > 6. { continue; }
+        if rocket_transform.translation.xy().distance(wisp_transform.translation.xy()) > ROCKET_HIT_DISTANCE { continue; }
 
-        let coords = GridCoords::from_transform(rocket_transform);
-        for (dx, dy) in ALL_DIRECTIONS.iter().chain(&[(0, 0)]) {
-            let blast_zone_coords = coords.shifted((*dx, *dy));
+        for direction in ALL_DIRECTIONS.iter().chain(&[(0, 0)]) {
+            let blast_zone_coords = rocket_coords.shifted(*direction);
             if !blast_zone_coords.are_in_bounds(wisps_grid.bounds) { continue; }
 
             commands.spawn(BuilderExplosion(blast_zone_coords));
@@ -228,9 +224,9 @@ fn rocket_hit_system(
 
 fn exhaust_blinking_system(
     time: Res<Time>,
-    mut query: Query<(&mut Sprite, &RocketExhaust)>,
+    mut exhausts: Query<&mut Sprite, With<RocketExhaust>>,
 ) {
-    for (mut sprite, _) in query.iter_mut() {
+    for mut sprite in exhausts.iter_mut() {
         sprite.color.set_alpha(if time.elapsed_secs() % 1. < 0.85 { 1. } else { 0.0 });
     }
 }

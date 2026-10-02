@@ -31,8 +31,7 @@ impl Plugin for EmissionsOverlayPlugin {
                 EmissionsOverlayConfig::on_config_change_system.run_if(resource_changed::<EmissionsOverlayConfig>),
                 refresh_display_system.run_if(in_state(EmissionsOverlayState::Show)),
                 (|mut config: ResMut<EmissionsOverlayConfig>| { config.is_overlay_globally_enabled ^= true; }).run_if(input_just_released(KeyCode::Digit6)),
-            ))
-            ;
+            ));
     }
 }
 
@@ -52,7 +51,7 @@ pub struct EmissionsOverlayConfig {
 impl Default for EmissionsOverlayConfig {
     fn default() -> Self {
         Self {
-            is_overlay_globally_enabled: true,
+            is_overlay_globally_enabled: false,
             emissions_type: EmissionsType::Energy,
             grid_version: GridVersion::default(),
         }
@@ -63,11 +62,8 @@ impl EmissionsOverlayConfig {
         overlay_config: Res<EmissionsOverlayConfig>,
         mut overlay_state: ResMut<NextState<EmissionsOverlayState>>,
     ) {
-        if overlay_config.is_overlay_globally_enabled {
-            overlay_state.set(EmissionsOverlayState::Show);
-        } else {
-            overlay_state.set(EmissionsOverlayState::Hide);
-        }
+        let shown = overlay_config.is_overlay_globally_enabled;
+        overlay_state.set(if shown { EmissionsOverlayState::Show } else { EmissionsOverlayState::Hide });
     }
 }
 
@@ -121,7 +117,7 @@ impl EmissionsOverlay {
     ) {
         if let Some(overlay_entity) = overlay {
             commands.entity(overlay_entity.into_inner()).despawn();
-        };
+        }
 
         commands.spawn((
             super::overlay_bundle(&mut meshes, &mut materials, &map_info),
@@ -147,21 +143,21 @@ fn refresh_display_system(
     let mut overlay_material = materials.get_mut(overlay.into_inner()).unwrap();
 
     // Find min/max for GPU-side normalization
-    let (mut min_val, mut max_val) = (f32::MAX, f32::MIN);
+    let (mut min_value, mut max_value) = (f32::MAX, f32::MIN);
     for emissions in emissions_grid.grid.iter() {
         let value = match overlay_config.emissions_type {
             EmissionsType::Energy => emissions.energy,
         };
-        if value != 0. { min_val = min_val.min(value); }
-        max_val = max_val.max(value);
+        if value != 0. { min_value = min_value.min(value); }
+        max_value = max_value.max(value);
     }
-    if min_val == f32::MAX { min_val = 0.; }
+    if min_value == f32::MAX { min_value = 0.; }
 
     // Build cell data
     local_buffer_data.clear();
-    local_buffer_data.extend(emissions_grid.grid.iter().map(|e| {
+    local_buffer_data.extend(emissions_grid.grid.iter().map(|emissions| {
         let energy = match overlay_config.emissions_type {
-            EmissionsType::Energy => e.energy,
+            EmissionsType::Energy => emissions.energy,
         };
         EmissionsCell { energy }
     }));
@@ -176,5 +172,5 @@ fn refresh_display_system(
     }
 
     // Update uniforms
-    overlay_material.uniforms = EmissionsUniformData::new(emissions_grid.bounds, min_val, max_val);
+    overlay_material.uniforms = EmissionsUniformData::new(emissions_grid.bounds, min_value, max_value);
 }

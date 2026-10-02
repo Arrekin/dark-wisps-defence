@@ -69,6 +69,7 @@ fn begin_screenshot_request(
         });
 }
 
+#[log_tags(Tag::Byoaic)]
 fn save_capture(image: &Image) -> ScreenshotResult {
     match save_png(image) {
         Ok(path) => ScreenshotResult::Saved {
@@ -77,7 +78,7 @@ fn save_capture(image: &Image) -> ScreenshotResult {
             height: image.height(),
         },
         Err(error) => {
-            Log::error().dev().tag(Tag::Byoaic).message(format!("Screenshot not saved: {error}"));
+            error_dev!("Screenshot not saved: {error}");
             ScreenshotResult::Failed { error }
         }
     }

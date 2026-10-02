@@ -6,11 +6,12 @@ pub(crate) mod panel;
 pub(crate) mod restriction_time_allowance;
 
 use bevy::prelude::*;
+
 use narrative::prelude::ObjectiveGoalRegistry;
 use persistence::prelude::{AppGameLoadSaveExtension, CollectSave};
 use states::prelude::MapLoadingStage;
 
-pub struct ObjectivesPlugin;
+pub(crate) struct ObjectivesPlugin;
 impl Plugin for ObjectivesPlugin {
     fn build(&self, app: &mut App) {
         app
@@ -30,7 +31,6 @@ impl Plugin for ObjectivesPlugin {
                 restriction_time_allowance::RestrictionTimeAllowancePlugin,
                 panel::ObjectivesPanelPlugin,
                 moments::ObjectiveMomentsPlugin,
-            ))
-            ;
+            ));
     }
 }

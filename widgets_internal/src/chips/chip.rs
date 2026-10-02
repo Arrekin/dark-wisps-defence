@@ -16,7 +16,7 @@ const CHIP_NEUTRAL_BORDER: Color = Color::srgb_u8(0x23, 0x3A, 0x68);
 // Shared with the specializations, which style on top of the core.
 pub(super) const CHIP_FONT_SIZE: f32 = 12.0;
 
-pub struct ChipPlugin;
+pub(crate) struct ChipPlugin;
 impl Plugin for ChipPlugin {
     fn build(&self, app: &mut App) {
         app

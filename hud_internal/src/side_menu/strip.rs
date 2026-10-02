@@ -6,8 +6,10 @@ use almanach::prelude::*;
 use game_core::prelude::*;
 use states::AdminMode;
 
-use super::section::{SectionLatch, SectionOffering};
-use super::tile::PlacementTile;
+use super::{
+    section::{SectionLatch, SectionOffering},
+    tile::PlacementTile,
+};
 
 /// Clearance between the tiles and the strip edge, and between one tile and the next.
 pub(crate) const STRIP_TILE_INSET: f32 = 5.;

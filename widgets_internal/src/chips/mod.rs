@@ -7,7 +7,7 @@ pub(crate) mod strip;
 
 /// Aggregates the chip core, the strip, and every chip specialization. Each
 /// specialization is its own plugin so that adding one touches a single file.
-pub struct ChipsPlugin;
+pub(crate) struct ChipsPlugin;
 impl Plugin for ChipsPlugin {
     fn build(&self, app: &mut App) {
         app

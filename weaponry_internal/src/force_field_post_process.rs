@@ -34,7 +34,7 @@ use weaponry::{
     prelude::ForceField,
 };
 
-pub struct ForceFieldPostProcessPlugin;
+pub(crate) struct ForceFieldPostProcessPlugin;
 impl Plugin for ForceFieldPostProcessPlugin {
     fn build(&self, app: &mut App) {
         app
@@ -48,8 +48,7 @@ impl Plugin for ForceFieldPostProcessPlugin {
             .init_resource::<FieldRippleEntries>()
             .add_observer(ForceFieldPostProcess::on_add_camera_attach_post_process)
             .add_observer(on_field_entered_create_ripple)
-            .add_systems(Update, ForceFieldPostProcess::update)
-            ;
+            .add_systems(Update, ForceFieldPostProcess::update);
 
         let Some(render_app) = app.get_sub_app_mut(RenderApp) else { return; };
         render_app
@@ -61,7 +60,7 @@ impl Plugin for ForceFieldPostProcessPlugin {
                 GpuFieldRippleStorage::prepare.in_set(RenderSystems::PrepareResources),
             ))
             // Ordering against the other post-process passes lives in the
-            // visuals crate's PostProcessOrderingPlugin (added after all effect plugins).
+            // visuals_internal's PostProcessOrderingPlugin (added after all effect plugins).
             .add_systems(Core2d, force_field_post_process_pass.in_set(ForceFieldPostProcessSet));
     }
 }
@@ -218,12 +217,12 @@ fn on_field_entered_create_ripple(
 
     // Only record ripples for fields visible to the main camera.
     // Using field_center + generous margin so partially-off-screen domes aren't skipped.
-    let (cam_transform, cam_projection) = *camera;
-    let Projection::Orthographic(ortho) = cam_projection else { return; };
-    let cam_pos  = cam_transform.translation.xy();
-    let half     = Vec2::new(ortho.area.width(), ortho.area.height()) * 0.5;
-    let margin   = Vec2::splat(200.0);
-    if (field_center - cam_pos).abs().cmpgt(half + margin).any() { return; }
+    let (camera_transform, camera_projection) = *camera;
+    let Projection::Orthographic(orthographic) = camera_projection else { return; };
+    let camera_position = camera_transform.translation.xy();
+    let half_viewport   = Vec2::new(orthographic.area.width(), orthographic.area.height()) * 0.5;
+    let margin          = Vec2::splat(200.0);
+    if (field_center - camera_position).abs().cmpgt(half_viewport + margin).any() { return; }
 
     let current_time = time.elapsed_secs();
     ripples.push(GpuFieldRipple {
@@ -266,14 +265,14 @@ impl ForceFieldPostProcess {
             });
         }
 
-        let count = entries.0.len() as u32;
+        let field_count = entries.0.len() as u32;
         let global_time = time.elapsed_secs();
         for (mut post_process, transform, projection) in cameras.iter_mut() {
-            let Projection::Orthographic(ortho) = projection else { continue; };
+            let Projection::Orthographic(orthographic) = projection else { continue; };
             post_process.camera_world_pos = transform.translation.xy();
-            post_process.viewport_world_size = Vec2::new(ortho.area.width(), ortho.area.height());
+            post_process.viewport_world_size = Vec2::new(orthographic.area.width(), orthographic.area.height());
             post_process.global_time = global_time;
-            post_process.field_count = count;
+            post_process.field_count = field_count;
         }
     }
 }
@@ -287,12 +286,12 @@ fn force_field_post_process_pass(
         &ForceFieldPostProcess,
         &ExtractedCamera,
     )>,
-    pipeline_res: Res<ForceFieldPostProcessPipeline>,
+    post_process_pipeline: Res<ForceFieldPostProcessPipeline>,
     pipeline_cache: Res<PipelineCache>,
     settings_uniforms: Res<ComponentUniforms<ForceFieldPostProcess>>,
     field_storage: Res<GpuForceFieldStorage>,
     ripple_storage: Res<GpuFieldRippleStorage>,
-    mut ctx: RenderContext,
+    mut render_context: RenderContext,
 ) {
     let (view_target, settings_index, settings, camera) = view.into_inner();
 
@@ -306,7 +305,7 @@ fn force_field_post_process_pass(
         "force field post-process requires an HDR camera; this PostProcessCamera lacks `Hdr`. \
          Add the `Hdr` component, or add a pipeline variant for its target format."
     );
-    let pipeline_id = pipeline_res.pipeline_id;
+    let pipeline_id = post_process_pipeline.pipeline_id;
     let Some(pipeline) = pipeline_cache.get_render_pipeline(pipeline_id) else { return; };
     let Some(settings_binding) = settings_uniforms.uniforms().binding() else { return; };
     let Some(storage_binding) = field_storage.buffer.binding() else { return; };
@@ -314,19 +313,19 @@ fn force_field_post_process_pass(
 
     let post_process = view_target.post_process_write();
 
-    let bind_group = ctx.render_device().create_bind_group(
+    let bind_group = render_context.render_device().create_bind_group(
         "force_field_post_process_bind_group",
-        &pipeline_cache.get_bind_group_layout(&pipeline_res.layout),
+        &pipeline_cache.get_bind_group_layout(&post_process_pipeline.layout),
         &BindGroupEntries::sequential((
             post_process.source,
-            &pipeline_res.sampler,
+            &post_process_pipeline.sampler,
             settings_binding.clone(),
             storage_binding.clone(),
             ripple_binding.clone(),
         )),
     );
 
-    let mut render_pass = ctx
+    let mut render_pass = render_context
         .command_encoder()
         .begin_render_pass(&RenderPassDescriptor {
             label: Some("force_field_post_process_pass"),

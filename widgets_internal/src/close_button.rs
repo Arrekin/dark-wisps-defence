@@ -17,8 +17,8 @@ impl Plugin for CloseButtonPlugin {
 fn on_builder_add_spawn_close_button(
     trigger: On<Add, BuilderCloseButton>,
     mut commands: Commands,
-    builders: Query<&BuilderCloseButton>,
     mut materials: ResMut<Assets<CloseButtonMaterial>>,
+    builders: Query<&BuilderCloseButton>,
 ) {
     let entity = trigger.entity;
     let Ok(builder) = builders.get(entity) else { return };
@@ -43,8 +43,8 @@ fn on_builder_add_spawn_close_button(
 
 fn sync_close_buttons(
     time: Res<Time>,
-    mut buttons: Query<(&mut CloseButton, &MaterialNode<CloseButtonMaterial>), Changed<CloseButton>>,
     mut materials: ResMut<Assets<CloseButtonMaterial>>,
+    mut buttons: Query<(&mut CloseButton, &MaterialNode<CloseButtonMaterial>), Changed<CloseButton>>,
 ) {
     let now = time.elapsed_secs();
     for (mut button, material_handle) in buttons.iter_mut() {

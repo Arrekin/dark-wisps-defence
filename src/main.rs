@@ -1,4 +1,4 @@
-use bevy::{ecs::message::Messages, prelude::*};
+use bevy::{prelude::*, window::PresentMode};
 
 use persistence::{LoadGameSignal, LoadMapConfig, MapFileName, MapSource, list_map_file_names, run_migrations_on_paths};
 use states::{AdminMode, prelude::*};
@@ -10,7 +10,7 @@ fn main() {
             DefaultPlugins
                 .set(ImagePlugin::default_nearest())
                 // Warning: VSync is causing a lot of issues with mouse events processing
-                .set(WindowPlugin{ primary_window: Some(Window { present_mode: bevy::window::PresentMode::AutoNoVsync, ..default()}), ..default() }),
+                .set(WindowPlugin { primary_window: Some(Window { present_mode: PresentMode::AutoNoVsync, ..default() }), ..default() }),
             MeshPickingPlugin,
             buildings_internal::BuildingsPlugin,
             map_objects_internal::MapObjectsPlugin,
@@ -45,13 +45,16 @@ fn main() {
         .run();
 }
 
-#[allow(dead_code)]
+#[expect(dead_code, reason = "alternative launch actions, selected by editing `LaunchAction::default`")]
 enum LaunchAction {
     ApplySQLMigrations,
     RebuildSQLMigrationsMetadata,
     StartMap(LoadMapConfig),
 }
 impl Default for LaunchAction {
+    /// The launch switchboard: edit these fields by hand to start another map, paused, or in admin
+    /// mode. Every field stays spelled out on purpose; do not replace this with a
+    /// `LoadMapConfig` constructor, even when the values happen to match one.
     fn default() -> Self {
         LaunchAction::StartMap(LoadMapConfig {
             source: MapSource::File("maps/test_map.dwd".into()),
@@ -66,14 +69,12 @@ impl Command for LaunchAction {
     fn apply(self, world: &mut World) {
         match self {
             LaunchAction::ApplySQLMigrations => {
-                let paths = Self::all_dwd_paths();
-                run_migrations_on_paths(&paths, false);
-                world.resource_mut::<Messages<bevy::app::AppExit>>().write(bevy::app::AppExit::Success);
+                run_migrations_on_paths(&Self::all_dwd_paths(), false);
+                world.write_message(AppExit::Success);
             }
             LaunchAction::RebuildSQLMigrationsMetadata => {
-                let paths = Self::all_dwd_paths();
-                run_migrations_on_paths(&paths, true);
-                world.resource_mut::<Messages<bevy::app::AppExit>>().write(bevy::app::AppExit::Success);
+                run_migrations_on_paths(&Self::all_dwd_paths(), true);
+                world.write_message(AppExit::Success);
             }
             LaunchAction::StartMap(config) => {
                 world.trigger(LoadGameSignal(config));

@@ -1,21 +1,22 @@
 use bevy::prelude::*;
 
-use alteration::effects::{EffectTarget, ModifierContributions};
-use alteration::modifiers::{MaxIntegrityPoints, ModifierBank};
+use alteration::{
+    effects::{EffectTarget, ModifierContributions},
+    modifiers::{MaxIntegrityPoints, ModifierBank},
+};
 use game_core::prelude::{IntegrityPoints, Property};
 
-pub struct ModifiersPlugin;
+pub(crate) struct ModifiersPlugin;
 impl Plugin for ModifiersPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_observer(apply_modifier_contributions_on_insert)
-            .add_observer(remove_modifier_contributions_on_remove)
-            .add_observer(clamp_integrity_points_to_max_on_insert)
-            ;
+            .add_observer(on_insert_modifier_contributions_apply_to_bank)
+            .add_observer(on_remove_modifier_contributions_remove_from_bank)
+            .add_observer(on_insert_max_integrity_points_clamp_integrity_points);
     }
 }
 
-fn apply_modifier_contributions_on_insert(
+fn on_insert_modifier_contributions_apply_to_bank(
     trigger: On<Insert, ModifierContributions>,
     mut commands: Commands,
     instances: Query<(&EffectTarget, &ModifierContributions)>,
@@ -29,7 +30,7 @@ fn apply_modifier_contributions_on_insert(
     bank.apply_contributions(effect_entity, contributions, &mut entity_commands);
 }
 
-fn remove_modifier_contributions_on_remove(
+fn on_remove_modifier_contributions_remove_from_bank(
     trigger: On<Remove, ModifierContributions>,
     mut commands: Commands,
     instances: Query<(&EffectTarget, &ModifierContributions)>,
@@ -43,13 +44,12 @@ fn remove_modifier_contributions_on_remove(
     bank.remove_contributions(effect_entity, contributions, &mut entity_commands);
 }
 
-fn clamp_integrity_points_to_max_on_insert(
+fn on_insert_max_integrity_points_clamp_integrity_points(
     trigger: On<Insert, MaxIntegrityPoints>,
     mut integrity_points_components: Query<(&mut IntegrityPoints, &MaxIntegrityPoints)>,
 ) {
     let Ok((mut integrity_points, max_integrity_points)) = integrity_points_components.get_mut(trigger.entity) else { return; };
-    integrity_points.max = max_integrity_points.get();
-    if integrity_points.current > max_integrity_points.get() {
-        integrity_points.current = max_integrity_points.get();
-    }
+    let max = max_integrity_points.get();
+    integrity_points.max = max;
+    integrity_points.current = integrity_points.current.min(max);
 }

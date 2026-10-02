@@ -1,12 +1,11 @@
 pub(crate) mod face;
 pub(crate) mod materials;
 pub(crate) mod spawning;
-pub(crate) mod systems;
 pub(crate) mod summoning;
+pub(crate) mod systems;
 pub(crate) mod tooltip;
 
-use bevy::prelude::*;
-use bevy::sprite_render::Material2dPlugin;
+use bevy::{prelude::*, sprite_render::Material2dPlugin};
 
 use almanach::{WispInfo, prelude::*};
 use game_core::motion::MotionSystems;
@@ -30,20 +29,20 @@ impl Plugin for WispsPlugin {
                 Material2dPlugin::<materials::WispLightMaterial>::default(),
                 Material2dPlugin::<materials::WispElectricMaterial>::default(),
             ))
-            .add_plugins(summoning::SummoningPlugin)
-            .add_plugins(face::WispFacePlugin)
-            .add_plugins(tooltip::WispTooltipPlugin)
+            .add_plugins((
+                summoning::SummoningPlugin,
+                face::WispFacePlugin,
+                tooltip::WispTooltipPlugin,
+            ))
             .add_systems(PreUpdate,
                 systems::remove_dead_wisps.run_if(in_state(GameState::Running)),
             )
             .add_systems(Update, (
-                (
-                    systems::move_wisps,
-                    systems::target_wisps,
-                    systems::wisp_charge_attack,
-                    systems::collide_wisps,
-                ).run_if(in_state(GameState::Running)),
-            ))
+                systems::move_wisps,
+                systems::target_wisps,
+                systems::wisp_charge_attack,
+                systems::collide_wisps,
+            ).run_if(in_state(GameState::Running)))
             .add_systems(Update, (
                 sync_effect_visuals::<materials::WispFireMaterial>,
                 sync_effect_visuals::<materials::WispWaterMaterial>,

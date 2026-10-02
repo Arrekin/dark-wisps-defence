@@ -11,7 +11,7 @@ use alteration::effects::ExpiresAt;
 use session::GameClock;
 use states::GameState;
 
-pub struct EffectsPlugin;
+pub(crate) struct EffectsPlugin;
 impl Plugin for EffectsPlugin {
     fn build(&self, app: &mut App) {
         app
@@ -19,7 +19,7 @@ impl Plugin for EffectsPlugin {
             .add_systems(PostUpdate,
                 EffectsExpiryQueue::process.run_if(in_state(GameState::Running)),
             )
-            .add_observer(enqueue_effect_expiry_on_insert)
+            .add_observer(on_insert_expires_at_enqueue_expiry)
             .add_plugins((
                 visual::EffectVisualsPlugin,
                 brittle::BrittleEffectPlugin,
@@ -28,7 +28,7 @@ impl Plugin for EffectsPlugin {
     }
 }
 
-fn enqueue_effect_expiry_on_insert(
+fn on_insert_expires_at_enqueue_expiry(
     trigger: On<Insert, ExpiresAt>,
     mut queue: ResMut<EffectsExpiryQueue>,
     expires: Query<&ExpiresAt>,

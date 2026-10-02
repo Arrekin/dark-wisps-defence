@@ -26,23 +26,19 @@ use states::prelude::*;
 use weaponry::prelude::*;
 use wisps::prelude::*;
 
-use crate::common::*;
-use crate::tooltip::building_tooltip;
+use crate::{common::*, tooltip::building_tooltip};
 
-pub struct TowerCannonPlugin;
+pub(crate) struct TowerCannonPlugin;
 impl Plugin for TowerCannonPlugin {
     fn build(&self, app: &mut App) {
         let almanach_info = BuilderTowerCannon::almanach_info(app.world().resource::<AssetServer>());
         app
-            .add_systems(Update, (
-                shooting_system.run_if(in_state(GameState::Running)),
-            ))
+            .add_systems(Update, shooting_system.run_if(in_state(GameState::Running)))
             .add_observer(BuilderTowerCannon::on_builder_add_spawn_tower_cannon)
             .add_observer(on_tower_cannon_place_request_do_so)
             .add_systems(CollectSave, collect_tower_cannons)
             .register_loader(MapLoadingStage::SpawnMapElements, "tower_cannons", load_tower_cannons)
-            .register_building(BuildingType::Tower(TowerType::Cannon), almanach_info)
-            ;
+            .register_building(BuildingType::Tower(TowerType::Cannon), almanach_info);
     }
 }
 
@@ -105,8 +101,8 @@ impl BuilderTowerCannon {
         let grid_imprint = building_info.grid_imprint;
 
         let mut entity_commands = commands.entity(entity);
-        if let Some(ip) = builder.integrity_points {
-            entity_commands.insert(IntegrityPoints::new(ip));
+        if let Some(integrity_points) = builder.integrity_points {
+            entity_commands.insert(IntegrityPoints::new(integrity_points));
         }
         if builder.disabled_by_player {
             entity_commands.insert(DisabledByPlayer);
@@ -119,7 +115,7 @@ impl BuilderTowerCannon {
                 Sprite {
                     image: building_info.sprite.clone(),
                     custom_size: Some(grid_imprint.world_size()),
-                    ..Default::default()
+                    ..default()
                 },
                 builder.grid_position,
                 grid_imprint,
@@ -170,28 +166,29 @@ fn on_tower_cannon_place_request_do_so(
     commands.spawn(BuilderTowerCannon::new(coords));
 }
 
+#[log_tags(Tag::GameSave)]
 fn collect_tower_cannons(
     towers: Query<(Entity, &GridCoords, &IntegrityPoints, Has<DisabledByPlayer>), With<TowerCannon>>,
     mut save: SaveWriter,
 ) {
     if towers.is_empty() { return; }
-    let rows: Vec<(i64, i32, i32, f32, bool)> = towers
+
+    #[debug_dev("Saving {} tower cannons", rows.len())]
+    let rows: Vec<(i64, GridCoords, f32, bool)> = towers
         .iter()
         .map(|(entity, coords, integrity_points, disabled_by_player)| {
             (
                 entity.index_u32() as i64,
-                coords.x,
-                coords.y,
+                *coords,
                 integrity_points.get_current(),
                 disabled_by_player,
             )
         })
         .collect();
-    Log::debug().dev().tag(Tag::GameSave).message(format!("Saving {} tower cannons", rows.len()));
     save.submit(move |tx| {
-        for (id, gx, gy, integrity_points, disabled_by_player) in rows {
+        for (id, coords, integrity_points, disabled_by_player) in rows {
             tx.save_marker("tower_cannons", id)?;
-            tx.save_grid_coords(id, GridCoords { x: gx, y: gy })?;
+            tx.save_grid_coords(id, coords)?;
             tx.save_integrity_points(id, integrity_points)?;
             if disabled_by_player {
                 tx.save_disabled_by_player(id)?;
@@ -201,6 +198,7 @@ fn collect_tower_cannons(
     });
 }
 
+#[log_tags(Tag::GameLoad)]
 fn load_tower_cannons(ctx: &mut LoadContext) -> rusqlite::Result<()> {
     let mut stmt = ctx.conn.prepare("SELECT id FROM tower_cannons")?;
     let mut rows = stmt.query([])?;
@@ -210,10 +208,8 @@ fn load_tower_cannons(ctx: &mut LoadContext) -> rusqlite::Result<()> {
         let integrity_points = ctx.conn.get_integrity_points(old_id)?;
         let disabled_by_player = ctx.conn.get_disabled_by_player(old_id)?;
 
-        let Some(entity) = ctx.entity(old_id) else {
-            Log::warn().dev().tag(Tag::GameLoad).message(format!("TowerCannon with old ID {old_id} has no corresponding new entity"));
-            continue;
-        };
+        #[warn_dev("TowerCannon with old ID {old_id} has no corresponding new entity")]
+        let Some(entity) = ctx.entity(old_id) else { continue };
         let mut builder = BuilderTowerCannon::new(grid_position)
             .with_integrity_points(integrity_points);
         if disabled_by_player {
@@ -239,11 +235,8 @@ fn shooting_system(
             continue;
         };
 
-        // If wisps has path, target the next path position. Otherwise, target the wisp's current position.
-        let target_world_position = wisp_grid_path.next_in_path().map_or(
-            wisp_coords.to_world_position_centered(WISP_GRID_IMPRINT),
-            |coords| coords.to_world_position_centered(WISP_GRID_IMPRINT)
-        );
+        // Aim at the next cell on the wisp's path, or at its current cell when it has no path.
+        let target_world_position = wisp_grid_path.next_in_path().unwrap_or(*wisp_coords).to_world_position_centered(WISP_GRID_IMPRINT);
 
         commands.spawn(BuilderCannonball::new(transform.translation.xy(), target_world_position, *attack_damage));
         timer.0.reset();

@@ -1,9 +1,6 @@
-use bevy::asset::{AssetServer, Handle};
-use bevy::ecs::resource::Resource;
-use bevy::prelude::*;
-use bevy::text::Font;
+use bevy::{prelude::*, text::Font};
 
-pub struct TypographyPlugin;
+pub(crate) struct TypographyPlugin;
 impl Plugin for TypographyPlugin {
     fn build(&self, app: &mut App) {
         app

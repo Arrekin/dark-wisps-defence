@@ -1,33 +1,25 @@
-//! # Detail View Shell
+//! # Research Detail View
 //!
-//! The expanded card showing one research in full: icon, name, description,
-//! progress bar, live status, remaining cost, grants, and the action button.
-//! The compact grid entry is [`crate::ui::tile`]; this is what the band above it
-//! shows. What the card following the running research adds is in [`super::active`].
+//! The card showing one research in full: icon, name, description, progress bar,
+//! status, remaining cost, grants and the action button. The panel's band holds two
+//! cards; [`super::active`] adds the effects of the card following the running research.
 //!
-//! ## A view never picks its own subject
+//! ## Which research a card shows
 //!
-//! A view is bound at spawn to a marker component through
-//! [`ResearchDetailViewSource`], and shows whichever research currently carries
-//! that marker — `ResearchActive` for the active view, `ResearchUISelected` for
-//! the inspected one. Both markers sit on at most one research at a time, so the
-//! binding resolves without a search, and a research losing its marker (by being
-//! parked, deselected, or despawned) empties the view. The view therefore never
-//! stores an entity it would have to invalidate.
+//! Each card is spawned with a [`ResearchDetailViewSource`] naming a marker component and
+//! shows the research carrying that marker: `ResearchActive` for the active card,
+//! `ResearchUISelected` for the selected one. Each marker is on at most one research. When
+//! the marker moves, the card follows it; when no research carries it, the card shows its
+//! empty text.
 //!
-//! Adding a third view costs a marker component, a spawn, and one call to
-//! `add_source_observers`. There is no per-source branch anywhere in this
-//! module: the marker is a type parameter, and the title and empty-state text
-//! are builder data.
+//! A new card needs a marker, a spawn with its title and empty text, and an
+//! `add_source_observers` call for the marker.
 //!
-//! ## Content is rebuilt, not patched
+//! ## Updates
 //!
-//! Changing subject despawns the content tree and builds a new one, because
-//! almost every node is subject-specific. Only the two status labels change
-//! often enough to be worth writing in place, and they are reachable through
-//! [`ResearchDetailViewContent`] — a component that exists only while a subject
-//! is shown, so there is no such thing as a view holding status nodes that
-//! aren't there.
+//! When the shown research changes, the card's content is despawned and built anew. While
+//! the panel is open, the progress percent, remaining time and cost chips update in place
+//! every frame.
 
 use std::marker::PhantomData;
 
@@ -49,9 +41,7 @@ use widgets::{
     },
 };
 
-use crate::process::units_paid;
-
-use super::super::action_button::ResearchActionButton;
+use crate::{process::units_paid, ui::action_button::ResearchActionButton};
 
 pub(crate) struct DetailViewShellPlugin;
 impl Plugin for DetailViewShellPlugin {
@@ -328,37 +318,27 @@ fn on_builder_add_spawn_research_detail_view(
 // CONTENT BUILD
 // ============================================================================
 
-/// Clears the previous tree and builds the one the builder asks for.
-///
-/// `Insert` rather than `Add`, and the clear lives here rather than at the call
-/// site, because a switch queues two builders in a row: parking the old research
-/// clears the view and activating the new one fills it. The second builder lands
-/// on an entity still carrying the first, which is an overwrite — `Add` would
-/// not fire and the view would keep the empty state. Owning the clear also keeps
-/// the rebuild to a single command, so no interleaving can put a despawn after
-/// the children it was meant to remove.
-///
-/// A research that cannot supply the display vocabulary falls back to the empty
-/// state rather than rendering blanks — a half-built card reads as a bug, an
-/// empty one reads as "nothing here yet".
+/// Replaces a view's content with the card for the builder's research, or with the
+/// empty state when no research is bound or its display data has not arrived yet.
+/// `DisplayIcon` is inserted after the research spawns, and `ResearchDisplayDataUpdated`
+/// then rebuilds the card.
 fn on_builder_insert_rebuild_research_detail_view_content(
     trigger: On<Insert, BuilderResearchDetailViewContent>,
     mut commands: Commands,
     builders: Query<&BuilderResearchDetailViewContent>,
-    researches: Query<(&DisplayName, &DisplayDescription, &DisplayIcon, &Research, Option<&HasOutcomes>)>,
+    researches: Query<(Entity, &DisplayName, &DisplayDescription, &DisplayIcon, &Research, Option<&HasOutcomes>)>,
 ) {
     let content_entity = trigger.entity;
     let Ok(builder) = builders.get(content_entity) else { return };
     let BuilderResearchDetailViewContent { research, empty_text } = *builder;
 
     commands.entity(content_entity)
-        .remove::<BuilderResearchDetailViewContent>()
-        .remove::<ResearchDetailViewContent>()
+        .remove::<(BuilderResearchDetailViewContent, ResearchDetailViewContent)>()
         .despawn_children();
 
-    let subject = research.and_then(|research| researches.get(research).ok().map(|data| (research, data)));
-
-    let Some((research, (name, description, icon, research_data, has_outcomes))) = subject else {
+    let Some((research, name, description, icon, research_data, has_outcomes)) =
+        research.and_then(|research| researches.get(research).ok())
+    else {
         let empty_state = spawn_empty_state(&mut commands, empty_text);
         commands.entity(content_entity).add_child(empty_state);
         return;

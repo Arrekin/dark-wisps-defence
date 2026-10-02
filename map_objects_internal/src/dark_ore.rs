@@ -1,10 +1,14 @@
 use bevy::prelude::*;
 
-use almanach::prelude::AlmanachAppExt;
-use almanach::{Almanach, DarkOreInfo, ObjectPresentation};
+use almanach::{Almanach, DarkOreInfo, ObjectPresentation, prelude::AlmanachAppExt};
 use game_core::prelude::{GridCoords, GridImprint, MapObject, SSS};
-use grids::placement::{annotate_non_empty, GridObjectPlacer, GridsCollectionParam, PlacementModes, PlacementValidity, PlaceRequest, RemoveRequest, validator_all_empty};
-use grids::prelude::ObstacleGrid;
+use grids::{
+    placement::{
+        annotate_non_empty, GridObjectPlacer, GridsCollectionParam, PlacementModes, PlacementValidity, PlaceRequest,
+        RemoveRequest, validator_all_empty,
+    },
+    prelude::ObstacleGrid,
+};
 use hud::prelude::BuilderSideMenuItemTooltip;
 use logging::prelude::*;
 use map_objects::prelude::*;
@@ -14,14 +18,13 @@ use persistence::{
 };
 use states::prelude::MapLoadingStage;
 
-
-pub struct DarkOrePlugin;
+pub(crate) struct DarkOrePlugin;
 impl Plugin for DarkOrePlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_systems(Update, remove_empty)
+            .add_systems(Update, despawn_depleted_dark_ores)
             .add_observer(BuilderDarkOre::on_builder_add_spawn_dark_ore)
-            .add_observer(dark_ore_area_scanner::on_add_init_scanner)
+            .add_observer(dark_ore_area_scanner::on_add_dark_ore_area_scanner_init)
             .add_observer(dark_ore_area_scanner::on_remove_dark_ore_sync_scanners)
             .add_observer(dark_ore_area_scanner::on_add_dark_ore_sync_scanners)
             .add_observer(on_dark_ore_place_request_do_so)
@@ -29,14 +32,11 @@ impl Plugin for DarkOrePlugin {
             .add_observer(on_builder_add_spawn_dark_ore_tooltip)
             .add_systems(CollectSave, collect_dark_ores)
             .register_loader(MapLoadingStage::SpawnMapElements, "dark_ores", load_dark_ores)
-            .register_dark_ore(BuilderDarkOre::almanach_info())
-            ;
+            .register_dark_ore(BuilderDarkOre::almanach_info());
     }
 }
 
 pub(crate) const DARK_ORE_GRID_IMPRINT: GridImprint = GridImprint::Rectangle { width: 1, height: 1 };
-
-
 
 #[derive(Component, SSS)]
 pub(crate) struct BuilderDarkOre {
@@ -74,43 +74,45 @@ impl BuilderDarkOre {
         commands.entity(entity)
             .remove::<BuilderDarkOre>()
             .insert((
-            builder.grid_position,
-            DarkOre { amount: builder.amount as i32 },
-            DARK_ORE_GRID_IMPRINT,
-        ));
+                builder.grid_position,
+                DarkOre { amount: builder.amount as i32 },
+                DARK_ORE_GRID_IMPRINT,
+            ));
     }
 }
 
+#[log_tags(Tag::GameSave)]
 fn collect_dark_ores(
     dark_ores: Query<(Entity, &GridCoords, &DarkOre)>,
     mut save: SaveWriter,
 ) {
     if dark_ores.is_empty() { return; }
-    let rows: Vec<(i64, i32, i32, u32)> = dark_ores
+
+    #[debug_dev("Saving {} dark ores", rows.len())]
+    let rows: Vec<(i64, GridCoords, u32)> = dark_ores
         .iter()
         .map(|(entity, coords, dark_ore)| {
             (
                 entity.index_u32() as i64,
-                coords.x,
-                coords.y,
+                *coords,
                 dark_ore.amount as u32,
             )
         })
         .collect();
-    Log::debug().dev().tag(Tag::GameSave).message(format!("Saving {} dark ores", rows.len()));
     save.submit(move |tx| {
-        for (id, gx, gy, amount) in rows {
+        for (id, coords, amount) in rows {
             tx.register_entity(id)?;
             tx.execute(
                 "INSERT OR REPLACE INTO dark_ores (id, amount) VALUES (?1, ?2)",
                 (id, amount),
             )?;
-            tx.save_grid_coords(id, GridCoords { x: gx, y: gy })?;
+            tx.save_grid_coords(id, coords)?;
         }
         Ok(())
     });
 }
 
+#[log_tags(Tag::GameLoad)]
 fn load_dark_ores(ctx: &mut LoadContext) -> rusqlite::Result<()> {
     let mut stmt = ctx.conn.prepare("SELECT id, amount FROM dark_ores")?;
     let mut rows = stmt.query([])?;
@@ -119,27 +121,27 @@ fn load_dark_ores(ctx: &mut LoadContext) -> rusqlite::Result<()> {
         let amount: u32 = row.get(1)?;
         let grid_position = ctx.conn.get_grid_coords(old_id)?;
 
-        let Some(entity) = ctx.entity(old_id) else {
-            Log::warn().dev().tag(Tag::GameLoad).message(format!("DarkOre with old ID {old_id} has no corresponding new entity"));
-            continue;
-        };
+        #[warn_dev("DarkOre with old ID {old_id} has no corresponding new entity")]
+        let Some(entity) = ctx.entity(old_id) else { continue };
         ctx.insert(entity, BuilderDarkOre::new(grid_position, amount));
     }
     Ok(())
 }
 
-fn remove_empty(
+#[log_tags(Tag::Resources)]
+fn despawn_depleted_dark_ores(
     mut commands: Commands,
     dark_ores: Query<(Entity, &DarkOre, &GridCoords), Changed<DarkOre>>,
 ) {
     for (entity, dark_ore, coords) in dark_ores.iter() {
         if dark_ore.amount <= 0 {
-            Log::debug().dev().tag(Tag::Resources).message(format!("Dark ore at ({}, {}) depleted", coords.x, coords.y));
+            #[debug_dev("Dark ore at ({}, {}) depleted", coords.x, coords.y)]
             commands.entity(entity).despawn();
         }
     }
 }
 
+#[log_tags(Tag::MapObjects)]
 fn on_dark_ore_place_request_do_so(
     trigger: On<PlaceRequest>,
     mut commands: Commands,
@@ -149,14 +151,14 @@ fn on_dark_ore_place_request_do_so(
 ) {
     let PlaceRequest(MapObject::DarkOre) = *trigger else { return };
     let (coords, grid_imprint) = placer.into_inner();
-    let validity = {
-        (almanach.dark_ore.validate)(MapObject::DarkOre, *coords, *grid_imprint, &grids)
-    };
+    let validity = (almanach.dark_ore.validate)(MapObject::DarkOre, *coords, *grid_imprint, &grids);
     if validity == PlacementValidity::Invalid { return; }
+    #[debug_dev("Dark ore placed at ({}, {})", coords.x, coords.y)]
     commands.spawn(BuilderDarkOre::new(*coords, almanach.dark_ore.max_field_saturation));
     grids.reserved_coords.reserve(*coords, *grid_imprint);
 }
 
+#[log_tags(Tag::MapObjects)]
 fn on_dark_ore_remove_request_do_so(
     trigger: On<RemoveRequest>,
     mut commands: Commands,
@@ -165,6 +167,7 @@ fn on_dark_ore_remove_request_do_so(
 ) {
     let RemoveRequest(MapObject::DarkOre) = *trigger else { return };
     let coords = placer.into_inner();
+    #[debug_dev("Dark ore removed at ({}, {})", coords.x, coords.y)]
     if let Some(entity) = grids.obstacle_grid[*coords].dark_ore {
         commands.entity(entity).despawn();
     }
@@ -173,20 +176,20 @@ fn on_dark_ore_remove_request_do_so(
 pub(crate) mod dark_ore_area_scanner {
     use super::*;
 
-    pub fn on_add_init_scanner(
+    pub fn on_add_dark_ore_area_scanner_init(
         trigger: On<Add, DarkOreAreaScanner>,
         mut commands: Commands,
         scanners: Query<&DarkOreAreaScanner>,
     ) {
         let entity = trigger.entity;
-        let scanner = scanners.get(entity).unwrap();
+        let Ok(scanner) = scanners.get(entity) else { return; };
         commands.entity(entity)
-            .observe(scan_on_change)
+            .observe(on_insert_scanner_or_coords_rescan)
             .insert(scanner.clone()); // Reinsert self to trigger initial scan; TODO: improve once Bevy introduces compound triggers
     }
 
-    // Local triggers when entity that is interested in scanner info changes by moving or changing the scanner range
-    fn scan_on_change(
+    /// Local observer: rescans when the scanning entity moves or its scanner range changes.
+    fn on_insert_scanner_or_coords_rescan(
         trigger: On<Insert, (DarkOreAreaScanner, GridCoords)>,
         mut commands: Commands,
         obstacle_grid: Res<ObstacleGrid>,
@@ -203,7 +206,7 @@ pub(crate) mod dark_ore_area_scanner {
         dark_ore_in_range.0 = ore_entities_in_range;
     }
 
-    // Global trigger reacting to any dark ore removal to keep DarkOreinRange in sync
+    /// Keeps every scanner's `DarkOreInRange` in sync when any dark ore is removed.
     pub fn on_remove_dark_ore_sync_scanners(
         trigger: On<Remove, DarkOre>,
         mut commands: Commands,
@@ -211,14 +214,15 @@ pub(crate) mod dark_ore_area_scanner {
         mut scanners: Query<(Entity, &DarkOreAreaScanner, &mut DarkOreInRange, &GridCoords)>,
     ) {
         let entity = trigger.entity;
-        let dark_ore_grid_coords = dark_ores.get(entity).unwrap();
+        let Ok(dark_ore_grid_coords) = dark_ores.get(entity) else { return; };
         for (scanner_entity, scanner, mut dark_ore_in_range, scanner_grid_coords) in scanners.iter_mut() {
             // TODO: This won't work when we want to implement Mining Complex range expansion, as the GridCoords won't match ScannerImprint coords
             // Ie, the expected mining range coords will shift in relation to the MiningComplex own's coords as they start in bottom left corner.
             if scanner.range_imprint.covers_coords(*scanner_grid_coords, *dark_ore_grid_coords)
-                && let Some(index) = dark_ore_in_range.0.iter().position(|&x| x == entity) {
-                    dark_ore_in_range.0.swap_remove(index);
-                }
+                && let Some(index) = dark_ore_in_range.0.iter().position(|&ore| ore == entity)
+            {
+                dark_ore_in_range.0.swap_remove(index);
+            }
             if dark_ore_in_range.0.is_empty() {
                 commands.entity(scanner_entity).insert(NoOreInScannerRange).remove::<HasOreInScannerRange>();
             }
@@ -236,17 +240,17 @@ pub(crate) mod dark_ore_area_scanner {
 
         for (scanner_entity, scanner, mut dark_ore_in_range, scanner_grid_coords) in scanners.iter_mut() {
             if scanner.range_imprint.covers_coords(*scanner_grid_coords, *dark_ore_grid_coords)
-                && !dark_ore_in_range.0.contains(&entity) {
-                    let was_empty = dark_ore_in_range.0.is_empty();
-                    dark_ore_in_range.0.push(entity);
-                    if was_empty {
-                        commands.entity(scanner_entity).insert(HasOreInScannerRange).remove::<NoOreInScannerRange>();
-                    }
+                && !dark_ore_in_range.0.contains(&entity)
+            {
+                let was_empty = dark_ore_in_range.0.is_empty();
+                dark_ore_in_range.0.push(entity);
+                if was_empty {
+                    commands.entity(scanner_entity).insert(HasOreInScannerRange).remove::<NoOreInScannerRange>();
                 }
+            }
         }
     }
 }
-
 
 /// Queues tooltip construction for a dark-ore placement tile.
 pub(crate) fn dark_ore_tooltip(commands: &mut Commands, anchor: Entity, _map_object: MapObject) {

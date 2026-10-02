@@ -62,10 +62,8 @@ pub fn tab_research(ui: &mut egui::Ui, world: &mut World) {
                                     selected = None;
                                 }
                             }
-                        } else {
-                            if ui.button("Add to scenario").clicked() {
-                                world.entity_mut(row.entity).insert(ResearchState::Available);
-                            }
+                        } else if ui.button("Add to scenario").clicked() {
+                            world.entity_mut(row.entity).insert(ResearchState::Available);
                         }
                     });
                 });
@@ -105,8 +103,8 @@ fn ui_research_editor(ui: &mut egui::Ui, world: &mut World, research: Entity) {
     ui.horizontal(|ui| {
         ui.label("Description:");
         let mut entity_ref = world.entity_mut(research);
-        let Some(mut desc) = entity_ref.get_mut::<DisplayDescription>() else { return };
-        ui.text_edit_multiline(&mut desc.0);
+        let Some(mut description) = entity_ref.get_mut::<DisplayDescription>() else { return };
+        ui.text_edit_multiline(&mut description.0);
     });
 
     ui.horizontal(|ui| {
@@ -120,9 +118,9 @@ fn ui_research_editor(ui: &mut egui::Ui, world: &mut World, research: Entity) {
         ui.label("Duration (s):");
         let mut entity_ref = world.entity_mut(research);
         let Some(mut research_data) = entity_ref.get_mut::<Research>() else { return };
-        let mut secs = research_data.duration.as_secs_f32();
-        ui.add(egui::DragValue::new(&mut secs).speed(0.1).range(0.0..=f32::MAX));
-        research_data.duration = Duration::from_secs_f32(secs);
+        let mut seconds = research_data.duration.as_secs_f32();
+        ui.add(egui::DragValue::new(&mut seconds).speed(0.1).range(0.0..=f32::MAX));
+        research_data.duration = Duration::from_secs_f32(seconds);
     });
 
     ui.heading("Costs");

@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use bevy::{
     input::common_conditions::input_just_released,
     prelude::*,
@@ -31,21 +33,20 @@ impl Plugin for TowersRangeOverlayPlugin {
             .init_state::<TowersRangeOverlayState>()
             .init_resource::<TowersRangeOverlayConfig>()
             .add_systems(OnEnter(MapLoadingStage::LoadResources), TowersRangeOverlay::create)
-            .add_systems(OnEnter(TowersRangeOverlayState::Show), |visibility: Single<&mut Visibility, With<TowersRangeOverlay>>| { *visibility.into_inner() = Visibility::Inherited; },)
-            .add_systems(OnExit(TowersRangeOverlayState::Show),|visibility: Single<&mut Visibility, With<TowersRangeOverlay>>| { *visibility.into_inner() = Visibility::Hidden; },)
-            .add_systems(OnExit(UiInteraction::PlaceGridObject),|mut config: ResMut<TowersRangeOverlayConfig>| { config.secondary_mode = TowersRangeOverlaySecondaryMode::None; },)
+            .add_systems(OnEnter(TowersRangeOverlayState::Show), |visibility: Single<&mut Visibility, With<TowersRangeOverlay>>| { *visibility.into_inner() = Visibility::Inherited; })
+            .add_systems(OnExit(TowersRangeOverlayState::Show), |visibility: Single<&mut Visibility, With<TowersRangeOverlay>>| { *visibility.into_inner() = Visibility::Hidden; })
+            .add_systems(OnExit(UiInteraction::PlaceGridObject), |mut config: ResMut<TowersRangeOverlayConfig>| { config.secondary_mode = TowersRangeOverlaySecondaryMode::None; })
             .add_systems(
                 Update,
                 (
                     TowersRangeOverlayConfig::on_config_change_system.run_if(resource_changed::<TowersRangeOverlayConfig>),
                     refresh_display_system.run_if(in_state(TowersRangeOverlayState::Show)),
-                    (|mut config: ResMut<TowersRangeOverlayConfig>| { config.is_overlay_globally_enabled ^= true; }).run_if(input_just_released(KeyCode::Digit8)), // Switch overlay on/off 
+                    (|mut config: ResMut<TowersRangeOverlayConfig>| { config.is_overlay_globally_enabled ^= true; }).run_if(input_just_released(KeyCode::Digit8)), // Toggles the overlay
                 ),
             )
-            .add_observer(TowersRangeOverlayConfig::on_map_object_focused)
-            .add_observer(TowersRangeOverlayConfig::on_map_object_unfocused)
-            .add_observer(on_grid_placer_changed)
-            ;
+            .add_observer(TowersRangeOverlayConfig::on_insert_focused_map_object_set_highlight)
+            .add_observer(TowersRangeOverlayConfig::on_remove_focused_map_object_clear_highlight)
+            .add_observer(on_grid_placer_changed_preview_placement);
     }
 }
 
@@ -55,10 +56,12 @@ pub enum TowersRangeOverlayState {
     Hide,
     Show,
 }
+
 #[derive(Resource, Default)]
 pub struct TowersRangeOverlayConfig {
     pub is_overlay_globally_enabled: bool,
-    pub grid_version: GridVersion, // Grid version for which we show the overlay
+    /// Grid version the overlay currently shows.
+    pub grid_version: GridVersion,
     pub secondary_mode: TowersRangeOverlaySecondaryMode,
 }
 impl TowersRangeOverlayConfig {
@@ -66,13 +69,10 @@ impl TowersRangeOverlayConfig {
         overlay_config: Res<TowersRangeOverlayConfig>,
         mut overlay_state: ResMut<NextState<TowersRangeOverlayState>>,
     ) {
-        if overlay_config.is_overlay_globally_enabled || !overlay_config.secondary_mode.is_none() {
-            overlay_state.set(TowersRangeOverlayState::Show);
-        } else {
-            overlay_state.set(TowersRangeOverlayState::Hide);
-        }
+        let shown = overlay_config.is_overlay_globally_enabled || !overlay_config.secondary_mode.is_none();
+        overlay_state.set(if shown { TowersRangeOverlayState::Show } else { TowersRangeOverlayState::Hide });
     }
-    fn on_map_object_focused(
+    fn on_insert_focused_map_object_set_highlight(
         trigger: On<Insert, FocusedMapObject>,
         mut overlay_config: ResMut<TowersRangeOverlayConfig>,
         towers: Query<(), With<Tower>>,
@@ -84,18 +84,19 @@ impl TowersRangeOverlayConfig {
             overlay_config.secondary_mode = TowersRangeOverlaySecondaryMode::None;
         }
     }
-    fn on_map_object_unfocused(
+    fn on_remove_focused_map_object_clear_highlight(
         _trigger: On<Remove, FocusedMapObject>,
         mut overlay_config: ResMut<TowersRangeOverlayConfig>,
     ) {
         overlay_config.secondary_mode = TowersRangeOverlaySecondaryMode::None;
     }
 }
+
+/// Temporary override of what the overlay shows.
+/// - `None`: not active
+/// - `Highlight { tower }`: emphasizes the selected tower's range
+/// - `PlacingTower { .. }`: previews the range flood from the planned building footprint
 #[derive(Default, Clone, Debug, PartialEq)]
-/// Secondary mode is temporary override 
-/// - `None`: Mode not active
-/// - `Highlight { tower }`: emphasize the selected tower's range
-/// - `PlacingTower { .. }`: preview of the range flood from the planned building footprint
 pub enum TowersRangeOverlaySecondaryMode {
     #[default]
     None,
@@ -138,11 +139,11 @@ impl TowersRangeOverlay {
         map_info: Res<MapInfo>,
         mut meshes: ResMut<Assets<Mesh>>,
         mut materials: ResMut<Assets<TowersRangeMaterial>>,
-        overlay: Query<Entity, With<TowersRangeOverlay>>,
+        overlay: Option<Single<Entity, With<TowersRangeOverlay>>>,
     ) {
-        if let Ok(overlay_entity) = overlay.single() {
-            commands.entity(overlay_entity).despawn();
-        };
+        if let Some(overlay_entity) = overlay {
+            commands.entity(overlay_entity.into_inner()).despawn();
+        }
 
         commands.spawn((
             super::overlay_bundle(&mut meshes, &mut materials, &map_info),
@@ -205,7 +206,7 @@ fn refresh_display_system(
     overlay_material.grid_data = tower_ranges_grid.bounds.into();
 }
 
-fn on_grid_placer_changed(
+fn on_grid_placer_changed_preview_placement(
     _trigger: On<GridPlacerChanged>,
     almanach: Res<Almanach>,
     mut overlay_config: ResMut<TowersRangeOverlayConfig>,
@@ -261,13 +262,13 @@ impl<'a> OverlayBufferCreator<'a> {
         let buffer_data = self.local_buffer_data.take().unwrap(); // Avoid double mutable borrows
         buffer_data.clear();
         let buffer_size = self.grid.grid.len();
-        let new_content = (0..buffer_size).map(|idx| self.create_cell_for_grid_index(idx, highlight_mode));
+        let new_content = (0..buffer_size).map(|index| self.create_cell_for_grid_index(index, highlight_mode));
         buffer_data.extend(new_content);
         self.local_buffer_data = Some(buffer_data);
     }
 
-    fn create_cell_for_grid_index(&self, idx: usize, highlight_mode: &HighlightMode) -> TowerRangeCell {
-        let set = &self.grid.grid[idx];
+    fn create_cell_for_grid_index(&self, index: usize, highlight_mode: &HighlightMode) -> TowerRangeCell {
+        let set = &self.grid.grid[index];
         if set.is_empty() {
             return TowerRangeCell::default();
         }
@@ -279,7 +280,7 @@ impl<'a> OverlayBufferCreator<'a> {
         let highlight = match highlight_mode {
             HighlightMode::None => 0u32,
             HighlightMode::Selected(selected_entities) => {
-                if selected_entities.iter().any(|e| set.contains(e)) { 1 } else { 0 }
+                if selected_entities.iter().any(|entity| set.contains(entity)) { 1 } else { 0 }
             }
         };
         TowerRangeCell { signature, cover_count, highlight }
@@ -293,7 +294,6 @@ impl<'a> OverlayBufferCreator<'a> {
         start_coords: impl IntoIterator<Item = GridCoords>,
         range: usize,
     ) {
-        use std::collections::VecDeque;
 
         // Start with base buffer data (all signatures + optional selection)
         self.generate_buffer_data(&HighlightMode::None);

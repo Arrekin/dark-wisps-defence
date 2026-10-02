@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+
 use almanach::prelude::{AlmanachAppExt, ResearchSpawnFn};
 use persistence::{creating_new_map, prelude::{AppGameLoadSaveExtension, CollectSave}};
 use research::prelude::SeedResearches;

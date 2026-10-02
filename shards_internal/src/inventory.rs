@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 
 use game_core::prelude::ShardType;
+use logging::prelude::*;
 use persistence::{
     creating_new_map,
     prelude::{AppGameLoadSaveExtension, CollectSave, LoadContext, SaveWriter},
@@ -17,8 +18,7 @@ impl Plugin for ShardInventoryPlugin {
             .add_systems(OnEnter(MapLoadingStage::Init), |mut commands: Commands| { commands.insert_resource(ShardInventory::default()); })
             .add_systems(CollectSave, collect_shard_inventory)
             .register_loader(MapLoadingStage::LoadResources, "shard_inventory", load_shard_inventory)
-            .add_systems(OnEnter(MapLoadingStage::LoadResources), seed_starting_shards.run_if(creating_new_map))
-            ;
+            .add_systems(OnEnter(MapLoadingStage::LoadResources), seed_starting_shards.run_if(creating_new_map));
     }
 }
 
@@ -29,22 +29,19 @@ fn seed_starting_shards(mut inventory: ResMut<ShardInventory>) {
 }
 
 fn collect_shard_inventory(inventory: Res<ShardInventory>, mut save: SaveWriter) {
-    let rows: Vec<(String, i32)> = inventory
-        .iter()
-        .map(|(shard_type, count)| (shard_type.to_string(), count as i32))
-        .collect();
-    if rows.is_empty() { return; }
+    let shard_inventory = inventory.clone();
     save.submit(move |tx| {
-        for (shard_type, count) in rows {
+        for (shard_type, count) in shard_inventory.iter() {
             tx.execute(
                 "INSERT OR REPLACE INTO shard_inventory (shard_type, count) VALUES (?1, ?2)",
-                rusqlite::params![shard_type, count],
+                rusqlite::params![shard_type.as_ref(), count as i32],
             )?;
         }
         Ok(())
     });
 }
 
+#[log_tags(Tag::GameLoad)]
 fn load_shard_inventory(ctx: &mut LoadContext) -> rusqlite::Result<()> {
     let mut stmt = ctx.conn.prepare("SELECT shard_type, count FROM shard_inventory")?;
     let mut rows = stmt.query([])?;
@@ -53,9 +50,9 @@ fn load_shard_inventory(ctx: &mut LoadContext) -> rusqlite::Result<()> {
     while let Some(row) = rows.next()? {
         let shard_str: String = row.get(0)?;
         let count: i32 = row.get(1)?;
-        if let Ok(shard_type) = shard_str.parse::<ShardType>() {
-            inventory.add(shard_type, count as usize);
-        }
+        #[warn_dev("Unknown shard type '{shard_str}' in saved inventory — {count} shards skipped")]
+        let Ok(shard_type) = shard_str.parse::<ShardType>() else { continue };
+        inventory.add(shard_type, count as usize);
     }
 
     ctx.insert_resource(inventory);

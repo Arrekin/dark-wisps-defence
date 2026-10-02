@@ -6,10 +6,14 @@ use almanach::prelude::Almanach;
 use game_core::prelude::{DisplayDescription, DisplayIcon, DisplayName, ShardType};
 use logging::prelude::*;
 use outcomes::prelude::*;
-use persistence::prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveWriter};
-use persistence::rusqlite;
-use shards::blueprints::{ShardBlueprintAcquired, ShardBlueprints};
-use shards::prelude::UnlockShardBlueprint;
+use persistence::{
+    prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveWriter},
+    rusqlite,
+};
+use shards::{
+    blueprints::{ShardBlueprintAcquired, ShardBlueprints},
+    prelude::UnlockShardBlueprint,
+};
 use states::prelude::MapLoadingStage;
 
 pub struct ShardOutcomesPlugin;
@@ -36,8 +40,7 @@ fn spawn_unlock_shard_blueprint_outcome(commands: &mut Commands, parent: Entity)
 /// it inserts a new `UnlockShardBlueprint` (immutable, so insert is the only
 /// way), which fires the derive observer to re-derive display.
 fn ui_unlock_shard_blueprint_editor(ui: &mut egui::Ui, entity: &mut EntityWorldMut) {
-    let current = entity.get::<UnlockShardBlueprint>().map(|u| u.0);
-    let Some(mut selected) = current else { return };
+    let Some(&UnlockShardBlueprint(mut selected)) = entity.get::<UnlockShardBlueprint>() else { return };
     let id = entity.id();
     let response = egui::ComboBox::from_id_salt(format!("shard_type_{id:?}"))
         .selected_text(selected.to_string())
@@ -68,6 +71,7 @@ fn on_insert_unlock_shard_blueprint_derive_display(
     ));
 }
 
+#[log_tags(Tag::Shards)]
 fn on_fulfill_outcome_unlock_shard_blueprint(
     trigger: On<FulfillOutcome>,
     mut commands: Commands,
@@ -77,6 +81,7 @@ fn on_fulfill_outcome_unlock_shard_blueprint(
     let outcome = trigger.event().outcome;
     let Ok(unlock) = outcomes.get(outcome) else { return };
     let shard_type = unlock.0;
+    #[info_player("{shard_type} shard blueprint unlocked")]
     if blueprints.unlock(shard_type) {
         commands.trigger(ShardBlueprintAcquired(shard_type));
     }
@@ -90,6 +95,7 @@ fn on_fulfill_outcome_unlock_shard_blueprint(
 /// map content (researches are `MapBound`), so all outcomes are saved.
 /// Display data is not saved; it is derived from `ShardType` on load via
 /// the observer above.
+#[log_tags(Tag::GameSave)]
 fn collect_unlock_shard_blueprint_outcomes(
     outcomes: Query<(Entity, &UnlockShardBlueprint, &OutcomeOf)>,
     mut save: SaveWriter,
@@ -97,15 +103,16 @@ fn collect_unlock_shard_blueprint_outcomes(
     struct Snapshot {
         id: i64,
         parent_id: i64,
-        shard_type: String,
+        shard_type: ShardType,
     }
 
+    #[debug_dev("Saving {} unlock shard blueprint outcomes", snapshots.len())]
     let snapshots: Vec<Snapshot> = outcomes
         .iter()
         .map(|(entity, unlock, outcome_of)| Snapshot {
             id: entity.index_u32() as i64,
             parent_id: outcome_of.0.index_u32() as i64,
-            shard_type: unlock.0.to_string(),
+            shard_type: unlock.0,
         })
         .collect();
 
@@ -117,13 +124,14 @@ fn collect_unlock_shard_blueprint_outcomes(
             tx.register_entity(snap.parent_id)?;
             tx.execute(
                 "INSERT OR REPLACE INTO unlock_shard_blueprint_outcomes (id, parent_id, shard_type) VALUES (?1, ?2, ?3)",
-                rusqlite::params![snap.id, snap.parent_id, snap.shard_type],
+                rusqlite::params![snap.id, snap.parent_id, snap.shard_type.as_ref()],
             )?;
         }
         Ok(())
     });
 }
 
+#[log_tags(Tag::GameLoad)]
 fn load_unlock_shard_blueprint_outcomes(ctx: &mut LoadContext) -> rusqlite::Result<()> {
     let mut stmt = ctx.conn.prepare(
         "SELECT id, parent_id, shard_type FROM unlock_shard_blueprint_outcomes",
@@ -134,18 +142,12 @@ fn load_unlock_shard_blueprint_outcomes(ctx: &mut LoadContext) -> rusqlite::Resu
         let parent_old_id: i64 = row.get(1)?;
         let shard_type_str: String = row.get(2)?;
 
-        let Some(entity) = ctx.entity(old_id) else {
-            Log::warn().dev().tag(Tag::GameLoad).message(format!("UnlockShardBlueprint outcome with old ID {old_id} has no corresponding new entity"));
-            continue;
-        };
-        let Some(parent) = ctx.entity(parent_old_id) else {
-            Log::warn().dev().tag(Tag::GameLoad).message(format!("UnlockShardBlueprint outcome with old ID {old_id} references parent {parent_old_id} that failed entity remap"));
-            continue;
-        };
-        let Ok(shard_type) = shard_type_str.parse::<ShardType>() else {
-            Log::warn().dev().tag(Tag::GameLoad).message(format!("Unknown shard type in save: {shard_type_str}"));
-            continue;
-        };
+        #[warn_dev("UnlockShardBlueprint outcome with old ID {old_id} has no corresponding new entity")]
+        let Some(entity) = ctx.entity(old_id) else { continue };
+        #[warn_dev("UnlockShardBlueprint outcome with old ID {old_id} references parent {parent_old_id} that failed entity remap")]
+        let Some(parent) = ctx.entity(parent_old_id) else { continue };
+        #[warn_dev("UnlockShardBlueprint outcome with old ID {old_id} has unknown shard type '{shard_type_str}' — skipped")]
+        let Ok(shard_type) = shard_type_str.parse::<ShardType>() else { continue };
 
         ctx.insert(entity, (
             OutcomeOf(parent),

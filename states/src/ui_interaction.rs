@@ -4,17 +4,18 @@ use serde::Serialize;
 #[derive(Default, Clone, Debug, States, PartialEq, Eq, Hash, Serialize)]
 pub enum UiInteraction {
     #[default]
-    Free, // No interaction
+    /// No UI interaction is in progress.
+    Free,
     MainMenu,
     PlaceGridObject,
     DisplayInfoPanel,
     ResearchPanel,
 }
 impl UiInteraction {
-    // On ESC: if UI is free, open Main Menu; otherwise, return to Free
+    /// On Escape: opens the main menu from `Free`, otherwise returns to `Free`.
     pub(crate) fn on_escape(
         mut next_ui_state: ResMut<NextState<UiInteraction>>,
-        current_ui_state: Res<State<UiInteraction>>
+        current_ui_state: Res<State<UiInteraction>>,
     ) {
         match current_ui_state.get() {
             UiInteraction::Free => next_ui_state.set(UiInteraction::MainMenu),

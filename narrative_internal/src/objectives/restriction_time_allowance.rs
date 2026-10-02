@@ -4,8 +4,7 @@ use bevy_egui::egui;
 use game_core::prelude::{DisplayName, SSS};
 use logging::prelude::*;
 use narrative::prelude::*;
-use persistence::prelude::*;
-use persistence::rusqlite;
+use persistence::{prelude::*, rusqlite};
 use states::prelude::{GameState, MapLoadingStage};
 
 pub(crate) struct RestrictionTimeAllowancePlugin;
@@ -16,13 +15,12 @@ impl Plugin for RestrictionTimeAllowancePlugin {
             .register_objective_goal("Time Allowance", ObjectiveGoalGroup::Restrictions, BuilderRestrictionTimeAllowance::editor_spawn)
             .add_observer(BuilderRestrictionTimeAllowance::on_builder_add_spawn_time_allowance)
             // Runtime observers + tick
-            .add_observer(on_time_allowance_activated)
-            .add_observer(on_refresh_time_allowance)
+            .add_observer(on_objective_activate_satisfy_time_allowance)
+            .add_observer(on_refresh_time_allowance_do_so)
             .add_systems(Update, tick_time_allowance.run_if(in_state(GameState::Running)))
             // Persistence
             .add_systems(CollectSave, collect_time_allowance)
-            .register_loader(MapLoadingStage::SpawnEffectInstances, "restriction_time_allowance", load_time_allowance)
-            ;
+            .register_loader(MapLoadingStage::SpawnEffectInstances, "restriction_time_allowance", load_time_allowance);
     }
 }
 
@@ -107,7 +105,7 @@ struct RefreshTimeAllowance {
     goal: Entity,
 }
 
-fn on_refresh_time_allowance(
+fn on_refresh_time_allowance_do_so(
     trigger: On<RefreshTimeAllowance>,
     mut goals: Query<(&RestrictionTimeAllowance, &TimeAllowanceRuntime, &mut DisplayName)>,
 ) {
@@ -116,11 +114,11 @@ fn on_refresh_time_allowance(
     display.0 = format_remaining(config.seconds - runtime.elapsed);
 }
 
-fn format_remaining(seconds: f32) -> String {
-    let total = seconds.max(0.0) as u32;
-    let mins = total / 60;
-    let secs = total % 60;
-    format!("{}:{:02} left", mins, secs)
+fn format_remaining(remaining: f32) -> String {
+    let total_seconds = remaining.max(0.0) as u32;
+    let minutes = total_seconds / 60;
+    let seconds = total_seconds % 60;
+    format!("{minutes}:{seconds:02} left")
 }
 
 // ============================================================================
@@ -132,7 +130,7 @@ fn format_remaining(seconds: f32) -> String {
 /// so the aggregator can evaluate the root. Runtime component + display line are
 /// already set at build time. The `Satisfied` insert does NOT re-trigger this
 /// observer (it listens to `ObjectiveActivate`, not `On<Insert, ObjectiveState>`).
-fn on_time_allowance_activated(
+fn on_objective_activate_satisfy_time_allowance(
     trigger: On<ObjectiveActivate>,
     mut commands: Commands,
     goals: Query<(), With<RestrictionTimeAllowance>>,
@@ -161,10 +159,10 @@ fn tick_time_allowance(
     >,
     active_roots: Query<(), (With<ObjectiveDetails>, With<ObjectiveInProgress>)>,
 ) {
-    let dt = time.delta_secs();
+    let delta_seconds = time.delta_secs();
     for (config, mut runtime, goal_of, goal) in goals.iter_mut() {
         if !active_roots.contains(goal_of.0) { continue; }
-        runtime.elapsed += dt;
+        runtime.elapsed += delta_seconds;
         commands.trigger(RefreshTimeAllowance { goal });
         if runtime.elapsed >= config.seconds {
             commands.entity(goal)
@@ -195,6 +193,7 @@ fn ui_time_allowance(ui: &mut egui::Ui, entity: &mut EntityWorldMut) {
 // PERSISTENCE
 // ============================================================================
 
+#[log_tags(Tag::GameSave)]
 fn collect_time_allowance(
     save_ctx: Res<SaveContext>,
     mut save: SaveWriter,
@@ -202,19 +201,16 @@ fn collect_time_allowance(
 ) {
     if goals.is_empty() { return; }
     let save_as_scenario = save_ctx.save_as_scenario;
-    let rows: Vec<(i64, i64, String, f32, f32)> = goals
+    #[debug_dev("Saving {} time allowance restrictions", rows.len())]
+    let rows: Vec<(i64, i64, ObjectiveState, f32, f32)> = goals
         .iter()
         .map(|(entity, config, state, runtime, goal_of)| {
-            let state_str = if save_as_scenario {
-                ObjectiveState::Inactive.as_ref().to_string()
-            } else {
-                state.as_ref().to_string()
-            };
+            let state = if save_as_scenario { ObjectiveState::Inactive } else { *state };
             let elapsed = if save_as_scenario { 0.0 } else { runtime.elapsed };
             (
                 entity.index_u32() as i64,
                 goal_of.0.index_u32() as i64,
-                state_str,
+                state,
                 config.seconds,
                 elapsed,
             )
@@ -226,13 +222,14 @@ fn collect_time_allowance(
             tx.register_entity(objective_id)?;
             tx.execute(
                 "INSERT OR REPLACE INTO restriction_time_allowance (id, objective_id, state, seconds, elapsed) VALUES (?1, ?2, ?3, ?4, ?5)",
-                rusqlite::params![id, objective_id, state, seconds, elapsed],
+                rusqlite::params![id, objective_id, state.as_ref(), seconds, elapsed],
             )?;
         }
         Ok(())
     });
 }
 
+#[log_tags(Tag::GameLoad)]
 fn load_time_allowance(ctx: &mut LoadContext) -> rusqlite::Result<()> {
     let mut stmt = ctx.conn.prepare("SELECT id, objective_id, state, seconds, elapsed FROM restriction_time_allowance")?;
     let mut rows = stmt.query([])?;
@@ -243,18 +240,12 @@ fn load_time_allowance(ctx: &mut LoadContext) -> rusqlite::Result<()> {
         let seconds: f32 = row.get(3)?;
         let elapsed: f32 = row.get(4)?;
 
-        let Some(entity) = ctx.entity(old_id) else {
-            Log::warn().dev().tag(Tag::GameLoad).message(format!("RestrictionTimeAllowance with old ID {old_id} has no corresponding new entity"));
-            continue;
-        };
-        let Some(objective_entity) = ctx.entity(objective_old_id) else {
-            Log::warn().dev().tag(Tag::GameLoad).message(format!("RestrictionTimeAllowance with old ID {old_id} references objective {objective_old_id} that failed remap"));
-            continue;
-        };
-        let Ok(state) = state_str.parse::<ObjectiveState>() else {
-            Log::warn().dev().tag(Tag::GameLoad).message(format!("Unknown objective state in save: {state_str}"));
-            continue;
-        };
+        #[warn_dev("RestrictionTimeAllowance with old ID {old_id} has no corresponding new entity")]
+        let Some(entity) = ctx.entity(old_id) else { continue };
+        #[warn_dev("RestrictionTimeAllowance with old ID {old_id} references objective {objective_old_id} that failed remap")]
+        let Some(objective_entity) = ctx.entity(objective_old_id) else { continue };
+        #[warn_dev("RestrictionTimeAllowance with old ID {old_id} has unknown state '{state_str}' — skipped")]
+        let Ok(state) = state_str.parse::<ObjectiveState>() else { continue };
 
         ctx.insert(entity, BuilderRestrictionTimeAllowance::new(objective_entity, seconds)
             .with_state(state)

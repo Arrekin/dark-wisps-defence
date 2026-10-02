@@ -40,7 +40,7 @@ use crate::{
     tooltip::building_tooltip,
 };
 
-pub struct ForgePlugin;
+pub(crate) struct ForgePlugin;
 impl Plugin for ForgePlugin {
     fn build(&self, app: &mut App) {
         let asset_server = app.world().resource::<AssetServer>();
@@ -55,23 +55,20 @@ impl Plugin for ForgePlugin {
             .add_observer(on_start_forge_do_so)
             .add_observer(on_cancel_forge_do_so)
             .add_observer(ForgeInfoPanel::on_building_info_panel_enabled_toggle_subpanel_visibility)
-            .add_observer(ForgeInfoPanel::on_rebuild_forge_ui)
+            .add_observer(ForgeInfoPanel::on_rebuild_forge_ui_do_so)
             .add_observer(ForgeShardButton::on_add_construct_forge_shard_button)
             .add_observer(on_insert_forge_job_rebuild_ui)
             .add_observer(on_remove_forge_job_rebuild_ui)
             .add_systems(CollectSave, collect_forges)
             .register_loader(MapLoadingStage::SpawnMapElements, "forges", load_forges)
-            .register_building(BuildingType::Forge, almanach_info)
-            ;
+            .register_building(BuildingType::Forge, almanach_info);
     }
 }
-
 
 // Shard tooltip colors: title, description, then lower-contrast crafting facts.
 const TOOLTIP_TITLE_COLOR: Color = Color::srgb_u8(0xEA, 0xF4, 0xFF);
 const TOOLTIP_BODY_COLOR: Color = Color::srgb_u8(0x8B, 0xA8, 0xCC);
 const TOOLTIP_FACTS_COLOR: Color = Color::srgb_u8(0x6B, 0x82, 0xA0);
-
 
 // ============================================================================
 // FORGE JOB
@@ -119,7 +116,6 @@ impl ForgeJob {
     }
 }
 
-
 // ============================================================================
 // REQUEST EVENTS
 // ============================================================================
@@ -142,6 +138,7 @@ pub(crate) struct CancelForgeRequest {
     pub forge: Entity,
 }
 
+#[log_tags(Tag::Forge)]
 fn on_start_forge_do_so(
     trigger: On<StartForgeRequest>,
     mut commands: Commands,
@@ -154,35 +151,37 @@ fn on_start_forge_do_so(
     let forge = event.forge;
     let shard_type = event.shard_type;
 
-    if idle_forges.get(forge).is_err() { return; }
+    if !idle_forges.contains(forge) { return; }
     if !blueprints.is_unlocked(shard_type) { return; }
 
     let info = almanach.get_shard_info(shard_type);
     let Some(recipe) = &info.recipe else { return };
 
+    #[info_player("Not enough resources")]
     if !stock.try_pay_costs(&recipe.cost) { return; }
 
+    #[info_player("Forge {forge} started forging {shard_type}")]
     commands.entity(forge).insert(ForgeJob::new(shard_type, recipe.duration));
-    Log::info().player().tag(Tag::Forge).message(format!("Forge {forge} started forging {shard_type}"));
 }
 
+#[log_tags(Tag::Forge)]
 fn on_cancel_forge_do_so(
     trigger: On<CancelForgeRequest>,
     mut commands: Commands,
     forge_jobs: Query<(), With<ForgeJob>>,
 ) {
     let forge = trigger.event().forge;
-    if forge_jobs.get(forge).is_ok() {
+    #[info_player("Forge {forge} cancelled forging")]
+    if forge_jobs.contains(forge) {
         commands.entity(forge).remove::<ForgeJob>();
-        Log::info().player().tag(Tag::Forge).message(format!("Forge {forge} cancelled forging"));
     }
 }
-
 
 // ============================================================================
 // CRAFT TICK SYSTEM
 // ============================================================================
 
+#[log_tags(Tag::Forge)]
 fn forge_crafting_system(
     mut commands: Commands,
     mut shard_inventory: ResMut<ShardInventory>,
@@ -191,15 +190,14 @@ fn forge_crafting_system(
 ) {
     for (entity, mut job) in forges.iter_mut() {
         job.timer.tick(time.delta());
+        #[info_player("Forge {entity} finished {shard_type} shard")]
         if job.timer.just_finished() {
             let shard_type = job.shard_type();
             shard_inventory.add(shard_type, 1);
             commands.entity(entity).remove::<ForgeJob>();
-            Log::info().player().tag(Tag::Forge).message(format!("Forge {entity} finished forging {shard_type}"));
         }
     }
 }
-
 
 #[derive(Component, SSS)]
 pub(crate) struct BuilderForge {
@@ -234,13 +232,14 @@ impl BuilderForge {
     pub fn new(grid_position: GridCoords) -> Self {
         Self { grid_position, integrity_points: None, disabled_by_player: false, forging: None }
     }
-    pub fn with_integrity_points(mut self, v: f32) -> Self { self.integrity_points = Some(v); self }
+    pub fn with_integrity_points(mut self, integrity_points: f32) -> Self { self.integrity_points = Some(integrity_points); self }
     pub fn with_disabled_by_player(mut self) -> Self { self.disabled_by_player = true; self }
     pub fn with_forging(mut self, shard_type: ShardType, remaining_secs: f32) -> Self {
         self.forging = Some((shard_type, remaining_secs));
         self
     }
 
+    #[log_tags(Tag::Forge)]
     pub fn on_builder_add_spawn_forge(
         trigger: On<Add, BuilderForge>,
         mut commands: Commands,
@@ -254,17 +253,19 @@ impl BuilderForge {
         let grid_imprint = building_info.grid_imprint;
 
         let mut entity_commands = commands.entity(entity);
-        if let Some(ip) = builder.integrity_points {
-            entity_commands.insert(IntegrityPoints::new(ip));
+        if let Some(integrity_points) = builder.integrity_points {
+            entity_commands.insert(IntegrityPoints::new(integrity_points));
         }
         if builder.disabled_by_player {
             entity_commands.insert(DisabledByPlayer);
         }
-        if let Some((shard_type, remaining_secs)) = builder.forging
-            && let Some(recipe) = &almanach.get_shard_info(shard_type).recipe {
-                entity_commands.insert(ForgeJob::resumed(shard_type, recipe.duration, remaining_secs));
-                Log::debug().dev().tag(Tag::Forge).message(format!("Forge {entity} resumed forging {shard_type} ({remaining_secs:.1}s left)"));
+        if let Some((shard_type, remaining_secs)) = builder.forging {
+            match &almanach.get_shard_info(shard_type).recipe {
+                #[debug_dev("Forge {entity} resumed forging {shard_type} ({remaining_secs:.1}s left)")]
+                Some(recipe) => { entity_commands.insert(ForgeJob::resumed(shard_type, recipe.duration, remaining_secs)); }
+                None => warn_dev!("Forge {entity} had a saved {shard_type} job, but {shard_type} has no recipe — job dropped"),
             }
+        }
 
         entity_commands
             .remove::<BuilderForge>()
@@ -273,7 +274,7 @@ impl BuilderForge {
                 Sprite {
                     image: building_info.sprite.clone(),
                     custom_size: Some(grid_imprint.world_size()),
-                    ..Default::default()
+                    ..default()
                 },
                 builder.grid_position,
                 grid_imprint,
@@ -304,29 +305,30 @@ fn on_forge_place_request_do_so(
     commands.spawn(BuilderForge::new(coords));
 }
 
+#[log_tags(Tag::GameSave)]
 fn collect_forges(
     forges: Query<(Entity, &GridCoords, &IntegrityPoints, Has<DisabledByPlayer>, Option<&ForgeJob>), With<Forge>>,
     mut save: SaveWriter,
 ) {
     if forges.is_empty() { return; }
-    let rows: Vec<(i64, i32, i32, f32, bool, Option<(ShardType, f32)>)> = forges
+
+    #[debug_dev("Saving {} forges", rows.len())]
+    let rows: Vec<(i64, GridCoords, f32, bool, Option<(ShardType, f32)>)> = forges
         .iter()
         .map(|(entity, coords, integrity_points, disabled_by_player, forge_job)| {
             (
                 entity.index_u32() as i64,
-                coords.x,
-                coords.y,
+                *coords,
                 integrity_points.get_current(),
                 disabled_by_player,
                 forge_job.map(|job| (job.shard_type(), job.remaining_secs())),
             )
         })
         .collect();
-    Log::debug().dev().tag(Tag::GameSave).message(format!("Saving {} forges", rows.len()));
     save.submit(move |tx| {
-        for (id, gx, gy, integrity_points, disabled_by_player, forging) in rows {
+        for (id, coords, integrity_points, disabled_by_player, forging) in rows {
             tx.save_marker("forges", id)?;
-            tx.save_grid_coords(id, GridCoords { x: gx, y: gy })?;
+            tx.save_grid_coords(id, coords)?;
             tx.save_integrity_points(id, integrity_points)?;
             if disabled_by_player {
                 tx.save_disabled_by_player(id)?;
@@ -334,7 +336,7 @@ fn collect_forges(
             if let Some((shard_type, remaining_secs)) = forging {
                 tx.execute(
                     "UPDATE forges SET forging_shard_type = ?1, forging_remaining_secs = ?2 WHERE id = ?3",
-                    rusqlite::params![shard_type.to_string(), remaining_secs, id],
+                    rusqlite::params![shard_type.as_ref(), remaining_secs, id],
                 )?;
             }
         }
@@ -342,6 +344,7 @@ fn collect_forges(
     });
 }
 
+#[log_tags(Tag::GameLoad)]
 fn load_forges(ctx: &mut LoadContext) -> rusqlite::Result<()> {
     let mut stmt = ctx.conn.prepare("SELECT id, forging_shard_type, forging_remaining_secs FROM forges")?;
     let mut rows = stmt.query([])?;
@@ -353,24 +356,23 @@ fn load_forges(ctx: &mut LoadContext) -> rusqlite::Result<()> {
         let integrity_points = ctx.conn.get_integrity_points(old_id)?;
         let disabled_by_player = ctx.conn.get_disabled_by_player(old_id)?;
 
-        let Some(entity) = ctx.entity(old_id) else {
-            Log::warn().dev().tag(Tag::GameLoad).message(format!("Forge with old ID {old_id} has no corresponding new entity"));
-            continue;
-        };
+        #[warn_dev("Forge with old ID {old_id} has no corresponding new entity")]
+        let Some(entity) = ctx.entity(old_id) else { continue };
         let mut builder = BuilderForge::new(grid_position)
             .with_integrity_points(integrity_points);
         if disabled_by_player {
             builder = builder.with_disabled_by_player();
         }
-        if let (Some(shard_str), Some(remaining_secs)) = (forging_shard_type, forging_remaining_secs)
-            && let Ok(shard_type) = shard_str.parse::<ShardType>() {
-                builder = builder.with_forging(shard_type, remaining_secs);
+        if let (Some(shard_str), Some(remaining_secs)) = (forging_shard_type, forging_remaining_secs) {
+            match shard_str.parse::<ShardType>() {
+                Ok(shard_type) => builder = builder.with_forging(shard_type, remaining_secs),
+                Err(_) => warn_dev!("Forge with old ID {old_id} has unknown forging ShardType: {shard_str} — job dropped"),
             }
+        }
         ctx.insert(entity, builder);
     }
     Ok(())
 }
-
 
 // ============================================================================
 // INFO PANEL
@@ -438,7 +440,7 @@ impl ForgeInfoPanel {
         }
     }
 
-    fn on_rebuild_forge_ui(
+    fn on_rebuild_forge_ui_do_so(
         _trigger: On<RebuildForgeUi>,
         mut commands: Commands,
         almanach: Res<Almanach>,
@@ -447,12 +449,12 @@ impl ForgeInfoPanel {
         focused_forge: Single<(Entity, Option<&ForgeJob>), (With<Forge>, With<FocusedMapObject>)>,
         container: Single<Entity, With<ForgeContentContainer>>,
     ) {
-        let (forge_entity, maybe_job) = focused_forge.into_inner();
+        let (forge_entity, job) = focused_forge.into_inner();
         let container_entity = *container;
 
-        commands.entity(container_entity).despawn_related::<Children>();
+        commands.entity(container_entity).despawn_children();
 
-        if let Some(job) = maybe_job {
+        if let Some(job) = job {
             // Forging view
             let info = almanach.get_shard_info(job.shard_type());
             let icon = info.icon.clone();
@@ -507,7 +509,7 @@ impl ForgeInfoPanel {
                         ),
                         // Countdown text
                         (
-                            Text::new(format!("{:.1}s", remaining)),
+                            Text::new(format!("{remaining:.1}s")),
                             TextFont::from_font_size(11.),
                             TextLayout::no_wrap(),
                             ForgeCountdownText,
@@ -585,7 +587,6 @@ impl ForgeCancelButton {
     }
 }
 
-
 // ============================================================================
 // SHARD BUTTON
 // ============================================================================
@@ -602,6 +603,7 @@ struct ForgeShardButton {
     affordable: bool,
 }
 impl ForgeShardButton {
+    #[log_tags(Tag::Forge)]
     fn on_add_construct_forge_shard_button(
         trigger: On<Add, ForgeShardButton>,
         mut commands: Commands,
@@ -614,10 +616,8 @@ impl ForgeShardButton {
         let affordable = button.affordable;
 
         let info = almanach.get_shard_info(shard_type);
-        let Some(recipe) = info.recipe.as_ref() else {
-            Log::error().dev().tag(Tag::Forge).message(format!("ForgeShardButton spawned for {shard_type} with no recipe"));
-            return;
-        };
+        #[error_dev("ForgeShardButton spawned for {shard_type} with no recipe")]
+        let Some(recipe) = info.recipe.as_ref() else { return };
 
         let icon_color = if affordable {
             Color::WHITE
@@ -625,7 +625,7 @@ impl ForgeShardButton {
             Color::srgba(1., 1., 1., 0.3)
         };
 
-        let bg_color_normal = if affordable {
+        let background_color = if affordable {
             Color::srgba(0.15, 0.15, 0.25, 0.9)
         } else {
             Color::srgba(0.1, 0.1, 0.1, 0.7)
@@ -641,13 +641,13 @@ impl ForgeShardButton {
                 border_radius: BorderRadius::all(Val::Px(4.)),
                 ..default()
             },
-            BackgroundColor::from(bg_color_normal),
+            BackgroundColor::from(background_color),
             ImageNode::new(info.icon.clone()).with_color(icon_color),
         ));
         if affordable {
             commands.entity(entity)
                 .observe(recolor_background_on::<Pointer<Over>>(Color::srgba(0.25, 0.3, 0.5, 0.95)))
-                .observe(recolor_background_on::<Pointer<Out>>(bg_color_normal))
+                .observe(recolor_background_on::<Pointer<Out>>(background_color))
                 .observe(Self::on_click_request_start_forge);
         }
 
@@ -685,7 +685,6 @@ impl ForgeShardButton {
         commands.trigger(StartForgeRequest { forge: button.forge, shard_type: button.shard_type });
     }
 }
-
 
 // ============================================================================
 // FORGE JOB INSERT / REMOVE OBSERVERS

@@ -162,8 +162,8 @@ fn random_border_point<const OUTPUT: usize>(
 
 /// Picks one letter of a research's own alphabet.
 ///
-/// The letter index chooses which of the six; the authored id decides what those six look
-/// like, so a research shows the same glyphs in every session.
+/// The letter index chooses which letter of the alphabet; the authored id decides what those
+/// letters look like, so a research shows the same glyphs in every session.
 ///
 /// The hash is spelled out here because the mapping has to survive saves and toolchain
 /// upgrades: change it and every research is given a new set of glyphs.

@@ -10,13 +10,11 @@ pub(crate) mod strip;
 pub(crate) mod tile;
 pub(crate) mod tooltip;
 
-pub struct SideMenuPlugin;
+pub(crate) struct SideMenuPlugin;
 impl Plugin for SideMenuPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_systems(Startup, (
-                root::SideMenu::setup,
-            ))
+            .add_systems(Startup, root::SideMenu::setup)
             .add_systems(Update, (
                 section::AdminSection::on_admin_mode_change_update_visibility.run_if(state_changed::<AdminMode>),
                 strip::trigger_offering_changed.run_if(state_changed::<AdminMode>),

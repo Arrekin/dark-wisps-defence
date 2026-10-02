@@ -272,6 +272,15 @@ Five groups, separated by blank lines, alphabetical within each:
 
 Merge duplicate imports from the same crate into a single `use` statement.
 
+## Logging
+
+Logs are written with the `logging` crate inside functions marked `#[log_tags(Tag::X)]`. Tags name the domain the log belongs to (`MapObjects`, `Units`), not the caller.
+
+- **Forms:** an annotation on a statement (`#[info_player("..")]`) logs once that statement completes; on an `if`, `let-else` or match arm it logs when that branch runs. A log-only line uses the macro form (`warn_dev!("..")`).
+- **Level and audience** (`debug`/`info`/`warn`/`error` × `dev`/`player`) are chosen per case. Player actions and refusals, including admin-mode editing, are `player`; broken contracts and unexpected states are `warn_dev`/`error_dev`.
+- **What to log:** lifecycle changes of domain entities, refusals of player actions, unexpected skips and fallbacks. Not per-frame or per-wisp work, not lookups that can legitimately miss in normal flow, not invariants a `Single` already expresses.
+- **Shape:** log only moments the game models (an event, a state); never add allocations, passes or new state just to produce a log. An error that is only logged: `let _ = call().inspect_err(|error| warn_dev!(..));`.
+
 ## BYOAIC / Remote Control
 
 Where feasible, test changes through the game's built-in HTTP server. See [BYOAIC](documentation/BYOAIC.md) for the available endpoints.

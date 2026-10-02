@@ -2,7 +2,7 @@ use bevy::prelude::*;
 
 use game_core::prelude::{GridCoords, GridImprint};
 
-fn on_grid_coords_insert_sync_transform(
+fn on_insert_grid_coords_sync_transform(
     trigger: On<Insert, GridCoords>,
     mut transforms: Query<(&mut Transform, &GridCoords, &GridImprint)>,
 ) {
@@ -13,10 +13,10 @@ fn on_grid_coords_insert_sync_transform(
     transform.translation.y = world_centered.y;
 }
 
-pub struct GridTransformSyncPlugin;
+pub(crate) struct GridTransformSyncPlugin;
 impl Plugin for GridTransformSyncPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_observer(on_grid_coords_insert_sync_transform);
+            .add_observer(on_insert_grid_coords_sync_transform);
     }
 }

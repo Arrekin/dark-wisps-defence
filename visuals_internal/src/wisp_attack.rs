@@ -5,14 +5,12 @@ use visuals::prelude::BuilderWispAttackEffect;
 
 use crate::common::AnimationController;
 
-pub struct WispAttackEffectPlugin;
+pub(crate) struct WispAttackEffectPlugin;
 impl Plugin for WispAttackEffectPlugin {
     fn build(&self, app: &mut App) {
         app
             .init_resource::<WispAttackEffectAtlas>()
-            .add_systems(Update, (
-                remove_effects_system,
-            ))
+            .add_systems(Update, remove_wisp_attack_effects_system)
             .add_observer(on_builder_add_spawn_wisp_attack_effect);
     }
 }
@@ -50,7 +48,7 @@ pub(crate) struct WispAttackEffect;
 fn on_builder_add_spawn_wisp_attack_effect(
     trigger: On<Add, BuilderWispAttackEffect>,
     mut commands: Commands,
-    explosion_atlas: Res<WispAttackEffectAtlas>,
+    atlas: Res<WispAttackEffectAtlas>,
     builders: Query<&BuilderWispAttackEffect>,
 ) {
     let entity = trigger.entity;
@@ -60,9 +58,9 @@ fn on_builder_add_spawn_wisp_attack_effect(
         .remove::<BuilderWispAttackEffect>()
         .insert((
             Sprite {
-                image: explosion_atlas.texture_handle.clone(),
+                image: atlas.texture_handle.clone(),
                 texture_atlas: Some(TextureAtlas {
-                    layout: explosion_atlas.atlas_handle.clone(),
+                    layout: atlas.atlas_handle.clone(),
                     index: 0,
                     ..default()
                 }),
@@ -71,22 +69,20 @@ fn on_builder_add_spawn_wisp_attack_effect(
             Transform {
                 translation: builder.0.extend(0.),
                 scale: Vec3::new(0.5, 0.5, 1.0),
-                ..Default::default()
+                ..default()
             },
             AnimationController::new(0, 9, 0.025, false),
             WispAttackEffect,
         ));
 }
 
-fn remove_effects_system(
+fn remove_wisp_attack_effects_system(
     mut commands: Commands,
-    explosions: Query<(Entity, &AnimationController), With<WispAttackEffect>>,
+    effects: Query<(Entity, &AnimationController), With<WispAttackEffect>>,
 ) {
-    for (explosion_entity, animation_controller) in &explosions {
+    for (effect_entity, animation_controller) in effects.iter() {
         if animation_controller.has_finished {
-            commands.entity(explosion_entity).despawn();
+            commands.entity(effect_entity).despawn();
         }
     }
 }
-
-

@@ -1,12 +1,10 @@
-use bevy::platform::collections::HashMap;
-use bevy::prelude::*;
+use bevy::{platform::collections::HashMap, prelude::*};
 
 use alteration::modifiers::prelude::ModifierType;
 use game_core::prelude::{BuildingType, ContentId, GridImprint, MapObject, ShardType};
 use grids::placement::{ObjectPlacementInfo, PlacementAnnotatorFn, PlacementModes, PlacementValidatorFn};
 use resources::prelude::Cost;
 use states::prelude::MapLoadingStage;
-
 
 pub mod prelude {
     pub use super::{AccessPattern, Almanach, AlmanachAppExt, BuildingInfo, ObjectPresentation, ObjectTooltipFn, ResearchSpawnFn, ShardInfo, ShardRecipe};

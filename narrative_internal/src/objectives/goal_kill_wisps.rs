@@ -4,8 +4,10 @@ use bevy_egui::egui;
 use game_core::prelude::{DisplayName, SSS};
 use logging::prelude::*;
 use narrative::prelude::*;
-use persistence::prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveContext, SaveWriter};
-use persistence::rusqlite;
+use persistence::{
+    prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveContext, SaveWriter},
+    rusqlite,
+};
 use states::prelude::MapLoadingStage;
 use wisps::prelude::WispDied;
 
@@ -18,11 +20,10 @@ impl Plugin for GoalKillWispsPlugin {
             .add_observer(BuilderGoalKillWisps::on_builder_add_spawn_goal_kill_wisps)
             // Runtime observers
             .add_observer(on_wisp_died_increment_kill_wisps)
-            .add_observer(on_refresh_kill_wisps_goal)
+            .add_observer(on_refresh_kill_wisps_goal_do_so)
             // Persistence
             .add_systems(CollectSave, collect_kill_wisps)
-            .register_loader(MapLoadingStage::SpawnEffectInstances, "goal_kill_wisps", load_kill_wisps)
-            ;
+            .register_loader(MapLoadingStage::SpawnEffectInstances, "goal_kill_wisps", load_kill_wisps);
     }
 }
 
@@ -99,7 +100,7 @@ struct RefreshKillWispsGoal {
     goal: Entity,
 }
 
-fn on_refresh_kill_wisps_goal(
+fn on_refresh_kill_wisps_goal_do_so(
     trigger: On<RefreshKillWispsGoal>,
     mut goals: Query<(&GoalKillWisps, &ObjectiveCounterProgress, &mut DisplayName)>,
 ) {
@@ -154,6 +155,7 @@ fn ui_kill_wisps(ui: &mut egui::Ui, entity: &mut EntityWorldMut) {
 // PERSISTENCE
 // ============================================================================
 
+#[log_tags(Tag::GameSave)]
 fn collect_kill_wisps(
     save_ctx: Res<SaveContext>,
     mut save: SaveWriter,
@@ -161,19 +163,16 @@ fn collect_kill_wisps(
 ) {
     if goals.is_empty() { return; }
     let save_as_scenario = save_ctx.save_as_scenario;
-    let rows: Vec<(i64, i64, String, i64, i64)> = goals
+    #[debug_dev("Saving {} kill wisps goals", rows.len())]
+    let rows: Vec<(i64, i64, ObjectiveState, i64, i64)> = goals
         .iter()
         .map(|(entity, goal, state, progress, goal_of)| {
-            let state_str = if save_as_scenario {
-                ObjectiveState::Inactive.as_ref().to_string()
-            } else {
-                state.as_ref().to_string()
-            };
+            let state = if save_as_scenario { ObjectiveState::Inactive } else { *state };
             let current = if save_as_scenario { 0 } else { progress.current };
             (
                 entity.index_u32() as i64,
                 goal_of.0.index_u32() as i64,
-                state_str,
+                state,
                 goal.target as i64,
                 current as i64,
             )
@@ -185,13 +184,14 @@ fn collect_kill_wisps(
             tx.register_entity(objective_id)?;
             tx.execute(
                 "INSERT OR REPLACE INTO goal_kill_wisps (id, objective_id, state, target, current) VALUES (?1, ?2, ?3, ?4, ?5)",
-                rusqlite::params![id, objective_id, state, target, current],
+                rusqlite::params![id, objective_id, state.as_ref(), target, current],
             )?;
         }
         Ok(())
     });
 }
 
+#[log_tags(Tag::GameLoad)]
 fn load_kill_wisps(ctx: &mut LoadContext) -> rusqlite::Result<()> {
     let mut stmt = ctx.conn.prepare("SELECT id, objective_id, state, target, current FROM goal_kill_wisps")?;
     let mut rows = stmt.query([])?;
@@ -202,18 +202,12 @@ fn load_kill_wisps(ctx: &mut LoadContext) -> rusqlite::Result<()> {
         let target: usize = row.get::<_, i64>(3)? as usize;
         let current: usize = row.get::<_, i64>(4)? as usize;
 
-        let Some(entity) = ctx.entity(old_id) else {
-            Log::warn().dev().tag(Tag::GameLoad).message(format!("GoalKillWisps with old ID {old_id} has no corresponding new entity"));
-            continue;
-        };
-        let Some(objective_entity) = ctx.entity(objective_old_id) else {
-            Log::warn().dev().tag(Tag::GameLoad).message(format!("GoalKillWisps with old ID {old_id} references objective {objective_old_id} that failed remap"));
-            continue;
-        };
-        let Ok(state) = state_str.parse::<ObjectiveState>() else {
-            Log::warn().dev().tag(Tag::GameLoad).message(format!("Unknown objective state in save: {state_str}"));
-            continue;
-        };
+        #[warn_dev("GoalKillWisps with old ID {old_id} has no corresponding new entity")]
+        let Some(entity) = ctx.entity(old_id) else { continue };
+        #[warn_dev("GoalKillWisps with old ID {old_id} references objective {objective_old_id} that failed remap")]
+        let Some(objective_entity) = ctx.entity(objective_old_id) else { continue };
+        #[warn_dev("GoalKillWisps with old ID {old_id} has unknown state '{state_str}' — skipped")]
+        let Ok(state) = state_str.parse::<ObjectiveState>() else { continue };
 
         ctx.insert(entity, BuilderGoalKillWisps::new(objective_entity, target)
             .with_state(state)

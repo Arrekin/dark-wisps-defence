@@ -27,24 +27,22 @@ pub(crate) fn on_insert_research_state_sync_markers(
 ) {
     let entity = trigger.entity;
     let Ok(new_state) = states.get(entity) else { return };
-    let mut ec = commands.entity(entity);
-    ec.remove::<ResearchAvailable>()
-      .remove::<ResearchActive>()
-      .remove::<ResearchCompleted>();
+    let mut entity_commands = commands.entity(entity);
+    entity_commands.remove::<(ResearchAvailable, ResearchActive, ResearchCompleted)>();
     match new_state {
-        ResearchState::Available => { ec.insert(ResearchAvailable); }
-        ResearchState::Active    => { ec.insert(ResearchActive); }
-        ResearchState::Completed => { ec.insert(ResearchCompleted); }
+        ResearchState::Available => { entity_commands.insert(ResearchAvailable); }
+        ResearchState::Active    => { entity_commands.insert(ResearchActive); }
+        ResearchState::Completed => { entity_commands.insert(ResearchCompleted); }
     }
 }
 
 pub(crate) fn on_insert_display_icon_fire_research_display_data_updated(
     trigger: On<Insert, DisplayIcon>,
-    researches: Query<&Research>,
     mut commands: Commands,
+    researches: Query<(), With<Research>>,
 ) {
     let entity = trigger.entity;
-    if researches.get(entity).is_ok() {
+    if researches.contains(entity) {
         commands.trigger(ResearchDisplayDataUpdated { research: entity });
     }
 }
@@ -54,10 +52,10 @@ pub(crate) fn on_insert_display_icon_fire_research_display_data_updated(
 pub(crate) fn on_seed_researches_spawn_missing(
     _trigger: On<SeedResearches>,
     mut commands: Commands,
-    existing: Query<&ContentId, With<Research>>,
     almanach: Res<Almanach>,
+    researches: Query<&ContentId, With<Research>>,
 ) {
-    let existing: HashSet<&ContentId> = existing.iter().collect();
+    let existing: HashSet<&ContentId> = researches.iter().collect();
     for (id, spawn_fn) in almanach.researches.iter() {
         if !existing.contains(id) {
             spawn_fn(&mut commands, id);

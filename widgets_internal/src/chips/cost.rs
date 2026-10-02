@@ -1,15 +1,17 @@
 use bevy::prelude::*;
 
 use resources::prelude::Stock;
-use widgets::prelude::{
-    BuilderChip, BuilderChipStrip, BuilderCostChip, BuilderFullPriceCostStrip, BuilderTooltip,
-    ChipChildren, CostChip, CostChipVisualFullPrice, CostChipVisualUnitAvailable,
+use widgets::{
+    common::utils::set_text_if_changed,
+    prelude::{
+        BuilderChip, BuilderChipStrip, BuilderCostChip, BuilderFullPriceCostStrip, BuilderTooltip,
+        ChipChildren, CostChip, CostChipVisualFullPrice, CostChipVisualUnitAvailable,
+    },
 };
-use widgets::common::utils::set_text_if_changed;
 
 use super::chip::CHIP_FONT_SIZE;
 
-pub struct CostChipPlugin;
+pub(crate) struct CostChipPlugin;
 impl Plugin for CostChipPlugin {
     fn build(&self, app: &mut App) {
         app

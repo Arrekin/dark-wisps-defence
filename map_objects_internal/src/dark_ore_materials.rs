@@ -10,6 +10,7 @@ use bevy::{
 };
 
 use game_core::prelude::{FaceSurface, GridImprint, MapObject, ObjectFaceRequest};
+use logging::prelude::*;
 
 pub(crate) struct DarkOreMaterialsPlugin;
 impl Plugin for DarkOreMaterialsPlugin {
@@ -54,6 +55,7 @@ impl Material2d for DarkOreQuadMaterial {
 /// Attaches a dark-ore face for UI or placement preview use.
 ///
 /// Placed deposits are rendered separately by the grid-wide dark-ore canvas.
+#[log_tags(Tag::MapObjects)]
 fn on_object_face_request_draw_dark_ore(
     trigger: On<ObjectFaceRequest>,
     mut commands: Commands,
@@ -69,6 +71,7 @@ fn on_object_face_request_draw_dark_ore(
             commands.entity(entity).insert(MaterialNode(face_materials.add(DarkOreFaceMaterial {})));
         }
         FaceSurface::World => {
+            #[warn_dev("Dark ore face requested in the world for {entity}, which has no GridImprint or no longer exists")]
             let Ok(grid_imprint) = grid_imprints.get(entity) else { return; };
             commands.entity(entity).insert((
                 Mesh2d(meshes.add(Rectangle::from_size(grid_imprint.world_size()))),

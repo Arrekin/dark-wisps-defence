@@ -7,7 +7,7 @@ use game_core::prelude::ShardType;
 #[derive(Event)]
 pub struct ShardBlueprintAcquired(pub ShardType);
 
-#[derive(Resource, Default)]
+#[derive(Resource, Default, Clone)]
 pub struct ShardBlueprints {
     unlocked: Vec<ShardType>,
 }

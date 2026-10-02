@@ -1,9 +1,8 @@
-use bevy::prelude::*;
-use bevy::ui::FocusPolicy;
+use bevy::{prelude::*, ui::FocusPolicy};
 
 use states::prelude::*;
 
-pub struct PauseIndicatorPlugin;
+pub(crate) struct PauseIndicatorPlugin;
 impl Plugin for PauseIndicatorPlugin {
     fn build(&self, app: &mut App) {
         app
@@ -28,10 +27,10 @@ impl PauseIndicator {
                 border: UiRect::all(Val::Px(4.0)),
             }
             BackgroundColor(Color::NONE)
-            template_value(BorderColor::all(Color::srgb(1.0, 0.8, 0.0))) // Yellow border
+            template_value(BorderColor::all(Color::srgb(1.0, 0.8, 0.0)))
             template_value(FocusPolicy::Pass)
             template_value(Pickable::IGNORE) // Don't block mouse clicks/events
-            Visibility::Hidden // Initially hidden
+            Visibility::Hidden
             ZIndex(-1) // Render behind other UI elements
         });
     }

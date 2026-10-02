@@ -21,8 +21,8 @@ impl Plugin for VoidPanelPlugin {
 fn on_builder_add_spawn_void_panel(
     trigger: On<Add, BuilderVoidPanel>,
     mut commands: Commands,
-    builders: Query<&BuilderVoidPanel>,
     mut materials: ResMut<Assets<VoidPanelMaterial>>,
+    builders: Query<&BuilderVoidPanel>,
 ) {
     let entity = trigger.entity;
     let Ok(builder) = builders.get(entity) else { return };
@@ -51,8 +51,8 @@ fn on_builder_add_spawn_void_panel(
 
 fn sync_void_panels(
     time: Res<Time>,
-    mut panels: Query<(&mut VoidPanel, &MaterialNode<VoidPanelMaterial>), Changed<VoidPanel>>,
     mut materials: ResMut<Assets<VoidPanelMaterial>>,
+    mut panels: Query<(&mut VoidPanel, &MaterialNode<VoidPanelMaterial>), Changed<VoidPanel>>,
 ) {
     let now = time.elapsed_secs();
     for (mut panel, material_handle) in panels.iter_mut() {

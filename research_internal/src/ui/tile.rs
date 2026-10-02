@@ -2,8 +2,7 @@ use bevy::prelude::*;
 
 use game_core::prelude::{DisplayIcon, DisplayName};
 use outcomes::prelude::HasOutcomes;
-use research::prelude::*;
-use research::research_bar::BuilderResearchBar;
+use research::{prelude::*, research_bar::BuilderResearchBar};
 use widgets::prelude::{
     BuilderChipStrip, BuilderDisplayChip, BuilderVoidPanel, ChipsFaded, TextRole, VoidPanel,
     VoidPanelBorderSurge, VoidPanelStyle,
@@ -111,9 +110,9 @@ fn on_add_research_tile_of_build_tile(
     let Ok(tile_of) = tiles.get(tile_entity) else { return };
     let research = tile_of.0;
 
-    let progress = runtimes.get(research).map(|r| r.progress).unwrap_or(0.);
+    let progress = runtimes.get(research).map(|runtime| runtime.progress).unwrap_or(0.);
 
-    // Build tile structure — content is populated by ResearchDataUpdated.
+    // Build tile structure — content is populated by ResearchDisplayDataUpdated.
     let icon_node = commands.spawn((
         ImageNode::default(),
         Node {
@@ -213,26 +212,26 @@ fn on_add_research_tile_of_build_tile(
         .add_children(&[icon_node, name_text, progress_bar, grants, action_row]);
 
     // Register the data-updated observer on the research entity.
-    commands.entity(research).observe(on_research_display_data_updated);
+    commands.entity(research).observe(on_research_display_data_updated_fill_tile);
 
     commands.entity(*grid).add_child(tile_entity);
 }
 
 // ============================================================================
-// DATA POPULATION — ResearchDataUpdated pushes display data to tile children
+// DATA POPULATION — ResearchDisplayDataUpdated pushes display data to tile children
 // ============================================================================
 
 /// Fired when the grid's tiles may need reordering.
 #[derive(Event, Clone, Copy)]
 pub(crate) struct ResearchTilesNeedOrdering;
 
-fn on_research_display_data_updated(
+fn on_research_display_data_updated_fill_tile(
     trigger: On<ResearchDisplayDataUpdated>,
+    mut commands: Commands,
     researches: Query<(&DisplayName, &DisplayIcon, &ResearchTileLink)>,
     tiles: Query<&ResearchTile>,
     mut image_nodes: Query<&mut ImageNode>,
     mut texts: Query<&mut Text>,
-    mut commands: Commands,
 ) {
     let research = trigger.research;
     let Ok((name, icon, link)) = researches.get(research) else { return };
@@ -263,8 +262,9 @@ fn on_insert_research_state_refresh_tile(
 ) {
     let Ok((research_state, tile_link)) = researches.get(trigger.entity) else { return };
     let Ok((tile, mut panel)) = tiles.get_mut(tile_link.0) else { return };
+    let is_completed = research_state.is_completed();
 
-    if research_state.is_completed() {
+    if is_completed {
         panel.set_style(COMPLETED_STYLE);
     } else {
         panel.clear_style();
@@ -272,16 +272,16 @@ fn on_insert_research_state_refresh_tile(
 
     // Hide the progress bar but keep it in the layout.
     if let Ok(mut visibility) = visibilities.get_mut(tile.progress_bar) {
-        *visibility = if research_state.is_completed() { Visibility::Hidden } else { Visibility::Inherited };
+        *visibility = if is_completed { Visibility::Hidden } else { Visibility::Inherited };
     }
 
     // Takes the action button's place in the row. Collapsed rather than hidden so it does
     // not sit beside the button and shift it off centre while a research is unfinished.
     if let Ok(mut label_node) = nodes.get_mut(tile.completed_label) {
-        label_node.display = if research_state.is_completed() { Display::Flex } else { Display::None };
+        label_node.display = if is_completed { Display::Flex } else { Display::None };
     }
 
-    let content_color = if research_state.is_completed() {
+    let content_color = if is_completed {
         Color::srgb(
             COMPLETED_CONTENT_BRIGHTNESS,
             COMPLETED_CONTENT_BRIGHTNESS,
@@ -299,7 +299,7 @@ fn on_insert_research_state_refresh_tile(
     // the strip is told otherwise, and a completed tile ends up muted everywhere except
     // its grants.
     let mut grants = commands.entity(tile.grants);
-    if research_state.is_completed() {
+    if is_completed {
         grants.insert(ChipsFaded(COMPLETED_CONTENT_BRIGHTNESS));
     } else {
         grants.remove::<ChipsFaded>();

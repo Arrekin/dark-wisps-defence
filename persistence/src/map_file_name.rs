@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use logging::prelude::*;
+
 const MAPS_DIRECTORY: &str = "maps";
 
 /// Identity of a map in `maps/`: its file name without the `.dwd` extension. Unique, unlike
@@ -22,8 +24,10 @@ impl MapFileName {
 }
 
 /// Every `.dwd` file in `maps/`.
+#[log_tags(Tag::GameLoad)]
 pub fn list_map_file_names() -> Vec<MapFileName> {
     std::fs::read_dir(MAPS_DIRECTORY)
+        .inspect_err(|error| warn_dev!("Maps directory '{MAPS_DIRECTORY}' not readable ({error}); listing no maps"))
         .ok()
         .into_iter()
         .flat_map(|entries| entries.filter_map(|entry| entry.ok()))

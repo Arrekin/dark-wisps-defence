@@ -19,9 +19,7 @@ impl Plugin for StatesPlugin {
             .init_state::<MapLoadingStage>()
             .init_state::<AdminMode>()
             .add_observer(GameState::on_set_game_paused_do_so)
-            .add_systems(PreUpdate, (
-                UiInteraction::on_escape.run_if(input_just_pressed(KeyCode::Escape)),
-            ))
+            .add_systems(PreUpdate, UiInteraction::on_escape.run_if(input_just_pressed(KeyCode::Escape)))
             .add_systems(Update, (
                 GameState::toggle_pause.run_if(input_just_pressed(KeyCode::Space)),
                 AdminMode::toggle_admin_mode.run_if(input_just_pressed(KeyCode::Tab)),

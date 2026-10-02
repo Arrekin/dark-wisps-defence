@@ -37,15 +37,14 @@ impl Plugin for ViewportPlugin {
                 camera_movement,
             ))
             .add_systems(PostUpdate, CameraAutoFollowEntity::update)
-            .add_observer(BuilderPreviewCamera::on_add)
-            ;
+            .add_observer(BuilderPreviewCamera::on_builder_add_spawn_preview_camera);
     }
 }
 
 #[derive(Component)]
 pub struct MainCamera;
 
-// Post process effect auto-hook themselves to cameras with this component
+/// Post-process effects attach themselves to cameras carrying this marker.
 #[derive(Component)]
 pub struct PostProcessCamera;
 
@@ -90,7 +89,6 @@ fn camera_zoom(
         _ => panic!("Only orthographic projections are supported for zooming"),
     }
 }
-
 
 fn camera_movement(
     keyboard_input: Res<ButtonInput<KeyCode>>,
@@ -143,8 +141,8 @@ fn camera_movement(
 ///     CameraOf(ui_node_entity),
 /// )).id();
 ///
-/// // Or use the builder for common preview camera setup:
-/// let camera = PreviewCamera::spawn(&mut commands, &mut images, ui_node_entity, position, scale);
+/// // Or use the builder for the common preview camera setup:
+/// let camera = commands.spawn(BuilderPreviewCamera::new(ui_node_entity, position, scale)).id();
 /// ```
 #[derive(Component)]
 #[relationship(relationship_target = OwnedCameras)]
@@ -162,10 +160,7 @@ pub struct OwnedCameras(Vec<Entity>);
 /// Builder for spawning preview cameras with automatic lifecycle management.
 ///
 /// Preview cameras render to an off-screen image that can be displayed in UI
-/// via `ViewportNode`. They are commonly used for:
-/// - Drone slot tooltips (showing drone on map)
-/// - Target selection previews
-/// - Any "picture-in-picture" style preview
+/// via `ViewportNode`, for picture-in-picture views of the map.
 ///
 /// # Lifecycle
 ///
@@ -225,7 +220,7 @@ impl BuilderPreviewCamera {
     /// - Orthographic projection at the specified scale
     /// - Automatic lifecycle via `CameraOf` relationship
     /// - If auto_follow_entity is provided, adds CameraAutoFollowEntity component to the camera
-    fn on_add(
+    fn on_builder_add_spawn_preview_camera(
         trigger: On<Add, BuilderPreviewCamera>,
         mut commands: Commands,
         mut images: ResMut<Assets<Image>>,
@@ -274,7 +269,7 @@ impl BuilderPreviewCamera {
     }
 }
 
-/// Camera that follows a drone for tooltip preview
+/// Keeps a camera centred on an entity's position.
 #[derive(Component)]
 pub struct CameraAutoFollowEntity(pub Entity);
 impl CameraAutoFollowEntity {
@@ -282,10 +277,10 @@ impl CameraAutoFollowEntity {
         mut cameras: Query<(&CameraAutoFollowEntity, &mut Transform)>,
         targets: Query<&Transform, Without<CameraAutoFollowEntity>>,
     ) {
-        for (auto_follow, mut cam_transform) in cameras.iter_mut() {
-            if let Ok(drone_transform) = targets.get(auto_follow.0) {
-                cam_transform.translation.x = drone_transform.translation.x;
-                cam_transform.translation.y = drone_transform.translation.y;
+        for (auto_follow, mut camera_transform) in cameras.iter_mut() {
+            if let Ok(target_transform) = targets.get(auto_follow.0) {
+                camera_transform.translation.x = target_transform.translation.x;
+                camera_transform.translation.y = target_transform.translation.y;
             }
         }
     }
@@ -299,7 +294,8 @@ impl CameraAutoFollowEntity {
 pub struct MouseInfo {
     pub screen_position: Vec2,
     pub world_position: Vec2,
-    pub grid_coords: GridCoords, // Not guaranteed to be in bounds
+    /// Not guaranteed to be within the map bounds.
+    pub grid_coords: GridCoords,
     pub is_over_ui: bool,
 }
 

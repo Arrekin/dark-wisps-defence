@@ -2,7 +2,7 @@ use bevy::prelude::*;
 
 use widgets::prelude::{BuilderFillBar, FillAxis, FillBar, FillBarChildren};
 
-pub struct FillBarPlugin;
+pub(crate) struct FillBarPlugin;
 impl Plugin for FillBarPlugin {
     fn build(&self, app: &mut App) {
         app
@@ -73,10 +73,10 @@ fn sync_fill_bars(
 
 /// Returns `(width, height)` for the fill node given the axis and fraction.
 fn fill_dimensions(axis: FillAxis, fraction: f32) -> (Val, Val) {
-    let pct = Val::Percent(fraction * 100.0);
+    let fill = Val::Percent(fraction * 100.0);
     let full = Val::Percent(100.0);
     match axis {
-        FillAxis::Horizontal => (pct, full),
-        FillAxis::Vertical => (full, pct),
+        FillAxis::Horizontal => (fill, full),
+        FillAxis::Vertical => (full, fill),
     }
 }

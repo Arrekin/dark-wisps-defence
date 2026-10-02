@@ -1,13 +1,14 @@
 //! Root layout for the left-edge construction and panel menu.
 
-use bevy::ecs::template::TemplateContext;
-use bevy::prelude::*;
+use bevy::{ecs::template::TemplateContext, prelude::*};
 use strum::IntoEnumIterator;
 
 use game_core::prelude::*;
 
-use super::section::{AdminSection, SectionOffering, on_click_open_research_panel, side_menu_section};
-use super::tile::PlacementTile;
+use super::{
+    section::{AdminSection, SectionOffering, on_click_open_research_panel, side_menu_section},
+    tile::PlacementTile,
+};
 
 /// Distance from the window's left edge to the menu column.
 pub(crate) const SIDE_MENU_LEFT: f32 = 5.0;

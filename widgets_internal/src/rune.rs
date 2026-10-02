@@ -20,8 +20,8 @@ fn on_builder_add_spawn_rune(
     trigger: On<Add, BuilderRune>,
     mut commands: Commands,
     time: Res<Time>,
-    builders: Query<&BuilderRune>,
     mut materials: ResMut<Assets<RuneMaterial>>,
+    builders: Query<&BuilderRune>,
 ) {
     let entity = trigger.entity;
     let Ok(builder) = builders.get(entity) else { return };

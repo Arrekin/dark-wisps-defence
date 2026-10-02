@@ -2,6 +2,7 @@ use bevy::prelude::*;
 use serde::Serialize;
 
 use game_core::prelude::*;
+use logging::prelude::*;
 
 #[derive(Default, Clone, Copy, Debug, States, PartialEq, Eq, Hash, Serialize)]
 pub enum GameState {
@@ -22,6 +23,7 @@ impl GameState {
         });
     }
 
+    #[log_tags(Tag::Ui)]
     pub(crate) fn on_set_game_paused_do_so(
         trigger: On<SetGamePaused>,
         mut commands: Commands,
@@ -36,10 +38,12 @@ impl GameState {
         }
         let result = match (current_game_state.get(), requested_paused) {
             (GameState::Running, true) => {
+                #[info_player("Game paused")]
                 next_game_state.set(GameState::Paused);
                 SetGamePausedResult::Applied
             }
             (GameState::Paused, false) => {
+                #[info_player("Game resumed")]
                 next_game_state.set(GameState::Running);
                 SetGamePausedResult::Applied
             }

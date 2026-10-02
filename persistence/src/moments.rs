@@ -3,10 +3,12 @@ use bevy::prelude::*;
 use game_core::prelude::{Moment, MomentKind, MomentOf};
 use logging::prelude::*;
 
-use crate::common::GameDbHelpers;
-use crate::load::LoadContext;
-use crate::rusqlite;
-use crate::save::{SaveContext, SaveWriter};
+use crate::{
+    common::GameDbHelpers,
+    load::LoadContext,
+    rusqlite,
+    save::{SaveContext, SaveWriter},
+};
 
 // ============================================================================
 // Generic moment persistence helpers
@@ -19,12 +21,14 @@ use crate::save::{SaveContext, SaveWriter};
 /// Save all moments of kind `M` to the `moments` table. Registered via
 /// `register_moment_persistence`. Scenario saves reset `fired_count` to 0;
 /// quick saves preserve it.
+#[log_tags(Tag::GameSave)]
 pub fn save_moments<M: MomentKind>(
     save_ctx: Res<SaveContext>,
     mut save: SaveWriter,
     moments: Query<(Entity, &Moment, &MomentOf, &M)>,
 ) {
     if moments.is_empty() { return; }
+    #[debug_dev("Saving {} '{}' moments", rows.len(), M::KIND)]
     let rows: Vec<(i64, i64, &'static str, u32)> = moments
         .iter()
         .map(|(entity, moment, parent, _marker)| {
@@ -49,6 +53,7 @@ pub fn save_moments<M: MomentKind>(
 
 /// Load all moments of kind `M` from the `moments` table and restore them via
 /// `ctx.insert`. Registered via `register_moment_persistence`.
+#[log_tags(Tag::GameLoad)]
 pub fn load_moments<M: MomentKind>(ctx: &mut LoadContext) -> rusqlite::Result<()> {
     let mut stmt = ctx.conn.prepare(
         "SELECT id, parent_id, fired_count FROM moments WHERE kind = ?1",
@@ -59,30 +64,16 @@ pub fn load_moments<M: MomentKind>(ctx: &mut LoadContext) -> rusqlite::Result<()
         let old_parent_id: i64 = row.get(1)?;
         let fired_count: i64 = row.get(2)?;
 
-        let Some(entity) = ctx.entity(old_id) else {
-            Log::warn().dev().tag(Tag::GameLoad).message(format!(
-                "Moment kind '{}' old ID {old_id} failed entity remap — skipping",
-                M::KIND,
-            ));
-            continue;
-        };
+        #[warn_dev("Moment kind '{}' old ID {old_id} failed entity remap — skipping", M::KIND)]
+        let Some(entity) = ctx.entity(old_id) else { continue };
+        #[warn_dev("Moment kind '{}' old ID {old_id} has parent_id {old_parent_id} that failed entity remap — skipping", M::KIND)]
+        let Some(parent) = ctx.entity(old_parent_id) else { continue };
 
-        let Some(parent) = ctx.entity(old_parent_id) else {
-            Log::warn().dev().tag(Tag::GameLoad).message(format!(
-                "Moment kind '{}' old ID {old_id} has parent_id {old_parent_id} that failed entity remap — skipping",
-                M::KIND,
-            ));
-            continue;
-        };
-
-        ctx.insert(
-            entity,
-            (
-                Moment { fired_count: fired_count as u32 },
-                MomentOf(parent),
-                M::default(),
-            ),
-        );
+        ctx.insert(entity, (
+            Moment { fired_count: fired_count as u32 },
+            MomentOf(parent),
+            M::default(),
+        ));
     }
     Ok(())
 }

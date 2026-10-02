@@ -25,8 +25,7 @@ use persistence::{
 use resources::prelude::*;
 use states::prelude::*;
 
-use crate::common::*;
-use crate::tooltip::building_tooltip;
+use crate::{common::*, tooltip::building_tooltip};
 
 fn mining_complex_validator(_: MapObject, origin: GridCoords, imprint: GridImprint, map_data: &GridsCollectionParam) -> PlacementValidity {
     if !imprint.is_in_bounds(origin, map_data.obstacle_grid.bounds) {
@@ -69,20 +68,17 @@ fn mining_complex_annotator(_: MapObject, origin: GridCoords, imprint: GridImpri
     }
 }
 
-pub struct MiningComplexPlugin;
+pub(crate) struct MiningComplexPlugin;
 impl Plugin for MiningComplexPlugin {
     fn build(&self, app: &mut App) {
         let almanach_info = BuilderMiningComplex::almanach_info(app.world().resource::<AssetServer>());
         app
-            .add_systems(Update, (
-                mine_ore_system.run_if(in_state(GameState::Running)),
-            ))
+            .add_systems(Update, mine_ore_system.run_if(in_state(GameState::Running)))
             .add_observer(BuilderMiningComplex::on_builder_add_spawn_mining_complex)
             .add_observer(on_mining_complex_place_request_do_so)
             .add_systems(CollectSave, collect_mining_complexes)
             .register_loader(MapLoadingStage::SpawnMapElements, "mining_complexes", load_mining_complexes)
-            .register_building(BuildingType::MiningComplex, almanach_info)
-            ;
+            .register_building(BuildingType::MiningComplex, almanach_info);
     }
 }
 
@@ -143,8 +139,8 @@ impl BuilderMiningComplex {
         let grid_imprint = building_info.grid_imprint;
 
         let mut entity_commands = commands.entity(entity);
-        if let Some(ip) = builder.integrity_points {
-            entity_commands.insert(IntegrityPoints::new(ip));
+        if let Some(integrity_points) = builder.integrity_points {
+            entity_commands.insert(IntegrityPoints::new(integrity_points));
         }
         if builder.disabled_by_player {
             entity_commands.insert(DisabledByPlayer);
@@ -157,7 +153,7 @@ impl BuilderMiningComplex {
                 Sprite {
                     image: building_info.sprite.clone(),
                     custom_size: Some(grid_imprint.world_size()),
-                    ..Default::default()
+                    ..default()
                 },
                 builder.grid_position,
                 grid_imprint,
@@ -191,28 +187,29 @@ fn on_mining_complex_place_request_do_so(
     commands.spawn(BuilderMiningComplex::new(coords));
 }
 
+#[log_tags(Tag::GameSave)]
 fn collect_mining_complexes(
     mining_complexes: Query<(Entity, &GridCoords, &IntegrityPoints, Has<DisabledByPlayer>), With<MiningComplex>>,
     mut save: SaveWriter,
 ) {
     if mining_complexes.is_empty() { return; }
-    let rows: Vec<(i64, i32, i32, f32, bool)> = mining_complexes
+
+    #[debug_dev("Saving {} mining complexes", rows.len())]
+    let rows: Vec<(i64, GridCoords, f32, bool)> = mining_complexes
         .iter()
         .map(|(entity, coords, integrity_points, disabled_by_player)| {
             (
                 entity.index_u32() as i64,
-                coords.x,
-                coords.y,
+                *coords,
                 integrity_points.get_current(),
                 disabled_by_player,
             )
         })
         .collect();
-    Log::debug().dev().tag(Tag::GameSave).message(format!("Saving {} mining complexes", rows.len()));
     save.submit(move |tx| {
-        for (id, gx, gy, integrity_points, disabled_by_player) in rows {
+        for (id, coords, integrity_points, disabled_by_player) in rows {
             tx.save_marker("mining_complexes", id)?;
-            tx.save_grid_coords(id, GridCoords { x: gx, y: gy })?;
+            tx.save_grid_coords(id, coords)?;
             tx.save_integrity_points(id, integrity_points)?;
             if disabled_by_player {
                 tx.save_disabled_by_player(id)?;
@@ -222,6 +219,7 @@ fn collect_mining_complexes(
     });
 }
 
+#[log_tags(Tag::GameLoad)]
 fn load_mining_complexes(ctx: &mut LoadContext) -> rusqlite::Result<()> {
     let mut stmt = ctx.conn.prepare("SELECT id FROM mining_complexes")?;
     let mut rows = stmt.query([])?;
@@ -231,10 +229,8 @@ fn load_mining_complexes(ctx: &mut LoadContext) -> rusqlite::Result<()> {
         let integrity_points = ctx.conn.get_integrity_points(old_id)?;
         let disabled_by_player = ctx.conn.get_disabled_by_player(old_id)?;
 
-        let Some(entity) = ctx.entity(old_id) else {
-            Log::warn().dev().tag(Tag::GameLoad).message(format!("MiningComplex with old ID {old_id} has no corresponding new entity"));
-            continue;
-        };
+        #[warn_dev("MiningComplex with old ID {old_id} has no corresponding new entity")]
+        let Some(entity) = ctx.entity(old_id) else { continue };
         let mut builder = BuilderMiningComplex::new(grid_position)
             .with_integrity_points(integrity_points);
         if disabled_by_player {

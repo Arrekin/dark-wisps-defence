@@ -1,5 +1,4 @@
-use bevy::color::palettes::css::GRAY;
-use bevy::prelude::*;
+use bevy::{color::palettes::css::GRAY, prelude::*};
 
 use game_core::prelude::*;
 

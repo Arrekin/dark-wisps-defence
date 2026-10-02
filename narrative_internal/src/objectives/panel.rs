@@ -1,5 +1,7 @@
-use bevy::prelude::*;
-use bevy::ui::{widget::NodeImageMode, VisualBox};
+use bevy::{
+    prelude::*,
+    ui::{widget::NodeImageMode, VisualBox},
+};
 
 use game_core::prelude::DisplayName;
 use narrative::prelude::*;
@@ -18,14 +20,13 @@ impl Plugin for ObjectivesPanelPlugin {
                 update_display_lines,
                 update_titles,
             ))
-            .add_observer(on_add_construct_objectives_panel)
-            .add_observer(on_add_construct_panel_content)
-            .add_observer(ObjectivesShowHideButton::on_add_construct_show_hide_button)
+            .add_observer(on_add_objectives_panel_construct)
+            .add_observer(on_add_objectives_panel_content_construct)
+            .add_observer(ObjectivesShowHideButton::on_add_objectives_show_hide_button_construct)
             .add_observer(on_add_objective_details_spawn_row)
             .add_observer(on_remove_objective_details_despawn_row)
             .add_observer(on_insert_objective_state_request_rebuild)
-            .add_observer(rebuild_panel)
-            ;
+            .add_observer(on_rebuild_objectives_panel_do_so);
     }
 }
 
@@ -46,15 +47,14 @@ pub(crate) struct ObjectivesPanelContent;
 #[require(Button, Pickable)]
 pub(crate) struct ObjectivesShowHideButton;
 
-/// Marker on a row entity (child of content container). Stores the logic entity
-/// Component on a row entity (child of content container). Stores the logic
-/// entity this row mirrors, plus the widget entities for direct indexing
-/// (avoids grandparent-walking to find the checkmark/title).
+/// Component on a row entity (child of content container). Stores the objective
+/// this row mirrors, plus the row's widget entities for direct indexing.
 #[derive(Component)]
 pub(crate) struct ObjectiveRow {
     pub(crate) objective: Entity,
     pub(crate) checkmark: Entity,
     pub(crate) title: Entity,
+    pub(crate) content: Entity,
 }
 
 /// Marker on the content container within a row (holds display-line texts).
@@ -95,7 +95,7 @@ const VISIBLE_TOP_POSITION: f32 = 5.;
 // PANEL ROOT CONSTRUCTION
 // ============================================================================
 
-fn on_add_construct_objectives_panel(
+fn on_add_objectives_panel_construct(
     trigger: On<Add, ObjectivesPanel>,
     mut commands: Commands,
 ) {
@@ -126,7 +126,7 @@ fn on_add_construct_objectives_panel(
     });
 }
 
-fn on_add_construct_panel_content(
+fn on_add_objectives_panel_content_construct(
     trigger: On<Add, ObjectivesPanelContent>,
     mut commands: Commands,
 ) {
@@ -144,7 +144,7 @@ fn on_add_construct_panel_content(
 // ============================================================================
 
 impl ObjectivesShowHideButton {
-    fn on_add_construct_show_hide_button(
+    fn on_add_objectives_show_hide_button_construct(
         trigger: On<Add, ObjectivesShowHideButton>,
         mut commands: Commands,
     ) {
@@ -222,10 +222,10 @@ fn panel_transition_to_hidden(
 
 fn on_add_objective_details_spawn_row(
     trigger: On<Add, ObjectiveDetails>,
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
     details: Query<&ObjectiveDetails>,
     content: Single<Entity, With<ObjectivesPanelContent>>,
-    asset_server: Res<AssetServer>,
-    mut commands: Commands,
 ) {
     let objective_entity = trigger.entity;
     let Ok(details) = details.get(objective_entity) else { return };
@@ -273,6 +273,7 @@ fn on_add_objective_details_spawn_row(
             objective: objective_entity,
             checkmark,
             title,
+            content: row_content,
         },
         Node {
             width: Val::Percent(100.),
@@ -307,28 +308,26 @@ fn on_insert_objective_state_request_rebuild(
 }
 
 // ============================================================================
-// REBUILD SYSTEM (structural changes: state, goal-set)
+// REBUILD (structural changes: state, goal-set)
 // ============================================================================
 
-fn rebuild_panel(
+fn on_rebuild_objectives_panel_do_so(
     _trigger: On<RebuildObjectivesPanel>,
-    rows: Query<(Entity, &ObjectiveRow, &Children)>,
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    rows: Query<(Entity, &ObjectiveRow)>,
     objectives: Query<(&ObjectiveState, Option<&ObjectiveGoals>), With<ObjectiveDetails>>,
     display_lines: Query<&DisplayName>,
     mut checkmarks: Query<&mut ImageNode, With<ObjectiveCheckmark>>,
     mut row_colors: Query<(&mut BackgroundColor, &mut BorderColor), With<ObjectiveRow>>,
-    row_contents: Query<&ObjectiveRowContent>,
     row_content_children: Query<&Children, With<ObjectiveRowContent>>,
     display_texts: Query<&ObjectiveDisplayLineText>,
-    asset_server: Res<AssetServer>,
-    mut commands: Commands,
 ) {
-    for (row_entity, row, row_children) in rows.iter() {
-        let objective_entity = row.objective;
-        let Ok((state, goals)) = objectives.get(objective_entity) else { continue };
+    for (row_entity, row) in rows.iter() {
+        let Ok((state, goals)) = objectives.get(row.objective) else { continue };
 
         // 1. Update colors + checkmark based on state
-        let (check_img, bg, border) = match state {
+        let (checkmark_image, background, border) = match state {
             ObjectiveState::Inactive => (
                 "ui/objectives_check_active.png",
                 Color::srgba(0.3, 0.3, 0.3, 0.7),
@@ -352,28 +351,19 @@ fn rebuild_panel(
         };
 
         // Update row colors
-        if let Ok((mut bg_color, mut border_color)) = row_colors.get_mut(row_entity) {
-            *bg_color = bg.into();
+        if let Ok((mut background_color, mut border_color)) = row_colors.get_mut(row_entity) {
+            *background_color = background.into();
             *border_color = border.into();
         }
 
         // Update the checkmark directly via stored entity.
-        if let Ok(mut img) = checkmarks.get_mut(row.checkmark) {
-            img.image = asset_server.load(check_img);
+        if let Ok(mut checkmark) = checkmarks.get_mut(row.checkmark) {
+            checkmark.image = asset_server.load(checkmark_image);
         }
 
         // 2. Sync display-line texts
-        let mut content_entity: Option<Entity> = None;
-        for child in row_children.iter() {
-            if row_contents.contains(child) {
-                content_entity = Some(child);
-                break;
-            }
-        }
-        let Some(content_entity) = content_entity else { continue };
-
         // Despawn old display-line texts
-        if let Ok(content_children) = row_content_children.get(content_entity) {
+        if let Ok(content_children) = row_content_children.get(row.content) {
             for child in content_children.iter() {
                 if display_texts.contains(child) {
                     commands.entity(child).despawn();
@@ -390,7 +380,7 @@ fn rebuild_panel(
                         TextFont::default().with_font_size(10.),
                         ObjectiveDisplayLineText(goal_entity),
                     )).id();
-                    commands.entity(content_entity).add_child(text);
+                    commands.entity(row.content).add_child(text);
                 }
             }
         }
@@ -418,17 +408,15 @@ fn update_display_lines(
 // ============================================================================
 
 fn update_titles(
-    changed: Query<Entity, Changed<ObjectiveDetails>>,
+    changed: Query<&ObjectiveDetails, Changed<ObjectiveDetails>>,
     rows: Query<&ObjectiveRow>,
     mut titles: Query<&mut Text, With<ObjectiveTitle>>,
-    details: Query<&ObjectiveDetails>,
 ) {
     if changed.is_empty() { return; }
     for row in rows.iter() {
-        if !changed.contains(row.objective) { continue; }
-        let Ok(det) = details.get(row.objective) else { continue };
+        let Ok(details) = changed.get(row.objective) else { continue };
         if let Ok(mut title_text) = titles.get_mut(row.title) {
-            title_text.0 = det.id_name.clone();
+            title_text.0 = details.id_name.clone();
         }
     }
 }
@@ -439,8 +427,8 @@ fn update_titles(
 
 fn on_remove_objective_details_despawn_row(
     trigger: On<Remove, ObjectiveDetails>,
-    rows: Query<(Entity, &ObjectiveRow)>,
     mut commands: Commands,
+    rows: Query<(Entity, &ObjectiveRow)>,
 ) {
     let objective_entity = trigger.entity;
     for (row_entity, row) in rows.iter() {
@@ -449,4 +437,3 @@ fn on_remove_objective_details_despawn_row(
         }
     }
 }
-

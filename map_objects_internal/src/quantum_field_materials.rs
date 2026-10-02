@@ -13,6 +13,7 @@ use bevy::{
 };
 
 use game_core::prelude::{FaceSurface, GridImprint, MapObject, ObjectFaceRequest};
+use logging::prelude::*;
 
 pub(crate) struct QuantumFieldMaterialsPlugin;
 impl Plugin for QuantumFieldMaterialsPlugin {
@@ -50,6 +51,7 @@ impl Material2d for QuantumFieldQuadMaterial {
     }
 }
 
+#[log_tags(Tag::MapObjects)]
 fn on_object_face_request_draw_quantum_field(
     trigger: On<ObjectFaceRequest>,
     mut commands: Commands,
@@ -65,6 +67,7 @@ fn on_object_face_request_draw_quantum_field(
             commands.entity(entity).insert(MaterialNode(face_materials.add(QuantumFieldFaceMaterial {})));
         }
         FaceSurface::World => {
+            #[warn_dev("Quantum field face requested in the world for {entity}, which has no GridImprint or no longer exists")]
             let Ok(grid_imprint) = grid_imprints.get(entity) else { return; };
             let quad_size = grid_imprint.world_size();
             commands.entity(entity).insert((

@@ -28,11 +28,10 @@ use weaponry::{
     prelude::*,
 };
 
-use crate::common::*;
-use crate::tooltip::building_tooltip;
+use crate::{common::*, tooltip::building_tooltip};
 
 
-pub struct TowerFieldPlugin;
+pub(crate) struct TowerFieldPlugin;
 impl Plugin for TowerFieldPlugin {
     fn build(&self, app: &mut App) {
         let almanach_info = BuilderTowerField::almanach_info(app.world().resource::<AssetServer>());
@@ -42,8 +41,7 @@ impl Plugin for TowerFieldPlugin {
             .add_observer(on_tower_field_despawn_shrink_orphaned_force_field)
             .add_systems(CollectSave, collect_tower_fields)
             .register_loader(MapLoadingStage::SpawnMapElements, "tower_fields", load_tower_fields)
-            .register_building(BuildingType::Tower(TowerType::Field), almanach_info)
-            ;
+            .register_building(BuildingType::Tower(TowerType::Field), almanach_info);
     }
 }
 
@@ -104,8 +102,8 @@ impl BuilderTowerField {
         let building_info = almanach.get_building_info(BuildingType::Tower(TowerType::Field));
 
         let mut entity_commands = commands.entity(entity);
-        if let Some(ip) = builder.integrity_points {
-            entity_commands.insert(IntegrityPoints::new(ip));
+        if let Some(integrity_points) = builder.integrity_points {
+            entity_commands.insert(IntegrityPoints::new(integrity_points));
         }
         if builder.disabled_by_player {
             entity_commands.insert(DisabledByPlayer);
@@ -118,7 +116,7 @@ impl BuilderTowerField {
                 Sprite {
                     image: building_info.sprite.clone(),
                     custom_size: Some(building_info.grid_imprint.world_size()),
-                    ..Default::default()
+                    ..default()
                 },
                 builder.grid_position,
                 building_info.grid_imprint,
@@ -135,23 +133,23 @@ impl BuilderTowerField {
                     IndicatorDisplay::default(),
                 ],
             ))
-            .observe(Self::on_attack_range_change_resize_force_field)
+            .observe(Self::on_insert_attack_range_resize_force_field)
             .observe(Self::on_shard_apply_do_so)
-            .observe(Self::on_technical_state_changed_manage_force_field);
+            .observe(on_technical_state_changed_recompute_operational)
+            .observe(Self::on_add_is_operational_grow_force_field)
+            .observe(Self::on_remove_is_operational_shrink_force_field);
         commands.trigger(TechnicalStateChanged { entity, kind: TechnicalChange::JustSpawned });
     }
 
-    fn on_attack_range_change_resize_force_field(
+    fn on_insert_attack_range_resize_force_field(
         trigger: On<Insert, AttackRange>,
         towers: Query<(Option<&GeneratedForceField>, &AttackRange), With<TowerField>>,
         mut fields: Query<&mut ForceField>,
     ) {
-        let Ok((has_field, attack_range)) = towers.get(trigger.entity) else { return; };
-        let new_radius = attack_range.get() * CELL_SIZE;
-        let Some(has_field) = has_field else { return; }; // If it has field
-        let Some(field_entity) = has_field.iter().next() else { return; }; // In 1:1 relation
-        let Ok(mut field) = fields.get_mut(field_entity) else { return; }; // And the field's entity exists
-        field.radius = new_radius;
+        let Ok((generated_field, attack_range)) = towers.get(trigger.entity) else { return; };
+        let Some(generated_field) = generated_field else { return; };
+        let Ok(mut field) = fields.get_mut(*generated_field.collection()) else { return; };
+        field.radius = attack_range.get() * CELL_SIZE;
     }
 
     fn on_shard_apply_do_so(
@@ -168,7 +166,6 @@ impl BuilderTowerField {
             ShardType::Damage | ShardType::Speed | ShardType::Fire | ShardType::Water | ShardType::Light | ShardType::Electric => {}
         }
     }
-
 }
 
 fn on_tower_field_place_request_do_so(
@@ -181,28 +178,29 @@ fn on_tower_field_place_request_do_so(
     commands.spawn(BuilderTowerField::new(coords));
 }
 
+#[log_tags(Tag::GameSave)]
 fn collect_tower_fields(
     towers: Query<(Entity, &GridCoords, &IntegrityPoints, Has<DisabledByPlayer>), With<TowerField>>,
     mut save: SaveWriter,
 ) {
     if towers.is_empty() { return; }
-    let rows: Vec<(i64, i32, i32, f32, bool)> = towers
+
+    #[debug_dev("Saving {} tower fields", rows.len())]
+    let rows: Vec<(i64, GridCoords, f32, bool)> = towers
         .iter()
         .map(|(entity, coords, integrity_points, disabled_by_player)| {
             (
                 entity.index_u32() as i64,
-                coords.x,
-                coords.y,
+                *coords,
                 integrity_points.get_current(),
                 disabled_by_player,
             )
         })
         .collect();
-    Log::debug().dev().tag(Tag::GameSave).message(format!("Saving {} tower fields", rows.len()));
     save.submit(move |tx| {
-        for (id, gx, gy, integrity_points, disabled_by_player) in rows {
+        for (id, coords, integrity_points, disabled_by_player) in rows {
             tx.save_marker("tower_fields", id)?;
-            tx.save_grid_coords(id, GridCoords { x: gx, y: gy })?;
+            tx.save_grid_coords(id, coords)?;
             tx.save_integrity_points(id, integrity_points)?;
             if disabled_by_player {
                 tx.save_disabled_by_player(id)?;
@@ -212,6 +210,7 @@ fn collect_tower_fields(
     });
 }
 
+#[log_tags(Tag::GameLoad)]
 fn load_tower_fields(ctx: &mut LoadContext) -> rusqlite::Result<()> {
     let mut stmt = ctx.conn.prepare("SELECT id FROM tower_fields")?;
     let mut rows = stmt.query([])?;
@@ -221,10 +220,8 @@ fn load_tower_fields(ctx: &mut LoadContext) -> rusqlite::Result<()> {
         let integrity_points = ctx.conn.get_integrity_points(old_id)?;
         let disabled_by_player = ctx.conn.get_disabled_by_player(old_id)?;
 
-        let Some(entity) = ctx.entity(old_id) else {
-            Log::warn().dev().tag(Tag::GameLoad).message(format!("TowerField with old ID {old_id} has no corresponding new entity"));
-            continue;
-        };
+        #[warn_dev("TowerField with old ID {old_id} has no corresponding new entity")]
+        let Some(entity) = ctx.entity(old_id) else { continue };
         let mut builder = BuilderTowerField::new(grid_position)
             .with_integrity_points(integrity_points);
         if disabled_by_player {
@@ -236,35 +233,34 @@ fn load_tower_fields(ctx: &mut LoadContext) -> rusqlite::Result<()> {
 }
 
 impl BuilderTowerField {
-    fn on_technical_state_changed_manage_force_field(
-        trigger: On<TechnicalStateChanged>,
+    fn on_add_is_operational_grow_force_field(
+        trigger: On<Add, IsOperational>,
         mut commands: Commands,
-        towers: Query<(Option<&GeneratedForceField>, &AttackRange, &Transform, Has<IsPowered>, Has<DisabledByPlayer>, Has<IsOperational>), With<TowerField>>,
+        towers: Query<(Option<&GeneratedForceField>, &AttackRange, &Transform), With<TowerField>>,
     ) {
         let tower_entity = trigger.entity;
-        let Ok((generated_field, attack_range, transform, has_power, is_disabled, has_is_operational)) = towers.get(tower_entity) else { return; };
+        let Ok((generated_field, attack_range, transform)) = towers.get(tower_entity) else { return; };
 
-        let is_operational = has_power && !is_disabled;
-        if is_operational == has_is_operational { return; }
-        if is_operational {
-            commands.entity(tower_entity).insert(IsOperational);
-            if let Some(generated_field) = generated_field {
-                let field_entity = generated_field.collection();
-                commands.entity(*field_entity).insert(ForceFieldState::Growing);
-            } else {
-                let radius = attack_range.get() * CELL_SIZE;
-                commands.spawn(BuilderForceField::new(radius, tower_entity, transform.translation))
-                    .observe(Self::on_field_entered_apply_effect)
-                    .observe(Self::on_field_exited_remove_effect)
-                    .observe(Self::on_field_despawn_remove_all_effects);
-            }
+        if let Some(generated_field) = generated_field {
+            let field_entity = generated_field.collection();
+            commands.entity(*field_entity).insert(ForceFieldState::Growing);
         } else {
-            commands.entity(tower_entity).remove::<IsOperational>();
-            if let Some(generated_field) = generated_field {
-                let field_entity = generated_field.collection();
-                commands.entity(*field_entity).insert(ForceFieldState::Shrinking);
-            }
+            let radius = attack_range.get() * CELL_SIZE;
+            commands.spawn(BuilderForceField::new(radius, tower_entity, transform.translation))
+                .observe(Self::on_field_entered_apply_effect)
+                .observe(Self::on_field_exited_remove_effect)
+                .observe(Self::on_field_despawn_remove_all_effects);
         }
+    }
+
+    fn on_remove_is_operational_shrink_force_field(
+        trigger: On<Remove, IsOperational>,
+        mut commands: Commands,
+        towers: Query<&GeneratedForceField, With<TowerField>>,
+    ) {
+        let Ok(generated_field) = towers.get(trigger.entity) else { return; };
+        let field_entity = generated_field.collection();
+        commands.entity(*field_entity).insert(ForceFieldState::Shrinking);
     }
 
     fn on_field_entered_apply_effect(

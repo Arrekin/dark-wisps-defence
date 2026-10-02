@@ -70,7 +70,7 @@ impl Plugin for MapLoadPlugin {
                 advance_stage
                     .run_if(in_state(GameState::Loading))
                     .after(apply_load_queues),
-                LoadGameSignal::emit.run_if(input_just_released(KeyCode::KeyA)),
+                LoadGameSignal::emit_load_quicksave.run_if(input_just_released(KeyCode::KeyA)),
             ))
             .add_observer(LoadGameSignal::on_load_game_signal_do_so);
     }
@@ -118,8 +118,8 @@ impl LoadContext<'_> {
     /// Inserts only if the entity still exists when the batch is applied.
     pub fn insert(&mut self, entity: Entity, bundle: impl Bundle) {
         self.push(move |world: &mut World| {
-            if let Ok(mut e) = world.get_entity_mut(entity) {
-                e.insert(bundle);
+            if let Ok(mut entity_mut) = world.get_entity_mut(entity) {
+                entity_mut.insert(bundle);
             }
         });
     }
@@ -131,8 +131,8 @@ impl LoadContext<'_> {
     }
 
     /// Queues a world change and counts it toward loading progress.
-    pub fn push(&mut self, f: impl FnOnce(&mut World) + Send + 'static) {
-        self.queue.push(f);
+    pub fn push(&mut self, change: impl FnOnce(&mut World) + Send + 'static) {
+        self.queue.push(change);
         self.done_rows.fetch_add(1, Ordering::Relaxed);
         self.rows_since_flush += 1;
         if self.rows_since_flush >= CHUNK_ROWS {
@@ -140,13 +140,15 @@ impl LoadContext<'_> {
         }
     }
 
+    #[log_tags(Tag::GameLoad)]
     fn flush(&mut self) {
         if self.queue.is_empty() {
             self.rows_since_flush = 0;
             return;
         }
         let queue = std::mem::take(&mut self.queue);
-        let _ = self.sender.send(queue);
+        let _ = self.sender.send(queue)
+            .inspect_err(|_| error_dev!("Load batch dropped: the load runner is gone"));
         self.rows_since_flush = 0;
     }
 }
@@ -206,30 +208,29 @@ impl Command for InitLoadRunner {
 /// Allocates entities for saved IDs and counts loader rows before the first loader starts.
 /// Runs exclusively because the loaders in this `OnEnter` schedule need the ID map immediately;
 /// deferred commands would apply too late.
+#[log_tags(Tag::GameLoad)]
 pub(crate) fn build_entity_id_map(world: &mut World) {
     let config = world.resource::<LoadMapConfig>().clone();
 
     let map_path = match &config.source {
+        #[debug_dev("EntityIdMap population skipped because map is new")]
         MapSource::New(_) => {
             world.insert_resource(EntityIdMap(Arc::new(HashMap::new())));
             world.resource_mut::<LoadProgress>().total_rows = 0;
-            Log::debug()
-                .dev()
-                .tag(Tag::GameLoad)
-                .message("EntityIdMap population skipped");
             return;
         }
         MapSource::File(map_path) => map_path.clone(),
     };
     let mut total_rows: usize = 0;
     let mut map: HashMap<i64, Entity> = HashMap::new();
+    #[debug_dev("EntityIdMap populated: {} entities; total_rows={total_rows}", map.len())]
     with_db_connection(&map_path, Migrations::Skip, |conn| {
         for loaders in world.resource::<GameLoadRegistry>().loaders.values() {
-            for desc in loaders {
+            for descriptor in loaders {
+                let table = descriptor.table;
                 let count: i64 = conn
-                    .query_row(&format!("SELECT COUNT(*) FROM {}", desc.table), [], |row| {
-                        row.get(0)
-                    })
+                    .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| row.get(0))
+                    .inspect_err(|error| warn_dev!("Row count of '{table}' not read ({error}); progress counts it as 0"))
                     .unwrap_or(0);
                 total_rows += count as usize;
             }
@@ -246,12 +247,6 @@ pub(crate) fn build_entity_id_map(world: &mut World) {
     })
     .expect("Failed to read entity IDs from the map file");
 
-    let count = map.len();
-    Log::debug()
-        .dev()
-        .tag(Tag::GameLoad)
-        .message(format!("EntityIdMap populated: {count} entities; total_rows={total_rows}"));
-
     let entity_id_map = Arc::new(map);
     world.insert_resource(EntityIdMap(entity_id_map));
 
@@ -261,6 +256,7 @@ pub(crate) fn build_entity_id_map(world: &mut World) {
 
 /// Starts one IO task and database connection per loader in this stage. Loader errors are
 /// logged, but do not stop the load.
+#[log_tags(Tag::GameLoad)]
 pub(crate) fn spawn_stage_loaders(
     stage: Res<State<MapLoadingStage>>,
     mut runner: ResMut<LoadRunner>,
@@ -286,21 +282,18 @@ pub(crate) fn spawn_stage_loaders(
     let sender = runner.sender.clone();
     let done_rows = progress.done_rows.clone();
 
-    Log::debug()
-        .dev()
-        .tag(Tag::GameLoad)
-        .message(format!("Spawning {} loader(s) for {target_stage:?}", descriptors.len()));
+    debug_dev!("Spawning {} loader(s) for {target_stage:?}", descriptors.len());
 
-    for desc in descriptors {
-        let table = desc.table;
-        let run = desc.run;
+    for descriptor in descriptors {
+        let table = descriptor.table;
+        let run = descriptor.run;
         let map_path = map_path.clone();
         let entity_map = entity_map.clone();
         let sender = sender.clone();
         let done_rows = done_rows.clone();
 
         let task = IoTaskPool::get().spawn(async move {
-            let result = with_db_connection(&map_path, Migrations::Skip, |conn| {
+            let _ = with_db_connection(&map_path, Migrations::Skip, |conn| {
                 let mut ctx = LoadContext {
                     conn,
                     entity_map,
@@ -311,13 +304,8 @@ pub(crate) fn spawn_stage_loaders(
                 };
                 run(&mut ctx)?;
                 Ok(())
-            });
-            if let Err(e) = result {
-                Log::error()
-                    .dev()
-                    .tag(Tag::GameLoad)
-                    .message(format!("Loader for '{table}' failed: {e}"));
-            }
+            })
+            .inspect_err(|error| error_dev!("Loader for '{table}' failed: {error}"));
         });
         runner.tasks.push(task);
     }
@@ -340,12 +328,13 @@ pub(crate) fn apply_load_queues(mut commands: Commands, runner: Res<LoadRunner>)
 
 /// Advances only after all tasks finish and the batch channel is empty. Runs after
 /// `apply_load_queues`, whose commands are applied before the next stage starts.
+#[log_tags(Tag::GameLoad)]
 pub(crate) fn advance_stage(
     mut runner: ResMut<LoadRunner>,
     stage: Res<State<MapLoadingStage>>,
     mut next_stage: ResMut<NextState<MapLoadingStage>>,
 ) {
-    runner.tasks.retain(|t| !t.is_finished());
+    runner.tasks.retain(|task| !task.is_finished());
 
     if !runner.tasks.is_empty() {
         return;
@@ -357,10 +346,7 @@ pub(crate) fn advance_stage(
     let Some(next) = stage.get().next() else {
         return;
     };
-    Log::debug()
-        .dev()
-        .tag(Tag::GameLoad)
-        .message(format!("Stage complete, advancing to {next:?}"));
+    debug_dev!("Stage complete, advancing to {next:?}");
     next_stage.set(next);
 }
 
@@ -424,14 +410,16 @@ pub fn creating_new_map(config: Res<LoadMapConfig>) -> bool {
 #[derive(Event)]
 pub struct LoadGameSignal(pub LoadMapConfig);
 impl LoadGameSignal {
-    /// Dev keybind: loads the quick save, `test_save.dwd`.
-    fn emit(mut commands: Commands) {
-        Log::debug().dev().tag(Tag::GameLoad).message("Triggering load signal");
+    /// Loads the quick save, `test_save.dwd`.
+    #[log_tags(Tag::GameLoad)]
+    fn emit_load_quicksave(mut commands: Commands) {
+        #[debug_player("Quicksave load requested")]
         commands.trigger(LoadGameSignal(LoadMapConfig::file("test_save.dwd")));
     }
 
     /// Rejects conflicting requests before changing the current map. Accepted file loads run
     /// migrations before starting the loader stages.
+    #[log_tags(Tag::GameLoad)]
     fn on_load_game_signal_do_so(
         trigger: On<LoadGameSignal>,
         mut commands: Commands,
@@ -443,35 +431,32 @@ impl LoadGameSignal {
     ) {
         let config = trigger.event().0.clone();
 
+        #[warn_player("Map load already in progress — skipping")]
         if *current_game_state.get() == GameState::Loading {
-            Log::warn().player().tag(Tag::GameLoad).message("Load already in progress — skipping");
             config.response.report(&mut commands, |entity| LoadGameReport { entity, result: LoadGameResult::AlreadyLoading });
             return;
         }
+        #[warn_dev("Transition to {state:?} already queued — skipping")]
         if let NextState::Pending(state) | NextState::PendingIfNeq(state) = *next_game_state {
-            Log::warn().dev().tag(Tag::GameLoad).message(format!("Transition to {state:?} already queued — skipping load"));
             config.response.report(&mut commands, |entity| LoadGameReport { entity, result: LoadGameResult::OtherTransitionAlreadyQueued { state } });
             return;
         }
-        if let MapSource::File(map_path) = &config.source
-            && !std::path::Path::new(map_path).exists()
+        #[warn_player("Map file '{map_path}' not found — skipping")]
+        if let MapSource::File(map_path) = &config.source && !std::path::Path::new(map_path).exists()
         {
-            Log::warn().player().tag(Tag::GameLoad).message(format!("Map file '{map_path}' not found — skipping"));
             let path = map_path.clone();
             config.response.report(&mut commands, |entity| LoadGameReport { entity, result: LoadGameResult::MapNotFound { path } });
             return;
         }
 
         match &config.source {
+            #[info_dev("Loading '{map_path}'")]
             MapSource::File(map_path) => {
-                Log::info().dev().tag(Tag::GameLoad).message(format!("Loading '{map_path}'"));
                 // A new map skips this: opening a SQLite connection would create a file.
                 with_db_connection(map_path, Migrations::Apply, |_| Ok(()))
-                    .expect("Failed to run migrations on load");
+                    .expect("Failed to run migrations on map load");
             }
-            MapSource::New(map_info) => {
-                Log::info().dev().tag(Tag::GameLoad).message(format!("Creating new map '{}'", map_info.name));
-            }
+            MapSource::New(map_info) => info_dev!("Creating new map '{}'", map_info.name),
         }
 
         commands.queue(InitLoadRunner);
@@ -506,12 +491,13 @@ pub enum LoadGameResult {
 }
 
 /// All loader stages have finished; transition to the requested play and admin states.
+#[log_tags(Tag::GameLoad)]
 fn on_map_load_ready(
     load_config: Res<LoadMapConfig>,
     mut next_admin_mode: ResMut<NextState<AdminMode>>,
     mut next_game_state: ResMut<NextState<GameState>>,
 ) {
-    Log::info().player().tag(Tag::GameLoad).message("Game loaded");
+    #[info_player("Game loaded")]
     next_game_state.set(load_config.game_start_state);
     (*next_admin_mode).set_if_neq(load_config.admin_mode);
 }

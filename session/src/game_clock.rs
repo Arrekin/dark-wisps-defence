@@ -2,6 +2,7 @@ use bevy::prelude::*;
 use serde::Serialize;
 
 use game_core::prelude::SSS;
+use logging::prelude::*;
 use persistence::{
     prelude::{AppGameLoadSaveExtension, CollectSave, LoadContext, SaveWriter},
     rusqlite,
@@ -16,8 +17,7 @@ impl Plugin for GameClockPlugin {
             .add_systems(OnEnter(MapLoadingStage::Init), |mut commands: Commands| { commands.insert_resource(GameClock::default()); })
             .add_systems(PreUpdate, GameClock::advance.run_if(in_state(GameState::Running)))
             .add_systems(CollectSave, collect_game_clock)
-            .register_loader(MapLoadingStage::LoadResources, "game_clock", load_game_clock)
-            ;
+            .register_loader(MapLoadingStage::LoadResources, "game_clock", load_game_clock);
     }
 }
 
@@ -46,11 +46,13 @@ fn collect_game_clock(clock: Res<GameClock>, mut save: SaveWriter) {
     });
 }
 
+#[log_tags(Tag::GameLoad)]
 fn load_game_clock(ctx: &mut LoadContext) -> rusqlite::Result<()> {
     let elapsed: f64 = ctx
         .conn
         .prepare("SELECT elapsed FROM game_clock WHERE id = 1")?
         .query_row([], |row| row.get(0))
+        .inspect_err(|error| warn_dev!("Game clock not read from save ({error}); starting at 0"))
         .unwrap_or(0.0);
     ctx.insert_resource(GameClock { elapsed });
     Ok(())

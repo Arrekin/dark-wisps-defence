@@ -1,4 +1,3 @@
-use bevy::app::{App, Plugin};
 use bevy::prelude::*;
 
 use persistence::prelude::{AppGameLoadSaveExtension, CollectSave};
@@ -17,7 +16,6 @@ impl Plugin for ResourcesPlugin {
             .add_systems(PostUpdate, emit_delta_events_system.run_if(resource_changed::<Stock>))
             .add_systems(OnEnter(MapLoadingStage::Init), |mut commands: Commands| { commands.insert_resource(Stock::default()); })
             .add_systems(CollectSave, collect_stock)
-            .register_loader(MapLoadingStage::LoadResources, "stock", load_stock)
-            ;
+            .register_loader(MapLoadingStage::LoadResources, "stock", load_stock);
     }
 }

@@ -2,7 +2,7 @@
 //!
 //! Registers per-shard metadata (name, description, icon, forge recipe) into the
 //! [`Almanach`] at startup — the single source of truth that shard UI and crafting read
-//! from. Lives alongside the other shard state (`shard_inventory`, `shard_blueprints`).
+//! from. Lives alongside the other shard state (`inventory`, `blueprints`).
 //!
 //! Recipe costs and durations are placeholder tuning; adjust during a global balance pass.
 
@@ -88,7 +88,6 @@ impl Plugin for ShardCatalogPlugin {
                     cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 100 }],
                     duration: Duration::from_secs(8),
                 }),
-            })
-            ;
+            });
     }
 }

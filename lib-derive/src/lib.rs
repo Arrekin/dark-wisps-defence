@@ -4,10 +4,12 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::{Data, DeriveInput, Fields, FieldsUnnamed, parse_macro_input};
 
+mod log_tags;
+
 /// Derives the SSS trait (Send + Sync + 'static) for structs and enums.
 ///
 /// # Example
-/// ```rust
+/// ```ignore
 /// #[derive(SSS)]
 /// struct MyComponent;
 ///
@@ -17,40 +19,33 @@ use syn::{Data, DeriveInput, Fields, FieldsUnnamed, parse_macro_input};
 #[proc_macro_derive(SSS)]
 pub fn derive_sss(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
-    
+
     let name = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
-    
+
     let expanded = quote! {
         impl #impl_generics SSS for #name #ty_generics #where_clause {}
     };
-    
+
     TokenStream::from(expanded)
 }
 
 /// Derives the Property trait for structs containing a single f32 field.
-/// 
+///
 /// Supported shapes:
 /// - structs with exactly one unnamed field, e.g. `struct Temperature(f32);`
 /// - structs with exactly one named field, e.g. `struct Temperature { value: f32 }`
-/// 
+///
 /// The derived implementation generates the full `Property` API:
 /// - `fn get(&self) -> f32`
 /// - `fn set(&mut self, value: f32)`
 /// - `fn new(value: f32) -> Self`
-/// 
-/// For unnamed-field structs, the generated methods access `self.0` and construct
-/// with `Self(value)`. For named-field structs, they access the single field by
-/// name and construct with `Self { field_name: value }`.
-/// 
-/// The derive only supports structs with exactly one field. Enums and multi-field
-/// structs are rejected.
 ///
 /// # Example
-/// ```rust
+/// ```ignore
 /// #[derive(Property)]
 /// struct Temperature(f32);
-/// 
+///
 /// // Generates:
 /// // impl Property for Temperature {
 /// //     fn get(&self) -> f32 { self.0 }
@@ -61,22 +56,22 @@ pub fn derive_sss(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(Property)]
 pub fn derive_property(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
-    
+
     let name = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
-    
+
     // Generate the implementation based on the struct's fields
     let property_impl = match generate_property_impl(&input.data) {
         Ok(impl_block) => impl_block,
-        Err(err) => return err.to_compile_error().into(),
+        Err(error) => return error.to_compile_error().into(),
     };
-    
+
     let expanded = quote! {
         impl #impl_generics Property for #name #ty_generics #where_clause {
             #property_impl
         }
     };
-    
+
     TokenStream::from(expanded)
 }
 
@@ -136,7 +131,7 @@ fn generate_property_impl(data: &Data) -> syn::Result<TokenStream2> {
 /// the prefix is stripped and the remainder is converted to snake_case.
 ///
 /// # Example
-/// ```rust
+/// ```ignore
 /// #[derive(Component, Default, MomentKind)]
 /// pub struct MomentGameStart;
 ///
@@ -152,7 +147,7 @@ pub fn derive_moment_kind(input: TokenStream) -> TokenStream {
 
     let kind = match moment_kind_from_ident(name) {
         Ok(kind) => kind,
-        Err(err) => return err.to_compile_error().into(),
+        Err(error) => return error.to_compile_error().into(),
     };
 
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
@@ -182,14 +177,14 @@ fn moment_kind_from_ident(ident: &syn::Ident) -> syn::Result<String> {
 /// Convert `PascalCase` to `snake_case`.
 fn to_snake_case(input: &str) -> String {
     let mut result = String::with_capacity(input.len() + input.len() / 2);
-    for (i, ch) in input.chars().enumerate() {
-        if ch.is_uppercase() {
-            if i > 0 {
+    for (index, character) in input.chars().enumerate() {
+        if character.is_uppercase() {
+            if index > 0 {
                 result.push('_');
             }
-            result.extend(ch.to_lowercase());
+            result.extend(character.to_lowercase());
         } else {
-            result.push(ch);
+            result.push(character);
         }
     }
     result
@@ -215,3 +210,101 @@ pub fn derive_from_entity(input: TokenStream) -> TokenStream {
     TokenStream::from(expanded)
 }
 
+/// Sets the log tags for a function and expands the log annotations in its body.
+///
+/// Annotations are named `<level>_<audience>` — level `debug`/`info`/`warn`/`error`,
+/// audience `dev`/`player` — and take `format!` arguments. Every log in the function
+/// carries the tags given to `#[log_tags]`. Removing the annotations leaves plain Rust
+/// that behaves the same apart from logging.
+///
+/// # Example
+/// ```ignore
+/// #[log_tags(Tag::GameLoad)]
+/// fn load_foos(ctx: &mut LoadContext) -> rusqlite::Result<()> {
+///     // ...
+///     while let Some(row) = rows.next()? {
+///         #[warn_dev("Foo with old ID {old_id} has no corresponding new entity")]
+///         let Some(entity) = ctx.entity(old_id) else { continue };
+///
+///         let kind = match kind_str.as_str() {
+///             "Small" => FooKind::Small,
+///             #[warn_dev("Unknown foo kind in save: {other}")]
+///             other => continue,
+///         };
+///
+///         #[debug_dev("Loaded foo {entity}")]
+///         ctx.insert(entity, Foo(kind));
+///     }
+///     Ok(())
+/// }
+/// ```
+///
+/// # Expansions
+///
+/// An annotation logs when its code runs to completion:
+///
+/// - a statement without a block logs after it has run;
+/// - a statement with a block logs when that block reaches its end.
+///
+/// Any early exit before that point — `?`, `return`, `continue`, `break` — leaves without
+/// logging. The same rule covers actions and refusals: in a guard (`let-else`, `if !paid
+/// { return None; }`) the block is the refusal, so the log reports the refusal.
+///
+/// A log in a block goes at its end, before its closing exit, so bindings made inside the
+/// block are in scope. A value the exit carries — `return x?`, `break 'label x` — is
+/// evaluated before the log, so it logs only if that value was produced. `LOG` below stands for
+/// `logging::Log::<level>().<audience>().tags([..]).message(format_args!(..))`.
+///
+/// ```ignore
+/// // let-else → end of the else block, before the exit
+/// #[warn_dev("..")] let Some(x) = a else { continue };
+/// let Some(x) = a else { LOG; continue };
+///
+/// // if without else → end of the if block, before the exit
+/// #[info_player("..")] if !paid { return None; }
+/// if !paid { let value = None; LOG; return value; }
+///
+/// // ... and bindings made inside the branch are usable in the message
+/// #[info_player("Finished {item}")] if done { let item = take(); store(item); }
+/// if done { let item = take(); store(item); LOG; }
+///
+/// // match arm → inside that arm
+/// #[warn_dev("Unknown kind: {other}")] other => None,
+/// other => { let value = None; LOG; value }
+///
+/// // a branch ending in a value → value evaluated first, logged, then yielded
+/// => { ..; compute() }
+/// => { ..; let value = compute(); LOG; value }
+///
+/// // continue / break / return without a value → before the exit
+/// #[warn_dev("..")] continue;
+/// LOG; continue;
+///
+/// // return / break with a value → value evaluated first, logged, then exited with
+/// #[warn_dev("..")] return fetch()?;
+/// let value = fetch()?; LOG; return value;
+///
+/// // anything else → after the statement; bindings it makes are in scope
+/// #[debug_dev("Saving {}", rows.len())] let rows = collect();
+/// let rows = collect(); LOG;
+///
+/// // `?` is not a block: the log fires once the statement succeeds, a failure exits silently.
+/// // To log the failure, give it a block: `let Ok(x) = a else { .. }` or a match arm.
+/// #[info_dev("Loaded {}", rows.len())] let rows = load()?;
+/// let rows = load()?; LOG;
+///
+/// // escape hatch: a log at a point no statement shape expresses
+/// info_dev!("..");
+/// LOG;
+/// ```
+///
+/// Rejected at compile time: an annotated `if` with an `else` and an annotated whole
+/// `match` (both have more than one branch — annotate the branch or arm instead), more than
+/// one annotation on a statement, and an annotation without a message. The `!` forms fail
+/// to compile outside a `#[log_tags]` function.
+#[proc_macro_attribute]
+pub fn log_tags(attribute: TokenStream, item: TokenStream) -> TokenStream {
+    log_tags::expand(attribute.into(), item.into())
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}

@@ -25,11 +25,9 @@ use persistence::{
 use states::prelude::*;
 use viewport::MainCamera;
 
-use crate::common::*;
-use crate::tooltip::building_tooltip;
+use crate::{common::*, tooltip::building_tooltip};
 
-
-pub struct MainBasePlugin;
+pub(crate) struct MainBasePlugin;
 impl Plugin for MainBasePlugin {
     fn build(&self, app: &mut App) {
         let almanach_info = BuilderMainBase::almanach_info(app.world().resource::<AssetServer>());
@@ -40,8 +38,7 @@ impl Plugin for MainBasePlugin {
             .register_loader(MapLoadingStage::SpawnMapElements, "main_bases", load_main_bases)
             .add_systems(OnEnter(MapLoadingStage::SpawnMapElements), seed_main_base.run_if(creating_new_map))
             .add_systems(OnEnter(MapLoadingStage::Ready), center_camera_on_main_base)
-            .register_building(BuildingType::MainBase, almanach_info)
-            ;
+            .register_building(BuildingType::MainBase, almanach_info);
     }
 }
 
@@ -70,13 +67,9 @@ fn center_camera_on_main_base(
     translation.y = center.y;
 }
 
-
-
 #[derive(Component, SSS)]
 pub(crate) struct BuilderMainBase {
     pub grid_position: GridCoords,
-    /// Saved integrity points. `None` ⇒ defer to baseline (fresh spawn);
-    /// `Some` ⇒ override with saved value (restore).
     pub integrity_points: Option<f32>,
 }
 impl BuilderMainBase {
@@ -122,17 +115,16 @@ impl BuilderMainBase {
         let grid_imprint = building_info.grid_imprint;
 
         let mut entity_commands = commands.entity(entity);
-        if let Some(ip) = builder.integrity_points {
-            entity_commands.insert(IntegrityPoints::new(ip));
+        if let Some(integrity_points) = builder.integrity_points {
+            entity_commands.insert(IntegrityPoints::new(integrity_points));
         }
-        // Common
         entity_commands
             .remove::<BuilderMainBase>()
             .insert((
                 Sprite {
                     image: building_info.sprite.clone(),
                     custom_size: Some(grid_imprint.world_size()),
-                    ..Default::default()
+                    ..default()
                 },
                 MainBase,
                 builder.grid_position,
@@ -149,8 +141,7 @@ impl BuilderMainBase {
                     (ModifierContributions(building_info.baseline.clone()), BaselineEffect),
                 ]],
             ))
-            .observe(on_technical_state_changed_recompute_operational)
-            ;
+            .observe(on_technical_state_changed_recompute_operational);
         commands.trigger(TechnicalStateChanged { entity, kind: TechnicalChange::JustSpawned });
     }
 }
@@ -171,23 +162,21 @@ fn on_main_base_place_request_do_so(
 }
 
 fn collect_main_bases(
-    main_base: Query<(Entity, &GridCoords, &IntegrityPoints), With<MainBase>>,
+    main_base: Single<(Entity, &GridCoords, &IntegrityPoints), With<MainBase>>,
     mut save: SaveWriter,
 ) {
-    if let Ok((entity, coords, integrity_points)) = main_base.single() {
-        let id = entity.index_u32() as i64;
-        let gx = coords.x;
-        let gy = coords.y;
-        let ip = integrity_points.get_current();
-        save.submit(move |tx| {
-            tx.save_marker("main_bases", id)?;
-            tx.save_grid_coords(id, GridCoords { x: gx, y: gy })?;
-            tx.save_integrity_points(id, ip)?;
-            Ok(())
-        });
-    }
+    let (entity, &coords, integrity_points) = main_base.into_inner();
+    let id = entity.index_u32() as i64;
+    let integrity_points = integrity_points.get_current();
+    save.submit(move |tx| {
+        tx.save_marker("main_bases", id)?;
+        tx.save_grid_coords(id, coords)?;
+        tx.save_integrity_points(id, integrity_points)?;
+        Ok(())
+    });
 }
 
+#[log_tags(Tag::GameLoad)]
 fn load_main_bases(ctx: &mut LoadContext) -> rusqlite::Result<()> {
     let mut stmt = ctx.conn.prepare("SELECT id FROM main_bases")?;
     let mut rows = stmt.query([])?;
@@ -196,10 +185,8 @@ fn load_main_bases(ctx: &mut LoadContext) -> rusqlite::Result<()> {
         let grid_position = ctx.conn.get_grid_coords(old_id)?;
         let integrity_points = ctx.conn.get_integrity_points(old_id)?;
 
-        let Some(entity) = ctx.entity(old_id) else {
-            Log::warn().dev().tag(Tag::GameLoad).message(format!("MainBase with old ID {old_id} has no corresponding new entity"));
-            continue;
-        };
+        #[warn_dev("MainBase with old ID {old_id} has no corresponding new entity")]
+        let Some(entity) = ctx.entity(old_id) else { continue };
         let builder = BuilderMainBase::new(grid_position)
             .with_integrity_points(integrity_points);
         ctx.insert(entity, builder);

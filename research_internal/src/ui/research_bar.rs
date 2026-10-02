@@ -1,7 +1,9 @@
 use bevy::prelude::*;
 
-use research::prelude::{Research, ResearchRuntime};
-use research::research_bar::{BuilderResearchBar, ResearchBar};
+use research::{
+    prelude::{Research, ResearchRuntime},
+    research_bar::{BuilderResearchBar, ResearchBar},
+};
 use resources::prelude::Stock;
 use states::prelude::{GameState, UiInteraction};
 use widgets::prelude::ProgressBar;
@@ -51,8 +53,8 @@ fn on_builder_add_spawn_research_bar(
 /// panel is closed, and a `Changed` filter would miss it because the change
 /// fired on a frame the system didn't run.
 fn sync_research_bars(
-    researches: Query<(&Research, &ResearchRuntime)>,
     stock: Res<Stock>,
+    researches: Query<(&Research, &ResearchRuntime)>,
     mut bars: Query<(&mut ProgressBar, &ResearchBar)>,
 ) {
     for (mut progress_bar, research_bar) in bars.iter_mut() {

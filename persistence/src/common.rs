@@ -5,9 +5,11 @@ use logging::prelude::*;
 use resources::prelude::{Cost, EssenceType, ResourceType};
 use states::MapLoadingStage;
 
-use crate::load::GameLoadRegistry;
-use crate::moments::{load_moments, save_moments};
-use crate::save::CollectSave;
+use crate::{
+    load::GameLoadRegistry,
+    moments::{load_moments, save_moments},
+    save::CollectSave,
+};
 
 /// Whether [`with_db_connection`] brings the file up to the current schema before running `f`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -40,41 +42,36 @@ pub(crate) mod db_migrations {
     embed_migrations!("./migrations");
 }
 
-/// Apply (or rebuild) schema migrations on every `.dwd` file in `paths`.
+/// Apply schema migrations on every `.dwd` file in `paths`.
 ///
 /// When `rebuild_metadata` is true, the refinery schema history is cleared first
 /// so V1 re-runs from scratch. Use this only when consolidating migrations.
+#[log_tags(Tag::GameLoad)]
 pub fn run_migrations_on_paths(paths: &[String], rebuild_metadata: bool) {
     for path in paths {
-        if rebuild_metadata {
-            Log::info().dev().tag(Tag::GameLoad).message(format!("Rebuilding migration metadata for '{path}'"));
-        } else {
-            Log::info().dev().tag(Tag::GameLoad).message(format!("Applying migrations to '{path}'"));
-        }
-        if let Err(e) = with_db_connection(path, Migrations::Skip, |conn| {
+        let _ = with_db_connection(path, Migrations::Skip, |conn| {
             if rebuild_metadata {
+                #[info_dev("Cleared migration history of '{path}'")]
                 conn.execute("DELETE FROM refinery_schema_history;", [])?;
             }
+            #[info_dev("Applied migrations to '{path}'")]
             db_migrations::migrations::runner().run(conn)?;
             Ok(())
-        }) {
-            let action = if rebuild_metadata { "Rebuild" } else { "Migration" };
-            Log::error().dev().tag(Tag::GameLoad).message(format!("{action} failed for '{path}': {e}"));
-        }
+        })
+        .inspect_err(|error| error_dev!("Migrations failed for '{path}': {error}"));
     }
-    let done_msg = if rebuild_metadata { "Migration metadata rebuild complete" } else { "Migrations complete" };
-    Log::info().dev().tag(Tag::GameLoad).message(done_msg);
+    info_dev!("Migrations complete");
 }
 
 pub trait GameDbHelpers {
     fn register_entity(&self, entity_id: i64) -> rusqlite::Result<usize>;
     fn save_marker(&self, table_name: &str, entity_id: i64) -> rusqlite::Result<usize>;
-    fn save_world_position(&self, entity_id: i64, pos: Vec2) -> rusqlite::Result<usize>;
+    fn save_world_position(&self, entity_id: i64, position: Vec2) -> rusqlite::Result<usize>;
     fn save_integrity_points(&self, entity_id: i64, current: f32) -> rusqlite::Result<usize>;
     fn save_disabled_by_player(&self, entity_id: i64) -> rusqlite::Result<usize>;
     fn save_stat(&self, stat_name: &str, stat_value: f32) -> rusqlite::Result<usize>;
     fn save_stock_resource(&self, resource_name: &str, amount: i32) -> rusqlite::Result<usize>;
-    fn save_grid_coords(&self, entity_id: i64, pos: GridCoords) -> rusqlite::Result<usize>;
+    fn save_grid_coords(&self, entity_id: i64, coords: GridCoords) -> rusqlite::Result<usize>;
     fn save_grid_imprint(&self, entity_id: i64, imprint: GridImprint) -> rusqlite::Result<usize>;
     fn save_costs(&self, entity_id: i64, costs: &[Cost]) -> rusqlite::Result<()>;
 
@@ -102,10 +99,10 @@ impl GameDbHelpers for rusqlite::Connection {
         self.execute(&query, [entity_id])
     }
 
-    fn save_world_position(&self, entity_id: i64, pos: Vec2) -> rusqlite::Result<usize> {
+    fn save_world_position(&self, entity_id: i64, position: Vec2) -> rusqlite::Result<usize> {
         self.execute(
             "INSERT INTO world_positions (entity_id, x, y) VALUES (?1, ?2, ?3)",
-            (entity_id, pos.x, pos.y),
+            (entity_id, position.x, position.y),
         )
     }
 
@@ -137,10 +134,10 @@ impl GameDbHelpers for rusqlite::Connection {
         )
     }
 
-    fn save_grid_coords(&self, entity_id: i64, pos: GridCoords) -> rusqlite::Result<usize> {
+    fn save_grid_coords(&self, entity_id: i64, coords: GridCoords) -> rusqlite::Result<usize> {
         self.execute(
             "INSERT INTO grid_coords (entity_id, x, y) VALUES (?1, ?2, ?3)",
-            (entity_id, pos.x, pos.y),
+            (entity_id, coords.x, coords.y),
         )
     }
 
@@ -159,9 +156,9 @@ impl GameDbHelpers for rusqlite::Connection {
 
     fn save_costs(&self, entity_id: i64, costs: &[Cost]) -> rusqlite::Result<()> {
         for (position, cost) in costs.iter().enumerate() {
-            let (resource_kind, essence_type): (&str, Option<String>) = match cost.resource_type {
+            let (resource_kind, essence_type): (&str, Option<&str>) = match &cost.resource_type {
                 ResourceType::DarkOre => ("DarkOre", None),
-                ResourceType::Essence(essence) => ("Essence", Some(essence.as_ref().to_string())),
+                ResourceType::Essence(essence) => ("Essence", Some(essence.as_ref())),
             };
             self.execute(
                 "INSERT OR REPLACE INTO costs (entity_id, position, resource_kind, essence_type, amount) VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -232,6 +229,7 @@ impl GameDbHelpers for rusqlite::Connection {
         }
     }
 
+    #[log_tags(Tag::GameLoad)]
     fn get_costs(&self, entity_id: i64) -> rusqlite::Result<Vec<Cost>> {
         let mut stmt = self.prepare(
             "SELECT resource_kind, essence_type, amount FROM costs WHERE entity_id = ?1 AND custom_key = 0 ORDER BY position",
@@ -245,22 +243,16 @@ impl GameDbHelpers for rusqlite::Connection {
             let resource_type = match resource_kind.as_str() {
                 "DarkOre" => ResourceType::DarkOre,
                 "Essence" => {
-                    let Some(essence_str) = essence_type else {
-                        Log::warn().dev().tag(Tag::GameLoad).message(format!("Essence cost for entity {entity_id} has no essence_type — skipping cost"));
-                        continue;
-                    };
+                    #[warn_dev("Essence cost of entity {entity_id} has no essence_type — skipped")]
+                    let Some(essence_str) = essence_type else { continue };
                     match essence_str.parse::<EssenceType>() {
                         Ok(essence) => ResourceType::Essence(essence),
-                        Err(_) => {
-                            Log::warn().dev().tag(Tag::GameLoad).message(format!("Unknown essence type in save: {essence_str}"));
-                            continue;
-                        }
+                        #[warn_dev("Essence cost of entity {entity_id} has unknown essence type '{essence_str}' — skipped")]
+                        Err(_) => continue,
                     }
                 }
-                other => {
-                    Log::warn().dev().tag(Tag::GameLoad).message(format!("Unknown resource kind in save: {other}"));
-                    continue;
-                }
+                #[warn_dev("Cost of entity {entity_id} has unknown resource_kind '{other}' — skipped")]
+                other => continue,
             };
             costs.push(Cost { resource_type, amount });
         }

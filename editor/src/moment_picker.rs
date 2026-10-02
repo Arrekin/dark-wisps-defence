@@ -11,8 +11,8 @@ pub(crate) fn find_moment_child<T: Component>(world: &World, parent: Entity) -> 
         .entity(parent)
         .get::<HasMoments>()
         .into_iter()
-        .flat_map(|h| h.iter())
-        .find(|&c| world.entity(c).contains::<T>())
+        .flat_map(|moments| moments.iter())
+        .find(|&moment| world.entity(moment).contains::<T>())
 }
 
 /// Dropdown over all `With<Moment>` entities. Labels compose at render time:
@@ -26,21 +26,21 @@ pub(crate) fn ui_moment_picker(ui: &mut egui::Ui, world: &mut World, entity: Ent
         let mut query = world.query_filtered::<(Entity, &Name, Option<&MomentOf>), With<Moment>>();
         query
             .iter(world)
-            .map(|(e, name, parent_rel)| {
-                let label = match parent_rel {
-                    Some(rel) => {
-                        let parent = world.entity(rel.0);
-                        if let Some(det) = parent.get::<ObjectiveDetails>() {
-                            format!("{}: {}", det.id_name, name.as_str())
-                        } else if let Some(s) = parent.get::<Summoning>() {
-                            format!("{}: {}", s.id_name, name.as_str())
+            .map(|(moment, name, moment_of)| {
+                let label = match moment_of {
+                    Some(moment_of) => {
+                        let parent = world.entity(moment_of.0);
+                        if let Some(details) = parent.get::<ObjectiveDetails>() {
+                            format!("{}: {}", details.id_name, name.as_str())
+                        } else if let Some(summoning) = parent.get::<Summoning>() {
+                            format!("{}: {}", summoning.id_name, name.as_str())
                         } else {
                             name.as_str().to_string()
                         }
                     }
                     None => name.as_str().to_string(),
                 };
-                (e, label)
+                (moment, label)
             })
             .collect()
     };
@@ -48,12 +48,12 @@ pub(crate) fn ui_moment_picker(ui: &mut egui::Ui, world: &mut World, entity: Ent
     let current: Option<Entity> = world
         .entity(entity)
         .get::<MomentOfInterest>()
-        .map(|a| a.0);
+        .map(|moment_of_interest| moment_of_interest.0);
 
     ui.horizontal(|ui| {
         ui.label("Activated by:");
         let selected_text = current
-            .and_then(|e| moments.iter().find(|(te, _)| *te == e).map(|(_, n)| n.clone()))
+            .and_then(|current| moments.iter().find(|(moment, _)| *moment == current).map(|(_, label)| label.clone()))
             .unwrap_or_else(|| "—".to_string());
         egui::ComboBox::from_id_salt(id_salt)
             .selected_text(selected_text)

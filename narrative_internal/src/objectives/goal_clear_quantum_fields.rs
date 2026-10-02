@@ -5,8 +5,10 @@ use game_core::prelude::{DisplayName, SSS};
 use logging::prelude::*;
 use map_objects::prelude::{QuantumField, QuantumFieldSolved};
 use narrative::prelude::*;
-use persistence::prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveContext, SaveWriter};
-use persistence::rusqlite;
+use persistence::{
+    prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveContext, SaveWriter},
+    rusqlite,
+};
 use states::prelude::MapLoadingStage;
 
 pub(crate) struct GoalClearQuantumFieldsPlugin;
@@ -17,13 +19,12 @@ impl Plugin for GoalClearQuantumFieldsPlugin {
             .register_objective_goal("Clear Quantum Fields", ObjectiveGoalGroup::Goals, BuilderGoalClearQuantumFields::editor_spawn)
             .add_observer(BuilderGoalClearQuantumFields::on_builder_add_spawn_goal_clear_quantum_fields)
             // Runtime observers
-            .add_observer(on_clear_quantum_fields_activated)
+            .add_observer(on_objective_activate_check_clear_quantum_fields)
             .add_observer(on_add_quantum_field_or_solved_request_refresh)
-            .add_observer(on_refresh_clear_quantum_fields_goal)
+            .add_observer(on_refresh_clear_quantum_fields_goal_do_so)
             // Persistence
             .add_systems(CollectSave, collect_clear_quantum_fields)
-            .register_loader(MapLoadingStage::SpawnEffectInstances, "goal_clear_quantum_fields", load_clear_quantum_fields)
-            ;
+            .register_loader(MapLoadingStage::SpawnEffectInstances, "goal_clear_quantum_fields", load_clear_quantum_fields);
     }
 }
 
@@ -90,7 +91,7 @@ impl BuilderGoalClearQuantumFields {
 /// Sink event: recompute the goal's counter from the live world. Fired by
 /// the builder spawn observer, the activation observer, and global
 /// `On<Add, QuantumFieldSolved>` / `On<Add, QuantumField>` observers. All actual
-/// recomputation logic lives in `on_refresh_clear_quantum_fields_goal`.
+/// recomputation logic lives in `on_refresh_clear_quantum_fields_goal_do_so`.
 #[derive(Event)]
 struct RefreshClearQuantumFieldsGoal {
     goal: Entity,
@@ -112,14 +113,13 @@ fn on_add_quantum_field_or_solved_request_refresh(
     // Re-checking here is cheap and correct for both cases.
     let total = quantum_fields.iter().count();
     let current = solved_fields.iter().count();
-    if current >= total && total > 0 {
-        for goal in goals.iter() {
+    let all_solved = current >= total && total > 0;
+    for goal in goals.iter() {
+        if all_solved {
             commands.entity(goal)
                 .insert(ObjectiveState::Satisfied)
                 .trigger(ObjectiveGoalStateChanged::from);
         }
-    }
-    for goal in goals.iter() {
         commands.trigger(RefreshClearQuantumFieldsGoal { goal });
     }
 }
@@ -128,7 +128,7 @@ fn on_add_quantum_field_or_solved_request_refresh(
 /// world, update counter + display. Unconditional — whoever fired refresh
 /// already decided it's needed. State transitions are handled at the upstream
 /// progress-change site (trigger observer) and activation observer.
-fn on_refresh_clear_quantum_fields_goal(
+fn on_refresh_clear_quantum_fields_goal_do_so(
     trigger: On<RefreshClearQuantumFieldsGoal>,
     mut goals: Query<(&mut ObjectiveCounterProgress, &mut DisplayName), With<GoalClearQuantumFields>>,
     quantum_fields: Query<Entity, With<QuantumField>>,
@@ -150,7 +150,7 @@ fn on_refresh_clear_quantum_fields_goal(
 /// On `ObjectiveActivate` for a clear-quantum-fields goal: fire refresh, then
 /// check satisfaction (all fields may already be solved at activation time).
 /// `ObjectiveActivate` is only fired on live activation (never during load).
-fn on_clear_quantum_fields_activated(
+fn on_objective_activate_check_clear_quantum_fields(
     trigger: On<ObjectiveActivate>,
     mut commands: Commands,
     goals: Query<(), (With<GoalClearQuantumFields>, With<ObjectiveGoalOf>)>,
@@ -181,24 +181,22 @@ fn ui_clear_quantum_fields(ui: &mut egui::Ui, _entity: &mut EntityWorldMut) {
 // PERSISTENCE
 // ============================================================================
 
+#[log_tags(Tag::GameSave)]
 fn collect_clear_quantum_fields(
     save_ctx: Res<SaveContext>,
     mut save: SaveWriter,
     goals: Query<(Entity, &ObjectiveState, &ObjectiveGoalOf), With<GoalClearQuantumFields>>,
 ) {
     if goals.is_empty() { return; }
-    let rows: Vec<(i64, i64, String)> = goals
+    #[debug_dev("Saving {} clear quantum fields goals", rows.len())]
+    let rows: Vec<(i64, i64, ObjectiveState)> = goals
         .iter()
         .map(|(entity, state, goal_of)| {
-            let state_str = if save_ctx.save_as_scenario {
-                ObjectiveState::Inactive.as_ref().to_string()
-            } else {
-                state.as_ref().to_string()
-            };
+            let state = if save_ctx.save_as_scenario { ObjectiveState::Inactive } else { *state };
             (
                 entity.index_u32() as i64,
                 goal_of.0.index_u32() as i64,
-                state_str,
+                state,
             )
         })
         .collect();
@@ -208,13 +206,14 @@ fn collect_clear_quantum_fields(
             tx.register_entity(objective_id)?;
             tx.execute(
                 "INSERT OR REPLACE INTO goal_clear_quantum_fields (id, objective_id, state) VALUES (?1, ?2, ?3)",
-                rusqlite::params![id, objective_id, state],
+                rusqlite::params![id, objective_id, state.as_ref()],
             )?;
         }
         Ok(())
     });
 }
 
+#[log_tags(Tag::GameLoad)]
 fn load_clear_quantum_fields(ctx: &mut LoadContext) -> rusqlite::Result<()> {
     let mut stmt = ctx.conn.prepare("SELECT id, objective_id, state FROM goal_clear_quantum_fields")?;
     let mut rows = stmt.query([])?;
@@ -223,18 +222,12 @@ fn load_clear_quantum_fields(ctx: &mut LoadContext) -> rusqlite::Result<()> {
         let objective_old_id: i64 = row.get(1)?;
         let state_str: String = row.get(2)?;
 
-        let Some(entity) = ctx.entity(old_id) else {
-            Log::warn().dev().tag(Tag::GameLoad).message(format!("GoalClearQuantumFields with old ID {old_id} has no corresponding new entity"));
-            continue;
-        };
-        let Some(objective_entity) = ctx.entity(objective_old_id) else {
-            Log::warn().dev().tag(Tag::GameLoad).message(format!("GoalClearQuantumFields with old ID {old_id} references objective {objective_old_id} that failed remap"));
-            continue;
-        };
-        let Ok(state) = state_str.parse::<ObjectiveState>() else {
-            Log::warn().dev().tag(Tag::GameLoad).message(format!("Unknown objective state in save: {state_str}"));
-            continue;
-        };
+        #[warn_dev("GoalClearQuantumFields with old ID {old_id} has no corresponding new entity")]
+        let Some(entity) = ctx.entity(old_id) else { continue };
+        #[warn_dev("GoalClearQuantumFields with old ID {old_id} references objective {objective_old_id} that failed remap")]
+        let Some(objective_entity) = ctx.entity(objective_old_id) else { continue };
+        #[warn_dev("GoalClearQuantumFields with old ID {old_id} has unknown state '{state_str}' — skipped")]
+        let Ok(state) = state_str.parse::<ObjectiveState>() else { continue };
 
         ctx.insert(entity, BuilderGoalClearQuantumFields::new(objective_entity).with_state(state));
     }

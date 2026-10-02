@@ -8,6 +8,7 @@ use almanach::prelude::*;
 use buildings::prelude::*;
 use game_core::prelude::*;
 use hud::prelude::*;
+use logging::prelude::*;
 use shards::prelude::*;
 use states::prelude::*;
 use widgets::{
@@ -17,27 +18,26 @@ use widgets::{
 
 use crate::common::*;
 
-pub struct InfoPanelPlugin;
+pub(crate) struct InfoPanelPlugin;
 impl Plugin for InfoPanelPlugin {
     fn build(&self, app: &mut App) {
         app
             .add_systems(PostStartup, initialize_building_panel_content_system)
             .add_systems(Update, update_building_info_panel_system.run_if(in_state(UiInteraction::DisplayInfoPanel)))
-            .add_observer(on_focused_map_object_insert_display_building_info_panel)
-            .add_observer(on_building_info_panel_enabled_for_towers_toggle_subpanel_visibility)
-            .add_observer(on_rebuild_tower_shard_slots)
+            .add_observer(on_insert_focused_map_object_show_building_info_panel)
+            .add_observer(on_building_info_panel_enabled_toggle_tower_subpanel)
+            .add_observer(on_rebuild_tower_shard_slots_ui_do_so)
             .add_observer(ShardSlotOccupied::on_add_construct_occupied_slot_ui)
             .add_observer(ShardSlotEmpty::on_add_construct_empty_slot_ui)
             .add_observer(ShardSelectionPanel::on_add_construct_shard_selection_panel)
             .add_observer(ShardPickerItem::on_add_construct_shard_picker_item)
-            .add_observer(ShardSelectionPanel::on_focused_map_object_removed_close_shard_selection_panel)
+            .add_observer(ShardSelectionPanel::on_remove_focused_map_object_close_shard_selection_panel)
             .add_observer(BuildingInfoPanelDisableButton::on_add_construct_disable_button)
-            .add_observer(BuildingInfoPanelDestroyButton::on_add_construct_destroy_button)
-            ;
+            .add_observer(BuildingInfoPanelDestroyButton::on_add_construct_destroy_button);
     }
 }
 
-/// Common
+// Common
 #[derive(Component)]
 pub(crate) struct BuildingInfoPanel;
 #[derive(Component)]
@@ -60,7 +60,6 @@ fn update_building_info_panel_system(
     healthbar: Single<&mut Healthbar, With<BuildingInfoPanelHealthbar>>,
 ) {
     let integrity_points = focused_building.into_inner();
-    // Update the healthbar
     let mut healthbar = healthbar.into_inner();
     healthbar.value = integrity_points.get_current();
     healthbar.max_value = integrity_points.get_max();
@@ -68,7 +67,7 @@ fn update_building_info_panel_system(
     healthbar.color = Color::srgba(1. - integrity_points_percentage, integrity_points_percentage, 0., 1.);
 }
 
-fn on_focused_map_object_insert_display_building_info_panel(
+fn on_insert_focused_map_object_show_building_info_panel(
     trigger: On<Insert, FocusedMapObject>,
     mut commands: Commands,
     almanach: Res<Almanach>,
@@ -83,11 +82,11 @@ fn on_focused_map_object_insert_display_building_info_panel(
 ) {
     let focused_entity = trigger.entity;
     let Ok(mut building_panel) = nodes.get_mut(building_panel_entity.into_inner()) else { return; };
-    let Ok(building_type) = buildings.get(focused_entity) else { 
+    let Ok(building_type) = buildings.get(focused_entity) else {
         building_panel.display = Display::None;
-        return; 
+        return;
     };
-    
+
     building_panel.display = Display::Flex;
     commands.trigger(BuildingInfoPanelEnabledTrigger { entity: focused_entity });
 
@@ -97,23 +96,23 @@ fn on_focused_map_object_insert_display_building_info_panel(
     // Manage the Disable button
     let is_main_base = matches!(building_type, &BuildingType::MainBase);
     if let Ok(mut disable_button) = nodes.get_mut(disable_button_entity.into_inner()) {
-        disable_button.display = if is_main_base { 
+        disable_button.display = if is_main_base {
             // MainBase cannot be disabled
-            Display::None 
-        } else { 
+            Display::None
+        } else {
             let is_disabled = disabled_by_player.contains(focused_entity);
             disable_button_icon.into_inner().color.set_alpha(if is_disabled { 1.0 } else { 0.35 });
-            Display::Flex 
+            Display::Flex
         };
     }
 
     // Manage the Destroy button
     if let Ok(mut destroy_button) = nodes.get_mut(destroy_button_entity.into_inner()) {
-        destroy_button.display = if is_main_base { 
+        destroy_button.display = if is_main_base {
             // MainBase cannot be destroyed
-            Display::None 
-        } else { 
-            Display::Flex 
+            Display::None
+        } else {
+            Display::Flex
         };
     }
 }
@@ -152,7 +151,7 @@ fn initialize_building_panel_content_system(
                             TextColor::from(BLUE),
                             TextLayout::no_wrap(),
                             Node {
-                                margin: UiRect{ left: Val::Px(4.), right: Val::Px(4.), ..default() },
+                                margin: UiRect::horizontal(Val::Px(4.)),
                                 ..default()
                             },
                             BuildingInfoPanelNameText,
@@ -188,7 +187,7 @@ fn initialize_building_panel_content_system(
     });
 }
 
-fn on_building_info_panel_enabled_for_towers_toggle_subpanel_visibility(
+fn on_building_info_panel_enabled_toggle_tower_subpanel(
     trigger: On<BuildingInfoPanelEnabledTrigger>,
     mut commands: Commands,
     tower_subpanel_root: Single<&mut Node, With<BuildingInfoPanelTowerRoot>>,
@@ -203,21 +202,16 @@ fn on_building_info_panel_enabled_for_towers_toggle_subpanel_visibility(
     }
 }
 
-fn on_rebuild_tower_shard_slots(
+fn on_rebuild_tower_shard_slots_ui_do_so(
     _trigger: On<RebuildTowerShardSlotsUi>,
     mut commands: Commands,
     focused_tower: Single<(Entity, &ShardSlots), With<FocusedMapObject>>,
-    shards_container: Single<(Entity, Option<&Children>), With<TowerShardSlotsContainer>>,
+    shards_container: Single<Entity, With<TowerShardSlotsContainer>>,
     existing_selection_panel: Option<Single<Entity, With<ShardSelectionPanel>>>,
 ) {
     let (shard_target, shard_slots) = focused_tower.into_inner();
-    let (container_entity, children) = shards_container.into_inner();
-
-    if let Some(children) = children {
-        for child in children.iter() {
-            commands.entity(child).despawn();
-        }
-    }
+    let container_entity = shards_container.into_inner();
+    commands.entity(container_entity).despawn_children();
     if let Some(panel) = existing_selection_panel {
         commands.entity(panel.into_inner()).despawn();
     }
@@ -247,7 +241,7 @@ fn tower_subpanel_content_bundle() -> impl Bundle {
                 TextColor::from(BLUE),
                 TextLayout::no_wrap(),
                 Node {
-                    margin: UiRect{ left: Val::Px(4.), right: Val::Px(4.), ..default() },
+                    margin: UiRect::horizontal(Val::Px(4.)),
                     ..default()
                 },
             ),
@@ -463,7 +457,7 @@ impl ShardSelectionPanel {
         commands.entity(panel.into_inner()).despawn();
     }
 
-    fn on_focused_map_object_removed_close_shard_selection_panel(
+    fn on_remove_focused_map_object_close_shard_selection_panel(
         _trigger: On<Remove, FocusedMapObject>,
         mut commands: Commands,
         panel: Single<Entity, With<ShardSelectionPanel>>,
@@ -514,6 +508,7 @@ impl ShardPickerItem {
             });
     }
 
+    #[log_tags(Tag::Shards)]
     fn on_click_equip_shard(
         trigger: On<Pointer<Click>>,
         mut commands: Commands,
@@ -530,6 +525,7 @@ impl ShardPickerItem {
         if slots.get(item.slot_index).is_some() { return; }
 
         inventory.remove(item.shard_type);
+        #[info_player("{} shard equipped", item.shard_type)]
         slots.insert_at(item.slot_index, item.shard_type, item.shard_target, &mut commands);
 
         commands.entity(panel.into_inner()).despawn();
@@ -550,14 +546,13 @@ impl BuildingInfoPanelDisableButton {
         asset_server: Res<AssetServer>,
     ) {
         let entity = trigger.entity;
-        // Style the button and attach click handler
         commands
             .entity(entity)
             .insert((
                 Node {
                     width: Val::Px(32.),
                     height: Val::Px(32.),
-                    margin: UiRect { left: Val::Px(2.), ..default() },
+                    margin: UiRect::left(Val::Px(2.)),
                     align_self: AlignSelf::Center,
                     justify_content: JustifyContent::Center,
                     align_items: AlignItems::Center,
@@ -573,16 +568,21 @@ impl BuildingInfoPanelDisableButton {
             });
     }
 
+    #[log_tags(Tag::Build)]
     fn on_click_toggle_building_disabled(
         _trigger: On<Pointer<Click>>,
         mut commands: Commands,
-        focused_building: Single<(Entity, Has<DisabledByPlayer>), With<FocusedMapObject>>,
+        almanach: Res<Almanach>,
+        focused_building: Single<(Entity, &BuildingType, Has<DisabledByPlayer>), With<FocusedMapObject>>,
         icon: Single<&mut ImageNode, With<BuildingInfoPanelDisableButtonIcon>>,
     ) {
-        let (focused_entity, is_disabled) = focused_building.into_inner();
+        let (focused_entity, building_type, is_disabled) = focused_building.into_inner();
+        let building_name = &almanach.get_building_info(*building_type).name;
         if is_disabled {
+            #[info_player("'{building_name}' enabled")]
             commands.entity(focused_entity).remove::<DisabledByPlayer>();
         } else {
+            #[info_player("'{building_name}' disabled")]
             commands.entity(focused_entity).insert(DisabledByPlayer);
         }
 
@@ -595,8 +595,6 @@ impl BuildingInfoPanelDisableButton {
 #[derive(Component)]
 #[require(Button)]
 struct BuildingInfoPanelDestroyButton;
-#[derive(Component)]
-struct BuildingInfoPanelDestroyButtonIcon;
 impl BuildingInfoPanelDestroyButton {
     fn on_add_construct_destroy_button(
         trigger: On<Add, BuildingInfoPanelDestroyButton>,
@@ -610,7 +608,7 @@ impl BuildingInfoPanelDestroyButton {
                 Node {
                     width: Val::Px(32.),
                     height: Val::Px(32.),
-                    margin: UiRect { left: Val::Px(2.), ..default() },
+                    margin: UiRect::left(Val::Px(2.)),
                     align_self: AlignSelf::Center,
                     justify_content: JustifyContent::Center,
                     align_items: AlignItems::Center,
@@ -619,10 +617,7 @@ impl BuildingInfoPanelDestroyButton {
             ))
             .observe(Self::on_click_request_building_destroy)
             .with_children(|parent| {
-                parent.spawn((
-                    ImageNode::new(asset_server.load("ui/building_destroy.png")),
-                    BuildingInfoPanelDestroyButtonIcon,
-                ));
+                parent.spawn(ImageNode::new(asset_server.load("ui/building_destroy.png")));
             });
     }
 
@@ -631,9 +626,6 @@ impl BuildingInfoPanelDestroyButton {
         mut commands: Commands,
         focused_building: Single<Entity, With<FocusedMapObject>>,
     ) {
-        let focused_entity = focused_building.into_inner();
-        
-        // Emit building destroy request event
-        commands.trigger(BuildingDestroyRequest(focused_entity));
+        commands.trigger(BuildingDestroyRequest(focused_building.into_inner()));
     }
 }

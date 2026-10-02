@@ -1,19 +1,20 @@
 use bevy::prelude::*;
 
-use alteration::effects::EffectTarget;
-use alteration::effects::visual::{EffectVisualContribution, EffectVisualState};
+use alteration::effects::{
+    EffectTarget,
+    visual::{EffectVisualContribution, EffectVisualState},
+};
 
-pub struct EffectVisualsPlugin;
+pub(crate) struct EffectVisualsPlugin;
 impl Plugin for EffectVisualsPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_observer(apply_effect_visual_contribution_on_insert)
-            .add_observer(clear_effect_visual_contribution_on_remove)
-            ;
+            .add_observer(on_insert_effect_visual_contribution_set_state)
+            .add_observer(on_remove_effect_visual_contribution_clear_state);
     }
 }
 
-fn apply_effect_visual_contribution_on_insert(
+fn on_insert_effect_visual_contribution_set_state(
     trigger: On<Insert, EffectVisualContribution>,
     contributions: Query<(&EffectTarget, &EffectVisualContribution)>,
     mut states: Query<&mut EffectVisualState>,
@@ -24,7 +25,7 @@ fn apply_effect_visual_contribution_on_insert(
     state.set(effect_entity, *contribution);
 }
 
-fn clear_effect_visual_contribution_on_remove(
+fn on_remove_effect_visual_contribution_clear_state(
     trigger: On<Remove, EffectVisualContribution>,
     targets: Query<&EffectTarget>,
     mut states: Query<&mut EffectVisualState>,

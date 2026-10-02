@@ -10,7 +10,7 @@ use game_core::motion::Locomotion;
 use visuals::prelude::*;
 
 pub(crate) trait WispMaterial: Material2d {
-    fn make(asset_server: &AssetServer) -> Self;
+    fn make() -> Self;
     /// Quad size multiplier over the wisp's grid footprint. Materials whose visual
     /// deforms past its resting radius pad the mesh so it never clips the quad edge.
     fn mesh_scale() -> f32 { 1.0 }
@@ -85,7 +85,7 @@ impl Material2d for WispFireMaterial {
     }
 }
 impl WispMaterial for WispFireMaterial {
-    fn make(_asset_server: &AssetServer) -> Self {
+    fn make() -> Self {
         let mut rng = nanorand::tls_rng();
         Self {
             seed: rng.generate::<f32>() * 100., // decorrelates a cluster of wisps
@@ -167,7 +167,7 @@ impl Material2d for WispWaterMaterial {
     }
 }
 impl WispMaterial for WispWaterMaterial {
-    fn make(_asset_server: &AssetServer) -> Self {
+    fn make() -> Self {
         let mut rng = nanorand::tls_rng();
         Self {
             seed: rng.generate::<f32>() * 100., // decorrelates a cluster of wisps
@@ -192,7 +192,6 @@ impl EffectVisualMaterial for WispWaterMaterial {
         &mut self.effects
     }
 }
-
 
 #[derive(Asset, TypePath, Debug, Clone, AsBindGroup)]
 pub(crate) struct WispLightMaterial {
@@ -226,7 +225,7 @@ impl Material2d for WispLightMaterial {
     }
 }
 impl WispMaterial for WispLightMaterial {
-    fn make(_asset_server: &AssetServer) -> Self {
+    fn make() -> Self {
         let mut rng = nanorand::tls_rng();
         Self {
             seed: rng.generate::<f32>() * 100., // decorrelates a cluster of wisps
@@ -285,7 +284,7 @@ impl Material2d for WispElectricMaterial {
     }
 }
 impl WispMaterial for WispElectricMaterial {
-    fn make(_asset_server: &AssetServer) -> Self {
+    fn make() -> Self {
         let mut rng = nanorand::tls_rng();
         Self {
             seed: rng.generate::<f32>() * 100., // decorrelates a cluster of wisps

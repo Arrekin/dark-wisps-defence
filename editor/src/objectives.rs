@@ -6,8 +6,10 @@ use game_core::prelude::{DisplayName, MomentOf};
 use narrative::prelude::*;
 use session::MomentGameStart;
 
-use super::EditorState;
-use super::moment_picker::{ui_moment_picker, find_moment_child};
+use super::{
+    EditorState,
+    moment_picker::{find_moment_child, ui_moment_picker},
+};
 
 pub fn tab_objectives(ui: &mut egui::Ui, world: &mut World) {
     ui.horizontal(|ui| {
@@ -20,7 +22,7 @@ pub fn tab_objectives(ui: &mut egui::Ui, world: &mut World) {
                 let mut query = world.query_filtered::<Entity, With<MomentGameStart>>();
                 query.single(world).ok()
             };
-            let mut builder = BuilderObjective::new(format!("objective_{}", count));
+            let mut builder = BuilderObjective::new(format!("objective_{count}"));
             if let Some(trigger) = start_game {
                 builder = builder.with_activated_by(trigger);
             }
@@ -35,7 +37,7 @@ pub fn tab_objectives(ui: &mut egui::Ui, world: &mut World) {
         let mut query = world.query::<(Entity, &ObjectiveDetails)>();
         query
             .iter(world)
-            .map(|(e, d)| (e, d.id_name.clone()))
+            .map(|(entity, details)| (entity, details.id_name.clone()))
             .collect()
     };
 
@@ -69,13 +71,13 @@ fn ui_objective_editor(ui: &mut egui::Ui, world: &mut World, objective: Entity) 
     // Common fields: id_name
     ui.horizontal(|ui| {
         ui.label("ID:");
-        let current = world.entity(objective).get::<ObjectiveDetails>().map(|d| d.id_name.clone());
+        let current = world.entity(objective).get::<ObjectiveDetails>().map(|details| details.id_name.clone());
         if let Some(mut id_name) = current {
             ui.text_edit_singleline(&mut id_name);
-            if let Some(mut det) = world.entity_mut(objective).get_mut::<ObjectiveDetails>()
-                && det.id_name != id_name
+            if let Some(mut details) = world.entity_mut(objective).get_mut::<ObjectiveDetails>()
+                && details.id_name != id_name
             {
-                det.id_name = id_name;
+                details.id_name = id_name;
             }
         }
     });
@@ -134,7 +136,7 @@ fn ui_goals_section(ui: &mut egui::Ui, world: &mut World, objective: Entity) {
         let registry = world.resource::<ObjectiveGoalRegistry>();
         for group in ObjectiveGoalGroup::iter() {
             ui.label(group.as_ref());
-            for (index, entry) in registry.entries.iter().enumerate().filter(|(_, e)| e.group == group) {
+            for (index, entry) in registry.entries.iter().enumerate().filter(|(_, entry)| entry.group == group) {
                 if ui.button(entry.name).clicked() {
                     clicked = Some(index);
                     ui.close();
@@ -151,7 +153,7 @@ fn ui_goals_section(ui: &mut egui::Ui, world: &mut World, objective: Entity) {
     let goals: Vec<Entity> = world
         .entity(objective)
         .get::<ObjectiveGoals>()
-        .map(|g| g.iter().collect())
+        .map(|goals| goals.iter().collect())
         .unwrap_or_default();
 
     if goals.is_empty() {
@@ -176,7 +178,7 @@ fn ui_goal_editor(ui: &mut egui::Ui, world: &mut World, goal_entity: Entity) {
             let fn_ptr = world
                 .entity(goal_entity)
                 .get::<ObjectiveEditorUi>()
-                .map(|e| e.0);
+                .map(|editor_ui| editor_ui.0);
             if let Some(fn_ptr) = fn_ptr {
                 fn_ptr(ui, &mut world.entity_mut(goal_entity));
             }

@@ -40,7 +40,7 @@ pub struct RecallDrone(pub Entity);
 
 /// Drone state machine. Immutable component - state changes trigger `on_state_changed_handle_drone_state_change` observer.
 /// See module docs for state transition diagram.
-#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq, strum::Display)]
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq, strum::Display, strum::EnumString, strum::AsRefStr)]
 #[component(immutable)]
 pub enum DroneState {
     #[default]

@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use bevy::{
     input::common_conditions::input_just_released,
     platform::collections::HashSet,
@@ -31,19 +33,17 @@ impl Plugin for EnergySupplyOverlayPlugin {
             .init_state::<EnergySupplyOverlayState>()
             .init_resource::<EnergySupplyOverlayConfig>()
             .add_systems(OnEnter(MapLoadingStage::LoadResources), EnergySupplyOverlay::create)
-            .add_systems(OnEnter(EnergySupplyOverlayState::Show), |visiblitiy: Single<&mut Visibility, With<EnergySupplyOverlay>>| { *visiblitiy.into_inner() = Visibility::Inherited; })
-            .add_systems(OnExit(EnergySupplyOverlayState::Show), |visiblitiy: Single<&mut Visibility, With<EnergySupplyOverlay>>| { *visiblitiy.into_inner() = Visibility::Hidden; })
+            .add_systems(OnEnter(EnergySupplyOverlayState::Show), |visibility: Single<&mut Visibility, With<EnergySupplyOverlay>>| { *visibility.into_inner() = Visibility::Inherited; })
+            .add_systems(OnExit(EnergySupplyOverlayState::Show), |visibility: Single<&mut Visibility, With<EnergySupplyOverlay>>| { *visibility.into_inner() = Visibility::Hidden; })
             .add_systems(OnExit(UiInteraction::PlaceGridObject), |mut config: ResMut<EnergySupplyOverlayConfig>| { config.secondary_mode = EnergySupplyOverlaySecondaryMode::None; })
             .add_systems(Update, (
                 EnergySupplyOverlayConfig::on_config_change_system.run_if(resource_changed::<EnergySupplyOverlayConfig>),
                 refresh_display_system.run_if(in_state(EnergySupplyOverlayState::Show)),
-                (|mut config: ResMut<EnergySupplyOverlayConfig>| { config.is_overlay_globally_enabled ^= true; }).run_if(input_just_released(KeyCode::Digit7)), // Switch overlay on/off 
+                (|mut config: ResMut<EnergySupplyOverlayConfig>| { config.is_overlay_globally_enabled ^= true; }).run_if(input_just_released(KeyCode::Digit7)), // Toggles the overlay
             ))
-            .add_observer(EnergySupplyOverlayConfig::on_map_object_focused)
-            .add_observer(EnergySupplyOverlayConfig::on_map_object_unfocused)
-            .add_observer(on_grid_placer_changed)
-            ;
-
+            .add_observer(EnergySupplyOverlayConfig::on_insert_focused_map_object_set_highlight)
+            .add_observer(EnergySupplyOverlayConfig::on_remove_focused_map_object_clear_highlight)
+            .add_observer(on_grid_placer_changed_preview_placement);
     }
 }
 
@@ -53,13 +53,14 @@ pub enum EnergySupplyOverlayState {
     Hide,
     Show,
 }
+
 #[derive(Resource, Default)]
 pub struct EnergySupplyOverlayConfig {
-    // Determines whether the energy supply overlay is globally enabled. We need that information for example when we are in building placing mode,
-    // showing the highlihted building, and then we need to disable the highligh. We have to either hide the overlay or change it to `All` depending on the state
-    // before the placing had started.
+    /// Whether the player turned the overlay on. A secondary mode (placement, highlight) shows the
+    /// overlay temporarily; when it ends, this decides whether the overlay stays or hides.
     pub is_overlay_globally_enabled: bool,
-    pub grid_version: GridVersion, // Grid version for which we show the overlay
+    /// Grid version the overlay currently shows.
+    pub grid_version: GridVersion,
     pub secondary_mode: EnergySupplyOverlaySecondaryMode,
 }
 impl EnergySupplyOverlayConfig {
@@ -67,13 +68,10 @@ impl EnergySupplyOverlayConfig {
         overlay_config: Res<EnergySupplyOverlayConfig>,
         mut overlay_state: ResMut<NextState<EnergySupplyOverlayState>>,
     ) {
-        if overlay_config.is_overlay_globally_enabled || !overlay_config.secondary_mode.is_none() {
-            overlay_state.set(EnergySupplyOverlayState::Show);
-        } else {
-            overlay_state.set(EnergySupplyOverlayState::Hide);
-        }
+        let shown = overlay_config.is_overlay_globally_enabled || !overlay_config.secondary_mode.is_none();
+        overlay_state.set(if shown { EnergySupplyOverlayState::Show } else { EnergySupplyOverlayState::Hide });
     }
-    fn on_map_object_focused(
+    fn on_insert_focused_map_object_set_highlight(
         trigger: On<Insert, FocusedMapObject>,
         mut overlay_config: ResMut<EnergySupplyOverlayConfig>,
         buildings: Query<&BuildingType>,
@@ -85,20 +83,21 @@ impl EnergySupplyOverlayConfig {
             overlay_config.secondary_mode = EnergySupplyOverlaySecondaryMode::None;
         }
     }
-    fn on_map_object_unfocused(
+    fn on_remove_focused_map_object_clear_highlight(
         _trigger: On<Remove, FocusedMapObject>,
         mut overlay_config: ResMut<EnergySupplyOverlayConfig>,
     ) {
         overlay_config.secondary_mode = EnergySupplyOverlaySecondaryMode::None;
     }
 }
+
 #[derive(Default, Clone, Debug, PartialEq)]
 pub enum EnergySupplyOverlaySecondaryMode {
     #[default]
     None,
-    Highlight{ building: Entity },
-    PlacingSupplier{grid_coords: GridCoords, grid_imprint: GridImprint, range: usize},
-    PlacingConsumer{grid_coords: GridCoords, grid_imprint: GridImprint},
+    Highlight { building: Entity },
+    PlacingSupplier { grid_coords: GridCoords, grid_imprint: GridImprint, range: usize },
+    PlacingConsumer { grid_coords: GridCoords, grid_imprint: GridImprint },
 }
 impl EnergySupplyOverlaySecondaryMode {
     pub fn is_none(&self) -> bool { matches!(self, EnergySupplyOverlaySecondaryMode::None) }
@@ -130,11 +129,11 @@ impl EnergySupplyOverlay {
         map_info: Res<MapInfo>,
         mut meshes: ResMut<Assets<Mesh>>,
         mut materials: ResMut<Assets<EnergySupplyHeatmapMaterial>>,
-        overlay: Query<Entity, With<EnergySupplyOverlay>>,
+        overlay: Option<Single<Entity, With<EnergySupplyOverlay>>>,
     ) {
-        if let Ok(overlay_entity) = overlay.single() {
-            commands.entity(overlay_entity).despawn();
-        };
+        if let Some(overlay_entity) = overlay {
+            commands.entity(overlay_entity.into_inner()).despawn();
+        }
 
         commands.spawn((
             super::overlay_bundle(&mut meshes, &mut materials, &map_info),
@@ -153,22 +152,22 @@ fn refresh_display_system(
     mut local_buffer_data: Local<Vec<EnergySupplyCell>>, // To avoid re-allocations every frame
 ) {
     if overlay_config.grid_version == energy_supply_grid.version && overlay_config.secondary_mode == *last_secondary_mode { return; }
-    
+
     *last_secondary_mode = overlay_config.secondary_mode.clone();
     overlay_config.grid_version = energy_supply_grid.version;
 
     let mut overlay_material = materials.get_mut(energy_supply_overlay.into_inner()).unwrap();
-    
+
     // Generate buffer data
     let mut overlay_creator = OverlayBufferCreator::new(&energy_supply_grid, &mut local_buffer_data);
     match &overlay_config.secondary_mode {
         EnergySupplyOverlaySecondaryMode::None => {
             overlay_creator.generate_buffer_data(&HighlightMode::All)
         }
-        EnergySupplyOverlaySecondaryMode::Highlight{ building } => {
+        EnergySupplyOverlaySecondaryMode::Highlight { building } => {
             overlay_creator.generate_buffer_data(&HighlightMode::Selected(vec![*building]))
         }
-        EnergySupplyOverlaySecondaryMode::PlacingConsumer{grid_coords, grid_imprint} => {
+        EnergySupplyOverlaySecondaryMode::PlacingConsumer { grid_coords, grid_imprint } => {
             // Include disabled suppliers so the player can see which disabled ranges would cover the new consumer.
             let suppliers = grid_imprint.iter_in_bounds(*grid_coords, energy_supply_grid.bounds)
                 .flat_map(|coords| {
@@ -181,7 +180,7 @@ fn refresh_display_system(
                 .collect::<Vec<_>>();
             overlay_creator.generate_buffer_data(&HighlightMode::Selected(suppliers));
         }
-        EnergySupplyOverlaySecondaryMode::PlacingSupplier{grid_coords, grid_imprint, range} => {
+        EnergySupplyOverlaySecondaryMode::PlacingSupplier { grid_coords, grid_imprint, range } => {
             if grid_coords.are_in_bounds(energy_supply_grid.bounds) {
                 overlay_creator.flood_potential_energy_supply_to_overlay_heatmap(
                     grid_imprint.iter_in_bounds(*grid_coords, energy_supply_grid.bounds),
@@ -201,12 +200,12 @@ fn refresh_display_system(
         let buffer_handle = buffers.add(storage_buffer);
         overlay_material.energy_cells = buffer_handle;
     }
-    
+
     // Update uniforms
     overlay_material.grid_data = energy_supply_grid.bounds.into();
 }
 
-fn on_grid_placer_changed(
+fn on_grid_placer_changed_preview_placement(
     _trigger: On<GridPlacerChanged>,
     almanach: Res<Almanach>,
     mut overlay_config: ResMut<EnergySupplyOverlayConfig>,
@@ -216,15 +215,14 @@ fn on_grid_placer_changed(
     let map_object = grid_object_placer.map_object();
     if let Some(MapObject::Building(building_type)) = map_object {
         let building_info = almanach.get_building_info(building_type);
-        if building_type.is_energy_supplier() { 
-            overlay_config.secondary_mode = EnergySupplyOverlaySecondaryMode::PlacingSupplier{
+        if building_type.is_energy_supplier() {
+            overlay_config.secondary_mode = EnergySupplyOverlaySecondaryMode::PlacingSupplier {
                 grid_coords: *grid_coords,
                 grid_imprint: building_info.grid_imprint,
                 range: building_info.baseline[&ModifierType::EnergySupplyRange] as usize,
             };
-        }
-        else if building_type.is_energy_consumer() {
-            overlay_config.secondary_mode = EnergySupplyOverlaySecondaryMode::PlacingConsumer{
+        } else if building_type.is_energy_consumer() {
+            overlay_config.secondary_mode = EnergySupplyOverlaySecondaryMode::PlacingConsumer {
                 grid_coords: *grid_coords,
                 grid_imprint: building_info.grid_imprint,
             };
@@ -282,14 +280,16 @@ enum HighlightLevel {
     Highlighted = 2,
 }
 
-// Global mode of display. Dictates the way HighlightLevel is set
+/// Global mode of display; decides each cell's `HighlightLevel`.
 #[derive(PartialEq)]
 enum HighlightMode {
-    All, // Every cell with supply is highlighted
-    Selected(Vec<Entity>), // Only cells covered by the selected suppliers are highlighted
+    /// Every cell with supply is highlighted.
+    All,
+    /// Only cells covered by the selected suppliers are highlighted; other supply is dimmed.
+    Selected(Vec<Entity>),
 }
 
-pub struct OverlayBufferCreator<'a> {
+struct OverlayBufferCreator<'a> {
     energy_supply_grid: &'a EnergySupplyGrid,
     local_buffer_data: Option<&'a mut Vec<EnergySupplyCell>>,
 }
@@ -302,14 +302,14 @@ impl<'a> OverlayBufferCreator<'a> {
         let buffer_data = self.local_buffer_data.take().unwrap(); // To avoid double mutable borrows on the struct's fields
         buffer_data.clear();
         let buffer_size = self.energy_supply_grid.grid.len();
-        let new_content = (0..buffer_size).map(|idx| self.create_cell_for_grid_field(idx, highlight_mode));
+        let new_content = (0..buffer_size).map(|index| self.create_cell_for_grid_field(index, highlight_mode));
         buffer_data.extend(new_content);
         self.local_buffer_data = Some(buffer_data);
     }
-    
-    /// If `highlight_supplier` is provided, only its range will be shown at full color, other ranges will be dimmed
-    fn create_cell_for_grid_field(&self, idx: usize, highlight_mode: &HighlightMode) -> EnergySupplyCell {
-        let grid_field = &self.energy_supply_grid.grid[idx];
+
+    /// Builds one cell; in `Selected` mode only the selected suppliers' ranges are highlighted.
+    fn create_cell_for_grid_field(&self, index: usize, highlight_mode: &HighlightMode) -> EnergySupplyCell {
+        let grid_field = &self.energy_supply_grid.grid[index];
         let mut cell = EnergySupplyCell::none();
 
         if grid_field.has_supply() {
@@ -332,7 +332,7 @@ impl<'a> OverlayBufferCreator<'a> {
 
         cell
     }
-    
+
     /// Special version of `flooding::flood_energy_supply` to add the energy supply of a building we are currently placing to the overlay heatmap.
     /// It writes directly to the overlay texture, so it's only a visual cue that does not affect the actual grid.
     fn flood_potential_energy_supply_to_overlay_heatmap(
@@ -340,7 +340,6 @@ impl<'a> OverlayBufferCreator<'a> {
         start_coords: impl IntoIterator<Item = GridCoords>,
         range: usize,
     ) {
-        use std::collections::VecDeque;
         // Collected because this function needs two passes over the start coords.
         let start_coords: Vec<GridCoords> = start_coords.into_iter().collect();
 
@@ -353,7 +352,7 @@ impl<'a> OverlayBufferCreator<'a> {
             visited_grid.resize_and_reset(grid_bounds);
             let mut queue = VecDeque::new();
 
-            // Start Flood from all fields to ensure event distance from buildings that are bigger than one cell
+            // Start Flood from all fields to ensure even distance from buildings that are bigger than one cell
             start_coords.iter().for_each(|coords| {
                 let index = self.energy_supply_grid.index(*coords);
                 buffer_data[index].set_supply(false, HighlightLevel::Highlighted);
@@ -378,27 +377,27 @@ impl<'a> OverlayBufferCreator<'a> {
                         }
                         continue;
                     }
-                    
+
                     let buffer_index = self.energy_supply_grid.index(new_coords);
                     // By default we assume supply but no power.  Don't overwrite if data from the original pass is set.
-                    if buffer_data[buffer_index].highlight_level != 2 {
+                    if buffer_data[buffer_index].highlight_level != HighlightLevel::Highlighted as u32 {
                         buffer_data[buffer_index].set_supply(false, HighlightLevel::Highlighted);
                     }
-                    
+
                     let new_distance = distance + 1;
                     if new_distance < range || (new_distance == range && !has_power) {
                         queue.push_back((new_distance, new_coords));
                     }
                 }
             }
-            
+
             // If we found that we have power, we need to do another flood to update the data
             // as the new building being placed may be a bridge between a stranded suppliers and the main power grid
-            // Note as this flood is not distance-restriced as the stranded suppliers may form a chain over entire map and putting new one can connect all of them.
+            // Note as this flood is not distance-restricted, as the stranded suppliers may form a chain over entire map and putting new one can connect all of them.
             if has_power {
                 visited_grid.reset();
                 queue.clear();
-                
+
                 start_coords.iter().for_each(|coords| {
                     let index = self.energy_supply_grid.index(*coords);
                     buffer_data[index].set_supply(true, HighlightLevel::Highlighted);
@@ -415,7 +414,7 @@ impl<'a> OverlayBufferCreator<'a> {
 
                         let buffer_index = self.energy_supply_grid.index(new_coords);
                         // Only update cells that were marked as highlighted in the previous passes
-                        if buffer_data[buffer_index].highlight_level == 2 {
+                        if buffer_data[buffer_index].highlight_level == HighlightLevel::Highlighted as u32 {
                             buffer_data[buffer_index].set_supply(true, HighlightLevel::Highlighted);
                             queue.push_back((0, new_coords));
                         }
@@ -423,7 +422,7 @@ impl<'a> OverlayBufferCreator<'a> {
                 }
             }
         });
-        
+
         self.local_buffer_data = Some(buffer_data);
     }
 }

@@ -1,20 +1,19 @@
-use bevy::platform::collections::HashMap;
-use bevy::prelude::*;
+use bevy::{platform::collections::HashMap, prelude::*};
 
-use alteration::effects::prelude::*;
-use alteration::effects::slow::SlowEffect;
-use alteration::modifiers::ModifierType;
+use alteration::{
+    effects::{prelude::*, slow::SlowEffect},
+    modifiers::ModifierType,
+};
 
-pub struct SlowEffectPlugin;
+pub(crate) struct SlowEffectPlugin;
 impl Plugin for SlowEffectPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_observer(build_slow_effect_on_add)
-            ;
+            .add_observer(on_builder_add_spawn_slow_effect);
     }
 }
 
-fn build_slow_effect_on_add(
+fn on_builder_add_spawn_slow_effect(
     trigger: On<Add, BuilderSlowEffect>,
     mut commands: Commands,
     builders: Query<&BuilderSlowEffect>,

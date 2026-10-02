@@ -20,9 +20,9 @@ use weaponry::{
     prelude::*,
 };
 
-const STARTUP_SPEED: f32 = 0.8; // progress units per second (0→1 in ~1.25s)
+const PROGRESS_SPEED: f32 = 0.8; // progress units per second (0→1 in ~1.25s)
 
-pub struct ForceFieldPlugin;
+pub(crate) struct ForceFieldPlugin;
 impl Plugin for ForceFieldPlugin {
     fn build(&self, app: &mut App) {
         app
@@ -31,11 +31,9 @@ impl Plugin for ForceFieldPlugin {
                 recompute_force_field_grid_system.run_if(resource_exists::<ForceFieldGrid>),
             )
             .add_systems(Update, (
-                    force_field_progress_system,
-                    field_tracking_system,
-                ).run_if(in_state(GameState::Running)
-            ))
-            ;
+                force_field_progress_system,
+                field_tracking_system,
+            ).run_if(in_state(GameState::Running)));
     }
 }
 
@@ -46,15 +44,14 @@ fn on_builder_add_spawn_force_field(
 ) {
     let entity = trigger.entity;
     let Ok(builder) = builders.get(entity) else { return; };
-    let (radius, tower_entity, world_position) = (builder.radius, builder.tower_entity, builder.world_position);
 
     commands.entity(entity)
         .remove::<BuilderForceField>()
         .insert((
-            ForceField::new(radius),
+            ForceField::new(builder.radius),
             ForceFieldState::Growing,
-            ForceFieldGeneratedBy(tower_entity),
-            Transform::from_translation(world_position),
+            ForceFieldGeneratedBy(builder.tower_entity),
+            Transform::from_translation(builder.world_position),
         ));
 }
 
@@ -81,21 +78,21 @@ fn recompute_force_field_grid_system(
     grid.version = grid.version.wrapping_add(1);
 }
 
-/// Returns the `ForceField` entity that owns `pos` via weighted Voronoi, or `None` if
-/// `pos` is not covered by any field.
+/// Returns the `ForceField` entity that owns `position` via weighted Voronoi, or `None` if
+/// `position` is not covered by any field.
 ///
 /// "Ownership" uses normalized distance (`actual_distance / effective_radius`) so that
 /// larger fields don't automatically swallow smaller ones — a small field still wins
 /// for points deep within it. A normalized distance of 1.0 means exactly on the edge;
 /// anything above 1.0 is outside and does not qualify.
-fn find_owning_field(pos: Vec2, fields: &Query<(Entity, &ForceField, &Transform)>) -> Option<Entity> {
+fn find_owning_field(position: Vec2, fields: &Query<(Entity, &ForceField, &Transform)>) -> Option<Entity> {
     fields.iter()
         .filter_map(|(entity, field, transform)| {
             let effective_radius = field.radius * field.progress;
             // Fields at progress ≈ 0 (fully collapsed) don't own any cells.
             if effective_radius < 0.001 { return None; }
 
-            let normalized_distance = pos.distance(transform.translation.xy()) / effective_radius;
+            let normalized_distance = position.distance(transform.translation.xy()) / effective_radius;
             // Only consider fields that actually cover this point (inside or on the edge).
             if normalized_distance <= 1.0 { Some((entity, normalized_distance)) } else { None }
         })
@@ -143,12 +140,12 @@ fn force_field_progress_system(
         match state {
             ForceFieldState::Growing => {
                 if field.progress < 1.0 {
-                    field.progress = (field.progress + STARTUP_SPEED * time.delta_secs()).min(1.0);
+                    field.progress = (field.progress + PROGRESS_SPEED * time.delta_secs()).min(1.0);
                 }
             }
             ForceFieldState::Shrinking => {
                 if field.progress > 0.0 {
-                    field.progress = (field.progress - STARTUP_SPEED * time.delta_secs()).max(0.0);
+                    field.progress = (field.progress - PROGRESS_SPEED * time.delta_secs()).max(0.0);
                     if field.progress <= 0.0 {
                         commands.entity(entity).despawn();
                     }

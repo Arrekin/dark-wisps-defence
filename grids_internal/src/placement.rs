@@ -12,7 +12,7 @@ use grids::placement::*;
 use states::prelude::UiInteraction;
 use viewport::MouseInfo;
 
-pub struct GridObjectPlacerPlugin;
+pub(crate) struct GridObjectPlacerPlugin;
 impl Plugin for GridObjectPlacerPlugin {
     fn build(&self, app: &mut App) {
         app
@@ -29,10 +29,9 @@ impl Plugin for GridObjectPlacerPlugin {
             ))
             .add_systems(OnEnter(UiInteraction::PlaceGridObject), show_placer)
             .add_systems(OnExit(UiInteraction::PlaceGridObject), hide_placer)
-            .add_observer(revalidate_placement)
-            .add_observer(on_modify_apply_placer_override)
-            .add_observer(on_ghost_stale_respawn_ghost)
-            ;
+            .add_observer(on_grid_placer_changed_revalidate_placement)
+            .add_observer(on_grid_placer_override_property_request_do_so)
+            .add_observer(on_placement_ghost_stale_respawn_ghost);
     }
 }
 
@@ -59,8 +58,7 @@ impl GridPlacerUniform {
     }
 }
 
-#[derive(Asset, AsBindGroup, TypePath, Debug, Clone)]
-#[derive(Default)]
+#[derive(Asset, AsBindGroup, TypePath, Debug, Clone, Default)]
 pub(crate) struct GridPlacerMaterial {
     #[uniform(0)]
     uniform: GridPlacerUniform,
@@ -114,7 +112,7 @@ fn follow_mouse_system(
     }
 }
 
-fn on_modify_apply_placer_override(
+fn on_grid_placer_override_property_request_do_so(
     trigger: On<GridPlacerOverridePropertyRequest>,
     mut commands: Commands,
     placer: Single<(&mut GridImprint, &mut PlacementStyle), With<GridObjectPlacer>>,
@@ -141,7 +139,7 @@ struct PlacementGhostStale;
 ///
 /// The ghost carries the current imprint and style required by domain renderers. This assumes the
 /// ghost is the placer's only child.
-fn on_ghost_stale_respawn_ghost(
+fn on_placement_ghost_stale_respawn_ghost(
     _trigger: On<PlacementGhostStale>,
     mut commands: Commands,
     placer: Single<(Entity, &GridObjectPlacer, &GridImprint, &PlacementStyle)>,
@@ -158,7 +156,7 @@ fn on_ghost_stale_respawn_ghost(
     });
 }
 
-fn revalidate_placement(
+fn on_grid_placer_changed_revalidate_placement(
     _trigger: On<GridPlacerChanged>,
     mut commands: Commands,
     mut materials: ResMut<Assets<GridPlacerMaterial>>,

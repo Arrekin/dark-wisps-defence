@@ -1,7 +1,6 @@
 //! Side-menu tile frames, placement interaction, and registered object presentation.
 
-use bevy::prelude::*;
-use bevy::ui::FocusPolicy;
+use bevy::{prelude::*, ui::FocusPolicy};
 
 use almanach::prelude::*;
 use game_core::prelude::*;
@@ -25,7 +24,6 @@ const TILE_BORDER_SURGE: VoidPanelBorderSurge = VoidPanelBorderSurge {
 // ============================================================================
 // TILE CORE
 // ============================================================================
-
 
 #[derive(Component, Clone, Copy, Default)]
 #[require(Button, FocusPolicy)]

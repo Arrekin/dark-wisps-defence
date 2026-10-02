@@ -14,7 +14,6 @@ impl Plugin for ObjectiveMomentsPlugin {
             .add_observer(moment_attach_self_trigger_to_parent::<MomentObjectiveSatisfied, ObjectiveSatisfiedEvent>)
             .add_observer(moment_attach_self_trigger_to_parent::<MomentObjectiveFailed, ObjectiveFailedEvent>)
             .register_moment_persistence::<MomentObjectiveSatisfied>()
-            .register_moment_persistence::<MomentObjectiveFailed>()
-            ;
+            .register_moment_persistence::<MomentObjectiveFailed>();
     }
 }

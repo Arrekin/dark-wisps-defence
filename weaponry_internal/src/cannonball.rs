@@ -4,9 +4,7 @@ use bevy::prelude::*;
 
 use alteration::modifiers::prelude::AttackDamage;
 use game_core::prelude::{ALL_DIRECTIONS, CELL_SIZE, DamageMessage, GridCoords, Property};
-use grids::{
-    wisps::WispsGrid,
-};
+use grids::wisps::WispsGrid;
 use logging::prelude::*;
 use persistence::{
     prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveWriter},
@@ -17,58 +15,60 @@ use visuals::prelude::BuilderExplosion;
 use weaponry::prelude::*;
 use wisps::prelude::Wisp;
 
-pub struct CannonballPlugin;
+pub(crate) struct CannonballPlugin;
 impl Plugin for CannonballPlugin {
     fn build(&self, app: &mut App) {
         app
             .add_systems(Update, (
-                (
-                    cannonball_move_system,
-                    cannonball_hit_system,
-                ).run_if(in_state(GameState::Running)),
-            ))
+                cannonball_move_system,
+                cannonball_hit_system,
+            ).run_if(in_state(GameState::Running)))
             .add_observer(on_builder_add_spawn_cannonball)
             .add_systems(CollectSave, collect_cannonballs)
-            .register_loader(MapLoadingStage::SpawnMapElements, "cannonballs", load_cannonballs)
-            ;
+            .register_loader(MapLoadingStage::SpawnMapElements, "cannonballs", load_cannonballs);
     }
 }
 
 pub(crate) const CANNONBALL_BASE_IMAGE: &str = "projectiles/cannonball.png";
 
+// Flight tuning
+const CANNONBALL_SPEED: f32 = 400.0;
+const CANNONBALL_LANDING_DISTANCE: f32 = 4.0;
+
+#[log_tags(Tag::GameSave)]
 fn collect_cannonballs(
     cannonballs: Query<(Entity, &Transform, &CannonballTarget, &AttackDamage), With<Cannonball>>,
     mut save: SaveWriter,
 ) {
     if cannonballs.is_empty() { return; }
-    // Copy into owned row tuples — the closure must not borrow the World.
-    let rows: Vec<(i64, f32, f32, f32, f32, f32, f32)> = cannonballs
+
+    #[debug_dev("Saving {} cannonballs", rows.len())]
+    let rows: Vec<(i64, Vec2, Vec2, f32, f32)> = cannonballs
         .iter()
         .map(|(entity, transform, target, damage)| {
             (
                 entity.index_u32() as i64,
-                transform.translation.x,
-                transform.translation.y,
-                target.target_position.x,
-                target.target_position.y,
+                transform.translation.xy(),
+                target.target_position,
                 damage.get(),
                 target.initial_distance,
             )
         })
         .collect();
     save.submit(move |tx| {
-        for (id, pos_x, pos_y, tgt_x, tgt_y, damage, initial_distance) in rows {
+        for (id, position, target_position, damage, initial_distance) in rows {
             tx.register_entity(id)?;
-            tx.save_world_position(id, Vec2::new(pos_x, pos_y))?;
+            tx.save_world_position(id, position)?;
             tx.execute(
                 "INSERT OR REPLACE INTO cannonballs (id, target_x, target_y, damage, initial_distance) VALUES (?1, ?2, ?3, ?4, ?5)",
-                rusqlite::params![id, tgt_x, tgt_y, damage, initial_distance],
+                rusqlite::params![id, target_position.x, target_position.y, damage, initial_distance],
             )?;
         }
         Ok(())
     });
 }
 
+#[log_tags(Tag::GameLoad)]
 fn load_cannonballs(ctx: &mut LoadContext) -> rusqlite::Result<()> {
     let mut stmt = ctx.conn.prepare(
         "SELECT id, target_x, target_y, damage, initial_distance FROM cannonballs",
@@ -78,20 +78,16 @@ fn load_cannonballs(ctx: &mut LoadContext) -> rusqlite::Result<()> {
         let old_id: i64 = row.get(0)?;
         let target_x: f32 = row.get(1)?;
         let target_y: f32 = row.get(2)?;
-        let damage_val: f32 = row.get(3)?;
+        let damage: f32 = row.get(3)?;
         let initial_distance: f32 = row.get(4)?;
         let world_position = ctx.conn.get_world_position(old_id)?;
 
-        let Some(entity) = ctx.entity(old_id) else {
-            Log::warn().dev().tag(Tag::GameLoad).message(format!(
-                "cannonballs: unmapped id for row {old_id}"
-            ));
-            continue;
-        };
+        #[warn_dev("Cannonball with old ID {old_id} has no corresponding new entity")]
+        let Some(entity) = ctx.entity(old_id) else { continue };
         let builder = BuilderCannonball::new(
             world_position,
             Vec2::new(target_x, target_y),
-            AttackDamage::new(damage_val),
+            AttackDamage::new(damage),
         )
         .with_initial_distance(initial_distance);
         ctx.insert(entity, builder);
@@ -132,7 +128,7 @@ fn cannonball_move_system(
 ) {
     for (mut transform, target) in cannonballs.iter_mut() {
         let direction_vector = (target.target_position - transform.translation.xy()).normalize();
-        let move_distance = direction_vector * time.delta_secs() * 400.;
+        let move_distance = direction_vector * time.delta_secs() * CANNONBALL_SPEED;
 
         let remaining_distance = (transform.translation.xy() + move_distance).distance(target.target_position);
 
@@ -160,11 +156,11 @@ fn cannonball_hit_system(
     wisps: Query<(), With<Wisp>>,
 ) {
     for (entity, cannonball_transform, target, attack_damage) in cannonballs.iter() {
-        if cannonball_transform.translation.xy().distance(target.target_position) > 4. { continue; } // TODO: 1. and 2. are causing cannonballs jitters at landing. Investigate.
+        if cannonball_transform.translation.xy().distance(target.target_position) > CANNONBALL_LANDING_DISTANCE { continue; } // TODO: 1. and 2. are causing cannonballs jitters at landing. Investigate.
 
         let coords = GridCoords::from_transform(cannonball_transform);
-        for (dx, dy) in ALL_DIRECTIONS.iter().chain(&[(0, 0)]) {
-            let blast_zone_coords = coords.shifted((*dx, *dy));
+        for direction in ALL_DIRECTIONS.iter().chain(&[(0, 0)]) {
+            let blast_zone_coords = coords.shifted(*direction);
             if !blast_zone_coords.are_in_bounds(wisps_grid.bounds) { continue; }
 
             commands.spawn(BuilderExplosion(blast_zone_coords));

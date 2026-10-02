@@ -5,8 +5,7 @@ use bevy::prelude::*;
 use hud::prelude::BuilderSideMenuItemTooltip;
 use widgets::prelude::{BuilderFullPriceCostStrip, BuilderTooltip, TextRole};
 
-use super::root::SIDE_MENU_LEFT;
-use super::section::SIDE_MENU_SECTION_SIZE;
+use super::{root::SIDE_MENU_LEFT, section::SIDE_MENU_SECTION_SIZE};
 
 // Typography
 const TITLE_FONT_SIZE: f32 = 13.0;

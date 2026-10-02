@@ -1,27 +1,22 @@
-use bevy::color::palettes::css::YELLOW;
-use bevy::prelude::*;
-use bevy::ui::widget::ViewportNode;
+use bevy::{color::palettes::css::YELLOW, prelude::*, ui::widget::ViewportNode};
 
 use grids::obstacles::{GridStructureType, ObstacleGrid};
 use hud::prelude::{DisplayPanelMainContentRoot, FocusedMapObject};
 use states::prelude::*;
 use viewport::{BuilderPreviewCamera, CameraAutoFollowEntity, MouseInfo};
 
-pub struct DisplayInfoPanelPlugin;
+pub(crate) struct DisplayInfoPanelPlugin;
 impl Plugin for DisplayInfoPanelPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_systems(Startup, (
-                initialize_display_info_panel_system,
-            ))
+            .add_systems(Startup, initialize_display_info_panel_system)
             .add_systems(Update, (
                 hide_system.run_if(in_state(UiInteraction::DisplayInfoPanel)),
                 show_on_click_system.run_if(in_state(UiInteraction::Free).or_else(in_state(UiInteraction::DisplayInfoPanel))),
             ))
             .add_systems(OnEnter(UiInteraction::DisplayInfoPanel), show_display_info_panel)
             .add_systems(OnExit(UiInteraction::DisplayInfoPanel), hide_display_info_panel)
-            .add_observer(on_focused_entity_despawned_return_to_free_interaction)
-            ;
+            .add_observer(on_despawn_focused_map_object_return_to_free_interaction);
     }
 }
 
@@ -77,12 +72,9 @@ fn show_on_click_system(
     let focused_element = match &field.structure {
         GridStructureType::Building(entity, _) => *entity,
         _ => {
-            if let Some(entity) = &field.quantum_field {
-                *entity
-            } else {
-                return;
-            }
-        },
+            let Some(entity) = field.quantum_field else { return };
+            entity
+        }
     };
 
     // Center the camera on the focused structure
@@ -96,7 +88,7 @@ fn show_on_click_system(
     (*next_ui_interaction_state).set_if_neq(UiInteraction::DisplayInfoPanel);
 }
 
-fn on_focused_entity_despawned_return_to_free_interaction(
+fn on_despawn_focused_map_object_return_to_free_interaction(
     _trigger: On<Despawn, FocusedMapObject>,
     mut ui_interaction_state: ResMut<NextState<UiInteraction>>,
 ) {

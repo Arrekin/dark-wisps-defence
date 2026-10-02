@@ -25,10 +25,9 @@ use resources::prelude::*;
 use states::prelude::*;
 use visuals::prelude::*;
 
-use crate::common::*;
-use crate::tooltip::building_tooltip;
+use crate::{common::*, tooltip::building_tooltip};
 
-pub struct EnergyRelayPlugin;
+pub(crate) struct EnergyRelayPlugin;
 impl Plugin for EnergyRelayPlugin {
     fn build(&self, app: &mut App) {
         let almanach_info = BuilderEnergyRelay::almanach_info(app.world().resource::<AssetServer>());
@@ -37,8 +36,7 @@ impl Plugin for EnergyRelayPlugin {
             .add_observer(on_energy_relay_place_request_do_so)
             .add_systems(CollectSave, collect_energy_relays)
             .register_loader(MapLoadingStage::SpawnMapElements, "energy_relays", load_energy_relays)
-            .register_building(BuildingType::EnergyRelay, almanach_info)
-            ;
+            .register_building(BuildingType::EnergyRelay, almanach_info);
     }
 }
 
@@ -97,8 +95,8 @@ impl BuilderEnergyRelay {
         let building_info = almanach.get_building_info(BuildingType::EnergyRelay);
 
         let mut entity_commands = commands.entity(entity);
-        if let Some(ip) = builder.integrity_points {
-            entity_commands.insert(IntegrityPoints::new(ip));
+        if let Some(integrity_points) = builder.integrity_points {
+            entity_commands.insert(IntegrityPoints::new(integrity_points));
         }
         if builder.disabled_by_player {
             entity_commands.insert(DisabledByPlayer);
@@ -112,7 +110,7 @@ impl BuilderEnergyRelay {
                     image: building_info.sprite.clone(),
                     custom_size: Some(building_info.grid_imprint.world_size()),
                     color: Color::hsla(0., 0.2, 1.0, 1.0), // 1.6 is a good value if the pulsation is off.
-                    ..Default::default()
+                    ..default()
                 },
                 builder.grid_position,
                 building_info.grid_imprint,
@@ -120,7 +118,7 @@ impl BuilderEnergyRelay {
                 EmitterEnergy(FloodEmissionsDetails {
                     emissions_type: EmissionsType::Energy,
                     range: usize::MAX,
-                    evaluator: FloodEmissionsEvaluator::ExponentialDecay{start_value: 100., decay: 0.1},
+                    evaluator: FloodEmissionsEvaluator::ExponentialDecay { start_value: 100., decay: 0.1 },
                     mode: FloodEmissionsMode::Increase,
                 }),
                 SupplierEnergy,
@@ -137,8 +135,7 @@ impl BuilderEnergyRelay {
             ))
             .observe(on_technical_state_changed_recompute_operational)
             .observe(Self::on_add_is_operational_insert_color_pulsation)
-            .observe(Self::on_remove_is_operational_remove_color_pulsation)
-            ;
+            .observe(Self::on_remove_is_operational_remove_color_pulsation);
         commands.trigger(TechnicalStateChanged { entity, kind: TechnicalChange::JustSpawned });
     }
 }
@@ -153,28 +150,29 @@ fn on_energy_relay_place_request_do_so(
     commands.spawn(BuilderEnergyRelay::new(coords));
 }
 
+#[log_tags(Tag::GameSave)]
 fn collect_energy_relays(
     relays: Query<(Entity, &GridCoords, &IntegrityPoints, Has<DisabledByPlayer>), With<EnergyRelay>>,
     mut save: SaveWriter,
 ) {
     if relays.is_empty() { return; }
-    let rows: Vec<(i64, i32, i32, f32, bool)> = relays
+
+    #[debug_dev("Saving {} energy relays", rows.len())]
+    let rows: Vec<(i64, GridCoords, f32, bool)> = relays
         .iter()
         .map(|(entity, coords, integrity_points, disabled_by_player)| {
             (
                 entity.index_u32() as i64,
-                coords.x,
-                coords.y,
+                *coords,
                 integrity_points.get_current(),
                 disabled_by_player,
             )
         })
         .collect();
-    Log::debug().dev().tag(Tag::GameSave).message(format!("Saving {} energy relays", rows.len()));
     save.submit(move |tx| {
-        for (id, gx, gy, integrity_points, disabled_by_player) in rows {
+        for (id, coords, integrity_points, disabled_by_player) in rows {
             tx.save_marker("energy_relays", id)?;
-            tx.save_grid_coords(id, GridCoords { x: gx, y: gy })?;
+            tx.save_grid_coords(id, coords)?;
             tx.save_integrity_points(id, integrity_points)?;
             if disabled_by_player {
                 tx.save_disabled_by_player(id)?;
@@ -184,6 +182,7 @@ fn collect_energy_relays(
     });
 }
 
+#[log_tags(Tag::GameLoad)]
 fn load_energy_relays(ctx: &mut LoadContext) -> rusqlite::Result<()> {
     let mut stmt = ctx.conn.prepare("SELECT id FROM energy_relays")?;
     let mut rows = stmt.query([])?;
@@ -193,10 +192,8 @@ fn load_energy_relays(ctx: &mut LoadContext) -> rusqlite::Result<()> {
         let integrity_points = ctx.conn.get_integrity_points(old_id)?;
         let disabled_by_player = ctx.conn.get_disabled_by_player(old_id)?;
 
-        let Some(entity) = ctx.entity(old_id) else {
-            Log::warn().dev().tag(Tag::GameLoad).message(format!("EnergyRelay with old ID {old_id} has no corresponding new entity"));
-            continue;
-        };
+        #[warn_dev("EnergyRelay with old ID {old_id} has no corresponding new entity")]
+        let Some(entity) = ctx.entity(old_id) else { continue };
         let mut builder = BuilderEnergyRelay::new(grid_position)
             .with_integrity_points(integrity_points);
         if disabled_by_player {
