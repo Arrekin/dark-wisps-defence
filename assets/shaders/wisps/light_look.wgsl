@@ -1,7 +1,7 @@
 #define_import_path dwd::wisps::light
 
 #import dwd::core::TAU
-#import dwd::voronoi_border::{dwd_voronoi_border_2d, dwd_voronoi_hash_2d}
+#import dwd::voronoi_border::{voronoi_border_2d, voronoi_hash_2d}
 
 // Pure-procedural light wisp: a radiant prism-star.
 //
@@ -55,14 +55,14 @@ fn brittle(color: vec4<f32>, p: vec2<f32>, seed: f32) -> vec4<f32> {
 
     let r = length(p) * 2.0;
     let band = 1.0 - smoothstep(CAGE_R * 0.8, CAGE_R, r); // filled disc over the core
-    let md = dwd_voronoi_border_2d(p * CRACK_DENSITY + vec2<f32>(seed));
+    let md = voronoi_border_2d(p * CRACK_DENSITY + vec2<f32>(seed));
     let crack = (1.0 - smoothstep(0.0, CRACK_W, md)) * band;
 
     let rgb = mix(color.rgb, cage_col, crack);
     return vec4<f32>(rgb, max(color.a, crack)); // opaque so the cage always reads
 }
 
-fn dwd_wisp_light(uv: vec2<f32>, time: f32, look: WispLightLook, effects_mask: u32) -> vec4<f32> {
+fn wisp_light(uv: vec2<f32>, time: f32, look: WispLightLook, effects_mask: u32) -> vec4<f32> {
     let p = uv - vec2<f32>(0.5);
     let r = length(p) * 2.0; // 0 at centre, ~1 at the inscribed edge
     let ang = atan2(p.y, p.x);
@@ -103,7 +103,7 @@ fn dwd_wisp_light(uv: vec2<f32>, time: f32, look: WispLightLook, effects_mask: u
     var motes = 0.0;                // scalar coverage (drives alpha/energy)
     var motes_rgb = vec3<f32>(0.0); // each mote carries its own spectral tint
     for (var i = 0; i < NUM_MOTES; i = i + 1) {
-        let rnd = dwd_voronoi_hash_2d(vec2<f32>(f32(i), look.seed)); // per-mote randoms
+        let rnd = voronoi_hash_2d(vec2<f32>(f32(i), look.seed)); // per-mote randoms
         let life = fract(time * MOTE_RATE + rnd.x);     // staggered 0..1 lifetime
         let spread = (rnd.y - 0.5) * MOTE_SPREAD * life;        // fan out as it ages
         let pos = wake * (life * MOTE_REACH) + wake_perp * spread;

@@ -6662,6 +6662,7 @@ dependencies = [
  "bevy",
  "game_core",
  "resources",
+ "visuals",
  "widgets",
 ]
 

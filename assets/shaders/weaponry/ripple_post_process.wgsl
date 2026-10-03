@@ -1,5 +1,6 @@
 #import bevy_core_pipeline::fullscreen_vertex_shader::FullscreenVertexOutput
 #import dwd::core::PI
+#import dwd::screen::{ScreenView, screen_uv_to_world, screen_world_to_uv}
 
 @group(0) @binding(0) var screen_texture: texture_2d<f32>;
 @group(0) @binding(1) var screen_sampler: sampler;
@@ -28,16 +29,6 @@ const WAVE_WIDTH: f32       = 0.15;
 const BOOST_INTENSITY: f32  = 0.22;
 const MAX_DISPLACEMENT: f32 = 15.0;
 
-fn uv_to_world(uv: vec2<f32>) -> vec2<f32> {
-    let centered = uv - vec2<f32>(0.5, 0.5);
-    return camera.world_pos + centered * camera.viewport_size * vec2<f32>(1.0, -1.0);
-}
-
-fn world_to_uv(world: vec2<f32>) -> vec2<f32> {
-    let centered = (world - camera.world_pos) / camera.viewport_size;
-    return centered * vec2<f32>(1.0, -1.0) + vec2<f32>(0.5, 0.5);
-}
-
 fn apply_color_boost(rgb: vec3<f32>, strength: f32) -> vec3<f32> {
     if !COLOR_BOOST || strength <= 0.0 {
         return rgb;
@@ -53,7 +44,8 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
         return textureSampleLevel(screen_texture, screen_sampler, in.uv, 0.0);
     }
 
-    let world_pos = uv_to_world(in.uv);
+    let view = ScreenView(camera.world_pos, camera.viewport_size);
+    let world_pos = screen_uv_to_world(in.uv, view);
 
     var total_displacement   = vec2<f32>(0.0);
     var total_displacement_r = vec2<f32>(0.0);
@@ -97,12 +89,12 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
         }
     }
 
-    let displaced_uv = world_to_uv(world_pos - total_displacement);
+    let displaced_uv = screen_world_to_uv(world_pos - total_displacement, view);
 
     var rgb: vec3<f32>;
     if CHROMATIC_ABERRATION {
-        let uv_r = world_to_uv(world_pos - total_displacement_r);
-        let uv_b = world_to_uv(world_pos - total_displacement_b);
+        let uv_r = screen_world_to_uv(world_pos - total_displacement_r, view);
+        let uv_b = screen_world_to_uv(world_pos - total_displacement_b, view);
         rgb = vec3<f32>(
             textureSampleLevel(screen_texture, screen_sampler, uv_r, 0.0).r,
             textureSampleLevel(screen_texture, screen_sampler, displaced_uv, 0.0).g,

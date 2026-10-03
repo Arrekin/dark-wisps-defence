@@ -2,7 +2,7 @@
 //!
 //! [`Fade`] is the GPU-side uniform: the endpoints, start time, and rate of an
 //! exponential curve the shader evaluates against `globals.time`. Its layout
-//! mirrors the `Fade` struct in the shaders that use it.
+//! mirrors `Fade` in `assets/shaders/widgets/fade.wgsl`.
 //!
 //! [`FadeState`] is the runtime bookkeeping: the target a consumer asked for,
 //! plus the fade carrying the drawn value toward it. It produces a [`Fade`] for
@@ -11,8 +11,8 @@
 use bevy::render::render_resource::ShaderType;
 
 /// The GPU-side uniform: endpoints, start time, and rate of the exponential
-/// curve. The shader evaluates it against `globals.time`. Layout mirrors the
-/// `Fade` struct in the shaders that use it.
+/// curve. The shader evaluates it against `globals.time`. Layout mirrors `Fade`
+/// in `assets/shaders/widgets/fade.wgsl`.
 #[derive(ShaderType, Clone, Copy, Debug)]
 pub struct Fade {
     pub start_value: f32,
@@ -49,8 +49,8 @@ impl FadeState {
         moved
     }
 
-    /// Value at `now`, using the same curve as `eased()` in the shaders. Both
-    /// definitions must be kept in step.
+    /// Value at `now`, using the same curve as `eased()` in
+    /// `assets/shaders/widgets/fade.wgsl`. Both definitions must be kept in step.
     pub(crate) fn sample(&self, now: f32) -> f32 {
         let elapsed = (now - self.start_time).max(0.0);
         self.start_value + (self.end_value - self.start_value) * (1.0 - (-self.rate * elapsed).exp())

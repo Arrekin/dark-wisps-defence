@@ -122,7 +122,7 @@ struct TowersRangeMaterial {
 }
 impl Material2d for TowersRangeMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/towers_ranges_map.wgsl".into()
+        "shaders/overlays/towers_ranges_map.wgsl".into()
     }
 
     fn alpha_mode(&self) -> AlphaMode2d {

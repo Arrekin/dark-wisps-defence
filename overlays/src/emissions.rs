@@ -91,7 +91,7 @@ struct EmissionsOverlayMaterial {
 }
 impl Material2d for EmissionsOverlayMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/emissions_map.wgsl".into()
+        "shaders/overlays/emissions_map.wgsl".into()
     }
     fn alpha_mode(&self) -> AlphaMode2d {
         AlphaMode2d::Blend

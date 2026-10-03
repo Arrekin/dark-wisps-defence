@@ -45,7 +45,7 @@ pub(crate) fn drive_water_material(
     // Measured speed (world units/sec) that maps to vigor 1.0; vigor is unbounded above.
     const VIGOR_SWEET_SPOT: f32 = 60.0;
     // Oscillator cadences, radians/sec: rate = rest + swing * vigor. These MUST match
-    // the same-named constants in assets/shaders/wisps/water_quad.wgsl, which recomputes the
+    // the same-named constants in assets/shaders/wisps/water_look.wgsl, which recomputes the
     // rates from vigor for its phase extrapolation; here they give the OLD rate for the
     // re-anchor. (A divergence between the two shows up as a phase snap on speed changes.)
     const STROKE_RATE_REST: f32 = 3.5;

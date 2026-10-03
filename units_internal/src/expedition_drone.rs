@@ -532,7 +532,7 @@ impl Default for ScanningBeamMaterial {
 
 impl Material2d for ScanningBeamMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/scanning_beam.wgsl".into()
+        "shaders/units/scanning_beam.wgsl".into()
     }
     fn alpha_mode(&self) -> AlphaMode2d {
         AlphaMode2d::Blend
@@ -548,7 +548,7 @@ pub(crate) struct ScanSpotMaterial {
 
 impl Material2d for ScanSpotMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/scan_spot.wgsl".into()
+        "shaders/units/scan_spot.wgsl".into()
     }
     fn alpha_mode(&self) -> AlphaMode2d {
         AlphaMode2d::Blend

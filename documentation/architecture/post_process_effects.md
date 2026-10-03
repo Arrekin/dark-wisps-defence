@@ -112,8 +112,8 @@ that as the loop bound.
 
 | Effect | Component | Shader |
 |--------|-----------|--------|
-| Ripple displacement | `RipplePostProcess` in `weaponry_internal/src/ripple_post_process.rs` | `assets/shaders/ripple_post_process.wgsl` |
-| Force field dome | `ForceFieldPostProcess` in `weaponry_internal/src/force_field_post_process.rs` | `assets/shaders/force_field_post_process.wgsl` |
-| Quantum field anomaly | `QuantumFieldPostProcess` in `map_objects_internal/src/quantum_field_post_process.rs` | `assets/shaders/quantum_field_post_process.wgsl` |
+| Ripple displacement | `RipplePostProcess` in `weaponry_internal/src/ripple_post_process.rs` | `assets/shaders/weaponry/ripple_post_process.wgsl` |
+| Force field dome | `ForceFieldPostProcess` in `weaponry_internal/src/force_field_post_process.rs` | `assets/shaders/weaponry/force_field_post_process.wgsl` |
+| Quantum field anomaly | `QuantumFieldPostProcess` in `map_objects_internal/src/quantum_field_post_process.rs` | `assets/shaders/quantum_field/post_process.wgsl` |
 
 Pass order (in the `Core2d` schedule): `Tonemapping → Ripple → ForceField → QuantumField → Upscaling`.

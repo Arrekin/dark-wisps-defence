@@ -1,4 +1,5 @@
 #import bevy_sprite::mesh2d_vertex_output::VertexOutput
+#import dwd::core::TAU
 
 // Scan spot shader - circle projection on ground
 struct ScanSpotData {
@@ -31,7 +32,7 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
     let inner_glow = smoothstep(0.95, 0.0, dist) * SPOT_GLOW_INTENSITY;
     
     // Animated scan rings expanding outward
-    let ring_phase = uniforms.pulse * 6.28318;
+    let ring_phase = uniforms.pulse * TAU;
     let rings = sin(dist * 10.0 - ring_phase) * 0.5 + 0.5;
     let ring_effect = rings * smoothstep(0.95, 0.2, dist) * SPOT_SCAN_INTENSITY;
     

@@ -1,6 +1,6 @@
 #import bevy_render::globals::Globals
 #import bevy_ui::ui_vertex_output::UiVertexOutput
-#import dwd::wisps::water::{WispWaterLook, dwd_wisp_water}
+#import dwd::wisps::water::{WispWaterLook, wisp_water}
 
 // Stationary water-wisp UI face with alteration effects disabled.
 
@@ -22,5 +22,5 @@ fn fragment(in: UiVertexOutput) -> @location(0) vec4<f32> {
     look.stroke_anchor_phase = 0.0;
     look.surf_anchor_phase = 0.0;
     look.anchor_time = 0.0;
-    return dwd_wisp_water(in.uv, globals.time, look, 0u);
+    return wisp_water(in.uv, globals.time, look, 0u);
 }

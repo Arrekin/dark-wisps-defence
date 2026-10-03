@@ -112,7 +112,7 @@ struct EnergySupplyHeatmapMaterial {
 }
 impl Material2d for EnergySupplyHeatmapMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/energy_supply_map.wgsl".into()
+        "shaders/overlays/energy_supply_map.wgsl".into()
     }
 
     fn alpha_mode(&self) -> AlphaMode2d {

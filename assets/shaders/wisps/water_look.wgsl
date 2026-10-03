@@ -1,6 +1,6 @@
 #define_import_path dwd::wisps::water
 
-#import dwd::voronoi_border::dwd_voronoi_border_2d
+#import dwd::voronoi_border::voronoi_border_2d
 
 // Pure-procedural water wisp: a living droplet of liquid.
 //
@@ -43,7 +43,7 @@ const CRACK_W: f32 = 0.28;        // crack line half-width, in cell units
 fn brittle(color: vec4<f32>, q: vec2<f32>, body: f32, seed: f32) -> vec4<f32> {
     let gold = vec3<f32>(1.00, 0.78, 0.25); // golden crack — complement of the blue body
 
-    let md = dwd_voronoi_border_2d(q * CRACK_DENSITY + vec2<f32>(seed));
+    let md = voronoi_border_2d(q * CRACK_DENSITY + vec2<f32>(seed));
     let crack = (1.0 - smoothstep(0.0, CRACK_W, md)) * body;
 
     let rgb = mix(color.rgb, gold, crack);
@@ -55,7 +55,7 @@ fn brittle(color: vec4<f32>, q: vec2<f32>, body: f32, seed: f32) -> vec4<f32> {
 // at DEFORM_ASYMP, so the body deforms more with speed but never stretches enough to tear.
 const DEFORM_ASYMP: f32 = 1.25;
 // Oscillator cadences, radians/sec: rate = rest + swing * vigor. MUST match the
-// same-named constants in drive_water_material (src/wisps/systems.rs), which uses
+// same-named constants in drive_water_material (wisps_internal/src/systems.rs), which uses
 // them for the CPU re-anchor. (Divergence shows up as a phase snap on speed changes.)
 const STROKE_RATE_REST: f32 = 3.5;
 const STROKE_RATE_SWING: f32 = 3.5;
@@ -68,7 +68,7 @@ const SWAY: f32 = 0.07;         // side-to-side wriggle
 const TAIL_TAPER: f32 = 0.22;   // how sharply the trailing edge pinches
 const CHURN_AMP_GAIN: f32 = 1.6;// extra rim amplitude at full travel
 
-fn dwd_wisp_water(uv: vec2<f32>, time: f32, look: WispWaterLook, effects_mask: u32) -> vec4<f32> {
+fn wisp_water(uv: vec2<f32>, time: f32, look: WispWaterLook, effects_mask: u32) -> vec4<f32> {
     let t = time * look.flow_speed;
     // Saturating geometry deform from raw vigor: 0 at rest, ≈1 at the sweet spot,
     // asymptotes at DEFORM_ASYMP so the body deforms more with speed but never tears.

@@ -1,6 +1,6 @@
 #import bevy_sprite::mesh2d_vertex_output::VertexOutput
 #import bevy_sprite::mesh2d_view_bindings::globals
-#import dwd::wisps::water::{WispWaterLook, dwd_wisp_water}
+#import dwd::wisps::water::{WispWaterLook, wisp_water}
 
 // Map-material bindings for the shared water-wisp shader.
 
@@ -23,7 +23,7 @@ var<uniform> quad: WispQuad;
 
 @fragment
 fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
-    var color = dwd_wisp_water(mesh.uv, globals.time, uniforms, effects.mask);
+    var color = wisp_water(mesh.uv, globals.time, uniforms, effects.mask);
     color.a *= quad.alpha;
     return color;
 }

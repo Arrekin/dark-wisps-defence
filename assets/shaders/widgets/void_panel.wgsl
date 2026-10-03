@@ -1,5 +1,6 @@
 #import bevy_ui::ui_vertex_output::{UiVertexOutput}
 #import bevy_render::globals::{Globals}
+#import dwd::widgets::fade::{Fade, eased}
 
 // Parameterized UI material using pixel-space signed-distance fields with derivative-based
 // antialiasing. It composites a field vignette, contour, hairline, rim, and optional corner mark.
@@ -35,15 +36,6 @@ struct VoidPanelStyleResponse {
     contour_scale: f32,
     tint: f32,
     corner_mark: f32,
-};
-
-// One state's fade, evaluated by `eased()`. The rate travels with the fade so the curve is
-// defined once, on the Rust side.
-struct Fade {
-    start_value: f32,
-    end_value: f32,
-    start_time: f32,
-    rate: f32,
 };
 
 // Shape and travel of two surges that move continuously around the panel border.
@@ -101,15 +93,6 @@ const MARK_INTENSITY: f32 = 0.9;
 
 // Exponential scale length of the inner rim, in pixels.
 const RIM_SCALE: f32 = 8.0;
-
-// Current value of a fade.
-//
-// Interpolate fades from `globals.time` for framerate-independent animation.
-fn eased(fade: Fade, now: f32) -> f32 {
-    let elapsed = max(0.0, now - fade.start_time);
-    return mix(fade.start_value, fade.end_value, 1.0 - exp(-fade.rate * elapsed));
-}
-
 
 // Position around the silhouette, 0..1, clockwise from the top-left corner.
 //

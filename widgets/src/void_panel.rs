@@ -20,7 +20,7 @@ use crate::common::fade::{Fade, FadeState};
 // MATERIAL — the GPU uniform
 // ============================================================================
 
-const SHADER_ASSET_PATH: &str = "shaders/void_panel.wgsl";
+const SHADER_ASSET_PATH: &str = "shaders/widgets/void_panel.wgsl";
 
 /// Silhouette dimensions in pixels and the resting intensity of the three edge layers.
 #[derive(ShaderType, Clone, Copy, Debug)]
@@ -64,7 +64,7 @@ pub struct VoidPanelBorderSurge {
 }
 
 /// GPU-side uniform for the void-panel shader. Field order and types mirror the
-/// `VoidPanelMaterial` struct in `assets/shaders/void_panel.wgsl` exactly.
+/// `VoidPanelMaterial` struct in `assets/shaders/widgets/void_panel.wgsl` exactly.
 ///
 /// Every member must start at a multiple of 16 bytes, and nothing here pads automatically. A
 /// member whose data is shorter shifts every member after it and panics when the buffer is

@@ -1,5 +1,6 @@
 #import bevy_ui::ui_vertex_output::{UiVertexOutput}
 #import bevy_render::globals::{Globals}
+#import dwd::widgets::fade::{Fade, eased}
 
 // Raked progress bar with three positions: completed progress, the resource-reachable marker,
 // and a lagging band between them. The runway closes when progress reaches the marker.
@@ -9,14 +10,6 @@
 
 @group(0) @binding(1)
 var<uniform> globals: Globals;
-
-// Must stay identical to `Fade` in the other UI shaders and on the Rust side.
-struct Fade {
-    start_value: f32,
-    end_value: f32,
-    start_time: f32,
-    rate: f32,
-};
 
 struct ProgressBarGeometry {
     // Horizontal shift of the top edge relative to the bottom, as a fraction of the track's
@@ -76,11 +69,6 @@ const RUNWAY_FLOOR: f32 = 0.4;
 const TICK_A: f32 = 0.25;
 const TICK_B: f32 = 0.5;
 const TICK_C: f32 = 0.75;
-
-fn eased(fade: Fade, now: f32) -> f32 {
-    let elapsed = max(0.0, now - fade.start_time);
-    return mix(fade.start_value, fade.end_value, 1.0 - exp(-fade.rate * elapsed));
-}
 
 @fragment
 fn fragment(in: UiVertexOutput) -> @location(0) vec4<f32> {

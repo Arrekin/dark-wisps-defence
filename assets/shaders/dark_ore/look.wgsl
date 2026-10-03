@@ -1,7 +1,7 @@
 #define_import_path dwd::dark_ore
 #import dwd::core::TAU
-#import dwd::gradient_noise::dwd_gradient_fbm_2d
-#import dwd::hash::{DWD_HASH_GOLDEN, dwd_hash_coords, dwd_hash_mix, dwd_hash_unit}
+#import dwd::gradient_noise::gradient_fbm_2d
+#import dwd::hash::{HASH_GOLDEN, hash_coords, hash_mix, hash_unit}
 #import dwd::map_light::{MAP_SUN_DIRECTION, MAP_SUN_GROUND_DIRECTION, MAP_SUN_HALF_VECTOR}
 
 // Binding-free procedural dark-ore shading. Callers provide distance, fill, screen scale and world
@@ -213,7 +213,7 @@ const FAR: f32 = 1.0e30;
 // Noise
 // --------------------------------------------------------------------------------------------
 
-// Mean of `dwd_gradient_fbm_2d` for `octaves` amplitudes starting at 0.5 and halving each octave.
+// Mean of `gradient_fbm_2d` for `octaves` amplitudes starting at 0.5 and halving each octave.
 fn fbm_mean(octaves: i32) -> f32 {
     return 0.5 * (1.0 - pow(0.5, f32(octaves)));
 }
@@ -237,21 +237,21 @@ fn noise_blend(value: f32, octaves: i32, gain: f32) -> f32 {
 
 // Two deterministic values in [0, 1).
 fn ore_hash(cell: vec2<f32>, salt: u32) -> vec2<f32> {
-    let base = dwd_hash_coords(cell, DWD_HASH_GOLDEN ^ (salt * 0x85ebca6bu));
-    return vec2<f32>(dwd_hash_unit(base), dwd_hash_unit(dwd_hash_mix(base ^ 0x68bc21ebu)));
+    let base = hash_coords(cell, HASH_GOLDEN ^ (salt * 0x85ebca6bu));
+    return vec2<f32>(hash_unit(base), hash_unit(hash_mix(base ^ 0x68bc21ebu)));
 }
 
 // One deterministic value in [0, 1); the `x` of `ore_hash` under the same salt.
 fn ore_roll(cell: vec2<f32>, salt: u32) -> f32 {
-    return dwd_hash_unit(dwd_hash_coords(cell, DWD_HASH_GOLDEN ^ (salt * 0x85ebca6bu)));
+    return hash_unit(hash_coords(cell, HASH_GOLDEN ^ (salt * 0x85ebca6bu)));
 }
 
 // How far the visible deposit is carved inward from the logical union of ore cells. Both terms are
 // stretched across the noise's useful range and remain non-negative, so the outline can wander
 // inside an occupied cell but can never invade an empty one.
 fn ore_inset(world: vec2<f32>) -> f32 {
-    let coarse = noise_blend(dwd_gradient_fbm_2d(world / INSET_SCALE, 3), 3, INSET_GAIN);
-    let fine = noise_blend(dwd_gradient_fbm_2d(world / INSET_FINE_SCALE + vec2<f32>(11.3, 57.8), 2), 2, INSET_GAIN);
+    let coarse = noise_blend(gradient_fbm_2d(world / INSET_SCALE, 3), 3, INSET_GAIN);
+    let fine = noise_blend(gradient_fbm_2d(world / INSET_FINE_SCALE + vec2<f32>(11.3, 57.8), 2), 2, INSET_GAIN);
     return INSET_BASE + coarse * INSET_AMOUNT + fine * INSET_FINE_AMOUNT;
 }
 
@@ -317,7 +317,7 @@ fn room_at(cell: vec2<f32>, seat: vec2<f32>) -> f32 {
 // ramp's slope, not a reachable value: the ramp hits 1.0 — every seat filled — at 0.345 of the
 // noise range and is clamped flat above that.
 fn ore_crowding(world: vec2<f32>) -> f32 {
-    return min(mix(CROWDING_BASE, CROWDING_TOP, saturate(dwd_gradient_fbm_2d(world / CROWDING_SCALE, 3))), 1.0);
+    return min(mix(CROWDING_BASE, CROWDING_TOP, saturate(gradient_fbm_2d(world / CROWDING_SCALE, 3))), 1.0);
 }
 
 // Whether a cell holds a crystal at all. Kept clear of the spacing above, which is settled for
@@ -800,7 +800,7 @@ fn dark_ore_shading(d: f32, fill: f32, texel: f32, world: vec2<f32>) -> vec4<f32
         // Stain is only needed where no crystal covers the ground, and so is the local probe.
         let contact = saturate(contact_strength(here.contact, 1.0) * HUG_WEIGHT + offset * OFFSET_WEIGHT);
         // Read raw rather than through `noise_blend`: the stain keeps to the middle of its colour range.
-        let mottle = saturate(dwd_gradient_fbm_2d(world / MOTTLE_SCALE, 4));
+        let mottle = saturate(gradient_fbm_2d(world / MOTTLE_SCALE, 4));
         let stain_colour = mix(STAIN_LOW, STAIN_HIGH, mottle * mix(STAIN_FLOOR, 1.0, visible_fill));
         let stain = smoothstep(0.0, STAIN_FADE, d);
         // Contact alpha remains visible where the underlying stain is faint.
@@ -816,7 +816,7 @@ fn dark_ore_shading(d: f32, fill: f32, texel: f32, world: vec2<f32>) -> vec4<f32
     let detail = smoothstep(DETAIL_LOW_TEXELS, DETAIL_HIGH_TEXELS, here.girth / texel);
 
     // Material tones dominate; diffuse and sky terms provide restrained face variation.
-    let plate = noise_blend(dwd_gradient_fbm_2d(world / PLATE_SCALE, 3), 3, PLATE_GAIN);
+    let plate = noise_blend(gradient_fbm_2d(world / PLATE_SCALE, 3), 3, PLATE_GAIN);
     var stone = mix(BODY_LOW, BODY_HIGH, plate) * (1.0 + BODY_LIGHT * key + SKY_LIGHT * sky) * here.tone;
 
     // Darken surfaces near the root to integrate the shaft with the bed.
@@ -830,7 +830,7 @@ fn dark_ore_shading(d: f32, fill: f32, texel: f32, world: vec2<f32>) -> vec4<f32
 
     // Growth bands use world height for size-independent spacing. Crystal tone provides a stable
     // second noise coordinate that decorrelates neighboring bands.
-    let bands = noise_blend(dwd_gradient_fbm_2d(vec2<f32>(sample.surface * GRAIN_SPACING, here.tone * GRAIN_OFFSET), 3), 3, GRAIN_GAIN);
+    let bands = noise_blend(gradient_fbm_2d(vec2<f32>(sample.surface * GRAIN_SPACING, here.tone * GRAIN_OFFSET), 3), 3, GRAIN_GAIN);
     stone = stone * mix(1.0 - GRAIN_DEPTH * detail, 1.0 + GRAIN_DEPTH * detail, bands);
 
     // The lustre, gated on length rather than width.

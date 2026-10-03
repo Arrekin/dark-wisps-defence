@@ -1,7 +1,7 @@
 #define_import_path dwd::wisps::fire
 
 #import dwd::core::TAU
-#import dwd::voronoi_border::dwd_voronoi_border_2d
+#import dwd::voronoi_border::voronoi_border_2d
 
 // Pure-procedural fire wisp: a molten orb on fire.
 //
@@ -190,14 +190,14 @@ fn brittle(color: vec4<f32>, c: vec2<f32>, seed: f32) -> vec4<f32> {
 
     let r = length(c);
     let band = 1.0 - smoothstep(CAGE_R * 0.8, CAGE_R, r); // filled disc over the core
-    let md = dwd_voronoi_border_2d(c * CRACK_DENSITY + vec2<f32>(seed));
+    let md = voronoi_border_2d(c * CRACK_DENSITY + vec2<f32>(seed));
     let crack = (1.0 - smoothstep(0.0, CRACK_W, md)) * band;
 
     let rgb = mix(color.rgb, gold, crack);
     return vec4<f32>(rgb, max(color.a, crack)); // opaque so the cage always reads
 }
 
-fn dwd_wisp_fire(uv: vec2<f32>, time: f32, look: WispFireLook, effects_mask: u32) -> vec4<f32> {
+fn wisp_fire(uv: vec2<f32>, time: f32, look: WispFireLook, effects_mask: u32) -> vec4<f32> {
     let p = (uv - vec2<f32>(0.5)) * QUAD_SCALE; // y points down
     let r = length(p);
     let t = time;

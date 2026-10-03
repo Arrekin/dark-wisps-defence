@@ -1,9 +1,9 @@
 #define_import_path dwd::wisps::electric
 
 #import dwd::core::{PI, TAU}
-#import dwd::hash::{dwd_hash_coords, dwd_hash_unit}
-#import dwd::value_noise::{dwd_value_hash_2d, dwd_value_noise_2d}
-#import dwd::voronoi_border::dwd_voronoi_border_2d
+#import dwd::hash::{hash_coords, hash_unit}
+#import dwd::value_noise::{value_hash_2d, value_noise_2d}
+#import dwd::voronoi_border::voronoi_border_2d
 
 // Pure-procedural electric wisp: a contained plasma globe.
 //
@@ -33,7 +33,7 @@ const ARC_GLOW: f32 = 0.42;   // soft halo half-width
 // Domain salt for the strike schedule draws.
 const STRIKE_SALT: u32 = 0x7f4a7c15u;
 fn hash11(x: f32) -> f32 {
-    return dwd_hash_unit(dwd_hash_coords(vec2<f32>(x, 0.0), STRIKE_SALT));
+    return hash_unit(hash_coords(vec2<f32>(x, 0.0), STRIKE_SALT));
 }
 // Smallest signed angle a - b, wrapped to (-PI, PI].
 fn angle_diff(a: f32, b: f32) -> f32 {
@@ -44,8 +44,8 @@ fn angle_diff(a: f32, b: f32) -> f32 {
 // One jagged arc from the core toward the rim. `base` is its striking angle;
 // the centreline wanders in angle as it climbs outward, giving the kinked path.
 fn arc(r: f32, ang: f32, base: f32, seed: f32, t: f32) -> f32 {
-    let wander = (dwd_value_noise_2d(vec2<f32>(r * 5.0 + seed, t)) - 0.5) * (ARC_WANDER * 2.0)
-               + (dwd_value_noise_2d(vec2<f32>(r * 13.0 + seed * 2.0, t * 1.7)) - 0.5) * ARC_WANDER;
+    let wander = (value_noise_2d(vec2<f32>(r * 5.0 + seed, t)) - 0.5) * (ARC_WANDER * 2.0)
+               + (value_noise_2d(vec2<f32>(r * 13.0 + seed * 2.0, t * 1.7)) - 0.5) * ARC_WANDER;
     let centre = base + wander;
     let d = abs(angle_diff(ang, centre)) * r; // angular gap → screen-space thinness
     let core = 1.0 - smoothstep(0.0, ARC_CORE, d);
@@ -66,14 +66,14 @@ fn brittle(color: vec4<f32>, p: vec2<f32>, seed: f32) -> vec4<f32> {
 
     let r = length(p) * 2.0;
     let band = 1.0 - smoothstep(CAGE_R * 0.8, CAGE_R, r); // filled disc over the core
-    let md = dwd_voronoi_border_2d(p * CRACK_DENSITY + vec2<f32>(seed));
+    let md = voronoi_border_2d(p * CRACK_DENSITY + vec2<f32>(seed));
     let crack = (1.0 - smoothstep(0.0, CRACK_W, md)) * band;
 
     let rgb = mix(color.rgb, gold, crack);
     return vec4<f32>(rgb, max(color.a, crack)); // opaque so the cage always reads
 }
 
-fn dwd_wisp_electric(uv: vec2<f32>, time: f32, look: WispElectricLook, effects_mask: u32) -> vec4<f32> {
+fn wisp_electric(uv: vec2<f32>, time: f32, look: WispElectricLook, effects_mask: u32) -> vec4<f32> {
     let hot = vec3<f32>(1.00, 0.95, 1.00);  // white-hot cores
     let volt = vec3<f32>(0.55, 0.25, 1.00); // violet high-voltage glow
 
@@ -107,7 +107,7 @@ fn dwd_wisp_electric(uv: vec2<f32>, time: f32, look: WispElectricLook, effects_m
     let dir = p / max(length(p), 1e-4);
     let back = max(0.0, -dot(dir, heading)); // 1 directly behind travel, 0 ahead
     let sp = p * 9.0;
-    let twinkle = step(0.92, fract(dwd_value_hash_2d(floor(sp)) + time * 3.0));
+    let twinkle = step(0.92, fract(value_hash_2d(floor(sp)) + time * 3.0));
     let spark_shape = (1.0 - smoothstep(0.0, 0.25, length(fract(sp) - 0.5))) * smoothstep(0.3, 0.95, r);
     let spark = twinkle * spark_shape * (0.5 + 1.2 * back * look.vigor);
 

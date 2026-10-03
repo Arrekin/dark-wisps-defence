@@ -44,7 +44,7 @@ struct GridPlacerUniform {
     cell_data: UVec4,
     cell_columns: u32,
     cell_rows: u32,
-    /// One of the `VALIDITY_*` constants in `assets/shaders/grid_placer.wgsl`.
+    /// One of the `VALIDITY_*` constants in `assets/shaders/grids/grid_placer.wgsl`.
     validity: u32,
 }
 impl GridPlacerUniform {
@@ -65,7 +65,7 @@ pub(crate) struct GridPlacerMaterial {
 }
 impl Material2d for GridPlacerMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/grid_placer.wgsl".into()
+        "shaders/grids/grid_placer.wgsl".into()
     }
     fn alpha_mode(&self) -> AlphaMode2d {
         AlphaMode2d::Blend
@@ -73,7 +73,7 @@ impl Material2d for GridPlacerMaterial {
 }
 
 /// Packs the imprint shape and its annotations two bits per cell, up to 64 cells. The values are
-/// the `CELL_*` constants in `assets/shaders/grid_placer.wgsl`.
+/// the `CELL_*` constants in `assets/shaders/grids/grid_placer.wgsl`.
 fn build_cell_data(imprint: GridImprint, origin: GridCoords, annotations: &[(GridCoords, CellHighlight)]) -> UVec4 {
     let imprint_bounds = Bounds::from(imprint);
     let mut words = [0u32; 4];

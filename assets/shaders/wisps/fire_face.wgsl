@@ -1,6 +1,6 @@
 #import bevy_render::globals::Globals
 #import bevy_ui::ui_vertex_output::UiVertexOutput
-#import dwd::wisps::fire::{WispFireLook, dwd_wisp_fire}
+#import dwd::wisps::fire::{WispFireLook, wisp_fire}
 
 // Stationary fire-wisp UI face with alteration effects disabled.
 
@@ -16,5 +16,5 @@ fn fragment(in: UiVertexOutput) -> @location(0) vec4<f32> {
     look.vigor = 0.0;
     look.heading_x = 0.0;
     look.heading_y = 0.0;
-    return dwd_wisp_fire(in.uv, globals.time, look, 0u);
+    return wisp_fire(in.uv, globals.time, look, 0u);
 }

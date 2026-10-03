@@ -1,5 +1,6 @@
 #import bevy_ui::ui_vertex_output::{UiVertexOutput}
 #import bevy_render::globals::{Globals}
+#import dwd::widgets::fade::{Fade, eased}
 
 // Close mark with two asymmetrical crossed strokes. The surround appears only on hover.
 // The heavier stroke follows the panel chamfer diagonal; the crossing gap keeps both strokes
@@ -7,14 +8,6 @@
 
 @group(0) @binding(1)
 var<uniform> globals: Globals;
-
-// Must stay identical to `Fade` in the other UI shaders and on the Rust side.
-struct Fade {
-    start_value: f32,
-    end_value: f32,
-    start_time: f32,
-    rate: f32,
-};
 
 struct CloseButtonGeometry {
     // Half-length of a stroke, in pixels: the mark spans twice this.
@@ -51,11 +44,6 @@ const SQRT_2_INV: f32 = 0.70710678;
 // Direction of the chamfer the panels are cut on, and the one crossing it.
 const HEAVY_DIR: vec2<f32> = vec2<f32>(SQRT_2_INV, SQRT_2_INV);
 const LIGHT_DIR: vec2<f32> = vec2<f32>(SQRT_2_INV, -SQRT_2_INV);
-
-fn eased(fade: Fade, now: f32) -> f32 {
-    let elapsed = max(0.0, now - fade.start_time);
-    return mix(fade.start_value, fade.end_value, 1.0 - exp(-fade.rate * elapsed));
-}
 
 // Distance to a stroke lying along `dir`, present between `gap` and `reach` from the centre
 // on both sides. The two arms are one expression because the projection is clamped by its

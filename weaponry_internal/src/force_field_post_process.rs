@@ -383,7 +383,7 @@ fn init_force_field_pipeline(
         min_filter: FilterMode::Linear,
         ..default()
     });
-    let shader = asset_server.load("shaders/force_field_post_process.wgsl");
+    let shader = asset_server.load("shaders/weaponry/force_field_post_process.wgsl");
 
     let make_pipeline = |format| RenderPipelineDescriptor {
         label: Some("force_field_post_process_pipeline".into()),

@@ -7,7 +7,7 @@
 //!
 //! Reachable drives two positions at different speeds — a marker that tracks it closely and
 //! a filled band that follows more slowly — so resources arriving open a gap that then
-//! flows shut. The layers are described in `assets/shaders/progress_bar.wgsl`.
+//! flows shut. The layers are described in `assets/shaders/widgets/progress_bar.wgsl`.
 //!
 //! Values are stamped as fades and interpolated by the shader, so a bar costs no CPU
 //! between changes and none at all while nothing is moving.
@@ -21,7 +21,7 @@ use bevy::{
 
 use crate::common::fade::{Fade, FadeState};
 
-const SHADER_ASSET_PATH: &str = "shaders/progress_bar.wgsl";
+const SHADER_ASSET_PATH: &str = "shaders/widgets/progress_bar.wgsl";
 
 /// Exponential ease rates per second. The marker follows affordability promptly while the
 /// slower band makes changes in reachable progress visible.
@@ -66,7 +66,7 @@ pub struct ProgressBarDetail {
 }
 
 /// GPU-side uniform. Field order and types mirror `ProgressBarMaterial` in
-/// `assets/shaders/progress_bar.wgsl`.
+/// `assets/shaders/widgets/progress_bar.wgsl`.
 ///
 /// Every member is 16 bytes. A narrower one shifts everything after it and panics when the
 /// buffer is prepared.

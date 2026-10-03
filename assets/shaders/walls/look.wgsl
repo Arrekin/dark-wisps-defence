@@ -1,6 +1,6 @@
 #define_import_path dwd::walls
 #import dwd::core::CELL_SIZE
-#import dwd::gradient_noise::dwd_gradient_fbm_2d
+#import dwd::gradient_noise::gradient_fbm_2d
 
 // Binding-free wall style layout and shading functions. Callers own their material bindings, so the
 // same code can serve both the map canvas and UI swatches.
@@ -48,13 +48,13 @@ fn single_cell_distance(world: vec2<f32>) -> f32 {
 }
 // Body variation is exposed separately for the canvas noise diagnostic.
 fn plate_noise(world: vec2<f32>, style: WallStyle) -> f32 {
-    return dwd_gradient_fbm_2d(world / max(style.surface.plate_noise_scale, 0.0001), 4);
+    return gradient_fbm_2d(world / max(style.surface.plate_noise_scale, 0.0001), 4);
 }
 
 // Perturbs signed distance before coverage and layer thresholds. Facing is sampled from the raw
 // field so high-frequency erosion does not affect lighting.
 fn eroded_distance(raw_distance: f32, world: vec2<f32>, style: WallStyle) -> f32 {
-    return raw_distance + (dwd_gradient_fbm_2d(world / GRAIN_SCALE, 3) - 0.5) * style.geometry.erosion_amount;
+    return raw_distance + (gradient_fbm_2d(world / GRAIN_SCALE, 3) - 0.5) * style.geometry.erosion_amount;
 }
 
 // Composites body, bevel, hairline and contour. `d` is signed world-pixel distance, `lit` is the
