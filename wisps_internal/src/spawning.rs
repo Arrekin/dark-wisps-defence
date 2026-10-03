@@ -8,10 +8,7 @@ use grids::{
     wisps::WispsGrid,
 };
 use logging::prelude::*;
-use persistence::{
-    prelude::{GameDbHelpers, LoadContext, SaveWriter},
-    rusqlite,
-};
+use persistence::{prelude::*, rusqlite};
 use resources::prelude::*;
 use wisps::{WispElectricType, WispFireType, WispLightType, WispWaterType, prelude::*};
 
@@ -109,13 +106,13 @@ pub(crate) fn collect_wisps(
             )
         })
         .collect();
-    save.submit(move |tx| {
+    save.submit(move |ctx| {
         for (id, wisp_type, coords, integrity_points, position) in rows {
-            tx.register_entity(id)?;
-            tx.save_world_position(id, position)?;
-            tx.save_grid_coords(id, coords)?;
-            tx.save_integrity_points(id, integrity_points)?;
-            tx.execute(
+            ctx.register_entity(id)?;
+            ctx.save_world_position(id, position)?;
+            ctx.save_grid_coords(id, coords)?;
+            ctx.save_integrity_points(id, integrity_points)?;
+            ctx.tx.execute(
                 "INSERT OR REPLACE INTO wisps (id, wisp_type) VALUES (?1, ?2)",
                 rusqlite::params![id, wisp_type.as_ref()],
             )?;
@@ -124,29 +121,18 @@ pub(crate) fn collect_wisps(
     });
 }
 
-#[log_tags(Tag::GameLoad)]
-pub(crate) fn load_wisps(ctx: &mut LoadContext) -> rusqlite::Result<()> {
-    let mut stmt = ctx.conn.prepare("SELECT id, wisp_type FROM wisps")?;
-    let mut rows = stmt.query([])?;
-    while let Some(row) = rows.next()? {
-        let old_id: i64 = row.get(0)?;
-        let wisp_type_str: String = row.get(1)?;
-
-        #[warn_dev("Unknown WispType '{wisp_type_str}'")]
-        let Ok(wisp_type) = wisp_type_str.parse::<WispType>() else { continue };
-
-        let grid_coords = ctx.conn.get_grid_coords(old_id)?;
-        let integrity_points = ctx.conn.get_integrity_points(old_id)?;
-        let world_position = ctx.conn.get_world_position(old_id)?;
-
-        #[warn_dev("Wisp with old ID {old_id} has no corresponding new entity")]
-        let Some(entity) = ctx.entity(old_id) else { continue };
+pub(crate) fn load_wisps(ctx: &mut LoadContext) -> LoadResult {
+    ctx.for_each_entity("SELECT id, wisp_type FROM wisps", |ctx, old_id, entity, row| {
+        let wisp_type = row.get_parsed::<WispType>(1)?;
+        let grid_coords = ctx.grid_coords(old_id)?;
+        let integrity_points = ctx.integrity_points(old_id)?;
+        let world_position = ctx.world_position(old_id)?;
         let builder = BuilderWisp::new(wisp_type, grid_coords)
             .with_integrity_points(integrity_points)
             .with_world_position(world_position);
         ctx.insert(entity, builder);
-    }
-    Ok(())
+        Ok(())
+    })
 }
 
 pub(crate) fn wisp_validator(

@@ -2,10 +2,7 @@ use bevy::prelude::*;
 
 use game_core::prelude::{ShardType, SSS};
 use logging::prelude::*;
-use persistence::{
-    prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveWriter},
-    rusqlite,
-};
+use persistence::{prelude::*, rusqlite};
 use shards::prelude::ShardSlots;
 use states::prelude::MapLoadingStage;
 
@@ -66,22 +63,22 @@ fn collect_shard_slots(
     mut save: SaveWriter,
 ) {
     #[debug_dev("Saving {} shard slots", rows.len())]
-    let rows: Vec<(i64, i32, ShardType)> = shard_targets.iter()
+    let rows: Vec<(i64, usize, ShardType)> = shard_targets.iter()
         .flat_map(|(entity, slots)| {
             slots.iter_with_index().map(move |(slot_index, shard_type)| {
                 (
                     entity.index_u32() as i64,
-                    slot_index as i32,
+                    slot_index,
                     shard_type,
                 )
             })
         })
         .collect();
     if rows.is_empty() { return; }
-    save.submit(move |tx| {
+    save.submit(move |ctx| {
         for (entity_id, slot_index, shard_type) in rows {
-            tx.register_entity(entity_id)?;
-            tx.execute(
+            ctx.register_entity(entity_id)?;
+            ctx.tx.execute(
                 "INSERT INTO entity_shards (shard_target_id, shard_index, shard_type) VALUES (?1, ?2, ?3)",
                 rusqlite::params![entity_id, slot_index, shard_type.as_ref()],
             )?;
@@ -90,25 +87,11 @@ fn collect_shard_slots(
     });
 }
 
-#[log_tags(Tag::GameLoad)]
-fn load_shard_slots(ctx: &mut LoadContext) -> rusqlite::Result<()> {
-    let mut stmt = ctx.conn.prepare(
-        "SELECT shard_target_id, shard_index, shard_type FROM entity_shards ORDER BY shard_target_id, shard_index"
-    )?;
-    let mut rows = stmt.query([])?;
-
-    while let Some(row) = rows.next()? {
-        let target_id: i64 = row.get(0)?;
-        let slot_index: usize = row.get::<_, i32>(1)? as usize;
-        let shard_str: String = row.get(2)?;
-
-        #[warn_dev("Shard slot {slot_index} of old ID {target_id} has unknown shard type '{shard_str}' — skipped")]
-        let Ok(shard_type) = shard_str.parse::<ShardType>() else { continue };
-
-        #[warn_dev("Shard slot target with old ID {target_id} has no corresponding new entity")]
-        let Some(entity) = ctx.entity(target_id) else { continue };
-
+fn load_shard_slots(ctx: &mut LoadContext) -> LoadResult {
+    ctx.for_each_entity("SELECT shard_target_id, shard_index, shard_type FROM entity_shards ORDER BY shard_target_id, shard_index", |ctx, _, entity, row| {
+        let slot_index: usize = row.get(1)?;
+        let shard_type = row.get_parsed::<ShardType>(2)?;
         ctx.insert(entity, BuilderShardSlot::new(slot_index, shard_type));
-    }
-    Ok(())
+        Ok(())
+    })
 }

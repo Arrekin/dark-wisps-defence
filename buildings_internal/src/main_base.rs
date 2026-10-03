@@ -16,12 +16,7 @@ use grids::{
     placement::{annotate_non_empty, PlacementModes, PlaceRequest},
     prelude::ObstacleGridObject,
 };
-use logging::prelude::*;
-use persistence::{
-    creating_new_map,
-    prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveWriter},
-    rusqlite,
-};
+use persistence::{creating_new_map, prelude::*};
 use states::prelude::*;
 use viewport::MainCamera;
 
@@ -165,28 +160,21 @@ fn collect_main_bases(
     let (entity, &coords, integrity_points) = main_base.into_inner();
     let id = entity.index_u32() as i64;
     let integrity_points = integrity_points.get_current();
-    save.submit(move |tx| {
-        tx.save_marker("main_bases", id)?;
-        tx.save_grid_coords(id, coords)?;
-        tx.save_integrity_points(id, integrity_points)?;
+    save.submit(move |ctx| {
+        ctx.save_marker("main_bases", id)?;
+        ctx.save_grid_coords(id, coords)?;
+        ctx.save_integrity_points(id, integrity_points)?;
         Ok(())
     });
 }
 
-#[log_tags(Tag::GameLoad)]
-fn load_main_bases(ctx: &mut LoadContext) -> rusqlite::Result<()> {
-    let mut stmt = ctx.conn.prepare("SELECT id FROM main_bases")?;
-    let mut rows = stmt.query([])?;
-    while let Some(row) = rows.next()? {
-        let old_id: i64 = row.get(0)?;
-        let grid_position = ctx.conn.get_grid_coords(old_id)?;
-        let integrity_points = ctx.conn.get_integrity_points(old_id)?;
-
-        #[warn_dev("MainBase with old ID {old_id} has no corresponding new entity")]
-        let Some(entity) = ctx.entity(old_id) else { continue };
+fn load_main_bases(ctx: &mut LoadContext) -> LoadResult {
+    ctx.for_each_entity("SELECT id FROM main_bases", |ctx, old_id, entity, _| {
+        let grid_position = ctx.grid_coords(old_id)?;
+        let integrity_points = ctx.integrity_points(old_id)?;
         let builder = BuilderMainBase::new(grid_position)
             .with_integrity_points(integrity_points);
         ctx.insert(entity, builder);
-    }
-    Ok(())
+        Ok(())
+    })
 }

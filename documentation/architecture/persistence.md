@@ -18,12 +18,12 @@ The data is saved to SQLite databases (one `.dwd` file per map).
 SaveGameSignal { target: SaveTarget }
     │
     ▼  repack observer (On<SaveGameSignal>)
-    │  SaveContext exists → log + return (in-flight block)
-    │  else: resolve path from target, insert SaveContext { path, save_as_scenario, done, error }
+    │  SaveRunner exists → log + return (in-flight block)
+    │  else: resolve path from target, insert SaveRunner { path, save_as_scenario, done, error }
     │
-    ▼  Last: drive_save (exclusive system, run_if resource_added::<SaveContext>)
+    ▼  Last: drive_save (exclusive system, run_if resource_added::<SaveRunner>)
 world.run_schedule(CollectSave)          ← runs ONCE; never part of the main loop
-    │       domain collector systems query ECS, read SaveContext for scenario mode,
+    │       domain collector systems query ECS, read SaveRunner for scenario mode,
     │       SaveWriter::submit(closure)
     ▼
 PendingSaveJobs (Vec<SaveJob>) taken by driver
@@ -35,8 +35,8 @@ write <path>.tmp: migrations → one transaction → all jobs → commit
     │
     ▼  error.store(true) on failure; done.store(true) after the save attempt
     │
-    ▼  Update: finalize_save (run_if resource_exists::<SaveContext>)
-    │  poll done atomic → on completion (success OR error): remove SaveContext
+    ▼  Update: finalize_save (run_if resource_exists::<SaveRunner>)
+    │  poll done atomic → on completion (success OR error): remove SaveRunner
     │  if save_as_scenario: GameMapList::refresh() (new map appears in menu)
 ```
 
@@ -49,7 +49,7 @@ executor.
 target file. The SQLite connection is dropped before the rename (Windows file-handle semantics —
 see `with_db_connection`'s doc comment).
 
-**SaveContext lifecycle:** `SaveContext`'s *existence* is the save lifecycle — guard + mode
+**SaveRunner lifecycle:** `SaveRunner`'s *existence* is the save lifecycle — guard + mode
 carrier + completion signal in one. The repack observer inserts it (one place requests become
 plans); the finalize system removes it on IO completion (success or error — else one bad write
 blocks saving forever).
@@ -68,37 +68,36 @@ fn collect_my_entities(
     let rows: Vec<(i64, f32)> = q.iter()
         .map(|(e, d)| (e.index_u32() as i64, d.value))
         .collect();
-    save.submit(move |tx| {
+    save.submit(move |ctx| {
         for (id, value) in rows {
-            tx.register_entity(id)?;
-            tx.execute("INSERT OR REPLACE INTO my_entities (id, value) VALUES (?1, ?2)",
-                       rusqlite::params![id, value])?;
+            ctx.register_entity(id)?;
+            ctx.tx.execute("INSERT OR REPLACE INTO my_entities (id, value) VALUES (?1, ?2)", rusqlite::params![id, value])?;
         }
         Ok(())
     });
 }
 ```
 
-`SaveJob` closures are `FnOnce(&Transaction) -> rusqlite::Result<()> + Send + Sync + 'static`
+`SaveJob` closures are `FnOnce(&SaveContext) -> rusqlite::Result<()> + Send + Sync + 'static`
 (`Sync` because the buffer resource requires it). They run on the IO thread inside the single
 save transaction; the first `Err` aborts the save.
 
 ### Scenario-aware collectors
 
 Collectors that care about scenario mode (playthrough metadata) read
-`Res<SaveContext>` and write either real state or scenario defaults. The decision lives
+`Res<SaveRunner>` and write either real state or scenario defaults. The decision lives
 in the one function that already knows the columns — no separate normalize jobs, no
-collector/normalizer drift. Collectors that don't care never mention `SaveContext`.
+collector/normalizer drift. Collectors that don't care never mention `SaveRunner`.
 
 ```rust
 fn collect_my_entities(
     q: Query<(Entity, &MyData), With<MyEntity>>,
-    save_ctx: Res<SaveContext>,
+    save_runner: Res<SaveRunner>,
     mut save: SaveWriter,
 ) {
     if q.is_empty() { return; }
     let rows: Vec<(i64, f32)> = q.iter()
-        .map(|(e, d)| (e.index_u32() as i64, if save_ctx.save_as_scenario { 0.0 } else { d.value }))
+        .map(|(e, d)| (e.index_u32() as i64, if save_runner.save_as_scenario { 0.0 } else { d.value }))
         .collect();
     // ... same submit pattern
 }
@@ -146,18 +145,13 @@ mutation. `fraction()` drives a determinate progress bar (approximate by design)
 ```rust
 app.register_loader(MapLoadingStage::SpawnMapElements, "my_entities", load_my_entities);
 
-fn load_my_entities(ctx: &mut LoadContext) -> rusqlite::Result<()> {
-    let mut stmt = ctx.conn.prepare("SELECT id, value FROM my_entities")?;
-    let mut rows = stmt.query([])?;
-    while let Some(row) = rows.next()? {
-        let old_id: i64 = row.get(0)?;
-        let Some(entity) = ctx.entity(old_id) else {
-            Log::warn().dev().tag(Tag::GameLoad).message(format!("my_entities: unmapped id {old_id}"));
-            continue;
-        };
-        ctx.insert(entity, BuilderMyEntity::new(row.get(1)?));
-    }
-    Ok(())
+fn load_my_entities(ctx: &mut LoadContext) -> LoadResult {
+    ctx.for_each_entity("SELECT id, kind FROM my_entities", |ctx, old_id, entity, row| {
+        let kind = row.get_parsed::<MyKind>(1)?;
+        let grid_position = ctx.grid_coords(old_id)?;
+        ctx.insert(entity, BuilderMyEntity::new(grid_position, kind));
+        Ok(())
+    })
 }
 ```
 
@@ -165,7 +159,7 @@ fn load_my_entities(ctx: &mut LoadContext) -> rusqlite::Result<()> {
 
 ### Shared Tables
 
-- `entities` — master registry; all saved entities register here first (`tx.register_entity`)
+- `entities` — master registry; all saved entities register here first (`ctx.register_entity`)
 - `grid_coords` — grid-based positions
 - `world_positions` — pixel-precise positions (smooth movement resume)
 - `integrity_points` — integrity-point values
@@ -173,8 +167,8 @@ fn load_my_entities(ctx: &mut LoadContext) -> rusqlite::Result<()> {
 ### Marker Tables
 
 Entity types have marker tables (`mining_complexes`, `tower_cannons`, `wisps`, ...); shared
-tables hold common data, entity-specific columns go on the marker table. `GameDbHelpers` provides the
-save/get helpers for the shared tables.
+tables hold common data, entity-specific columns go on the marker table. `SaveContext` writes the
+shared tables (`ctx.save_grid_coords(id, coords)?`, ...); `LoadContext` reads them (`ctx.grid_coords(old_id)?`, ...).
 
 ## Merging Migrations
 

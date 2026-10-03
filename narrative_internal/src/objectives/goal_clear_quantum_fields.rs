@@ -5,10 +5,7 @@ use game_core::prelude::{DisplayName, SSS};
 use logging::prelude::*;
 use map_objects::prelude::{QuantumField, QuantumFieldSolved};
 use narrative::prelude::*;
-use persistence::{
-    prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveContext, SaveWriter},
-    rusqlite,
-};
+use persistence::{prelude::*, rusqlite};
 use states::prelude::MapLoadingStage;
 
 pub(crate) struct GoalClearQuantumFieldsPlugin;
@@ -183,7 +180,7 @@ fn ui_clear_quantum_fields(ui: &mut egui::Ui, _entity: &mut EntityWorldMut) {
 
 #[log_tags(Tag::GameSave)]
 fn collect_clear_quantum_fields(
-    save_ctx: Res<SaveContext>,
+    save_runner: Res<SaveRunner>,
     mut save: SaveWriter,
     goals: Query<(Entity, &ObjectiveState, &ObjectiveGoalOf), With<GoalClearQuantumFields>>,
 ) {
@@ -192,7 +189,7 @@ fn collect_clear_quantum_fields(
     let rows: Vec<(i64, i64, ObjectiveState)> = goals
         .iter()
         .map(|(entity, state, goal_of)| {
-            let state = if save_ctx.save_as_scenario { ObjectiveState::Inactive } else { *state };
+            let state = if save_runner.save_as_scenario { ObjectiveState::Inactive } else { *state };
             (
                 entity.index_u32() as i64,
                 goal_of.0.index_u32() as i64,
@@ -200,11 +197,11 @@ fn collect_clear_quantum_fields(
             )
         })
         .collect();
-    save.submit(move |tx| {
+    save.submit(move |ctx| {
         for (id, objective_id, state) in rows {
-            tx.register_entity(id)?;
-            tx.register_entity(objective_id)?;
-            tx.execute(
+            ctx.register_entity(id)?;
+            ctx.register_entity(objective_id)?;
+            ctx.tx.execute(
                 "INSERT OR REPLACE INTO goal_clear_quantum_fields (id, objective_id, state) VALUES (?1, ?2, ?3)",
                 rusqlite::params![id, objective_id, state.as_ref()],
             )?;
@@ -213,23 +210,12 @@ fn collect_clear_quantum_fields(
     });
 }
 
-#[log_tags(Tag::GameLoad)]
-fn load_clear_quantum_fields(ctx: &mut LoadContext) -> rusqlite::Result<()> {
-    let mut stmt = ctx.conn.prepare("SELECT id, objective_id, state FROM goal_clear_quantum_fields")?;
-    let mut rows = stmt.query([])?;
-    while let Some(row) = rows.next()? {
-        let old_id: i64 = row.get(0)?;
+fn load_clear_quantum_fields(ctx: &mut LoadContext) -> LoadResult {
+    ctx.for_each_entity("SELECT id, objective_id, state FROM goal_clear_quantum_fields", |ctx, _, entity, row| {
         let objective_old_id: i64 = row.get(1)?;
-        let state_str: String = row.get(2)?;
-
-        #[warn_dev("GoalClearQuantumFields with old ID {old_id} has no corresponding new entity")]
-        let Some(entity) = ctx.entity(old_id) else { continue };
-        #[warn_dev("GoalClearQuantumFields with old ID {old_id} references objective {objective_old_id} that failed remap")]
-        let Some(objective_entity) = ctx.entity(objective_old_id) else { continue };
-        #[warn_dev("GoalClearQuantumFields with old ID {old_id} has unknown state '{state_str}' — skipped")]
-        let Ok(state) = state_str.parse::<ObjectiveState>() else { continue };
-
+        let state = row.get_parsed::<ObjectiveState>(2)?;
+        let objective_entity = ctx.entity(objective_old_id)?;
         ctx.insert(entity, BuilderGoalClearQuantumFields::new(objective_entity).with_state(state));
-    }
-    Ok(())
+        Ok(())
+    })
 }

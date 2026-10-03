@@ -25,13 +25,11 @@ pub struct BuilderLaserDart {
     pub damage: AttackDamage,
 }
 impl BuilderLaserDart {
-    pub fn new(world_position: Vec2, target_wisp: Entity, target_vector: Vec2, damage: AttackDamage) -> Self {
-        Self { world_position, target_wisp: Some(target_wisp), target_vector, damage }
+    pub fn new(world_position: Vec2, target_vector: Vec2, damage: AttackDamage) -> Self {
+        Self { world_position, target_wisp: None, target_vector, damage }
     }
-    /// Override the target wisp. Used by the loader when the saved target may
-    /// have been despawned (mapped to `None`).
-    pub fn with_target_wisp(mut self, target_wisp: Option<Entity>) -> Self {
-        self.target_wisp = target_wisp;
+    pub fn with_target_wisp(mut self, target_wisp: impl Into<Option<Entity>>) -> Self {
+        self.target_wisp = target_wisp.into();
         self
     }
 }

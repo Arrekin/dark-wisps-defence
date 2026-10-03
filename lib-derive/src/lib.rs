@@ -219,23 +219,21 @@ pub fn derive_from_entity(input: TokenStream) -> TokenStream {
 ///
 /// # Example
 /// ```ignore
-/// #[log_tags(Tag::GameLoad)]
-/// fn load_foos(ctx: &mut LoadContext) -> rusqlite::Result<()> {
-///     // ...
-///     while let Some(row) = rows.next()? {
-///         #[warn_dev("Foo with old ID {old_id} has no corresponding new entity")]
-///         let Some(entity) = ctx.entity(old_id) else { continue };
+/// #[log_tags(Tag::MapObjects)]
+/// fn spawn_foos(mut commands: Commands, requests: &[FooRequest], anchors: &HashMap<u32, Entity>) {
+///     for request in requests {
+///         #[warn_dev("Foo request {} has no anchor", request.id)]
+///         let Some(&anchor) = anchors.get(&request.id) else { continue };
 ///
-///         let kind = match kind_str.as_str() {
+///         let kind = match request.kind.as_str() {
 ///             "Small" => FooKind::Small,
-///             #[warn_dev("Unknown foo kind in save: {other}")]
+///             #[warn_dev("Unknown foo kind: {other}")]
 ///             other => continue,
 ///         };
 ///
-///         #[debug_dev("Loaded foo {entity}")]
-///         ctx.insert(entity, Foo(kind));
+///         #[debug_dev("Spawned foo on anchor {anchor}")]
+///         commands.spawn((Foo(kind), ChildOf(anchor)));
 ///     }
-///     Ok(())
 /// }
 /// ```
 ///

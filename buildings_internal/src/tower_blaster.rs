@@ -13,10 +13,7 @@ use game_core::{math::angle_difference, prelude::*};
 use grids::placement::{annotate_non_empty, PlacementModes, PlaceRequest};
 use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
 use logging::prelude::*;
-use persistence::{
-    prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveWriter},
-    rusqlite,
-};
+use persistence::prelude::*;
 use resources::prelude::*;
 use shards::prelude::*;
 use states::prelude::*;
@@ -186,37 +183,30 @@ fn collect_tower_blasters(
             )
         })
         .collect();
-    save.submit(move |tx| {
+    save.submit(move |ctx| {
         for (id, coords, integrity_points, disabled_by_player) in rows {
-            tx.save_marker("tower_blasters", id)?;
-            tx.save_grid_coords(id, coords)?;
-            tx.save_integrity_points(id, integrity_points)?;
+            ctx.save_marker("tower_blasters", id)?;
+            ctx.save_grid_coords(id, coords)?;
+            ctx.save_integrity_points(id, integrity_points)?;
             if disabled_by_player {
-                tx.save_disabled_by_player(id)?;
+                ctx.save_disabled_by_player(id)?;
             }
         }
         Ok(())
     });
 }
 
-#[log_tags(Tag::GameLoad)]
-fn load_tower_blasters(ctx: &mut LoadContext) -> rusqlite::Result<()> {
-    let mut stmt = ctx.conn.prepare("SELECT id FROM tower_blasters")?;
-    let mut rows = stmt.query([])?;
-    while let Some(row) = rows.next()? {
-        let old_id: i64 = row.get(0)?;
-        let grid_position = ctx.conn.get_grid_coords(old_id)?;
-        let integrity_points = ctx.conn.get_integrity_points(old_id)?;
-        let disabled_by_player = ctx.conn.get_disabled_by_player(old_id)?;
-
-        #[warn_dev("TowerBlaster with old ID {old_id} has no corresponding new entity")]
-        let Some(entity) = ctx.entity(old_id) else { continue };
+fn load_tower_blasters(ctx: &mut LoadContext) -> LoadResult {
+    ctx.for_each_entity("SELECT id FROM tower_blasters", |ctx, old_id, entity, _| {
+        let grid_position = ctx.grid_coords(old_id)?;
+        let integrity_points = ctx.integrity_points(old_id)?;
+        let disabled_by_player = ctx.disabled_by_player(old_id)?;
         let builder = BuilderTowerBlaster::new(grid_position)
             .with_integrity_points(integrity_points)
             .with_disabled_by_player(disabled_by_player);
         ctx.insert(entity, builder);
-    }
-    Ok(())
+        Ok(())
+    })
 }
 
 fn shooting_system(
@@ -244,7 +234,10 @@ fn shooting_system(
         let offset = Vec2::from_angle(top_rotation.current_angle) * tower_world_width * 0.4;
         let spawn_position = transform.translation.xy() + offset;
 
-        commands.spawn(BuilderLaserDart::new(spawn_position, target_wisp, (wisp_position - spawn_position).normalize(), *attack_damage));
+        commands.spawn(
+            BuilderLaserDart::new(spawn_position, (wisp_position - spawn_position).normalize(), *attack_damage)
+                .with_target_wisp(target_wisp)
+        );
         timer.0.reset();
     }
 }

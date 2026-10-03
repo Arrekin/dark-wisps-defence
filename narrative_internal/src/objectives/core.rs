@@ -3,10 +3,7 @@ use bevy::prelude::*;
 use game_core::prelude::{InsertSome, MomentHappened, MomentOfInterest};
 use logging::prelude::*;
 use narrative::prelude::*;
-use persistence::{
-    prelude::{GameDbHelpers, LoadContext, SaveContext, SaveWriter},
-    rusqlite,
-};
+use persistence::{prelude::*, rusqlite};
 
 // ============================================================================
 // BUILDER SPAWN OBSERVER
@@ -176,7 +173,7 @@ pub(crate) fn on_remove_moment_of_interest_fail_inactive(
 
 #[log_tags(Tag::GameSave)]
 pub(crate) fn collect_objectives(
-    save_ctx: Res<SaveContext>,
+    save_runner: Res<SaveRunner>,
     mut save: SaveWriter,
     objectives: Query<(Entity, &ObjectiveDetails, &ObjectiveState, Option<&MomentOfInterest>)>,
 ) {
@@ -185,7 +182,7 @@ pub(crate) fn collect_objectives(
     let rows: Vec<(i64, String, ObjectiveState, Option<i64>)> = objectives
         .iter()
         .map(|(entity, details, state, activated_by)| {
-            let state = if save_ctx.save_as_scenario { ObjectiveState::Inactive } else { *state };
+            let state = if save_runner.save_as_scenario { ObjectiveState::Inactive } else { *state };
             (
                 entity.index_u32() as i64,
                 details.id_name.clone(),
@@ -194,10 +191,10 @@ pub(crate) fn collect_objectives(
             )
         })
         .collect();
-    save.submit(move |tx| {
+    save.submit(move |ctx| {
         for (id, id_name, state, activated_by) in rows {
-            tx.register_entity(id)?;
-            tx.execute(
+            ctx.register_entity(id)?;
+            ctx.tx.execute(
                 "INSERT OR REPLACE INTO objectives (id, id_name, state, activated_by) VALUES (?1, ?2, ?3, ?4)",
                 rusqlite::params![id, id_name, state.as_ref(), activated_by],
             )?;
@@ -207,30 +204,22 @@ pub(crate) fn collect_objectives(
 }
 
 #[log_tags(Tag::GameLoad)]
-pub(crate) fn load_objectives(ctx: &mut LoadContext) -> rusqlite::Result<()> {
-    let mut stmt = ctx.conn.prepare("SELECT id, id_name, state, activated_by FROM objectives")?;
-    let mut rows = stmt.query([])?;
-    while let Some(row) = rows.next()? {
-        let old_id: i64 = row.get(0)?;
+pub(crate) fn load_objectives(ctx: &mut LoadContext) -> LoadResult {
+    ctx.for_each_entity("SELECT id, id_name, state, activated_by FROM objectives", |ctx, old_id, entity, row| {
         let id_name: String = row.get(1)?;
-        let state_str: String = row.get(2)?;
+        let state = row.get_parsed::<ObjectiveState>(2)?;
         let activated_by: Option<i64> = row.get(3)?;
-
-        #[warn_dev("Objective with old ID {old_id} has no corresponding new entity")]
-        let Some(entity) = ctx.entity(old_id) else { continue };
-        #[warn_dev("Objective '{id_name}' (old ID {old_id}) has unknown state '{state_str}' — skipped")]
-        let Ok(state) = state_str.parse::<ObjectiveState>() else { continue };
 
         // Lost-activation load rule: an Inactive objective whose activation moment failed
         // remap can never activate — load as Failed. Non-Inactive objectives
         // (Satisfied/InProgress) already activated or completed; their
         // activation moment is irrelevant, so preserve the saved state.
         let (state, activated_by) = if let Some(moment_old_id) = activated_by {
-            match ctx.entity(moment_old_id) {
+            match ctx.entity(moment_old_id).ok() {
                 Some(moment_entity) => (state, Some(moment_entity)),
                 #[error_dev("Inactive objective '{id_name}' (old ID {old_id}) has activated_by={moment_old_id} that failed entity remap — loading as Failed")]
                 None if state == ObjectiveState::Inactive => (ObjectiveState::Failed, None),
-                #[warn_dev("Objective '{id_name}' (old ID {old_id}, state {state_str}) has activated_by={moment_old_id} that failed entity remap — preserving saved state")]
+                #[warn_dev("Objective '{id_name}' (old ID {old_id}, state {state:?}) has activated_by={moment_old_id} that failed entity remap — preserving saved state")]
                 None => (state, None),
             }
         } else {
@@ -239,6 +228,6 @@ pub(crate) fn load_objectives(ctx: &mut LoadContext) -> rusqlite::Result<()> {
 
         let builder = BuilderObjective::new(id_name).with_state(state).with_activated_by(activated_by);
         ctx.insert(entity, builder);
-    }
-    Ok(())
+        Ok(())
+    })
 }

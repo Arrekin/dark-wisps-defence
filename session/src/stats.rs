@@ -1,10 +1,7 @@
 use bevy::prelude::*;
 
 use logging::prelude::*;
-use persistence::{
-    prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveWriter},
-    rusqlite,
-};
+use persistence::prelude::*;
 use states::MapLoadingStage;
 use wisps::prelude::WispDied;
 
@@ -34,15 +31,15 @@ fn collect_stats(
     mut save: SaveWriter,
 ) {
     let wisps_killed = stats_wisps_killed.0;
-    save.submit(move |tx| {
-        tx.save_stat("wisps_killed", wisps_killed as f32)?;
+    save.submit(move |ctx| {
+        ctx.save_stat("wisps_killed", wisps_killed as f32)?;
         Ok(())
     });
 }
 
 #[log_tags(Tag::GameLoad)]
-fn load_stats(ctx: &mut LoadContext) -> rusqlite::Result<()> {
-    let wisps_killed = ctx.conn.get_stat("wisps_killed")
+fn load_stats(ctx: &mut LoadContext) -> LoadResult {
+    let wisps_killed = ctx.stat("wisps_killed")
         .inspect_err(|error| warn_dev!("Wisps killed stat not read from save ({error}); starting at 0"))
         .unwrap_or(0.0) as usize;
     ctx.insert_resource(StatsWispsKilled(wisps_killed));

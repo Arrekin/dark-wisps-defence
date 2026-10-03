@@ -6,10 +6,7 @@ use almanach::prelude::Almanach;
 use game_core::prelude::{DisplayDescription, DisplayIcon, DisplayName, ShardType};
 use logging::prelude::*;
 use outcomes::prelude::*;
-use persistence::{
-    prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveWriter},
-    rusqlite,
-};
+use persistence::{prelude::*, rusqlite};
 use shards::{
     blueprints::{ShardBlueprintAcquired, ShardBlueprints},
     prelude::UnlockShardBlueprint,
@@ -118,11 +115,11 @@ fn collect_unlock_shard_blueprint_outcomes(
 
     if snapshots.is_empty() { return; }
 
-    save.submit(move |tx| {
+    save.submit(move |ctx| {
         for snap in &snapshots {
-            tx.register_entity(snap.id)?;
-            tx.register_entity(snap.parent_id)?;
-            tx.execute(
+            ctx.register_entity(snap.id)?;
+            ctx.register_entity(snap.parent_id)?;
+            ctx.tx.execute(
                 "INSERT OR REPLACE INTO unlock_shard_blueprint_outcomes (id, parent_id, shard_type) VALUES (?1, ?2, ?3)",
                 rusqlite::params![snap.id, snap.parent_id, snap.shard_type.as_ref()],
             )?;
@@ -131,28 +128,15 @@ fn collect_unlock_shard_blueprint_outcomes(
     });
 }
 
-#[log_tags(Tag::GameLoad)]
-fn load_unlock_shard_blueprint_outcomes(ctx: &mut LoadContext) -> rusqlite::Result<()> {
-    let mut stmt = ctx.conn.prepare(
-        "SELECT id, parent_id, shard_type FROM unlock_shard_blueprint_outcomes",
-    )?;
-    let mut rows = stmt.query([])?;
-    while let Some(row) = rows.next()? {
-        let old_id: i64 = row.get(0)?;
+fn load_unlock_shard_blueprint_outcomes(ctx: &mut LoadContext) -> LoadResult {
+    ctx.for_each_entity("SELECT id, parent_id, shard_type FROM unlock_shard_blueprint_outcomes", |ctx, _, entity, row| {
         let parent_old_id: i64 = row.get(1)?;
-        let shard_type_str: String = row.get(2)?;
-
-        #[warn_dev("UnlockShardBlueprint outcome with old ID {old_id} has no corresponding new entity")]
-        let Some(entity) = ctx.entity(old_id) else { continue };
-        #[warn_dev("UnlockShardBlueprint outcome with old ID {old_id} references parent {parent_old_id} that failed entity remap")]
-        let Some(parent) = ctx.entity(parent_old_id) else { continue };
-        #[warn_dev("UnlockShardBlueprint outcome with old ID {old_id} has unknown shard type '{shard_type_str}' — skipped")]
-        let Ok(shard_type) = shard_type_str.parse::<ShardType>() else { continue };
-
+        let shard_type = row.get_parsed::<ShardType>(2)?;
+        let parent = ctx.entity(parent_old_id)?;
         ctx.insert(entity, (
             OutcomeOf(parent),
             UnlockShardBlueprint(shard_type),
         ));
-    }
-    Ok(())
+        Ok(())
+    })
 }

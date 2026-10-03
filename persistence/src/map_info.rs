@@ -5,7 +5,7 @@ use states::prelude::MapLoadingStage;
 
 use crate::{
     common::AppGameLoadSaveExtension,
-    load::{LoadContext, LoadMapConfig, MapSource, creating_new_map},
+    load::{LoadContext, LoadResult, LoadMapConfig, MapSource, creating_new_map},
     rusqlite,
     save::{CollectSave, SaveWriter},
 };
@@ -38,8 +38,8 @@ fn collect_map_info(
     let width = map_info.grid_bounds.width;
     let height = map_info.grid_bounds.height;
     let name = map_info.name.clone();
-    save.submit(move |tx| {
-        tx.execute(
+    save.submit(move |ctx| {
+        ctx.tx.execute(
             "INSERT OR REPLACE INTO map_info (id, width, height, name) VALUES (1, ?1, ?2, ?3)",
             (width, height, &name),
         )?;
@@ -47,7 +47,7 @@ fn collect_map_info(
     });
 }
 
-fn load_map_info(ctx: &mut LoadContext) -> rusqlite::Result<()> {
+fn load_map_info(ctx: &mut LoadContext) -> LoadResult {
     let map_info = read_map_info(ctx.conn)?;
     ctx.insert_resource(map_info);
     Ok(())

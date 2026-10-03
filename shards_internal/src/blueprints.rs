@@ -1,12 +1,7 @@
 use bevy::prelude::*;
 
 use game_core::prelude::ShardType;
-use logging::prelude::*;
-use persistence::{
-    creating_new_map,
-    prelude::{AppGameLoadSaveExtension, CollectSave, LoadContext, SaveWriter},
-    rusqlite,
-};
+use persistence::{creating_new_map, prelude::*, rusqlite};
 use shards::blueprints::ShardBlueprints;
 use states::prelude::MapLoadingStage;
 
@@ -30,9 +25,9 @@ fn seed_starting_blueprints(mut blueprints: ResMut<ShardBlueprints>) {
 
 fn collect_shard_blueprints(blueprints: Res<ShardBlueprints>, mut save: SaveWriter) {
     let shard_blueprints = blueprints.clone();
-    save.submit(move |tx| {
+    save.submit(move |ctx| {
         for shard_type in shard_blueprints.iter() {
-            tx.execute(
+            ctx.tx.execute(
                 "INSERT OR REPLACE INTO shard_blueprints (shard_type) VALUES (?1)",
                 rusqlite::params![shard_type.as_ref()],
             )?;
@@ -41,19 +36,13 @@ fn collect_shard_blueprints(blueprints: Res<ShardBlueprints>, mut save: SaveWrit
     });
 }
 
-#[log_tags(Tag::GameLoad)]
-fn load_shard_blueprints(ctx: &mut LoadContext) -> rusqlite::Result<()> {
-    let mut stmt = ctx.conn.prepare("SELECT shard_type FROM shard_blueprints")?;
-    let mut rows = stmt.query([])?;
-
+fn load_shard_blueprints(ctx: &mut LoadContext) -> LoadResult {
     let mut blueprints = ShardBlueprints::default();
-    while let Some(row) = rows.next()? {
-        let shard_str: String = row.get(0)?;
-        #[warn_dev("Unknown shard type '{shard_str}' in saved blueprints — skipped")]
-        let Ok(shard_type) = shard_str.parse::<ShardType>() else { continue };
+    ctx.for_each_row("SELECT shard_type FROM shard_blueprints", |_, row| {
+        let shard_type = row.get_parsed(0)?;
         blueprints.unlock(shard_type);
-    }
-
+        Ok(())
+    })?;
     ctx.insert_resource(blueprints);
     Ok(())
 }

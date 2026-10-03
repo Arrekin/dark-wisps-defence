@@ -10,10 +10,7 @@ use game_core::{
 };
 use grids::wisps::WispsGrid;
 use logging::prelude::*;
-use persistence::{
-    prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveWriter},
-    rusqlite,
-};
+use persistence::{prelude::*, rusqlite};
 use states::prelude::{GameState, MapLoadingStage};
 use visuals::prelude::BuilderExplosion;
 use weaponry::prelude::*;
@@ -68,11 +65,11 @@ fn collect_rockets(
             )
         })
         .collect();
-    save.submit(move |tx| {
+    save.submit(move |ctx| {
         for (id, position, target_wisp_id, rotation_z, damage) in rows {
-            tx.register_entity(id)?;
-            tx.save_world_position(id, position)?;
-            tx.execute(
+            ctx.register_entity(id)?;
+            ctx.save_world_position(id, position)?;
+            ctx.tx.execute(
                 "INSERT OR REPLACE INTO rockets (id, target_wisp_id, rotation_z, damage) VALUES (?1, ?2, ?3, ?4)",
                 rusqlite::params![id, target_wisp_id, rotation_z, damage],
             )?;
@@ -81,21 +78,14 @@ fn collect_rockets(
     });
 }
 
-#[log_tags(Tag::GameLoad)]
-fn load_rockets(ctx: &mut LoadContext) -> rusqlite::Result<()> {
-    let mut stmt = ctx.conn.prepare("SELECT id, target_wisp_id, rotation_z, damage FROM rockets")?;
-    let mut rows = stmt.query([])?;
-    while let Some(row) = rows.next()? {
-        let old_id: i64 = row.get(0)?;
+fn load_rockets(ctx: &mut LoadContext) -> LoadResult {
+    ctx.for_each_entity("SELECT id, target_wisp_id, rotation_z, damage FROM rockets", |ctx, old_id, entity, row| {
         let target_wisp_old_id: Option<i64> = row.get(1)?;
         let rotation_z: f32 = row.get(2)?;
         let damage: f32 = row.get(3)?;
-        let world_position = ctx.conn.get_world_position(old_id)?;
-
-        #[warn_dev("Rocket with old ID {old_id} has no corresponding new entity")]
-        let Some(entity) = ctx.entity(old_id) else { continue };
-        let new_target_wisp = target_wisp_old_id
-            .and_then(|id| ctx.entity(id))
+        let world_position = ctx.world_position(old_id)?;
+        let new_target_wisp = ctx.optional_entity(target_wisp_old_id)
+            .unwrap_or_default()
             .unwrap_or(Entity::PLACEHOLDER);
 
         let builder = BuilderRocket::new(
@@ -105,8 +95,8 @@ fn load_rockets(ctx: &mut LoadContext) -> rusqlite::Result<()> {
             AttackDamage::new(damage),
         );
         ctx.insert(entity, builder);
-    }
-    Ok(())
+        Ok(())
+    })
 }
 
 fn on_builder_add_spawn_rocket(

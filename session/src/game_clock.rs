@@ -3,10 +3,7 @@ use serde::Serialize;
 
 use game_core::prelude::SSS;
 use logging::prelude::*;
-use persistence::{
-    prelude::{AppGameLoadSaveExtension, CollectSave, LoadContext, SaveWriter},
-    rusqlite,
-};
+use persistence::prelude::*;
 use states::{GameState, MapLoadingStage};
 
 pub struct GameClockPlugin;
@@ -37,8 +34,8 @@ impl GameClock {
 
 fn collect_game_clock(clock: Res<GameClock>, mut save: SaveWriter) {
     let elapsed = clock.elapsed;
-    save.submit(move |tx| {
-        tx.execute(
+    save.submit(move |ctx| {
+        ctx.tx.execute(
             "INSERT OR REPLACE INTO game_clock (id, elapsed) VALUES (1, ?1)",
             [elapsed],
         )?;
@@ -47,11 +44,9 @@ fn collect_game_clock(clock: Res<GameClock>, mut save: SaveWriter) {
 }
 
 #[log_tags(Tag::GameLoad)]
-fn load_game_clock(ctx: &mut LoadContext) -> rusqlite::Result<()> {
-    let elapsed: f64 = ctx
-        .conn
-        .prepare("SELECT elapsed FROM game_clock WHERE id = 1")?
-        .query_row([], |row| row.get(0))
+fn load_game_clock(ctx: &mut LoadContext) -> LoadResult {
+    let elapsed: f64 = ctx.conn
+        .query_row("SELECT elapsed FROM game_clock WHERE id = 1", [], |row| row.get(0))
         .inspect_err(|error| warn_dev!("Game clock not read from save ({error}); starting at 0"))
         .unwrap_or(0.0);
     ctx.insert_resource(GameClock { elapsed });

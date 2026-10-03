@@ -6,10 +6,7 @@ use alteration::{
 };
 use game_core::prelude::InsertSome;
 use logging::prelude::*;
-use persistence::{
-    prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveWriter},
-    rusqlite,
-};
+use persistence::{prelude::*, rusqlite};
 use states::MapLoadingStage;
 
 pub(crate) struct BrittleEffectPlugin;
@@ -45,10 +42,10 @@ fn collect_brittle_effects(
             )
         })
         .collect();
-    save.submit(move |tx| {
+    save.submit(move |ctx| {
         for (id, target_id, source_id, damage_multiplier, expires_at) in rows {
-            tx.register_entity(id)?;
-            tx.execute(
+            ctx.register_entity(id)?;
+            ctx.tx.execute(
                 "INSERT OR REPLACE INTO brittle_effects (id, target_id, source_id, damage_multiplier, expires_at) VALUES (?1, ?2, ?3, ?4, ?5)",
                 rusqlite::params![id, target_id, source_id, damage_multiplier, expires_at],
             )?;
@@ -58,33 +55,24 @@ fn collect_brittle_effects(
 }
 
 #[log_tags(Tag::GameLoad)]
-fn load_brittle_effects(ctx: &mut LoadContext) -> rusqlite::Result<()> {
-    let mut stmt = ctx.conn.prepare(
-        "SELECT id, target_id, source_id, damage_multiplier, expires_at FROM brittle_effects"
-    )?;
-    let mut rows = stmt.query([])?;
-    while let Some(row) = rows.next()? {
-        let old_id: i64 = row.get(0)?;
+fn load_brittle_effects(ctx: &mut LoadContext) -> LoadResult {
+    ctx.for_each_entity("SELECT id, target_id, source_id, damage_multiplier, expires_at FROM brittle_effects", |ctx, old_id, entity, row| {
         let old_target_id: i64 = row.get(1)?;
         let old_source_id: Option<i64> = row.get(2)?;
         let damage_multiplier: f32 = row.get(3)?;
         let expires_at: Option<f64> = row.get(4)?;
+        let new_target = ctx.entity(old_target_id)?;
 
-        #[warn_dev("BrittleEffect old_id={old_id} or target old_id={old_target_id} has no mapped entity")]
-        let (Some(entity), Some(new_target)) = (ctx.entity(old_id), ctx.entity(old_target_id)) else { continue };
-
-        let new_source = old_source_id.and_then(|old_source_id| {
-            let new_source = ctx.entity(old_source_id);
-            if new_source.is_none() { warn_dev!("BrittleEffect old_id={old_id} source old_id={old_source_id} has no mapped entity"); }
-            new_source
-        });
+        let new_source = ctx.optional_entity(old_source_id)
+            .inspect_err(|error| warn_dev!("BrittleEffect old_id={old_id} loads without its source: {error}"))
+            .unwrap_or_default();
 
         let builder = BuilderBrittleEffect::new(new_target, damage_multiplier)
             .with_source(new_source)
             .with_expiry(expires_at.map(ExpiresAt));
         ctx.insert(entity, builder);
-    }
-    Ok(())
+        Ok(())
+    })
 }
 
 fn on_builder_add_spawn_brittle_effect(

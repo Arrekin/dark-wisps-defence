@@ -14,10 +14,7 @@ use game_core::{math::angle_difference, prelude::*};
 use grids::placement::{annotate_non_empty, PlacementModes, PlaceRequest};
 use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
 use logging::prelude::*;
-use persistence::{
-    prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveWriter},
-    rusqlite,
-};
+use persistence::prelude::*;
 use resources::prelude::*;
 use shards::prelude::*;
 use states::prelude::*;
@@ -187,37 +184,30 @@ fn collect_tower_rocket_launchers(
             )
         })
         .collect();
-    save.submit(move |tx| {
+    save.submit(move |ctx| {
         for (id, coords, integrity_points, disabled_by_player) in rows {
-            tx.save_marker("tower_rocket_launchers", id)?;
-            tx.save_grid_coords(id, coords)?;
-            tx.save_integrity_points(id, integrity_points)?;
+            ctx.save_marker("tower_rocket_launchers", id)?;
+            ctx.save_grid_coords(id, coords)?;
+            ctx.save_integrity_points(id, integrity_points)?;
             if disabled_by_player {
-                tx.save_disabled_by_player(id)?;
+                ctx.save_disabled_by_player(id)?;
             }
         }
         Ok(())
     });
 }
 
-#[log_tags(Tag::GameLoad)]
-fn load_tower_rocket_launchers(ctx: &mut LoadContext) -> rusqlite::Result<()> {
-    let mut stmt = ctx.conn.prepare("SELECT id FROM tower_rocket_launchers")?;
-    let mut rows = stmt.query([])?;
-    while let Some(row) = rows.next()? {
-        let old_id: i64 = row.get(0)?;
-        let grid_position = ctx.conn.get_grid_coords(old_id)?;
-        let integrity_points = ctx.conn.get_integrity_points(old_id)?;
-        let disabled_by_player = ctx.conn.get_disabled_by_player(old_id)?;
-
-        #[warn_dev("TowerRocketLauncher with old ID {old_id} has no corresponding new entity")]
-        let Some(entity) = ctx.entity(old_id) else { continue };
+fn load_tower_rocket_launchers(ctx: &mut LoadContext) -> LoadResult {
+    ctx.for_each_entity("SELECT id FROM tower_rocket_launchers", |ctx, old_id, entity, _| {
+        let grid_position = ctx.grid_coords(old_id)?;
+        let integrity_points = ctx.integrity_points(old_id)?;
+        let disabled_by_player = ctx.disabled_by_player(old_id)?;
         let builder = BuilderTowerRocketLauncher::new(grid_position)
             .with_integrity_points(integrity_points)
             .with_disabled_by_player(disabled_by_player);
         ctx.insert(entity, builder);
-    }
-    Ok(())
+        Ok(())
+    })
 }
 
 fn shooting_system(

@@ -15,10 +15,7 @@ use map_objects::{
     prelude::{BuilderWallSideMenuTooltip, Wall},
     wall_style::{WallStyleKey, WallStyles},
 };
-use persistence::{
-    prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveWriter},
-    rusqlite,
-};
+use persistence::{prelude::*, rusqlite};
 use states::prelude::MapLoadingStage;
 
 pub(crate) struct WallPlugin;
@@ -129,33 +126,26 @@ fn collect_walls(
             )
         })
         .collect();
-    save.submit(move |tx| {
+    save.submit(move |ctx| {
         for (id, coords, style) in rows {
-            tx.register_entity(id)?;
-            tx.execute(
+            ctx.register_entity(id)?;
+            ctx.tx.execute(
                 "INSERT OR REPLACE INTO walls (id, style) VALUES (?1, ?2)",
                 rusqlite::params![id, style],
             )?;
-            tx.save_grid_coords(id, coords)?;
+            ctx.save_grid_coords(id, coords)?;
         }
         Ok(())
     });
 }
 
-#[log_tags(Tag::GameLoad)]
-fn load_walls(ctx: &mut LoadContext) -> rusqlite::Result<()> {
-    let mut stmt = ctx.conn.prepare("SELECT id, style FROM walls")?;
-    let mut rows = stmt.query([])?;
-    while let Some(row) = rows.next()? {
-        let old_id: i64 = row.get(0)?;
+fn load_walls(ctx: &mut LoadContext) -> LoadResult {
+    ctx.for_each_entity("SELECT id, style FROM walls", |ctx, old_id, entity, row| {
         let style: String = row.get(1)?;
-        let grid_position = ctx.conn.get_grid_coords(old_id)?;
-
-        #[warn_dev("Wall with old ID {old_id} has no corresponding new entity")]
-        let Some(entity) = ctx.entity(old_id) else { continue };
+        let grid_position = ctx.grid_coords(old_id)?;
         ctx.insert(entity, BuilderWall::new(grid_position, style));
-    }
-    Ok(())
+        Ok(())
+    })
 }
 
 #[log_tags(Tag::MapObjects)]

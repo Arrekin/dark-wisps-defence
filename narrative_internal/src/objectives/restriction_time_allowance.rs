@@ -195,12 +195,12 @@ fn ui_time_allowance(ui: &mut egui::Ui, entity: &mut EntityWorldMut) {
 
 #[log_tags(Tag::GameSave)]
 fn collect_time_allowance(
-    save_ctx: Res<SaveContext>,
+    save_runner: Res<SaveRunner>,
     mut save: SaveWriter,
     goals: Query<(Entity, &RestrictionTimeAllowance, &ObjectiveState, &TimeAllowanceRuntime, &ObjectiveGoalOf)>,
 ) {
     if goals.is_empty() { return; }
-    let save_as_scenario = save_ctx.save_as_scenario;
+    let save_as_scenario = save_runner.save_as_scenario;
     #[debug_dev("Saving {} time allowance restrictions", rows.len())]
     let rows: Vec<(i64, i64, ObjectiveState, f32, f32)> = goals
         .iter()
@@ -216,11 +216,11 @@ fn collect_time_allowance(
             )
         })
         .collect();
-    save.submit(move |tx| {
+    save.submit(move |ctx| {
         for (id, objective_id, state, seconds, elapsed) in rows {
-            tx.register_entity(id)?;
-            tx.register_entity(objective_id)?;
-            tx.execute(
+            ctx.register_entity(id)?;
+            ctx.register_entity(objective_id)?;
+            ctx.tx.execute(
                 "INSERT OR REPLACE INTO restriction_time_allowance (id, objective_id, state, seconds, elapsed) VALUES (?1, ?2, ?3, ?4, ?5)",
                 rusqlite::params![id, objective_id, state.as_ref(), seconds, elapsed],
             )?;
@@ -229,27 +229,16 @@ fn collect_time_allowance(
     });
 }
 
-#[log_tags(Tag::GameLoad)]
-fn load_time_allowance(ctx: &mut LoadContext) -> rusqlite::Result<()> {
-    let mut stmt = ctx.conn.prepare("SELECT id, objective_id, state, seconds, elapsed FROM restriction_time_allowance")?;
-    let mut rows = stmt.query([])?;
-    while let Some(row) = rows.next()? {
-        let old_id: i64 = row.get(0)?;
+fn load_time_allowance(ctx: &mut LoadContext) -> LoadResult {
+    ctx.for_each_entity("SELECT id, objective_id, state, seconds, elapsed FROM restriction_time_allowance", |ctx, _, entity, row| {
         let objective_old_id: i64 = row.get(1)?;
-        let state_str: String = row.get(2)?;
+        let state = row.get_parsed::<ObjectiveState>(2)?;
         let seconds: f32 = row.get(3)?;
         let elapsed: f32 = row.get(4)?;
-
-        #[warn_dev("RestrictionTimeAllowance with old ID {old_id} has no corresponding new entity")]
-        let Some(entity) = ctx.entity(old_id) else { continue };
-        #[warn_dev("RestrictionTimeAllowance with old ID {old_id} references objective {objective_old_id} that failed remap")]
-        let Some(objective_entity) = ctx.entity(objective_old_id) else { continue };
-        #[warn_dev("RestrictionTimeAllowance with old ID {old_id} has unknown state '{state_str}' — skipped")]
-        let Ok(state) = state_str.parse::<ObjectiveState>() else { continue };
-
+        let objective_entity = ctx.entity(objective_old_id)?;
         ctx.insert(entity, BuilderRestrictionTimeAllowance::new(objective_entity, seconds)
             .with_state(state)
             .with_elapsed(elapsed));
-    }
-    Ok(())
+        Ok(())
+    })
 }

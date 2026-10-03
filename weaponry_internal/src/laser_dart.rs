@@ -4,10 +4,7 @@ use alteration::modifiers::prelude::AttackDamage;
 use game_core::prelude::{DamageMessage, GridCoords, Property};
 use grids::wisps::WispsGrid;
 use logging::prelude::*;
-use persistence::{
-    prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveWriter},
-    rusqlite,
-};
+use persistence::{prelude::*, rusqlite};
 use states::prelude::{GameState, MapLoadingStage};
 use weaponry::prelude::*;
 use wisps::prelude::Wisp;
@@ -50,11 +47,11 @@ fn collect_laser_darts(
             )
         })
         .collect();
-    save.submit(move |tx| {
+    save.submit(move |ctx| {
         for (id, position, target_wisp_id, target_vector, damage) in rows {
-            tx.register_entity(id)?;
-            tx.save_world_position(id, position)?;
-            tx.execute(
+            ctx.register_entity(id)?;
+            ctx.save_world_position(id, position)?;
+            ctx.tx.execute(
                 "INSERT OR REPLACE INTO laser_darts (id, target_wisp_id, vector_x, vector_y, damage) VALUES (?1, ?2, ?3, ?4, ?5)",
                 rusqlite::params![id, target_wisp_id, target_vector.x, target_vector.y, damage],
             )?;
@@ -63,36 +60,18 @@ fn collect_laser_darts(
     });
 }
 
-#[log_tags(Tag::GameLoad)]
-fn load_laser_darts(ctx: &mut LoadContext) -> rusqlite::Result<()> {
-    let mut stmt = ctx.conn.prepare(
-        "SELECT id, target_wisp_id, vector_x, vector_y, damage FROM laser_darts",
-    )?;
-    let mut rows = stmt.query([])?;
-    while let Some(row) = rows.next()? {
-        let old_id: i64 = row.get(0)?;
+fn load_laser_darts(ctx: &mut LoadContext) -> LoadResult {
+    ctx.for_each_entity("SELECT id, target_wisp_id, vector_x, vector_y, damage FROM laser_darts", |ctx, old_id, entity, row| {
         let target_wisp_old_id: Option<i64> = row.get(1)?;
         let vector_x: f32 = row.get(2)?;
         let vector_y: f32 = row.get(3)?;
         let damage: f32 = row.get(4)?;
-        let world_position = ctx.conn.get_world_position(old_id)?;
-
-        #[warn_dev("LaserDart with old ID {old_id} has no corresponding new entity")]
-        let Some(entity) = ctx.entity(old_id) else { continue };
-        let new_target_wisp = target_wisp_old_id.and_then(|id| ctx.entity(id));
-
-        let builder = BuilderLaserDart::new(
-            world_position,
-            // new() requires an Entity; use PLACEHOLDER, then override via
-            // with_target_wisp which accepts Option (including None).
-            Entity::PLACEHOLDER,
-            Vec2::new(vector_x, vector_y),
-            AttackDamage::new(damage),
-        )
-        .with_target_wisp(new_target_wisp);
+        let world_position = ctx.world_position(old_id)?;
+        let builder = BuilderLaserDart::new(world_position, Vec2::new(vector_x, vector_y), AttackDamage::new(damage))
+            .with_target_wisp(ctx.optional_entity(target_wisp_old_id).unwrap_or_default());
         ctx.insert(entity, builder);
-    }
-    Ok(())
+        Ok(())
+    })
 }
 
 fn on_builder_add_spawn_laser_dart(

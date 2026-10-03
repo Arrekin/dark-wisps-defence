@@ -19,10 +19,7 @@ use alteration::{
 use game_core::prelude::{CELL_SIZE, GridCoords, Property};
 use grids::wisps::WispsGrid;
 use logging::prelude::*;
-use persistence::{
-    prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveWriter},
-    rusqlite,
-};
+use persistence::{prelude::*, rusqlite};
 use session::GameClock;
 use states::prelude::{GameState, MapLoadingStage};
 use weaponry::prelude::*;
@@ -68,11 +65,11 @@ fn collect_ripples(
             )
         })
         .collect();
-    save.submit(move |tx| {
+    save.submit(move |ctx| {
         for (id, position, max_radius, current_radius) in rows {
-            tx.register_entity(id)?;
-            tx.save_world_position(id, position)?;
-            tx.execute(
+            ctx.register_entity(id)?;
+            ctx.save_world_position(id, position)?;
+            ctx.tx.execute(
                 "INSERT OR REPLACE INTO ripples (id, max_radius, current_radius) VALUES (?1, ?2, ?3)",
                 rusqlite::params![id, max_radius, current_radius],
             )?;
@@ -81,23 +78,16 @@ fn collect_ripples(
     });
 }
 
-#[log_tags(Tag::GameLoad)]
-fn load_ripples(ctx: &mut LoadContext) -> rusqlite::Result<()> {
-    let mut stmt = ctx.conn.prepare("SELECT id, max_radius, current_radius FROM ripples")?;
-    let mut rows = stmt.query([])?;
-    while let Some(row) = rows.next()? {
-        let old_id: i64 = row.get(0)?;
+fn load_ripples(ctx: &mut LoadContext) -> LoadResult {
+    ctx.for_each_entity("SELECT id, max_radius, current_radius FROM ripples", |ctx, old_id, entity, row| {
         let max_radius: f32 = row.get(1)?;
         let current_radius: f32 = row.get(2)?;
-        let world_position = ctx.conn.get_world_position(old_id)?;
-
-        #[warn_dev("Ripple with old ID {old_id} has no corresponding new entity")]
-        let Some(entity) = ctx.entity(old_id) else { continue };
+        let world_position = ctx.world_position(old_id)?;
         let builder = BuilderRipple::new(world_position, max_radius)
             .with_current_radius(current_radius);
         ctx.insert(entity, builder);
-    }
-    Ok(())
+        Ok(())
+    })
 }
 
 fn on_builder_add_spawn_ripple(

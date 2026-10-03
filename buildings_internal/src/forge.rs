@@ -22,10 +22,7 @@ use game_core::prelude::*;
 use grids::placement::{annotate_non_empty, PlacementModes, PlaceRequest};
 use hud::prelude::*;
 use logging::prelude::*;
-use persistence::{
-    prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveWriter},
-    rusqlite,
-};
+use persistence::{prelude::*, rusqlite};
 use resources::prelude::*;
 use shards::prelude::*;
 use states::prelude::*;
@@ -322,16 +319,16 @@ fn collect_forges(
             )
         })
         .collect();
-    save.submit(move |tx| {
+    save.submit(move |ctx| {
         for (id, coords, integrity_points, disabled_by_player, forging) in rows {
-            tx.save_marker("forges", id)?;
-            tx.save_grid_coords(id, coords)?;
-            tx.save_integrity_points(id, integrity_points)?;
+            ctx.save_marker("forges", id)?;
+            ctx.save_grid_coords(id, coords)?;
+            ctx.save_integrity_points(id, integrity_points)?;
             if disabled_by_player {
-                tx.save_disabled_by_player(id)?;
+                ctx.save_disabled_by_player(id)?;
             }
             if let Some((shard_type, remaining_secs)) = forging {
-                tx.execute(
+                ctx.tx.execute(
                     "UPDATE forges SET forging_shard_type = ?1, forging_remaining_secs = ?2 WHERE id = ?3",
                     rusqlite::params![shard_type.as_ref(), remaining_secs, id],
                 )?;
@@ -342,19 +339,13 @@ fn collect_forges(
 }
 
 #[log_tags(Tag::GameLoad)]
-fn load_forges(ctx: &mut LoadContext) -> rusqlite::Result<()> {
-    let mut stmt = ctx.conn.prepare("SELECT id, forging_shard_type, forging_remaining_secs FROM forges")?;
-    let mut rows = stmt.query([])?;
-    while let Some(row) = rows.next()? {
-        let old_id: i64 = row.get(0)?;
+fn load_forges(ctx: &mut LoadContext) -> LoadResult {
+    ctx.for_each_entity("SELECT id, forging_shard_type, forging_remaining_secs FROM forges", |ctx, old_id, entity, row| {
         let forging_shard_type: Option<String> = row.get(1)?;
         let forging_remaining_secs: Option<f32> = row.get(2)?;
-        let grid_position = ctx.conn.get_grid_coords(old_id)?;
-        let integrity_points = ctx.conn.get_integrity_points(old_id)?;
-        let disabled_by_player = ctx.conn.get_disabled_by_player(old_id)?;
-
-        #[warn_dev("Forge with old ID {old_id} has no corresponding new entity")]
-        let Some(entity) = ctx.entity(old_id) else { continue };
+        let grid_position = ctx.grid_coords(old_id)?;
+        let integrity_points = ctx.integrity_points(old_id)?;
+        let disabled_by_player = ctx.disabled_by_player(old_id)?;
         let mut builder = BuilderForge::new(grid_position)
             .with_integrity_points(integrity_points)
             .with_disabled_by_player(disabled_by_player);
@@ -365,8 +356,8 @@ fn load_forges(ctx: &mut LoadContext) -> rusqlite::Result<()> {
             }
         }
         ctx.insert(entity, builder);
-    }
-    Ok(())
+        Ok(())
+    })
 }
 
 // ============================================================================

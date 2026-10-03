@@ -12,9 +12,12 @@
 //! At `Ready`, the game queues the requested start state. It sends a `LoadGameReport` when it
 //! leaves `Loading`, after that state takes effect.
 
-use std::sync::{
-    Arc,
-    atomic::{AtomicUsize, Ordering},
+use std::{
+    str::FromStr,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
 };
 
 use bevy::{
@@ -29,6 +32,7 @@ use serde::Serialize;
 
 use game_core::prelude::*;
 use logging::prelude::*;
+use resources::prelude::{Cost, EssenceType, ResourceType};
 use states::{AdminMode, prelude::*};
 
 use crate::{
@@ -80,7 +84,66 @@ impl Plugin for MapLoadPlugin {
 
 /// Read each table in one pass and send world changes through `LoadContext`. The context batches
 /// those changes across frames; loaders should not paginate their queries.
-pub type LoaderFn = fn(&mut LoadContext) -> rusqlite::Result<()>;
+pub type LoaderFn = fn(&mut LoadContext) -> LoadResult;
+
+pub type LoadResult<T = ()> = Result<T, LoadError>;
+
+/// Why a loader or one saved entity could not be loaded. [`LoadContext::for_each_entity`] logs
+/// an entity's error and moves on to the next entity; a loader's own error ends that loader.
+#[derive(Debug)]
+pub enum LoadError {
+    Database(rusqlite::Error),
+    /// The saved ID has no entity allocated in [`EntityIdMap`].
+    UnmappedEntity(i64),
+    /// Reading a named table failed, including finding no row where one is required.
+    TableReadFailed { table: &'static str, error: rusqlite::Error },
+    /// A required row of a child table is absent.
+    MissingRow { table: &'static str },
+    /// A stored name matches no variant the game knows.
+    UnknownValue { kind: &'static str, value: String },
+}
+impl LoadError {
+    pub fn unknown_value(kind: &'static str, value: impl Into<String>) -> Self {
+        Self::UnknownValue { kind, value: value.into() }
+    }
+
+    /// Error conversion naming the table a query read: `.map_err(LoadError::table_read("grid_coords"))`.
+    pub fn table_read(table: &'static str) -> impl FnOnce(rusqlite::Error) -> Self {
+        move |error| Self::TableReadFailed { table, error }
+    }
+}
+impl From<rusqlite::Error> for LoadError {
+    fn from(error: rusqlite::Error) -> Self {
+        Self::Database(error)
+    }
+}
+impl std::fmt::Display for LoadError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Database(error) => write!(formatter, "database error: {error}"),
+            Self::UnmappedEntity(old_id) => write!(formatter, "saved ID {old_id} has no allocated entity"),
+            Self::TableReadFailed { table, error } => write!(formatter, "reading '{table}' failed: {error}"),
+            Self::MissingRow { table } => write!(formatter, "no row in '{table}'"),
+            Self::UnknownValue { kind, value } => write!(formatter, "unknown {kind} '{value}'"),
+        }
+    }
+}
+impl std::error::Error for LoadError {}
+
+pub trait LoadRowExtension {
+    /// Reads a column holding a stored name and parses it into `T`; a name `T` does not know
+    /// becomes [`LoadError::UnknownValue`] labelled with `T`'s type name.
+    fn get_parsed<T: FromStr>(&self, index: usize) -> LoadResult<T>;
+}
+impl LoadRowExtension for rusqlite::Row<'_> {
+    fn get_parsed<T: FromStr>(&self, index: usize) -> LoadResult<T> {
+        let name: String = self.get(index)?;
+        name.parse().map_err(|_| {
+            let kind = std::any::type_name::<T>().rsplit("::").next().unwrap_or_default();
+            LoadError::unknown_value(kind, name)
+        })
+    }
+}
 
 pub(crate) struct LoaderDescriptor {
     /// Table counted for the progress bar; loaders can read additional tables.
@@ -103,16 +166,146 @@ const CHUNK_ROWS: usize = 128;
 /// Queues loader changes for the main thread; flushes every `CHUNK_ROWS` changes and on drop.
 pub struct LoadContext<'a> {
     pub conn: &'a rusqlite::Connection,
+    /// The table the loader is registered for; names the loader in logs.
+    table: &'static str,
     entity_map: Arc<HashMap<i64, Entity>>,
     queue: CommandQueue,
     rows_since_flush: usize,
     sender: Sender<CommandQueue>,
     done_rows: Arc<AtomicUsize>,
 }
+/// Database side: walks the save file's tables and reads the shared ones.
 impl LoadContext<'_> {
-    /// Resolves a saved ID; missing IDs have no allocated entity.
-    pub fn entity(&self, old_id: i64) -> Option<Entity> {
-        self.entity_map.get(&old_id).copied()
+    /// Runs `load_row` for every row of `query`. A row that fails to load is logged and skipped;
+    /// the rest of the table still loads. Only a failure to prepare the query or to step to the
+    /// next row ends the table early.
+    #[log_tags(Tag::GameLoad)]
+    pub fn for_each_row(
+        &mut self,
+        query: &str,
+        mut load_row: impl FnMut(&mut Self, &rusqlite::Row) -> LoadResult,
+    ) -> LoadResult {
+        let conn = self.conn;
+        let mut statement = conn.prepare(query)?;
+        let mut rows = statement.query([])?;
+        while let Some(row) = rows.next()? {
+            let _ = load_row(self, row)
+                .inspect_err(|error| error_dev!("'{}' row skipped: {error}", self.table));
+        }
+        Ok(())
+    }
+
+    /// [`Self::for_each_row`] for tables whose first column is the saved entity ID.
+    /// `load_entity` receives that ID and the entity it maps to; the skip log names the ID.
+    #[log_tags(Tag::GameLoad)]
+    pub fn for_each_entity(
+        &mut self,
+        query: &str,
+        mut load_entity: impl FnMut(&mut Self, i64, Entity, &rusqlite::Row) -> LoadResult,
+    ) -> LoadResult {
+        self.for_each_row(query, |ctx, row| {
+            let old_id: i64 = row.get(0)?;
+            let _ = ctx.entity(old_id)
+                .and_then(|entity| load_entity(ctx, old_id, entity, row))
+                .inspect_err(|error| error_dev!("'{}' entity {old_id} skipped: {error}", ctx.table));
+            Ok(())
+        })
+    }
+
+    pub fn world_position(&self, old_id: i64) -> LoadResult<Vec2> {
+        self.query_row_cached("world_positions", "SELECT x, y FROM world_positions WHERE entity_id = ?1", [old_id], |row| Ok(Vec2::new(row.get(0)?, row.get(1)?)))
+    }
+
+    pub fn integrity_points(&self, old_id: i64) -> LoadResult<f32> {
+        self.query_row_cached("integrity_points", "SELECT current FROM integrity_points WHERE entity_id = ?1", [old_id], |row| row.get(0))
+    }
+
+    pub fn disabled_by_player(&self, old_id: i64) -> LoadResult<bool> {
+        Ok(self.conn.prepare_cached("SELECT 1 FROM disabled_by_player WHERE entity_id = ?1")?.exists([old_id])?)
+    }
+
+    pub fn stat(&self, stat_name: &str) -> LoadResult<f32> {
+        self.query_row_cached("stats", "SELECT stat_value FROM stats WHERE stat_name = ?1", [stat_name], |row| row.get(0))
+    }
+
+    pub fn stock_resource(&self, resource_name: &str) -> LoadResult<i32> {
+        self.query_row_cached("stock", "SELECT amount FROM stock WHERE resource_name = ?1", [resource_name], |row| row.get(0))
+    }
+
+    pub fn grid_coords(&self, old_id: i64) -> LoadResult<GridCoords> {
+        self.query_row_cached("grid_coords", "SELECT x, y FROM grid_coords WHERE entity_id = ?1", [old_id], |row| Ok(GridCoords { x: row.get(0)?, y: row.get(1)? }))
+    }
+
+    pub fn grid_imprint(&self, old_id: i64) -> LoadResult<GridImprint> {
+        let (shape, width, height): (String, i32, Option<i32>) = self.query_row_cached(
+            "grid_imprints",
+            "SELECT shape, width, height FROM grid_imprints WHERE id = ?1",
+            [old_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )?;
+        match (shape.as_str(), height) {
+            ("Rectangle", Some(height)) => Ok(GridImprint::Rectangle { width, height }),
+            ("Plus", _) => Ok(GridImprint::Plus { extents: width }),
+            _ => Err(LoadError::unknown_value("grid imprint", format!("{shape} width={width} height={height:?}"))),
+        }
+    }
+
+    #[log_tags(Tag::GameLoad)]
+    pub fn costs(&self, old_id: i64) -> LoadResult<Vec<Cost>> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT resource_kind, essence_type, amount FROM costs WHERE entity_id = ?1 AND custom_key = 0 ORDER BY position",
+        )?;
+        let mut rows = stmt.query([old_id])?;
+        let mut costs = Vec::new();
+        while let Some(row) = rows.next()? {
+            let resource_kind: String = row.get(0)?;
+            let essence_type: Option<String> = row.get(1)?;
+            let amount: i32 = row.get(2)?;
+            let resource_type = match resource_kind.as_str() {
+                "DarkOre" => ResourceType::DarkOre,
+                "Essence" => {
+                    #[warn_dev("Essence cost of entity {old_id} has no essence_type — skipped")]
+                    let Some(essence_str) = essence_type else { continue };
+                    match essence_str.parse::<EssenceType>() {
+                        Ok(essence) => ResourceType::Essence(essence),
+                        #[warn_dev("Essence cost of entity {old_id} has unknown essence type '{essence_str}' — skipped")]
+                        Err(_) => continue,
+                    }
+                }
+                #[warn_dev("Cost of entity {old_id} has unknown resource_kind '{other}' — skipped")]
+                other => continue,
+            };
+            costs.push(Cost { resource_type, amount });
+        }
+        Ok(costs)
+    }
+
+    /// Reads the one row `query` selects through the connection's statement cache, so
+    /// per-entity reads skip re-preparing their SQL. Any failure, including a missing row,
+    /// becomes [`LoadError::TableReadFailed`] naming `table`.
+    fn query_row_cached<T>(
+        &self,
+        table: &'static str,
+        query: &str,
+        params: impl rusqlite::Params,
+        map_row: impl FnOnce(&rusqlite::Row) -> rusqlite::Result<T>,
+    ) -> LoadResult<T> {
+        self.conn.prepare_cached(query)
+            .and_then(|mut statement| statement.query_row(params, map_row))
+            .map_err(LoadError::table_read(table))
+    }
+}
+
+/// Game side: maps saved IDs to entities and queues world changes for the main thread.
+impl LoadContext<'_> {
+    /// Resolves a saved ID to the entity allocated for it before loading began.
+    pub fn entity(&self, old_id: i64) -> LoadResult<Entity> {
+        self.entity_map.get(&old_id).copied().ok_or(LoadError::UnmappedEntity(old_id))
+    }
+
+    /// Resolves an optional saved reference: no ID is `Ok(None)`, an unmapped ID is an error.
+    pub fn optional_entity(&self, old_id: Option<i64>) -> LoadResult<Option<Entity>> {
+        old_id.map(|old_id| self.entity(old_id)).transpose()
     }
 
     /// Inserts only if the entity still exists when the batch is applied.
@@ -296,6 +489,7 @@ pub(crate) fn spawn_stage_loaders(
             let _ = with_db_connection(&map_path, Migrations::Skip, |conn| {
                 let mut ctx = LoadContext {
                     conn,
+                    table,
                     entity_map,
                     queue: CommandQueue::default(),
                     rows_since_flush: 0,

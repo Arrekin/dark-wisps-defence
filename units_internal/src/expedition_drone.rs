@@ -69,10 +69,7 @@ use game_core::{
 };
 use logging::prelude::*;
 use map_objects::prelude::ExpeditionZone;
-use persistence::{
-    prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveWriter},
-    rusqlite,
-};
+use persistence::{prelude::*, rusqlite};
 use states::prelude::{GameState, MapLoadingStage};
 use units::{
     expedition_drone::{
@@ -579,11 +576,11 @@ fn collect_expedition_drones(
             )
         })
         .collect();
-    save.submit(move |tx| {
+    save.submit(move |ctx| {
         for (id, home_base_id, state, mission_target_id, heading, waypoint, fuel_current, fuel_max, position) in rows {
-            tx.register_entity(id)?;
-            tx.save_world_position(id, position)?;
-            tx.execute(
+            ctx.register_entity(id)?;
+            ctx.save_world_position(id, position)?;
+            ctx.tx.execute(
                 "INSERT OR REPLACE INTO expedition_drones (id, home_base_id, state, mission_target_id, heading, waypoint_x, waypoint_y, fuel_current, fuel_max) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                 rusqlite::params![id, home_base_id, state.as_ref(), mission_target_id, heading, waypoint.x, waypoint.y, fuel_current, fuel_max],
             )?;
@@ -593,30 +590,21 @@ fn collect_expedition_drones(
 }
 
 #[log_tags(Tag::GameLoad)]
-fn load_expedition_drones(ctx: &mut LoadContext) -> rusqlite::Result<()> {
-    let mut stmt = ctx.conn.prepare("SELECT id, home_base_id, state, mission_target_id, heading, waypoint_x, waypoint_y, fuel_current, fuel_max FROM expedition_drones")?;
-    let mut rows = stmt.query([])?;
-    while let Some(row) = rows.next()? {
-        let old_id: i64 = row.get(0)?;
+fn load_expedition_drones(ctx: &mut LoadContext) -> LoadResult {
+    ctx.for_each_entity("SELECT id, home_base_id, state, mission_target_id, heading, waypoint_x, waypoint_y, fuel_current, fuel_max FROM expedition_drones", |ctx, old_id, entity, row| {
         let home_base_old_id: i64 = row.get(1)?;
-        let state_str: String = row.get(2)?;
+        let state = row.get_parsed::<DroneState>(2)
+            .inspect_err(|error| warn_dev!("ExpeditionDrone with old ID {old_id} loads as Stationed: {error}"))
+            .unwrap_or(DroneState::Stationed);
         let mission_target_old_id: Option<i64> = row.get(3)?;
         let heading: f32 = row.get(4)?;
         let waypoint_x: f32 = row.get(5)?;
         let waypoint_y: f32 = row.get(6)?;
         let fuel_current: f32 = row.get(7)?;
         let fuel_max: f32 = row.get(8)?;
-        let world_position = ctx.conn.get_world_position(old_id)?;
-
-        #[warn_dev("ExpeditionDrone with old ID {old_id} has no corresponding new entity")]
-        let Some(entity) = ctx.entity(old_id) else { continue };
-        #[warn_dev("ExpeditionDrone home base with old ID {home_base_old_id} has no corresponding new entity")]
-        let Some(home_base) = ctx.entity(home_base_old_id) else { continue };
-        let mission_target = mission_target_old_id.and_then(|id| ctx.entity(id));
-
-        let state = state_str.parse::<DroneState>()
-            .inspect_err(|_| warn_dev!("ExpeditionDrone with old ID {old_id} has unknown state '{state_str}' — loading as Stationed"))
-            .unwrap_or(DroneState::Stationed);
+        let world_position = ctx.world_position(old_id)?;
+        let home_base = ctx.entity(home_base_old_id)?;
+        let mission_target = ctx.optional_entity(mission_target_old_id).unwrap_or_default();
 
         let builder = BuilderExpeditionDrone::new(home_base)
             .with_state(state)
@@ -626,8 +614,8 @@ fn load_expedition_drones(ctx: &mut LoadContext) -> rusqlite::Result<()> {
             .with_world_position(world_position)
             .with_mission_target(mission_target);
         ctx.insert(entity, builder);
-    }
-    Ok(())
+        Ok(())
+    })
 }
 
 /// Spawns drone with linked visual components (ScanSpot + ScanningBeam as separate entities).

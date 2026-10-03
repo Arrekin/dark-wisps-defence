@@ -6,10 +6,7 @@ use alteration::modifiers::prelude::AttackDamage;
 use game_core::prelude::{ALL_DIRECTIONS, CELL_SIZE, DamageMessage, GridCoords, Property};
 use grids::wisps::WispsGrid;
 use logging::prelude::*;
-use persistence::{
-    prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveWriter},
-    rusqlite,
-};
+use persistence::{prelude::*, rusqlite};
 use states::prelude::{GameState, MapLoadingStage};
 use visuals::prelude::BuilderExplosion;
 use weaponry::prelude::*;
@@ -55,11 +52,11 @@ fn collect_cannonballs(
             )
         })
         .collect();
-    save.submit(move |tx| {
+    save.submit(move |ctx| {
         for (id, position, target_position, damage, initial_distance) in rows {
-            tx.register_entity(id)?;
-            tx.save_world_position(id, position)?;
-            tx.execute(
+            ctx.register_entity(id)?;
+            ctx.save_world_position(id, position)?;
+            ctx.tx.execute(
                 "INSERT OR REPLACE INTO cannonballs (id, target_x, target_y, damage, initial_distance) VALUES (?1, ?2, ?3, ?4, ?5)",
                 rusqlite::params![id, target_position.x, target_position.y, damage, initial_distance],
             )?;
@@ -68,22 +65,13 @@ fn collect_cannonballs(
     });
 }
 
-#[log_tags(Tag::GameLoad)]
-fn load_cannonballs(ctx: &mut LoadContext) -> rusqlite::Result<()> {
-    let mut stmt = ctx.conn.prepare(
-        "SELECT id, target_x, target_y, damage, initial_distance FROM cannonballs",
-    )?;
-    let mut rows = stmt.query([])?;
-    while let Some(row) = rows.next()? {
-        let old_id: i64 = row.get(0)?;
+fn load_cannonballs(ctx: &mut LoadContext) -> LoadResult {
+    ctx.for_each_entity("SELECT id, target_x, target_y, damage, initial_distance FROM cannonballs", |ctx, old_id, entity, row| {
         let target_x: f32 = row.get(1)?;
         let target_y: f32 = row.get(2)?;
         let damage: f32 = row.get(3)?;
         let initial_distance: f32 = row.get(4)?;
-        let world_position = ctx.conn.get_world_position(old_id)?;
-
-        #[warn_dev("Cannonball with old ID {old_id} has no corresponding new entity")]
-        let Some(entity) = ctx.entity(old_id) else { continue };
+        let world_position = ctx.world_position(old_id)?;
         let builder = BuilderCannonball::new(
             world_position,
             Vec2::new(target_x, target_y),
@@ -91,8 +79,8 @@ fn load_cannonballs(ctx: &mut LoadContext) -> rusqlite::Result<()> {
         )
         .with_initial_distance(initial_distance);
         ctx.insert(entity, builder);
-    }
-    Ok(())
+        Ok(())
+    })
 }
 
 fn on_builder_add_spawn_cannonball(

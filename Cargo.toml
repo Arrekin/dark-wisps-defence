@@ -99,7 +99,7 @@ bevy = { version = "0.19.*", default-features = false, features = ["dynamic_link
 bevy_egui = "0.40.*"
 strum = { version = "0.28.*", features = ["derive"] }
 nanorand = "0.8"
-rusqlite = { version = "0.39.*", features = ["bundled"] }
+rusqlite = { version = "0.39.*", features = ["bundled", "fallible_uint"] }
 refinery = { version = "0.9.*", features = ["rusqlite"] }
 crossbeam-channel = "0.5.*"
 axum = { version = "0.8.*", default-features = false, features = ["tokio", "http1", "json"] }

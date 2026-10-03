@@ -12,10 +12,7 @@ use grids::{
 use hud::prelude::BuilderSideMenuItemTooltip;
 use logging::prelude::*;
 use map_objects::prelude::*;
-use persistence::{
-    prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveWriter},
-    rusqlite,
-};
+use persistence::prelude::*;
 use states::prelude::MapLoadingStage;
 
 pub(crate) struct DarkOrePlugin;
@@ -99,33 +96,26 @@ fn collect_dark_ores(
             )
         })
         .collect();
-    save.submit(move |tx| {
+    save.submit(move |ctx| {
         for (id, coords, amount) in rows {
-            tx.register_entity(id)?;
-            tx.execute(
+            ctx.register_entity(id)?;
+            ctx.tx.execute(
                 "INSERT OR REPLACE INTO dark_ores (id, amount) VALUES (?1, ?2)",
                 (id, amount),
             )?;
-            tx.save_grid_coords(id, coords)?;
+            ctx.save_grid_coords(id, coords)?;
         }
         Ok(())
     });
 }
 
-#[log_tags(Tag::GameLoad)]
-fn load_dark_ores(ctx: &mut LoadContext) -> rusqlite::Result<()> {
-    let mut stmt = ctx.conn.prepare("SELECT id, amount FROM dark_ores")?;
-    let mut rows = stmt.query([])?;
-    while let Some(row) = rows.next()? {
-        let old_id: i64 = row.get(0)?;
+fn load_dark_ores(ctx: &mut LoadContext) -> LoadResult {
+    ctx.for_each_entity("SELECT id, amount FROM dark_ores", |ctx, old_id, entity, row| {
         let amount: u32 = row.get(1)?;
-        let grid_position = ctx.conn.get_grid_coords(old_id)?;
-
-        #[warn_dev("DarkOre with old ID {old_id} has no corresponding new entity")]
-        let Some(entity) = ctx.entity(old_id) else { continue };
+        let grid_position = ctx.grid_coords(old_id)?;
         ctx.insert(entity, BuilderDarkOre::new(grid_position, amount));
-    }
-    Ok(())
+        Ok(())
+    })
 }
 
 #[log_tags(Tag::Resources)]

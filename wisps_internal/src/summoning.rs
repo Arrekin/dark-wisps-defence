@@ -4,10 +4,7 @@ use nanorand::Rng;
 use game_core::{moments::moment_attach_self_trigger_to_parent, prelude::*};
 use grids::prelude::ObstacleGrid;
 use logging::prelude::*;
-use persistence::{
-    prelude::{AppGameLoadSaveExtension, CollectSave, GameDbHelpers, LoadContext, SaveContext, SaveWriter},
-    rusqlite::{self, OptionalExtension},
-};
+use persistence::{prelude::*, rusqlite};
 use session::GameClock;
 use states::prelude::*;
 use wisps::summoning::*;
@@ -56,7 +53,7 @@ fn on_insert_summoning_state_sync_markers(
 
 #[log_tags(Tag::GameSave)]
 fn collect_summonings(
-    save_context: Res<SaveContext>,
+    save_runner: Res<SaveRunner>,
     summonings: Query<(Entity, &Summoning, &SummoningState, &SummoningRuntime, Option<&MomentOfInterest>)>,
     mut save: SaveWriter,
 ) {
@@ -75,7 +72,7 @@ fn collect_summonings(
     let snapshots: Vec<Snapshot> = summonings
         .iter()
         .map(|(entity, summoning, state, runtime, activated_by)| {
-            let (state, produced, next_spawn_time) = if save_context.save_as_scenario {
+            let (state, produced, next_spawn_time) = if save_runner.save_as_scenario {
                 (SummoningState::Inactive, 0, 0.0)
             } else {
                 (*state, runtime.produced, runtime.next_spawn_time)
@@ -91,14 +88,14 @@ fn collect_summonings(
         })
         .collect();
 
-    save.submit(move |tx| {
+    save.submit(move |ctx| {
         for snapshot in &snapshots {
-            tx.register_entity(snapshot.id)?;
+            ctx.register_entity(snapshot.id)?;
             if let Some(activated_by_id) = snapshot.activated_by {
-                tx.register_entity(activated_by_id)?;
+                ctx.register_entity(activated_by_id)?;
             }
 
-            tx.execute(
+            ctx.tx.execute(
                 "INSERT OR REPLACE INTO summonings (id, id_name, state, activated_by, tempo_kind, limit_count, area_kind, produced, next_spawn_time) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                 rusqlite::params![
                     snapshot.id,
@@ -113,18 +110,18 @@ fn collect_summonings(
                 ],
             )?;
 
-            save_tempo(tx, snapshot.id, &snapshot.summoning.tempo)?;
-            save_area(tx, snapshot.id, &snapshot.summoning.area)?;
-            save_wisp_types(tx, snapshot.id, &snapshot.summoning.wisp_types)?;
+            save_tempo(ctx, snapshot.id, &snapshot.summoning.tempo)?;
+            save_area(ctx, snapshot.id, &snapshot.summoning.area)?;
+            save_wisp_types(ctx, snapshot.id, &snapshot.summoning.wisp_types)?;
         }
         Ok(())
     });
 }
 
-fn save_tempo(tx: &rusqlite::Transaction, id: i64, tempo: &SpawnTempo) -> rusqlite::Result<()> {
+fn save_tempo(ctx: &SaveContext, id: i64, tempo: &SpawnTempo) -> rusqlite::Result<()> {
     match tempo {
         SpawnTempo::Continuous { seconds, jitter, bulk_count } => {
-            tx.execute(
+            ctx.tx.execute(
                 "INSERT OR REPLACE INTO summoning_tempo_continuous (summoning_id, seconds, jitter, bulk_count) VALUES (?1, ?2, ?3, ?4)",
                 rusqlite::params![id, seconds, jitter, bulk_count],
             )?;
@@ -133,24 +130,24 @@ fn save_tempo(tx: &rusqlite::Transaction, id: i64, tempo: &SpawnTempo) -> rusqli
     Ok(())
 }
 
-fn save_area(tx: &rusqlite::Transaction, id: i64, area: &SpawnArea) -> rusqlite::Result<()> {
+fn save_area(ctx: &SaveContext, id: i64, area: &SpawnArea) -> rusqlite::Result<()> {
     match area {
         SpawnArea::Coords { coords } => {
             for coord in coords {
-                tx.execute(
+                ctx.tx.execute(
                     "INSERT OR REPLACE INTO summoning_area_coords (summoning_id, x, y) VALUES (?1, ?2, ?3)",
                     rusqlite::params![id, coord.x, coord.y],
                 )?;
             }
         }
         SpawnArea::Rect { origin, width, height } => {
-            tx.execute(
+            ctx.tx.execute(
                 "INSERT OR REPLACE INTO summoning_area_rect (summoning_id, origin_x, origin_y, width, height) VALUES (?1, ?2, ?3, ?4, ?5)",
                 rusqlite::params![id, origin.x, origin.y, width, height],
             )?;
         }
         SpawnArea::Edge { side } => {
-            tx.execute(
+            ctx.tx.execute(
                 "INSERT OR REPLACE INTO summoning_area_edge (summoning_id, side) VALUES (?1, ?2)",
                 rusqlite::params![id, side.as_ref()],
             )?;
@@ -160,9 +157,9 @@ fn save_area(tx: &rusqlite::Transaction, id: i64, area: &SpawnArea) -> rusqlite:
     Ok(())
 }
 
-fn save_wisp_types(tx: &rusqlite::Transaction, id: i64, wisp_types: &[WispType]) -> rusqlite::Result<()> {
+fn save_wisp_types(ctx: &SaveContext, id: i64, wisp_types: &[WispType]) -> rusqlite::Result<()> {
     for wisp_type in wisp_types {
-        tx.execute(
+        ctx.tx.execute(
             "INSERT OR REPLACE INTO summoning_wisp_types (summoning_id, wisp_type) VALUES (?1, ?2)",
             rusqlite::params![id, wisp_type.as_ref()],
         )?;
@@ -171,31 +168,21 @@ fn save_wisp_types(tx: &rusqlite::Transaction, id: i64, wisp_types: &[WispType])
 }
 
 #[log_tags(Tag::GameLoad)]
-fn load_summonings(ctx: &mut LoadContext) -> rusqlite::Result<()> {
-    let mut stmt = ctx.conn.prepare(
+fn load_summonings(ctx: &mut LoadContext) -> LoadResult {
+    ctx.for_each_entity(
         "SELECT id, id_name, state, activated_by, tempo_kind, limit_count, area_kind, produced, next_spawn_time FROM summonings",
-    )?;
-    let mut rows = stmt.query([])?;
-    while let Some(row) = rows.next()? {
-        let old_id: i64 = row.get(0)?;
-        let id_name: String = row.get(1)?;
-        let state_str: String = row.get(2)?;
-        let activated_by_old_id: Option<i64> = row.get(3)?;
-        let tempo_kind: String = row.get(4)?;
-        let limit_count: Option<i32> = row.get(5)?;
-        let area_kind: String = row.get(6)?;
-        let produced: i32 = row.get(7)?;
-        let next_spawn_time: f32 = row.get(8)?;
+        |ctx, old_id, entity, row| {
+            let id_name: String = row.get(1)?;
+            let state = row.get_parsed::<SummoningState>(2)?;
+            let activated_by_old_id: Option<i64> = row.get(3)?;
+            let tempo_kind: String = row.get(4)?;
+            let limit_count: Option<i32> = row.get(5)?;
+            let area_kind: String = row.get(6)?;
+            let produced: i32 = row.get(7)?;
+            let next_spawn_time: f32 = row.get(8)?;
 
-        #[warn_dev("Summoning with old ID {old_id} has no corresponding new entity")]
-        let Some(entity) = ctx.entity(old_id) else { continue };
-        #[warn_dev("Unknown summoning state in save: {state_str}")]
-        let Ok(state) = state_str.parse::<SummoningState>() else { continue };
-
-        let tempo = match tempo_kind.as_str() {
-            "Continuous" => {
-                #[warn_dev("Summoning with old ID {old_id} has no Continuous tempo row in save — skipping")]
-                let Some(tempo) = ctx.conn.query_row(
+            let tempo = match tempo_kind.as_str() {
+                "Continuous" => ctx.conn.query_row(
                     "SELECT seconds, jitter, bulk_count FROM summoning_tempo_continuous WHERE summoning_id = ?1",
                     [old_id],
                     |row| Ok(SpawnTempo::Continuous {
@@ -203,23 +190,18 @@ fn load_summonings(ctx: &mut LoadContext) -> rusqlite::Result<()> {
                         jitter: row.get(1)?,
                         bulk_count: row.get(2)?,
                     }),
-                ).optional()? else { continue };
-                tempo
-            }
-            #[warn_dev("Summoning with old ID {old_id} has unknown tempo kind '{other}' — skipping")]
-            other => continue,
-        };
+                ).map_err(LoadError::table_read("summoning_tempo_continuous"))?,
+                other => return Err(LoadError::unknown_value("tempo kind", other)),
+            };
 
-        let area = match area_kind.as_str() {
-            "Coords" => {
-                let coords = ctx.conn.prepare("SELECT x, y FROM summoning_area_coords WHERE summoning_id = ?1")?
-                    .query_map([old_id], |row| Ok(GridCoords { x: row.get(0)?, y: row.get(1)? }))?
-                    .collect::<rusqlite::Result<Vec<_>>>()?;
-                SpawnArea::Coords { coords }
-            }
-            "Rect" => {
-                #[warn_dev("Summoning with old ID {old_id} has no Rect area row in save — skipping")]
-                let Some(area) = ctx.conn.query_row(
+            let area = match area_kind.as_str() {
+                "Coords" => {
+                    let coords = ctx.conn.prepare("SELECT x, y FROM summoning_area_coords WHERE summoning_id = ?1")?
+                        .query_map([old_id], |row| Ok(GridCoords { x: row.get(0)?, y: row.get(1)? }))?
+                        .collect::<rusqlite::Result<Vec<_>>>()?;
+                    SpawnArea::Coords { coords }
+                }
+                "Rect" => ctx.conn.query_row(
                     "SELECT origin_x, origin_y, width, height FROM summoning_area_rect WHERE summoning_id = ?1",
                     [old_id],
                     |row| Ok(SpawnArea::Rect {
@@ -227,61 +209,51 @@ fn load_summonings(ctx: &mut LoadContext) -> rusqlite::Result<()> {
                         width: row.get(2)?,
                         height: row.get(3)?,
                     }),
-                ).optional()? else { continue };
-                area
-            }
-            "Edge" => {
-                #[warn_dev("Summoning with old ID {old_id} has no Edge area row in save — skipping")]
-                let Some(side_str) = ctx.conn.query_row(
-                    "SELECT side FROM summoning_area_edge WHERE summoning_id = ?1",
-                    [old_id],
-                    |row| row.get::<_, String>(0),
-                ).optional()? else { continue };
-                #[warn_dev("Summoning with old ID {old_id} has unknown edge side '{side_str}' in save — skipping")]
-                let Ok(side) = side_str.parse::<EdgeSide>() else { continue };
-                SpawnArea::Edge { side }
-            }
-            "EdgesAll" => SpawnArea::EdgesAll,
-            #[warn_dev("Summoning with old ID {old_id} has unknown area kind '{other}' — skipping")]
-            other => continue,
-        };
+                ).map_err(LoadError::table_read("summoning_area_rect"))?,
+                "Edge" => {
+                    let side_name: String = ctx.conn.query_row(
+                        "SELECT side FROM summoning_area_edge WHERE summoning_id = ?1",
+                        [old_id],
+                        |row| row.get(0),
+                    ).map_err(LoadError::table_read("summoning_area_edge"))?;
+                    let side = side_name.parse::<EdgeSide>()
+                        .map_err(|_| LoadError::unknown_value("edge side", &side_name))?;
+                    SpawnArea::Edge { side }
+                }
+                "EdgesAll" => SpawnArea::EdgesAll,
+                other => return Err(LoadError::unknown_value("area kind", other)),
+            };
 
-        let wisp_types: Vec<WispType> = ctx.conn.prepare("SELECT wisp_type FROM summoning_wisp_types WHERE summoning_id = ?1")?
-            .query_map([old_id], |row| {
-                let wisp_type_str: String = row.get(0)?;
-                Ok(wisp_type_str.parse::<WispType>()
-                    .inspect_err(|_| warn_dev!("Summoning with old ID {old_id} has unknown wisp type '{wisp_type_str}' in save — ignoring it"))
+            // An unknown wisp type drops only that type; the summoning still loads with the rest.
+            let wisp_types: Vec<WispType> = ctx.conn.prepare("SELECT wisp_type FROM summoning_wisp_types WHERE summoning_id = ?1")?
+                .query_and_then([old_id], |row| row.get_parsed::<WispType>(0))?
+                .filter_map(|wisp_type| wisp_type
+                    .inspect_err(|error| warn_dev!("Summoning with old ID {old_id} dropped a wisp type: {error}"))
                     .ok())
-            })?
-            .filter_map(Result::transpose)
-            .collect::<rusqlite::Result<_>>()?;
-
-        #[warn_dev("Summoning with old ID {old_id} has no wisp types in save — skipping")]
-        if wisp_types.is_empty() { continue; }
-
-        let summoning = Summoning {
-            id_name,
-            wisp_types,
-            area,
-            tempo,
-            limit_count,
-        };
-
-        let activated_by = activated_by_old_id.and_then(|old_activated_by_id| {
-            let activated_by = ctx.entity(old_activated_by_id);
-            if activated_by.is_none() {
-                warn_dev!("Summoning with old ID {old_id} has activated_by={old_activated_by_id} that failed entity remap — summoning will not activate");
+                .collect();
+            if wisp_types.is_empty() {
+                return Err(LoadError::MissingRow { table: "summoning_wisp_types" });
             }
-            activated_by
-        });
 
-        let builder = BuilderSummoning::new(summoning)
-            .with_state(state)
-            .with_runtime(SummoningRuntime { produced, next_spawn_time })
-            .with_activated_by(activated_by);
-        ctx.insert(entity, builder);
-    }
-    Ok(())
+            let activated_by = ctx.optional_entity(activated_by_old_id)
+                .inspect_err(|error| warn_dev!("Summoning with old ID {old_id} loads without its activator and will never activate: {error}"))
+                .unwrap_or_default();
+
+            let summoning = Summoning {
+                id_name,
+                wisp_types,
+                area,
+                tempo,
+                limit_count,
+            };
+            let builder = BuilderSummoning::new(summoning)
+                .with_state(state)
+                .with_runtime(SummoningRuntime { produced, next_spawn_time })
+                .with_activated_by(activated_by);
+            ctx.insert(entity, builder);
+            Ok(())
+        },
+    )
 }
 
 fn on_builder_add_spawn_summoning(

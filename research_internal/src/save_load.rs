@@ -2,10 +2,7 @@ use bevy::prelude::*;
 
 use game_core::prelude::*;
 use logging::prelude::*;
-use persistence::{
-    prelude::{GameDbHelpers, LoadContext, SaveContext, SaveWriter},
-    rusqlite,
-};
+use persistence::{prelude::*, rusqlite};
 use research::prelude::*;
 use resources::prelude::Cost;
 
@@ -16,7 +13,7 @@ use resources::prelude::Cost;
 /// to not started." A completed one stays Completed with no runtime.
 #[log_tags(Tag::GameSave)]
 pub(crate) fn collect_researches(
-    save_ctx: Res<SaveContext>,
+    save_runner: Res<SaveRunner>,
     researches: Query<(
         Entity,
         &Research,
@@ -49,7 +46,7 @@ pub(crate) fn collect_researches(
         .map(|(entity, research, content_id, name, description, icon, state, runtime)| {
             // Scenario saves drop runtime: progress becomes NULL regardless of
             // current progress. Non-scenario saves keep it when present.
-            let progress = if save_ctx.save_as_scenario {
+            let progress = if save_runner.save_as_scenario {
                 None
             } else {
                 runtime.map(|runtime| runtime.progress)
@@ -68,10 +65,10 @@ pub(crate) fn collect_researches(
         })
         .collect();
 
-    save.submit(move |tx| {
+    save.submit(move |ctx| {
         for snap in &snapshots {
-            tx.register_entity(snap.id)?;
-            tx.execute(
+            ctx.register_entity(snap.id)?;
+            ctx.tx.execute(
                 "INSERT OR REPLACE INTO researches (id, content_id, name, description, icon_path, duration_secs, progress, state) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 rusqlite::params![
                     snap.id,
@@ -84,20 +81,15 @@ pub(crate) fn collect_researches(
                     snap.state.as_ref().map(|state| state.as_ref()),
                 ],
             )?;
-            tx.save_costs(snap.id, &snap.costs)?;
+            ctx.save_costs(snap.id, &snap.costs)?;
         }
         Ok(())
     });
 }
 
 #[log_tags(Tag::GameLoad)]
-pub(crate) fn load_researches(ctx: &mut LoadContext) -> rusqlite::Result<()> {
-    let mut stmt = ctx.conn.prepare(
-        "SELECT id, content_id, name, description, icon_path, duration_secs, progress, state FROM researches",
-    )?;
-    let mut rows = stmt.query([])?;
-    while let Some(row) = rows.next()? {
-        let old_id: i64 = row.get(0)?;
+pub(crate) fn load_researches(ctx: &mut LoadContext) -> LoadResult {
+    ctx.for_each_entity("SELECT id, content_id, name, description, icon_path, duration_secs, progress, state FROM researches", |ctx, old_id, entity, row| {
         let content_id: String = row.get(1)?;
         let name: String = row.get(2)?;
         let description: String = row.get(3)?;
@@ -105,11 +97,7 @@ pub(crate) fn load_researches(ctx: &mut LoadContext) -> rusqlite::Result<()> {
         let duration_secs: f32 = row.get(5)?;
         let progress: Option<f32> = row.get(6)?;
         let state_str: Option<String> = row.get(7)?;
-
-        #[warn_dev("Research with old ID {old_id} has no corresponding new entity")]
-        let Some(entity) = ctx.entity(old_id) else { continue };
-
-        let costs = ctx.conn.get_costs(old_id)?;
+        let costs = ctx.costs(old_id)?;
 
         // Insert core components (always present, enabled or not).
         ctx.insert(entity, (
@@ -130,13 +118,13 @@ pub(crate) fn load_researches(ctx: &mut LoadContext) -> rusqlite::Result<()> {
         // runtime after — the require on ResearchAvailable would auto-insert
         // a default runtime, but we insert the saved one explicitly to
         // overwrite it.
-        let Some(state_str) = state_str else { continue };
+        let Some(state_str) = state_str else { return Ok(()) };
         #[warn_dev("Research with old ID {old_id} has unknown state '{state_str}' — treating as disabled")]
-        let Ok(state) = state_str.parse::<ResearchState>() else { continue };
+        let Ok(state) = state_str.parse::<ResearchState>() else { return Ok(()) };
         ctx.insert(entity, state);
         if let Some(progress) = progress {
             ctx.insert(entity, ResearchRuntime { progress });
         }
-    }
-    Ok(())
+        Ok(())
+    })
 }
