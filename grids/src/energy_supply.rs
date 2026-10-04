@@ -46,7 +46,7 @@ pub struct SupplierEnergy;
 pub struct GeneratorEnergy;
 
 #[derive(Message)]
-pub struct SupplierChangedEvent {
+pub struct SupplierChangedMessage {
     pub supplier: Entity,
     pub imprint: GridImprint,
     pub grid_coords: GridCoords,
@@ -54,14 +54,14 @@ pub struct SupplierChangedEvent {
     pub mode: SupplierChange,
 }
 
-/// What happened to a supplier, as carried by `SupplierChangedEvent`.
+/// What happened to a supplier, as carried by `SupplierChangedMessage`.
 ///
 /// Deliberately state-free: whether a placed supplier lands in the active or
 /// disabled set is derived from live entity state at apply time (see
-/// `apply_supplier_changes` in grids_internal), so the event can never
+/// `apply_supplier_changes` in grids_internal), so the message can never
 /// disagree with the entity. This also makes `Place` overwrite-idempotent —
 /// duplicate or reordered emissions converge on the entity's actual state.
-/// `Remove` must keep working after despawn, hence the event payload carries
+/// `Remove` must keep working after despawn, hence the message payload carries
 /// coords/imprint/range.
 #[derive(ConstParamTy, PartialEq, Eq, Copy, Clone, Debug)]
 pub enum SupplierChange {

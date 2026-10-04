@@ -54,7 +54,7 @@ impl BuilderTowerEmitter {
             sprite: asset_server.load("buildings/tower_emitter.png"),
             top_sprite: None,
             grid_imprint: GridImprint::Rectangle { width: 2, height: 2 },
-            cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 450 }],
+            cost: vec![ResourceAmount::new(ResourceType::DarkOre, 450)],
             baseline: HashMap::from([
                 (ModifierType::MaxIntegrityPoints, 100.),
                 (ModifierType::AttackRange, 4.),
@@ -127,11 +127,11 @@ impl BuilderTowerEmitter {
         trigger: On<ShardApplyEvent>,
         mut commands: Commands,
     ) {
-        match trigger.shard_type {
-            ShardType::Range => {
+        match trigger.shard.shard_type {
+            ShardType::Reach => {
                 commands.spawn(ShardEffect::from_modifiers(trigger.shard_target, HashMap::from([(ModifierType::AttackRange, 2.0)])));
             }
-            ShardType::Damage => {
+            ShardType::Strength => {
                 commands.spawn(ShardEffect::from_modifiers(trigger.shard_target, HashMap::from([(ModifierType::AttackDamage, 2.0)])));
             }
             ShardType::Speed => {

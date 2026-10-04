@@ -11,7 +11,7 @@ use shards::prelude::UnlockShardBlueprint;
 pub fn spawn_fire_shard_recipe_research(commands: &mut Commands, id: &ContentId) {
     commands.spawn_scene(bsn! {
         Research {
-            cost: {vec![Cost { resource_type: ResourceType::Essence(EssenceType::Fire), amount: 100 }]},
+            cost: {vec![ResourceAmount::new(EssenceType::Fire, 100)]},
             duration: {Duration::from_secs(30)},
         }
         ContentId({id.0.clone()})
@@ -27,7 +27,7 @@ pub fn spawn_fire_shard_recipe_research(commands: &mut Commands, id: &ContentId)
 pub fn spawn_water_shard_recipe_research(commands: &mut Commands, id: &ContentId) {
     commands.spawn_scene(bsn! {
         Research {
-            cost: {vec![Cost { resource_type: ResourceType::Essence(EssenceType::Water), amount: 100 }]},
+            cost: {vec![ResourceAmount::new(EssenceType::Water, 100)]},
             duration: {Duration::from_secs(30)},
         }
         ContentId({id.0.clone()})
@@ -43,7 +43,7 @@ pub fn spawn_water_shard_recipe_research(commands: &mut Commands, id: &ContentId
 pub fn spawn_light_shard_recipe_research(commands: &mut Commands, id: &ContentId) {
     commands.spawn_scene(bsn! {
         Research {
-            cost: {vec![Cost { resource_type: ResourceType::Essence(EssenceType::Light), amount: 100 }]},
+            cost: {vec![ResourceAmount::new(EssenceType::Light, 100)]},
             duration: {Duration::from_secs(30)},
         }
         ContentId({id.0.clone()})
@@ -59,7 +59,7 @@ pub fn spawn_light_shard_recipe_research(commands: &mut Commands, id: &ContentId
 pub fn spawn_electric_shard_recipe_research(commands: &mut Commands, id: &ContentId) {
     commands.spawn_scene(bsn! {
         Research {
-            cost: {vec![Cost { resource_type: ResourceType::Essence(EssenceType::Electric), amount: 100 }]},
+            cost: {vec![ResourceAmount::new(EssenceType::Electric, 100)]},
             duration: {Duration::from_secs(30)},
         }
         ContentId({id.0.clone()})

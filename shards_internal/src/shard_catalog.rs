@@ -1,93 +1,59 @@
 //! # Shard Catalog
 //!
-//! Registers per-shard metadata (name, description, icon, forge recipe) into the
-//! [`Almanach`] at startup — the single source of truth that shard UI and crafting read
-//! from. Lives alongside the other shard state (`inventory`, `blueprints`).
+//! Registers every shard into the [`Almanach`] at startup — its presentation (name,
+//! description, icon) as a resource and its forge recipe as a shard — the single source of
+//! truth that shard UI and crafting read from. Every shard type is registered in every tier.
 //!
 //! Recipe costs and durations are placeholder tuning; adjust during a global balance pass.
 
 use std::time::Duration;
 
 use bevy::prelude::*;
+use strum::IntoEnumIterator;
 
-use almanach::prelude::{AlmanachAppExt, ShardInfo, ShardRecipe};
-use game_core::prelude::ShardType;
-use resources::prelude::{Cost, ResourceType};
+use almanach::prelude::{AlmanachAppExt, ResourceInfo, ShardInfo, ShardRecipe};
+use game_core::prelude::{Shard, ShardTier, ShardType};
+use resources::prelude::{ResourceAmount, ResourceType};
 
-pub struct ShardCatalogPlugin;
+// Recipe tuning
+const LOWER_TIER_SHARDS_PER_RECIPE: i32 = 3;
+
+pub(crate) struct ShardCatalogPlugin;
 impl Plugin for ShardCatalogPlugin {
     fn build(&self, app: &mut App) {
-        let asset_server = app.world().resource::<AssetServer>();
-        let range_shard_image: Handle<Image> = asset_server.load("ui/shards/shard_range.png");
-        let damage_shard_image: Handle<Image> = asset_server.load("ui/shards/shard_damage.png");
-        let speed_shard_image: Handle<Image> = asset_server.load("ui/shards/shard_speed.png");
-        let fire_shard_image: Handle<Image> = asset_server.load("ui/shards/shard_fire.png");
-        let water_shard_image: Handle<Image> = asset_server.load("ui/shards/shard_water.png");
-        let light_shard_image: Handle<Image> = asset_server.load("ui/shards/shard_light.png");
-        let electric_shard_image: Handle<Image> = asset_server.load("ui/shards/shard_electric.png");
-        app
-            .register_shard(ShardType::Range, ShardInfo {
-                name: "Range".to_string(),
-                description: "Distance is just a concept. Ignore it.".to_string(),
-                icon: range_shard_image,
-                recipe: Some(ShardRecipe {
-                    cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 100 }],
-                    duration: Duration::from_secs(8),
-                }),
-            })
-            .register_shard(ShardType::Damage, ShardInfo {
-                name: "Damage".to_string(),
-                description: "Peace was never an option.".to_string(),
-                icon: damage_shard_image,
-                recipe: Some(ShardRecipe {
-                    cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 100 }],
-                    duration: Duration::from_secs(8),
-                }),
-            })
-            .register_shard(ShardType::Speed, ShardInfo {
-                name: "Speed".to_string(),
-                description: "Go fast. Go faster.".to_string(),
-                icon: speed_shard_image,
-                recipe: Some(ShardRecipe {
-                    cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 100 }],
-                    duration: Duration::from_secs(8),
-                }),
-            })
-            .register_shard(ShardType::Fire, ShardInfo {
-                name: "Fire".to_string(),
-                description: "Burn it all down.".to_string(),
-                icon: fire_shard_image,
-                recipe: Some(ShardRecipe {
-                    cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 100 }],
-                    duration: Duration::from_secs(8),
-                }),
-            })
-            .register_shard(ShardType::Water, ShardInfo {
-                name: "Water".to_string(),
-                description: "Flow like water.".to_string(),
-                icon: water_shard_image,
-                recipe: Some(ShardRecipe {
-                    cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 100 }],
-                    duration: Duration::from_secs(8),
-                }),
-            })
-            .register_shard(ShardType::Light, ShardInfo {
-                name: "Light".to_string(),
-                description: "Illuminate the darkness.".to_string(),
-                icon: light_shard_image,
-                recipe: Some(ShardRecipe {
-                    cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 100 }],
-                    duration: Duration::from_secs(8),
-                }),
-            })
-            .register_shard(ShardType::Electric, ShardInfo {
-                name: "Electric".to_string(),
-                description: "Shock and awe.".to_string(),
-                icon: electric_shard_image,
-                recipe: Some(ShardRecipe {
-                    cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 100 }],
-                    duration: Duration::from_secs(8),
-                }),
-            });
+        let families = [
+            (ShardType::Strength, "Strength", "Peace was never an option.", "ui/shards/shard_strength.png"),
+            (ShardType::Speed, "Speed", "Go fast. Go faster.", "ui/shards/shard_speed.png"),
+            (ShardType::Reach, "Reach", "Distance is just a concept. Ignore it.", "ui/shards/shard_reach.png"),
+            (ShardType::Fire, "Fire", "Burn it all down.", "ui/shards/shard_fire.png"),
+            (ShardType::Water, "Water", "Flow like water.", "ui/shards/shard_water.png"),
+            (ShardType::Light, "Light", "Illuminate the darkness.", "ui/shards/shard_light.png"),
+            (ShardType::Electric, "Electric", "Shock and awe.", "ui/shards/shard_electric.png"),
+        ];
+        for (shard_type, name, description, icon_path) in families {
+            let icon: Handle<Image> = app.world().resource::<AssetServer>().load(icon_path);
+            for tier in ShardTier::iter() {
+                let (dark_ore, duration_secs) = match tier {
+                    ShardTier::T1 => (100, 8),
+                    ShardTier::T2 => (200, 12),
+                    ShardTier::T3 => (400, 16),
+                };
+                let mut cost = vec![ResourceAmount::new(ResourceType::DarkOre, dark_ore)];
+                if let Some(below) = tier.below() {
+                    cost.push(ResourceAmount::new(Shard::new(shard_type, below), LOWER_TIER_SHARDS_PER_RECIPE));
+                }
+                app.register_shard(
+                    Shard::new(shard_type, tier),
+                    ResourceInfo {
+                        name: format!("{name} {tier}"),
+                        description: description.to_string(),
+                        icon: icon.clone(),
+                    },
+                    ShardInfo {
+                        recipe: Some(ShardRecipe { cost, duration: Duration::from_secs(duration_secs) }),
+                    },
+                );
+            }
+        }
     }
 }

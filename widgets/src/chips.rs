@@ -11,7 +11,7 @@
 //! # Usage
 //! ```
 //! // A cost, coloured green while the whole price is affordable.
-//! parent.spawn((BuilderCostChip::from(cost), CostChipVisualFullPrice));
+//! parent.spawn((BuilderCostChip(cost), CostChipVisualFullPrice));
 //!
 //! // Bind a chip to an entity's display metadata.
 //! parent.spawn(BuilderDisplayChip(outcome));
@@ -19,7 +19,7 @@
 
 use bevy::prelude::*;
 
-use resources::prelude::{Cost, ResourceType};
+use resources::prelude::ResourceAmount;
 
 // ============================================================================
 // Strip
@@ -36,7 +36,7 @@ pub struct BuilderChipStrip;
 
 /// Expands into a horizontal strip with one full-price affordability chip per cost.
 #[derive(Component, Clone, Debug)]
-pub struct BuilderFullPriceCostStrip(pub Vec<Cost>);
+pub struct BuilderFullPriceCostStrip(pub Vec<ResourceAmount>);
 
 // ============================================================================
 // Chip core
@@ -99,12 +99,9 @@ impl BuilderChip {
 /// Spawn contract for a cost chip. Expands into [`BuilderChip`] plus the
 /// runtime [`CostChip`].
 #[derive(Component, Clone, Copy, Debug)]
-pub struct BuilderCostChip {
-    pub resource_type: ResourceType,
-    pub amount: i32,
-}
+pub struct BuilderCostChip(pub ResourceAmount);
 
-/// Runtime component. The owner writes `amount`; the specialization re-renders
+/// Runtime component. The owner writes `cost.amount`; the specialization re-renders
 /// the amount text and re-evaluates the border on change.
 ///
 /// The widget never derives its own amount, because "what does this chip show"
@@ -112,8 +109,7 @@ pub struct BuilderCostChip {
 /// for it to pick one.
 #[derive(Component, Clone, Copy, Debug)]
 pub struct CostChip {
-    pub resource_type: ResourceType,
-    pub amount: i32,
+    pub cost: ResourceAmount,
 }
 
 /// Visual specialization: affordable when the stock covers the whole displayed
@@ -126,18 +122,6 @@ pub struct CostChipVisualFullPrice;
 /// affordable — nothing is owed, so nothing blocks.
 #[derive(Component, Clone, Copy, Debug)]
 pub struct CostChipVisualUnitAvailable;
-
-impl BuilderCostChip {
-    pub fn new(resource_type: ResourceType, amount: i32) -> Self {
-        Self { resource_type, amount }
-    }
-}
-
-impl From<Cost> for BuilderCostChip {
-    fn from(cost: Cost) -> Self {
-        Self::new(cost.resource_type, cost.amount)
-    }
-}
 
 // ============================================================================
 // Display specialization — content bound to a subject entity

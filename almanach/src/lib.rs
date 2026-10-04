@@ -1,13 +1,13 @@
 use bevy::{platform::collections::HashMap, prelude::*};
 
 use alteration::modifiers::prelude::ModifierType;
-use game_core::prelude::{BuildingType, ContentId, GridImprint, MapObject, ShardType};
+use game_core::prelude::{BuildingType, ContentId, GridImprint, MapObject, Shard};
 use grids::placement::{ObjectPlacementInfo, PlacementAnnotatorFn, PlacementModes, PlacementValidatorFn};
-use resources::prelude::Cost;
+use resources::prelude::{ResourceAmount, ResourceType};
 use states::prelude::MapLoadingStage;
 
 pub mod prelude {
-    pub use super::{AccessPattern, Almanach, AlmanachAppExt, BuildingInfo, ObjectPresentation, ObjectTooltipFn, ResearchSpawnFn, ShardInfo, ShardRecipe};
+    pub use super::{AccessPattern, Almanach, AlmanachAppExt, BuildingInfo, ObjectPresentation, ObjectTooltipFn, ResearchSpawnFn, ResourceInfo, ShardInfo, ShardRecipe};
 }
 
 pub struct AlmanachPlugin;
@@ -26,7 +26,8 @@ impl Plugin for AlmanachPlugin {
 #[derive(Resource, Default, Clone)]
 pub struct AlmanachRegistrations {
     pub buildings: HashMap<BuildingType, BuildingInfo>,
-    pub shards: HashMap<ShardType, ShardInfo>,
+    pub resources: HashMap<ResourceType, ResourceInfo>,
+    pub shards: HashMap<Shard, ShardInfo>,
     pub researches: HashMap<ContentId, ResearchSpawnFn>,
     pub walls: Option<WallInfo>,
     pub dark_ore: Option<DarkOreInfo>,
@@ -36,7 +37,9 @@ pub struct AlmanachRegistrations {
 
 pub trait AlmanachAppExt {
     fn register_building(&mut self, building_type: BuildingType, info: BuildingInfo) -> &mut Self;
-    fn register_shard(&mut self, shard_type: ShardType, info: ShardInfo) -> &mut Self;
+    fn register_resource(&mut self, resource_type: ResourceType, info: ResourceInfo) -> &mut Self;
+    /// Registers a shard both as a resource (its presentation) and as a shard (its recipe).
+    fn register_shard(&mut self, shard: Shard, resource_info: ResourceInfo, shard_info: ShardInfo) -> &mut Self;
     fn register_research(&mut self, content_id: impl Into<ContentId>, spawn_fn: ResearchSpawnFn) -> &mut Self;
     fn register_walls(&mut self, info: WallInfo) -> &mut Self;
     fn register_dark_ore(&mut self, info: DarkOreInfo) -> &mut Self;
@@ -52,10 +55,17 @@ impl AlmanachAppExt for App {
         self
     }
 
-    fn register_shard(&mut self, shard_type: ShardType, info: ShardInfo) -> &mut Self {
+    fn register_resource(&mut self, resource_type: ResourceType, info: ResourceInfo) -> &mut Self {
         self.init_resource::<AlmanachRegistrations>();
         self.world_mut().resource_mut::<AlmanachRegistrations>()
-            .shards.insert(shard_type, info);
+            .resources.insert(resource_type, info);
+        self
+    }
+
+    fn register_shard(&mut self, shard: Shard, resource_info: ResourceInfo, shard_info: ShardInfo) -> &mut Self {
+        self.register_resource(ResourceType::Shard(shard), resource_info);
+        self.world_mut().resource_mut::<AlmanachRegistrations>()
+            .shards.insert(shard, shard_info);
         self
     }
 
@@ -118,7 +128,8 @@ pub struct ObjectPresentation {
 #[derive(Resource)]
 pub struct Almanach {
     buildings: HashMap<BuildingType, BuildingInfo>,
-    shards: HashMap<ShardType, ShardInfo>,
+    resources: HashMap<ResourceType, ResourceInfo>,
+    shards: HashMap<Shard, ShardInfo>,
     pub researches: HashMap<ContentId, ResearchSpawnFn>,
     pub walls: WallInfo,
     pub dark_ore: DarkOreInfo,
@@ -130,6 +141,7 @@ impl Almanach {
     fn init_from_registrations(mut commands: Commands, registrations: Res<AlmanachRegistrations>) {
         commands.insert_resource(Almanach {
             buildings: registrations.buildings.clone(),
+            resources: registrations.resources.clone(),
             shards: registrations.shards.clone(),
             researches: registrations.researches.clone(),
             walls: registrations.walls.clone().expect("WallInfo not registered in AlmanachRegistrations"),
@@ -165,19 +177,27 @@ impl Almanach {
         })
     }
 
+    // === Resources ===
+
+    pub fn get_resource_info(&self, resource_type: impl Into<ResourceType>) -> &ResourceInfo {
+        let resource_type = resource_type.into();
+        self.resources.get(&resource_type)
+            .unwrap_or_else(|| panic!("Resource {resource_type:?} not found in almanach"))
+    }
+
     // === Shards ===
 
-    pub fn get_shard_info(&self, shard_type: ShardType) -> &ShardInfo {
-        self.shards.get(&shard_type)
-            .unwrap_or_else(|| panic!("Shard {shard_type:?} not found in almanach"))
+    pub fn get_shard_info(&self, shard: Shard) -> &ShardInfo {
+        self.shards.get(&shard)
+            .unwrap_or_else(|| panic!("Shard {shard:?} not found in almanach"))
     }
 
-    pub fn get_shard_info_mut(&mut self, shard_type: ShardType) -> &mut ShardInfo {
-        self.shards.get_mut(&shard_type)
-            .unwrap_or_else(|| panic!("Shard {shard_type:?} not found in almanach"))
+    pub fn get_shard_info_mut(&mut self, shard: Shard) -> &mut ShardInfo {
+        self.shards.get_mut(&shard)
+            .unwrap_or_else(|| panic!("Shard {shard:?} not found in almanach"))
     }
 
-    // === Researches ===
+    // === Map objects ===
 
     /// Extracts generic ObjectPlacementInfo for any MapObject.
     pub fn get_placement_info_for(&self, map_object: MapObject) -> ObjectPlacementInfo {
@@ -202,7 +222,6 @@ impl Almanach {
     }
 }
 
-
 // ============================================================================
 // BUILDING INFO
 // ============================================================================
@@ -212,7 +231,7 @@ pub struct BuildingInfo {
     pub name: String,
     pub description: String,
     pub grid_imprint: GridImprint,
-    pub cost: Vec<Cost>,
+    pub cost: Vec<ResourceAmount>,
     pub baseline: HashMap<ModifierType, f32>,
     pub validate: PlacementValidatorFn,
     pub annotate: PlacementAnnotatorFn,
@@ -347,24 +366,33 @@ impl From<&WispInfo> for ObjectPlacementInfo {
 }
 
 // ============================================================================
-// SHARD INFO
+// RESOURCE INFO
 // ============================================================================
 
-/// The cost and forge duration required to craft one shard of a given type.
+/// How a resource is presented to the player wherever it appears: cost chips, pickers, panels.
 #[derive(Clone)]
-pub struct ShardRecipe {
-    pub cost: Vec<Cost>,
-    pub duration: std::time::Duration,
-}
-
-/// Metadata for a shard type: display name, description, icon, and optional forge recipe.
-///
-/// A `None` recipe means this shard type cannot be forged and will not appear in the
-/// forge's button list.
-#[derive(Clone)]
-pub struct ShardInfo {
+pub struct ResourceInfo {
     pub name: String,
     pub description: String,
     pub icon: Handle<Image>,
+}
+
+// ============================================================================
+// SHARD INFO
+// ============================================================================
+
+/// The cost and forge duration required to craft one shard.
+#[derive(Clone)]
+pub struct ShardRecipe {
+    pub cost: Vec<ResourceAmount>,
+    pub duration: std::time::Duration,
+}
+
+/// Shard-specific metadata for one shard (type and tier). Its name, description and icon are its
+/// [`ResourceInfo`].
+///
+/// A `None` recipe means this shard cannot be forged and will not appear in the forge's button list.
+#[derive(Clone)]
+pub struct ShardInfo {
     pub recipe: Option<ShardRecipe>,
 }

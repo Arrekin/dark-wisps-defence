@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use bevy::prelude::*;
 use game_core::prelude::MapBound;
-use resources::prelude::Cost;
+use resources::prelude::ResourceAmount;
 use strum::{AsRefStr, EnumString};
 
 // ============================================================================
@@ -30,7 +30,7 @@ use strum::{AsRefStr, EnumString};
 #[derive(Component, Clone, Debug, Default)]
 #[require(MapBound)]
 pub struct Research {
-    pub cost: Vec<Cost>,
+    pub cost: Vec<ResourceAmount>,
     pub duration: Duration,
 }
 

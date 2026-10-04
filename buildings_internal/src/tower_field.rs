@@ -63,7 +63,7 @@ impl BuilderTowerField {
             sprite: asset_server.load("buildings/tower_field.png"),
             top_sprite: None,
             grid_imprint: GridImprint::Plus { extents: 1 },
-            cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 500 }],
+            cost: vec![ResourceAmount::new(ResourceType::DarkOre, 500)],
             baseline: HashMap::from([
                 (ModifierType::MaxIntegrityPoints, 100.),
                 (ModifierType::AttackRange, FIELD_RANGE_CELLS),
@@ -147,14 +147,14 @@ impl BuilderTowerField {
         trigger: On<ShardApplyEvent>,
         mut commands: Commands,
     ) {
-        match trigger.shard_type {
-            ShardType::Range => {
+        match trigger.shard.shard_type {
+            ShardType::Reach => {
                 commands.spawn(ShardEffect::from_modifiers(
                     trigger.shard_target,
                     HashMap::from([(ModifierType::AttackRange, 2.0)]),
                 ));
             }
-            ShardType::Damage | ShardType::Speed | ShardType::Fire | ShardType::Water | ShardType::Light | ShardType::Electric => {}
+            ShardType::Strength | ShardType::Speed | ShardType::Fire | ShardType::Water | ShardType::Light | ShardType::Electric => {}
         }
     }
 }

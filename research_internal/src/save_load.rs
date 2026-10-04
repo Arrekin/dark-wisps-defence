@@ -4,7 +4,7 @@ use game_core::prelude::*;
 use logging::prelude::*;
 use persistence::{prelude::*, rusqlite};
 use research::prelude::*;
-use resources::prelude::Cost;
+use resources::prelude::ResourceAmount;
 
 /// Saves every research on the map, enabled or not. `state` is nullable
 /// (NULL = disabled); `progress` is nullable (NULL = no runtime, i.e. not-yet-
@@ -37,7 +37,7 @@ pub(crate) fn collect_researches(
         duration_secs: f32,
         progress: Option<f32>,
         state: Option<ResearchState>,
-        costs: Vec<Cost>,
+        costs: Vec<ResourceAmount>,
     }
 
     #[debug_dev("Saving {} researches", snapshots.len())]
@@ -68,8 +68,9 @@ pub(crate) fn collect_researches(
     save.submit(move |ctx| {
         for snap in &snapshots {
             ctx.register_entity(snap.id)?;
+            let cost_list_id = ctx.save_resource_list(&snap.costs)?;
             ctx.tx.execute(
-                "INSERT OR REPLACE INTO researches (id, content_id, name, description, icon_path, duration_secs, progress, state) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                "INSERT OR REPLACE INTO researches (id, content_id, name, description, icon_path, duration_secs, progress, state, cost_list_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                 rusqlite::params![
                     snap.id,
                     snap.content_id,
@@ -79,9 +80,9 @@ pub(crate) fn collect_researches(
                     snap.duration_secs,
                     snap.progress,
                     snap.state.as_ref().map(|state| state.as_ref()),
+                    cost_list_id,
                 ],
             )?;
-            ctx.save_costs(snap.id, &snap.costs)?;
         }
         Ok(())
     });
@@ -89,7 +90,7 @@ pub(crate) fn collect_researches(
 
 #[log_tags(Tag::GameLoad)]
 pub(crate) fn load_researches(ctx: &mut LoadContext) -> LoadResult {
-    ctx.for_each_entity("SELECT id, content_id, name, description, icon_path, duration_secs, progress, state FROM researches", |ctx, old_id, entity, row| {
+    ctx.for_each_entity("SELECT id, content_id, name, description, icon_path, duration_secs, progress, state, cost_list_id FROM researches", |ctx, old_id, entity, row| {
         let content_id: String = row.get(1)?;
         let name: String = row.get(2)?;
         let description: String = row.get(3)?;
@@ -97,7 +98,8 @@ pub(crate) fn load_researches(ctx: &mut LoadContext) -> LoadResult {
         let duration_secs: f32 = row.get(5)?;
         let progress: Option<f32> = row.get(6)?;
         let state_str: Option<String> = row.get(7)?;
-        let costs = ctx.costs(old_id)?;
+        let cost_list_id: i64 = row.get(8)?;
+        let costs = ctx.resource_list(cost_list_id)?;
 
         // Insert core components (always present, enabled or not).
         ctx.insert(entity, (

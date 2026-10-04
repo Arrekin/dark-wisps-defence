@@ -5,7 +5,7 @@ use persistence::{creating_new_map, prelude::*, rusqlite};
 use shards::blueprints::ShardBlueprints;
 use states::prelude::MapLoadingStage;
 
-pub struct ShardBlueprintsPlugin;
+pub(crate) struct ShardBlueprintsPlugin;
 impl Plugin for ShardBlueprintsPlugin {
     fn build(&self, app: &mut App) {
         app
@@ -18,8 +18,8 @@ impl Plugin for ShardBlueprintsPlugin {
 }
 
 fn seed_starting_blueprints(mut blueprints: ResMut<ShardBlueprints>) {
-    blueprints.unlock(ShardType::Range);
-    blueprints.unlock(ShardType::Damage);
+    blueprints.unlock(ShardType::Reach);
+    blueprints.unlock(ShardType::Strength);
     blueprints.unlock(ShardType::Speed);
 }
 

@@ -42,7 +42,6 @@ use states::prelude::*;
 use units::{
     expedition_drone::{
         BuilderExpeditionDrone,
-        DRONE_COST_ORE,
         DroneFuel,
         DroneState,
         ExpeditionDrone,
@@ -96,6 +95,9 @@ impl Plugin for ExplorationCenterPlugin {
     }
 }
 
+// Drone purchase
+const DRONE_COST: ResourceAmount = ResourceAmount { resource_type: ResourceType::DarkOre, amount: 100 };
+
 #[derive(Component, SSS)]
 pub(crate) struct BuilderExplorationCenter {
     pub grid_position: GridCoords,
@@ -113,7 +115,7 @@ impl BuilderExplorationCenter {
             sprite: asset_server.load("buildings/exploration_center.png"),
             top_sprite: None,
             grid_imprint: GridImprint::Rectangle { width: 4, height: 4 },
-            cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 500 }],
+            cost: vec![ResourceAmount::new(ResourceType::DarkOre, 500)],
             baseline: HashMap::from([(ModifierType::MaxIntegrityPoints, 100.)]),
             validate: building_validator,
             annotate: annotate_non_empty,
@@ -651,13 +653,16 @@ impl DroneActionButton {
 #[component(immutable)]
 enum SlotTooltipData {
     DroneState { state: DroneState, drone_entity: Entity },
-    BuyCost(u32),
+    BuyCost(ResourceAmount),
 }
 impl SlotTooltipData {
     fn text(&self) -> String {
         match self {
             Self::DroneState { state, .. } => state.to_string(),
-            Self::BuyCost(cost) => format!("Cost: {cost} ore"),
+            Self::BuyCost(cost) => {
+                assert_eq!(cost.resource_type, ResourceType::DarkOre, "Slot tooltip renders only Dark Ore costs");
+                format!("Cost: {} ore", cost.amount)
+            }
         }
     }
 
@@ -687,7 +692,7 @@ impl BuilderSlotTooltip {
         Self::new(SlotTooltipData::DroneState { state, drone_entity })
     }
     fn new_buy() -> impl Bundle {
-        Self::new(SlotTooltipData::BuyCost(DRONE_COST_ORE))
+        Self::new(SlotTooltipData::BuyCost(DRONE_COST))
     }
     fn new(data: SlotTooltipData) -> impl Bundle {
         (
@@ -844,9 +849,8 @@ impl BuyDroneSlot {
         if owned_count >= center.max_drone_slots { return; }
 
         // Check cost
-        let cost = Cost { resource_type: ResourceType::DarkOre, amount: DRONE_COST_ORE as i32 };
         #[info_player("Not enough resources to buy a drone")]
-        if !stock.try_pay_cost(cost) { return; }
+        if !stock.try_remove(DRONE_COST) { return; }
 
         // Spawn new drone and trigger UI rebuild
         #[info_player("Expedition drone bought")]

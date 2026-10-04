@@ -4,7 +4,7 @@ use game_core::prelude::DisplayName;
 use logging::prelude::*;
 use outcomes::prelude::{FulfillOutcome, HasOutcomes};
 use research::prelude::*;
-use resources::prelude::{Cost, Stock};
+use resources::prelude::{ResourceAmount, Stock};
 
 /// Start or switch the active research. Parks the incumbent (back to
 /// `Available`, progress retained) and sets the target `Active`. Only an
@@ -114,22 +114,22 @@ fn advanced_fraction(fraction: f32, duration_secs: f32, delta_secs: f32) -> f32 
 /// sub-unit stretch before the first boundary unpaid for and therefore free —
 /// harmless at an amount of 100, but a research costing a single unit would run
 /// to 99.9% on an empty stock, since its one unit is not owed until `1.0`.
-fn can_advance(fraction: f32, costs: &[Cost], stock: &Stock) -> bool {
+fn can_advance(fraction: f32, costs: &[ResourceAmount], stock: &Stock) -> bool {
     costs.iter().all(|cost| {
         let outstanding = cost.amount - units_paid(fraction, cost);
-        outstanding <= 0 || stock.get(cost.resource_type) >= 1
+        outstanding <= 0 || stock.has((cost.resource_type, 1))
     })
 }
 
 /// Whole units of `cost` paid at `fraction` (`paid = floor(fraction * amount)`).
-pub(crate) fn units_paid(fraction: f32, cost: &Cost) -> i32 {
+pub(crate) fn units_paid(fraction: f32, cost: &ResourceAmount) -> i32 {
     (fraction * cost.amount as f32).floor() as i32
 }
 
 /// The furthest fraction this research can reach with the stock currently held. 1.0
 /// when nothing will run out. Each cost can advance to `(paid + available) / amount`;
 /// the research is limited by whichever runs out first.
-pub(crate) fn reachable_fraction(fraction: f32, costs: &[Cost], stock: &Stock) -> f32 {
+pub(crate) fn reachable_fraction(fraction: f32, costs: &[ResourceAmount], stock: &Stock) -> f32 {
     costs.iter()
         .map(|cost| {
             let paid = units_paid(fraction, cost);
@@ -143,7 +143,7 @@ pub(crate) fn reachable_fraction(fraction: f32, costs: &[Cost], stock: &Stock) -
 /// Clamps `target` so no cost crosses a unit threshold the stock cannot cover —
 /// the research stalls just before its first unaffordable unit. Never clamps
 /// below `fraction`: earned progress is kept.
-fn clamp_to_affordable(fraction: f32, mut target: f32, costs: &[Cost], stock: &Stock) -> f32 {
+fn clamp_to_affordable(fraction: f32, mut target: f32, costs: &[ResourceAmount], stock: &Stock) -> f32 {
     for cost in costs.iter() {
         let paid = units_paid(fraction, cost);
         let owed = units_paid(target, cost) - paid;
@@ -164,13 +164,13 @@ fn pay_crossed_units(
     research: Entity,
     fraction: f32,
     target: f32,
-    costs: &[Cost],
+    costs: &[ResourceAmount],
     stock: &mut Stock,
 ) {
     for cost in costs.iter() {
         let units = units_paid(target, cost) - units_paid(fraction, cost);
         if units > 0 {
-            let removed = stock.try_remove(cost.resource_type, units);
+            let removed = stock.try_remove((cost.resource_type, units));
             debug_assert!(removed, "clamp_to_affordable must keep crossed units payable");
             for _ in 0..units {
                 commands.trigger(ResearchUnitPaid { research, resource_type: cost.resource_type });

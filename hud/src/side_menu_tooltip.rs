@@ -2,7 +2,7 @@
 
 use bevy::prelude::*;
 
-use resources::prelude::Cost;
+use resources::prelude::ResourceAmount;
 
 /// Spawn request for a side-menu tile tooltip.
 ///
@@ -15,7 +15,7 @@ pub struct BuilderSideMenuItemTooltip {
     pub description: Option<String>,
     /// Short statements, shown as one row.
     pub facts: Vec<String>,
-    pub cost: Vec<Cost>,
+    pub cost: Vec<ResourceAmount>,
 }
 
 impl BuilderSideMenuItemTooltip {
@@ -45,7 +45,7 @@ impl BuilderSideMenuItemTooltip {
         self
     }
 
-    pub fn with_cost(mut self, cost: Vec<Cost>) -> Self {
+    pub fn with_cost(mut self, cost: Vec<ResourceAmount>) -> Self {
         self.cost = cost;
         self
     }

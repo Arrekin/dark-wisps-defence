@@ -12,7 +12,6 @@ use bevy::{
 
 use game_core::prelude::{GridCoords, GridImprint};
 use logging::prelude::*;
-use resources::prelude::{Cost, ResourceType};
 
 use crate::{
     common::{Migrations, with_db_connection},
@@ -71,10 +70,6 @@ impl SaveContext<'_> {
         self.tx.prepare_cached("INSERT OR REPLACE INTO stats (stat_name, stat_value) VALUES (?1, ?2)")?.execute((stat_name, stat_value))
     }
 
-    pub fn save_stock_resource(&self, resource_name: &str, amount: i32) -> rusqlite::Result<usize> {
-        self.tx.prepare_cached("INSERT OR REPLACE INTO stock (resource_name, amount) VALUES (?1, ?2)")?.execute((resource_name, amount))
-    }
-
     pub fn save_grid_coords(&self, entity_id: i64, coords: GridCoords) -> rusqlite::Result<usize> {
         self.tx.prepare_cached("INSERT INTO grid_coords (entity_id, x, y) VALUES (?1, ?2, ?3)")?.execute((entity_id, coords.x, coords.y))
     }
@@ -87,17 +82,6 @@ impl SaveContext<'_> {
         };
 
         self.tx.prepare_cached("INSERT OR REPLACE INTO grid_imprints (id, shape, width, height) VALUES (?1, ?2, ?3, ?4)")?.execute(rusqlite::params![entity_id, shape, width, height])
-    }
-
-    pub fn save_costs(&self, entity_id: i64, costs: &[Cost]) -> rusqlite::Result<()> {
-        for (position, cost) in costs.iter().enumerate() {
-            let (resource_kind, essence_type): (&str, Option<&str>) = match &cost.resource_type {
-                ResourceType::DarkOre => ("DarkOre", None),
-                ResourceType::Essence(essence) => ("Essence", Some(essence.as_ref())),
-            };
-            self.tx.prepare_cached("INSERT OR REPLACE INTO costs (entity_id, position, resource_kind, essence_type, amount) VALUES (?1, ?2, ?3, ?4, ?5)")?.execute(rusqlite::params![entity_id, position as i64, resource_kind, essence_type, cost.amount])?;
-        }
-        Ok(())
     }
 }
 

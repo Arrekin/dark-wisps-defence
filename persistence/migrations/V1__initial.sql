@@ -27,9 +27,42 @@ CREATE TABLE IF NOT EXISTS stats (
     stat_value REAL NOT NULL
 );
 
+-- An ordered list of resource amounts. Owners keep the list id in their own row; the list itself
+-- does not know its owner.
+CREATE TABLE IF NOT EXISTS resource_lists (
+    id INTEGER PRIMARY KEY
+);
+
+-- One row per entry: its resource kind and amount. Kinds that carry data keep it in the entry
+-- tables below, keyed by the entry id; Dark Ore has none.
+CREATE TABLE IF NOT EXISTS resource_list_entries (
+    id INTEGER PRIMARY KEY,
+    list_id INTEGER NOT NULL,
+    position INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    amount INTEGER NOT NULL,
+    UNIQUE (list_id, position),
+    FOREIGN KEY(list_id) REFERENCES resource_lists(id)
+);
+
+CREATE TABLE IF NOT EXISTS resource_list_entry_essences (
+    entry_id INTEGER PRIMARY KEY,
+    essence_type TEXT NOT NULL,
+    FOREIGN KEY(entry_id) REFERENCES resource_list_entries(id)
+);
+
+CREATE TABLE IF NOT EXISTS resource_list_entry_shards (
+    entry_id INTEGER PRIMARY KEY,
+    shard_type TEXT NOT NULL,
+    shard_tier TEXT NOT NULL,
+    FOREIGN KEY(entry_id) REFERENCES resource_list_entries(id)
+);
+
+-- Single row: the list holding the player's stock.
 CREATE TABLE IF NOT EXISTS stock (
-    resource_name TEXT PRIMARY KEY,
-    amount INTEGER NOT NULL
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    list_id INTEGER NOT NULL,
+    FOREIGN KEY(list_id) REFERENCES resource_lists(id)
 );
 
 -- ========================
@@ -106,11 +139,12 @@ CREATE TABLE IF NOT EXISTS exploration_centers (
 );
 
 -- The nullable forging_* columns hold an in-progress craft so a forge resumes mid-job
--- across save/load; both are NULL when the forge is idle.
+-- across save/load; all are NULL when the forge is idle.
 CREATE TABLE IF NOT EXISTS forges (
     id INTEGER PRIMARY KEY,
     forging_shard_type TEXT,
     forging_remaining_secs REAL,
+    forging_shard_tier TEXT,
     FOREIGN KEY(id) REFERENCES entities(id)
 );
 
@@ -158,12 +192,8 @@ CREATE TABLE IF NOT EXISTS entity_shards (
     shard_target_id INTEGER NOT NULL,
     shard_index INTEGER NOT NULL,
     shard_type TEXT NOT NULL,
+    shard_tier TEXT NOT NULL,
     PRIMARY KEY (shard_target_id, shard_index)
-);
-
-CREATE TABLE IF NOT EXISTS shard_inventory (
-    shard_type TEXT PRIMARY KEY,
-    count INTEGER NOT NULL
 );
 
 -- Shard types the player has unlocked for forging (membership only).
@@ -368,7 +398,8 @@ CREATE TABLE IF NOT EXISTS summoning_wisp_types (
 -- One row per research instance present on the map. `content_id` is the authored
 -- identity. `progress` and `state` are nullable: present for an enabled research
 -- (one with `ResearchRuntime`), NULL for a disabled one. The pair encodes
--- enablement together — a row cannot express a half-state.
+-- enablement together — a row cannot express a half-state. `cost_list_id` is the
+-- resource list holding the research's cost.
 CREATE TABLE IF NOT EXISTS researches (
     id INTEGER PRIMARY KEY,
     content_id TEXT NOT NULL,
@@ -378,23 +409,9 @@ CREATE TABLE IF NOT EXISTS researches (
     duration_secs REAL NOT NULL,
     progress REAL,
     state TEXT,
-    FOREIGN KEY(id) REFERENCES entities(id)
-);
-
--- Generic cost storage, one row per `Cost` entry. Any entity may use it.
--- `position` preserves `Vec` order within a group; `essence_type` is set
--- only for essence costs.
--- `custom_key` is for saver internal use — e.g. an entity with multiple
--- groups of costs (quantum field layers) uses it to distinguish them.
--- Defaults to 0; single-group savers ignore it.
-CREATE TABLE IF NOT EXISTS costs (
-    entity_id INTEGER NOT NULL,
-    custom_key INTEGER NOT NULL DEFAULT 0,
-    position INTEGER NOT NULL,
-    resource_kind TEXT NOT NULL,
-    essence_type TEXT,
-    amount INTEGER NOT NULL,
-    FOREIGN KEY(entity_id) REFERENCES entities(id)
+    cost_list_id INTEGER NOT NULL,
+    FOREIGN KEY(id) REFERENCES entities(id),
+    FOREIGN KEY(cost_list_id) REFERENCES resource_lists(id)
 );
 
 -- One row per UnlockShardBlueprint outcome instance present on the map.

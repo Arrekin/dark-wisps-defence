@@ -2526,7 +2526,6 @@ dependencies = [
  "research",
  "resources",
  "session",
- "shards",
  "states",
  "strum",
  "wisps",
@@ -5018,6 +5017,7 @@ dependencies = [
 name = "resources_internal"
 version = "0.2.0"
 dependencies = [
+ "almanach",
  "bevy",
  "logging",
  "persistence",
@@ -6650,6 +6650,7 @@ dependencies = [
 name = "widgets_internal"
 version = "0.2.0"
 dependencies = [
+ "almanach",
  "bevy",
  "game_core",
  "resources",

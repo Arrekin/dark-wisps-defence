@@ -9,6 +9,7 @@ use buildings::prelude::*;
 use game_core::prelude::*;
 use hud::prelude::*;
 use logging::prelude::*;
+use resources::prelude::*;
 use shards::prelude::*;
 use states::prelude::*;
 use widgets::{
@@ -218,7 +219,7 @@ fn on_rebuild_tower_shard_slots_ui_do_so(
 
     for slot_index in 0..shard_slots.capacity() {
         match shard_slots.get(slot_index) {
-            Some(shard_type) => { commands.entity(container_entity).with_child(ShardSlotOccupied { shard_type }); }
+            Some(shard) => { commands.entity(container_entity).with_child(ShardSlotOccupied { shard }); }
             None => { commands.entity(container_entity).with_child(ShardSlotEmpty { shard_target, slot_index }); }
         }
     }
@@ -261,17 +262,18 @@ fn tower_subpanel_content_bundle() -> impl Bundle {
 // Shard slot: filled slot (read-only display)
 #[derive(Component)]
 struct ShardSlotOccupied {
-    shard_type: ShardType,
+    shard: Shard,
 }
 impl ShardSlotOccupied {
     fn on_add_construct_occupied_slot_ui(
         trigger: On<Add, ShardSlotOccupied>,
         mut commands: Commands,
+        almanach: Res<Almanach>,
         slots: Query<&ShardSlotOccupied>,
     ) {
         let entity = trigger.entity;
         let Ok(slot) = slots.get(entity) else { return };
-        let shard_name = slot.shard_type.to_string();
+        let shard_name = almanach.get_resource_info(ResourceType::Shard(slot.shard)).name.clone();
         commands.entity(entity)
             .insert((
                 Node {
@@ -351,7 +353,7 @@ impl ShardSlotEmpty {
     }
 }
 
-// Modal panel for selecting a shard from inventory
+// Modal panel for selecting a shard from the stock
 #[derive(Component)]
 struct ShardSelectionPanel {
     shard_target: Entity,
@@ -361,7 +363,7 @@ impl ShardSelectionPanel {
     fn on_add_construct_shard_selection_panel(
         trigger: On<Add, ShardSelectionPanel>,
         mut commands: Commands,
-        inventory: Res<ShardInventory>,
+        stock: Res<Stock>,
         panels: Query<&ShardSelectionPanel>,
     ) {
         let entity = trigger.entity;
@@ -406,9 +408,13 @@ impl ShardSelectionPanel {
                         Node { margin: UiRect::bottom(Val::Px(4.)), ..default() },
                     ));
 
-                    let available: Vec<(ShardType, usize)> = inventory.iter()
-                        .filter(|(_, count)| *count > 0)
+                    let mut available: Vec<(Shard, i32)> = stock.iter()
+                        .filter_map(|entry| match entry.resource_type {
+                            ResourceType::Shard(shard) if entry.amount > 0 => Some((shard, entry.amount)),
+                            _ => None,
+                        })
                         .collect();
+                    available.sort_unstable();
 
                     if available.is_empty() {
                         parent.spawn((
@@ -417,8 +423,8 @@ impl ShardSelectionPanel {
                             TextColor::from(Color::srgb(0.5, 0.5, 0.5)),
                         ));
                     } else {
-                        for (shard_type, count) in available {
-                            parent.spawn(ShardPickerItem { shard_target, slot_index, shard_type, count });
+                        for (shard, count) in available {
+                            parent.spawn(ShardPickerItem { shard_target, slot_index, shard, count });
                         }
                     }
 
@@ -471,18 +477,19 @@ impl ShardSelectionPanel {
 struct ShardPickerItem {
     shard_target: Entity,
     slot_index: usize,
-    shard_type: ShardType,
-    count: usize,
+    shard: Shard,
+    count: i32,
 }
 impl ShardPickerItem {
     fn on_add_construct_shard_picker_item(
         trigger: On<Add, ShardPickerItem>,
         mut commands: Commands,
+        almanach: Res<Almanach>,
         items: Query<&ShardPickerItem>,
     ) {
         let entity = trigger.entity;
         let Ok(item) = items.get(entity) else { return };
-        let label = format!("{} x{}", item.shard_type, item.count);
+        let label = format!("{} x{}", almanach.get_resource_info(ResourceType::Shard(item.shard)).name, item.count);
         commands.entity(entity)
             .insert((
                 Button,
@@ -512,7 +519,7 @@ impl ShardPickerItem {
     fn on_click_equip_shard(
         trigger: On<Pointer<Click>>,
         mut commands: Commands,
-        mut inventory: ResMut<ShardInventory>,
+        mut stock: ResMut<Stock>,
         items: Query<&ShardPickerItem>,
         mut shard_slots: Query<&mut ShardSlots>,
         panel: Single<Entity, With<ShardSelectionPanel>>,
@@ -520,13 +527,12 @@ impl ShardPickerItem {
         let entity = trigger.entity;
         let Ok(item) = items.get(entity) else { return };
 
-        if !inventory.has(item.shard_type) { return; }
         let Ok(mut slots) = shard_slots.get_mut(item.shard_target) else { return; };
         if slots.get(item.slot_index).is_some() { return; }
+        if !stock.try_remove((item.shard, 1)) { return; }
 
-        inventory.remove(item.shard_type);
-        #[info_player("{} shard equipped", item.shard_type)]
-        slots.insert_at(item.slot_index, item.shard_type, item.shard_target, &mut commands);
+        #[info_player("{} shard equipped", item.shard)]
+        slots.insert_at(item.slot_index, item.shard, item.shard_target, &mut commands);
 
         commands.entity(panel.into_inner()).despawn();
         commands.trigger(RebuildTowerShardSlotsUi);

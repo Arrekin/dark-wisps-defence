@@ -1,12 +1,12 @@
 use bevy::prelude::*;
 
-use game_core::prelude::{ShardType, SSS};
+use game_core::prelude::{Shard, ShardTier, ShardType, SSS};
 use logging::prelude::*;
 use persistence::{prelude::*, rusqlite};
 use shards::prelude::ShardSlots;
 use states::prelude::MapLoadingStage;
 
-pub struct ShardSlotsPlugin;
+pub(crate) struct ShardSlotsPlugin;
 impl Plugin for ShardSlotsPlugin {
     fn build(&self, app: &mut App) {
         app
@@ -31,11 +31,11 @@ impl Plugin for ShardSlotsPlugin {
 #[derive(Component, Clone, Copy, Debug, SSS)]
 pub(crate) struct BuilderShardSlot {
     pub slot_index: usize,
-    pub shard_type: ShardType,
+    pub shard: Shard,
 }
 impl BuilderShardSlot {
-    pub fn new(slot_index: usize, shard_type: ShardType) -> Self {
-        Self { slot_index, shard_type }
+    pub fn new(slot_index: usize, shard: Shard) -> Self {
+        Self { slot_index, shard }
     }
 }
 
@@ -53,7 +53,7 @@ fn on_builder_add_populate_shard_slots(
         commands.entity(entity).remove::<BuilderShardSlot>();
         return;
     };
-    slots.insert_at(builder.slot_index, builder.shard_type, entity, &mut commands);
+    slots.insert_at(builder.slot_index, builder.shard, entity, &mut commands);
     commands.entity(entity).remove::<BuilderShardSlot>();
 }
 
@@ -63,24 +63,24 @@ fn collect_shard_slots(
     mut save: SaveWriter,
 ) {
     #[debug_dev("Saving {} shard slots", rows.len())]
-    let rows: Vec<(i64, usize, ShardType)> = shard_targets.iter()
+    let rows: Vec<(i64, usize, Shard)> = shard_targets.iter()
         .flat_map(|(entity, slots)| {
-            slots.iter_with_index().map(move |(slot_index, shard_type)| {
+            slots.iter_with_index().map(move |(slot_index, shard)| {
                 (
                     entity.index_u32() as i64,
                     slot_index,
-                    shard_type,
+                    shard,
                 )
             })
         })
         .collect();
     if rows.is_empty() { return; }
     save.submit(move |ctx| {
-        for (entity_id, slot_index, shard_type) in rows {
+        for (entity_id, slot_index, shard) in rows {
             ctx.register_entity(entity_id)?;
             ctx.tx.execute(
-                "INSERT INTO entity_shards (shard_target_id, shard_index, shard_type) VALUES (?1, ?2, ?3)",
-                rusqlite::params![entity_id, slot_index, shard_type.as_ref()],
+                "INSERT INTO entity_shards (shard_target_id, shard_index, shard_type, shard_tier) VALUES (?1, ?2, ?3, ?4)",
+                rusqlite::params![entity_id, slot_index, shard.shard_type.as_ref(), shard.tier.as_ref()],
             )?;
         }
         Ok(())
@@ -88,10 +88,10 @@ fn collect_shard_slots(
 }
 
 fn load_shard_slots(ctx: &mut LoadContext) -> LoadResult {
-    ctx.for_each_entity("SELECT shard_target_id, shard_index, shard_type FROM entity_shards ORDER BY shard_target_id, shard_index", |ctx, _, entity, row| {
+    ctx.for_each_entity("SELECT shard_target_id, shard_index, shard_type, shard_tier FROM entity_shards ORDER BY shard_target_id, shard_index", |ctx, _, entity, row| {
         let slot_index: usize = row.get(1)?;
-        let shard_type = row.get_parsed::<ShardType>(2)?;
-        ctx.insert(entity, BuilderShardSlot::new(slot_index, shard_type));
+        let shard = Shard::new(row.get_parsed::<ShardType>(2)?, row.get_parsed::<ShardTier>(3)?);
+        ctx.insert(entity, BuilderShardSlot::new(slot_index, shard));
         Ok(())
     })
 }

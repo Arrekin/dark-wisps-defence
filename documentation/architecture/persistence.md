@@ -170,6 +170,11 @@ Entity types have marker tables (`mining_complexes`, `tower_cannons`, `wisps`, .
 tables hold common data, entity-specific columns go on the marker table. `SaveContext` writes the
 shared tables (`ctx.save_grid_coords(id, coords)?`, ...); `LoadContext` reads them (`ctx.grid_coords(old_id)?`, ...).
 
+### Lists
+
+Lists have their own tables, and their owners store only the list id. For enum entries, give each variant's data its own table so the main table isn't filled with NULLs.
+Resource lists work this way: see `persistence/src/resource_lists.rs`, used by `stock` and `researches`.
+
 ## Merging Migrations
 
 During development, schema changes accumulate as incremental migrations (V2, V3, ...). Once a

@@ -2,9 +2,6 @@ use bevy::prelude::*;
 
 use game_core::prelude::{MapBound, SSS, ZDepth};
 
-/// Drone cost in dark ore - kept as constant for easy balancing
-pub const DRONE_COST_ORE: u32 = 100;
-
 // Movement tuning
 pub const PATROL_RADIUS: f32 = 150.0;
 pub const DRONE_SPEED: f32 = 160.0;

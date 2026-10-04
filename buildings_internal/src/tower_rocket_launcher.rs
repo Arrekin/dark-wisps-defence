@@ -55,7 +55,7 @@ impl BuilderTowerRocketLauncher {
             sprite: asset_server.load("buildings/tower_rocket_launcher.png"),
             top_sprite: Some(asset_server.load("buildings/tower_rocket_launcher_top.png")),
             grid_imprint: GridImprint::Rectangle { width: 3, height: 3 },
-            cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 350 }],
+            cost: vec![ResourceAmount::new(ResourceType::DarkOre, 350)],
             baseline: HashMap::from([
                 (ModifierType::MaxIntegrityPoints, 100.),
                 (ModifierType::AttackRange, 30.),
@@ -140,11 +140,11 @@ impl BuilderTowerRocketLauncher {
         trigger: On<ShardApplyEvent>,
         mut commands: Commands,
     ) {
-        match trigger.shard_type {
-            ShardType::Range => {
+        match trigger.shard.shard_type {
+            ShardType::Reach => {
                 commands.spawn(ShardEffect::from_modifiers(trigger.shard_target, HashMap::from([(ModifierType::AttackRange, 2.0)])));
             }
-            ShardType::Damage => {
+            ShardType::Strength => {
                 commands.spawn(ShardEffect::from_modifiers(trigger.shard_target, HashMap::from([(ModifierType::AttackDamage, 15.0)])));
             }
             ShardType::Speed => {

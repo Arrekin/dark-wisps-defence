@@ -15,7 +15,10 @@ use resources::prelude::*;
 use visuals::prelude::*;
 use wisps::prelude::*;
 
-use super::materials::{WispLocomotiveMaterial, WispWaterMaterial};
+use super::{
+    materials::{WispLocomotiveMaterial, WispWaterMaterial},
+    spawning::DeathLoot,
+};
 
 // Charge attack tuning
 const CHARGE_SPEED_MULTIPLIER: f32 = 5.0;
@@ -175,16 +178,15 @@ pub(crate) fn remove_dead_wisps(
     mut commands: Commands,
     mut stock: ResMut<Stock>,
     mut wisps_grid: ResMut<WispsGrid>,
-    wisps: Query<(Entity, &IntegrityPoints, &GridCoords, &EssencesContainer), With<Wisp>>,
+    wisps: Query<(Entity, &IntegrityPoints, &GridCoords, &DeathLoot), With<Wisp>>,
 ) {
-    for (wisp_entity, integrity_points, coords, essences) in wisps.iter() {
+    for (wisp_entity, integrity_points, coords, death_loot) in wisps.iter() {
         if integrity_points.is_dead() {
             wisps_grid.wisp_remove(*coords, wisp_entity);
             commands.entity(wisp_entity).despawn();
             commands.trigger(WispDied(wisp_entity));
-            // Grant essence
-            for essence in essences.0.iter() {
-                stock.add(essence.essence_type.into(), essence.amount);
+            for entry in death_loot.0.iter() {
+                stock.add(*entry);
             }
         }
     }

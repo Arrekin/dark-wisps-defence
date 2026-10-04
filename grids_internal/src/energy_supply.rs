@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use alteration::modifiers::prelude::EnergySupplyRange;
 use game_core::prelude::{DisabledByPlayer, GridCoords, GridImprint, MapInfo};
 use grids::{
-    energy_supply::{EnergySupplyGrid, FloodEnergySupplyMode, GeneratorEnergy, SupplierChange, SupplierChangedEvent, SupplierEnergy},
+    energy_supply::{EnergySupplyGrid, FloodEnergySupplyMode, GeneratorEnergy, SupplierChange, SupplierChangedMessage, SupplierEnergy},
     search::flooding::{flood_energy_supply, flood_power_coverage},
     EnergySupplySystems,
 };
@@ -15,7 +15,7 @@ impl Plugin for EnergySupplyPlugin {
         app
             .insert_resource(EnergySupplyGrid::new_empty())
             .init_resource::<EnergySupplyRecalculatePower>()
-            .add_message::<SupplierChangedEvent>()
+            .add_message::<SupplierChangedMessage>()
             .add_systems(OnExit(MapLoadingStage::LoadMapInfo), |mut commands: Commands, map_info: Res<MapInfo>| { commands.insert_resource(EnergySupplyGrid::new_with_size(map_info.grid_bounds)); })
             .add_systems(PostUpdate, (
                 (
@@ -46,7 +46,7 @@ fn on_add_supplier_energy_register_supplier(
 
 fn emit_supplier_changed<E, B, const MODE: SupplierChange>(
     trigger: On<E, B>,
-    mut supplier_changed_event_writer: MessageWriter<SupplierChangedEvent>,
+    mut supplier_changed_messages: MessageWriter<SupplierChangedMessage>,
     suppliers: Query<(&EnergySupplyRange, &GridCoords, &GridImprint), With<SupplierEnergy>>,
 ) where
     E: EntityEvent,
@@ -55,7 +55,7 @@ fn emit_supplier_changed<E, B, const MODE: SupplierChange>(
     let entity = trigger.event_target();
     let Ok((energy_supply_range, grid_coords, grid_imprint)) = suppliers.get(entity) else { return; };
 
-    supplier_changed_event_writer.write(SupplierChangedEvent {
+    supplier_changed_messages.write(SupplierChangedMessage {
         supplier: entity,
         imprint: *grid_imprint,
         grid_coords: *grid_coords,
@@ -67,13 +67,13 @@ fn emit_supplier_changed<E, B, const MODE: SupplierChange>(
 fn apply_supplier_changes(
     mut energy_supply_grid: ResMut<EnergySupplyGrid>,
     mut need_recalculate_power: ResMut<EnergySupplyRecalculatePower>,
-    mut events: MessageReader<SupplierChangedEvent>,
+    mut supplier_changed_messages: MessageReader<SupplierChangedMessage>,
     suppliers: Query<Has<DisabledByPlayer>, With<SupplierEnergy>>,
 ) {
-    for event in events.read() {
+    for message in supplier_changed_messages.read() {
         // Resolve the concrete grid operation from live entity state, so a
         // message can never act on state that was stale at emit time.
-        let mode = match event.mode {
+        let mode = match message.mode {
             SupplierChange::Remove => FloodEnergySupplyMode::Remove,
             SupplierChange::Place => {
                 // Supplier no longer alive with SupplierEnergy by apply time
@@ -81,16 +81,16 @@ fn apply_supplier_changes(
                 // emitted a Remove for the same range — drop this Place so a
                 // dead supplier can't be resurrected (e.g. by the
                 // Remove<DisabledByPlayer> that fires during despawn).
-                let Ok(as_disabled) = suppliers.get(event.supplier) else { continue; };
+                let Ok(as_disabled) = suppliers.get(message.supplier) else { continue; };
                 FloodEnergySupplyMode::Place { as_disabled }
             }
         };
         flood_energy_supply(
             &mut energy_supply_grid,
-            event.imprint.iter(event.grid_coords),
+            message.imprint.iter(message.grid_coords),
             mode,
-            event.range,
-            event.supplier,
+            message.range,
+            message.supplier,
         );
         need_recalculate_power.0 = true;
     }

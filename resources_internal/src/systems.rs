@@ -1,54 +1,45 @@
 use bevy::prelude::*;
-use strum::IntoEnumIterator;
 
-use logging::prelude::*;
-use persistence::prelude::*;
+use persistence::{prelude::*, rusqlite};
 use resources::{
-    common::{EssenceType, ResourceType},
-    stock::{Stock, StockChangedEvent},
+    common::ResourceAmount,
+    stock::{Stock, StockChangedMessage},
 };
 
 pub(crate) fn collect_stock(stock: Res<Stock>, mut save: SaveWriter) {
-    let dark_ore = stock.get(ResourceType::DarkOre);
-    let essences: Vec<(EssenceType, i32)> = EssenceType::iter()
-        .map(|essence_type| (essence_type, stock.get(ResourceType::Essence(essence_type))))
-        .collect();
+    let entries: Vec<ResourceAmount> = stock.iter().collect();
     save.submit(move |ctx| {
-        ctx.save_stock_resource("DarkOre", dark_ore)?;
-        for (essence_type, amount) in essences {
-            ctx.save_stock_resource(essence_type.as_ref(), amount)?;
-        }
+        let list_id = ctx.save_resource_list(&entries)?;
+        ctx.tx.execute("INSERT INTO stock (id, list_id) VALUES (1, ?1)", rusqlite::params![list_id])?;
         Ok(())
     });
 }
 
-#[log_tags(Tag::GameLoad)]
+/// Starts from `Stock::default` and overrides every saved entry; resources absent from the save
+/// keep their default amount.
 pub(crate) fn load_stock(ctx: &mut LoadContext) -> LoadResult {
+    let list_id: i64 = ctx.conn
+        .query_row("SELECT list_id FROM stock WHERE id = 1", [], |row| row.get(0))
+        .map_err(LoadError::table_read("stock"))?;
     let mut stock = Stock::default();
-
-    // Load DarkOre
-    let dark_ore_amount = ctx.stock_resource("DarkOre")
-        .inspect_err(|error| warn_dev!("DarkOre stock not read from save ({error}); starting at 5555"))
-        .unwrap_or(5555);
-    stock.set(ResourceType::DarkOre, dark_ore_amount);
-    // Load Essences
-    for essence_type in EssenceType::iter() {
-        let resource_key = essence_type.as_ref();
-        let amount = ctx.stock_resource(resource_key)
-            .inspect_err(|error| warn_dev!("{resource_key} stock not read from save ({error}); starting at 0"))
-            .unwrap_or(0);
-        stock.set(ResourceType::Essence(essence_type), amount);
+    for entry in ctx.resource_list(list_id)? {
+        stock.set(entry);
     }
-
     ctx.insert_resource(stock);
     Ok(())
 }
 
-pub(crate) fn emit_delta_events_system(
+pub(crate) fn emit_stock_changed_messages(
     mut stock: ResMut<Stock>,
-    mut event_writer: MessageWriter<StockChangedEvent>,
+    mut stock_changed_messages: MessageWriter<StockChangedMessage>,
 ) {
-    for (resource_type, delta) in stock.take_pending_deltas() {
-        event_writer.write(StockChangedEvent { resource_type, delta, new_amount: stock.get(resource_type) });
+    // Draining deltas is bookkeeping, not a stock change; flagging it would re-run this system every frame.
+    let stock = stock.bypass_change_detection();
+    for delta in stock.take_pending_deltas() {
+        stock_changed_messages.write(StockChangedMessage {
+            resource_type: delta.resource_type,
+            delta: delta.amount,
+            new_amount: stock.get(delta.resource_type),
+        });
     }
 }

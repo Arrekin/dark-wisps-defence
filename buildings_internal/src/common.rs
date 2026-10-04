@@ -94,7 +94,7 @@ impl<'w, 's> BuildingPlacementManager<'w, 's> {
         #[info_player("'{}' cannot be placed at ({}, {})", building_info.name, coords.x, coords.y)]
         if !self.is_site_valid(building_type, coords, imprint) { return None; }
         #[info_player("Not enough resources")]
-        if !self.stock.try_pay_costs(&building_info.cost) { return None; }
+        if !self.stock.try_remove_all(&building_info.cost) { return None; }
 
         #[info_player("'{}' placed at ({}, {})", building_info.name, coords.x, coords.y)]
         self.grids.reserved_coords.reserve(coords, imprint);

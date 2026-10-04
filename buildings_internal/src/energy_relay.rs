@@ -54,7 +54,7 @@ impl BuilderEnergyRelay {
             sprite: asset_server.load("buildings/energy_relay.png"),
             top_sprite: None,
             grid_imprint: GridImprint::Rectangle { width: 2, height: 2 },
-            cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 300 }],
+            cost: vec![ResourceAmount::new(ResourceType::DarkOre, 300)],
             baseline: HashMap::from([
                 (ModifierType::MaxIntegrityPoints, 100.),
                 (ModifierType::EnergySupplyRange, 12.),

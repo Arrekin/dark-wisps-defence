@@ -31,7 +31,7 @@ use research::{
     prelude::{Research, ResearchActive, ResearchDisplayDataUpdated, ResearchRuntime, ResearchUISelected},
     research_bar::BuilderResearchBar,
 };
-use resources::prelude::Cost;
+use resources::prelude::ResourceAmount;
 use states::prelude::{GameState, UiInteraction};
 use widgets::{
     common::utils::set_text_if_changed,
@@ -179,7 +179,7 @@ pub(super) struct ResearchDetailViewContent {
 #[derive(Component)]
 struct ResearchCostChip {
     research: Entity,
-    cost: Cost,
+    cost: ResourceAmount,
 }
 
 /// Points a view at a research, or at nothing. The only way content changes.
@@ -477,13 +477,13 @@ fn spawn_bottom_spacer(commands: &mut Commands) -> Entity {
 fn spawn_bottom_row(
     commands: &mut Commands,
     research: Entity,
-    costs: &[Cost],
+    costs: &[ResourceAmount],
     grants: Option<&HasOutcomes>,
 ) -> Entity {
     let remaining_chips = commands.spawn(BuilderChipStrip).with_children(|strip| {
         for cost in costs.iter().copied() {
             strip.spawn((
-                BuilderCostChip::from(cost),
+                BuilderCostChip(cost),
                 CostChipVisualUnitAvailable,
                 ResearchCostChip { research, cost },
             ));
@@ -608,8 +608,8 @@ fn update_research_cost_chips(
         let remaining = cost.amount - units_paid(runtime.progress, cost);
         // Assigning unconditionally would mark every chip changed every frame
         // and defeat the widget's `Changed<CostChip>` gate.
-        if chip.amount != remaining {
-            chip.amount = remaining;
+        if chip.cost.amount != remaining {
+            chip.cost.amount = remaining;
         }
     }
 }

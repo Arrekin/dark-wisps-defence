@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use game_core::prelude::{GridCoords, GridImprint, IsOperational, MapInfo};
 use grids::{
     EmissionsGridSpreadAffector,
-    emissions::{EmissionsEnergyRecalculateAll, EmissionsGrid, EmitterChangedEvent, EmitterEnergy},
+    emissions::{EmissionsEnergyRecalculateAll, EmissionsGrid, EmitterChangedMessage, EmitterEnergy},
     obstacles::ObstacleGrid,
     search::flooding::flood_emissions,
 };
@@ -15,7 +15,7 @@ impl Plugin for EmissionsPlugin {
         app
             .insert_resource(EmissionsGrid::new_empty())
             .init_resource::<EmissionsEnergyRecalculateAll>()
-            .add_message::<EmitterChangedEvent>()
+            .add_message::<EmitterChangedMessage>()
             .add_systems(OnExit(MapLoadingStage::LoadMapInfo), |mut commands: Commands, map_info: Res<MapInfo>| { commands.insert_resource(EmissionsGrid::new_with_size(map_info.grid_bounds)); })
             .add_systems(PostUpdate, update_emissions_grid)
             .add_observer(on_add_emitter_energy_register_emitter)
@@ -30,18 +30,18 @@ fn on_add_emitter_energy_register_emitter(
 ) {
     let entity = trigger.entity;
     commands.entity(entity)
-        .observe(on_insert_emitter_coords_or_operational_emit_added_event)
-        .observe(on_discard_emitter_coords_or_operational_emit_removed_event);
+        .observe(on_insert_emitter_coords_or_operational_emit_added_message)
+        .observe(on_discard_emitter_coords_or_operational_emit_removed_message);
 }
 
-fn on_insert_emitter_coords_or_operational_emit_added_event(
+fn on_insert_emitter_coords_or_operational_emit_added_message(
     trigger: On<Insert, (GridCoords, GridImprint, IsOperational)>,
-    mut events: MessageWriter<EmitterChangedEvent>,
+    mut emitter_changed_messages: MessageWriter<EmitterChangedMessage>,
     emitters: Query<(&GridCoords, &GridImprint, &EmitterEnergy), With<IsOperational>>,
 ) {
     let entity = trigger.entity;
     let Ok((grid_coords, grid_imprint, emitter)) = emitters.get(entity) else { return; };
-    events.write(EmitterChangedEvent {
+    emitter_changed_messages.write(EmitterChangedMessage {
         emitter_entity: entity,
         imprint: *grid_imprint,
         grid_coords: *grid_coords,
@@ -49,14 +49,14 @@ fn on_insert_emitter_coords_or_operational_emit_added_event(
     });
 }
 
-fn on_discard_emitter_coords_or_operational_emit_removed_event(
+fn on_discard_emitter_coords_or_operational_emit_removed_message(
     trigger: On<Discard, (GridCoords, GridImprint, IsOperational)>,
-    mut events: MessageWriter<EmitterChangedEvent>,
+    mut emitter_changed_messages: MessageWriter<EmitterChangedMessage>,
     emitters: Query<(&GridCoords, &GridImprint, &EmitterEnergy), With<IsOperational>>,
 ) {
     let entity = trigger.entity;
     let Ok((grid_coords, grid_imprint, emitter)) = emitters.get(entity) else { return; };
-    events.write(EmitterChangedEvent {
+    emitter_changed_messages.write(EmitterChangedMessage {
         emitter_entity: entity,
         imprint: *grid_imprint,
         grid_coords: *grid_coords,
@@ -81,7 +81,7 @@ fn on_remove_emissions_spread_affector_flag_for_recalculation(
 fn update_emissions_grid(
     mut recalculate_all: ResMut<EmissionsEnergyRecalculateAll>,
     mut emissions_grid: ResMut<EmissionsGrid>,
-    mut events: MessageReader<EmitterChangedEvent>,
+    mut emitter_changed_messages: MessageReader<EmitterChangedMessage>,
     obstacle_grid: Res<ObstacleGrid>,
     emitters: Query<(&EmitterEnergy, &GridImprint, &GridCoords), With<IsOperational>>,
 ) {
@@ -97,14 +97,14 @@ fn update_emissions_grid(
                 |field| !field.has_wall(),
             );
         }
-        events.clear();
+        emitter_changed_messages.clear();
     } else {
-        for event in events.read() {
+        for message in emitter_changed_messages.read() {
             flood_emissions(
                 &mut emissions_grid,
                 &obstacle_grid,
-                event.imprint.iter(event.grid_coords),
-                &event.emissions_details,
+                message.imprint.iter(message.grid_coords),
+                &message.emissions_details,
                 |field| !field.has_wall(),
             );
         }

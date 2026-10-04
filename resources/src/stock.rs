@@ -1,17 +1,21 @@
 use std::collections::HashMap;
 
 use bevy::prelude::*;
-use strum::IntoEnumIterator;
 
 use game_core::prelude::SSS;
 
-use crate::common::{Cost, EssenceType, ResourceType};
+use crate::common::{ResourceAmount, ResourceType};
 
+// Starting amounts
+const STARTING_DARK_ORE: i32 = 5555;
+
+// Stock caps
 const MAX_DARK_ORE_STOCK: i32 = 9999;
 const MAX_ESSENCE_STOCK: i32 = 999;
+const MAX_SHARD_STOCK: i32 = i32::MAX;
 
 #[derive(Message)]
-pub struct StockChangedEvent {
+pub struct StockChangedMessage {
     pub resource_type: ResourceType,
     pub delta: i32,
     pub new_amount: i32,
@@ -21,82 +25,90 @@ pub struct StockChangedEvent {
 struct StockInfo {
     amount: i32,
     max_amount: i32,
+    /// Net change since the last `take_pending_deltas`.
+    pending_delta: i32,
+}
+impl StockInfo {
+    /// Moves to `amount`, capped at `max_amount`, and records the real change as pending.
+    fn change_to(&mut self, amount: i32) {
+        let previous = self.amount;
+        self.amount = std::cmp::min(self.max_amount, amount);
+        self.pending_delta += self.amount - previous;
+    }
 }
 
 #[derive(Resource, Clone, SSS)]
 pub struct Stock {
-    current: HashMap<ResourceType, StockInfo>,
-    delta: HashMap<ResourceType, i32>,
+    resources: HashMap<ResourceType, StockInfo>,
 }
 
 impl Stock {
-    pub fn get(&self, resource_type: ResourceType) -> i32 {
-        self.get_info(resource_type).amount
+    pub fn get(&self, resource_type: impl Into<ResourceType>) -> i32 {
+        self.get_info(resource_type.into()).amount
     }
-    pub fn can_cover(&self, cost: &Cost) -> bool {
-        self.has(cost.resource_type, cost.amount)
+    pub fn has(&self, entry: impl Into<ResourceAmount>) -> bool {
+        let entry = entry.into();
+        self.get_info(entry.resource_type).amount >= entry.amount
     }
-    pub fn can_cover_all(&self, costs: &[Cost]) -> bool {
-        costs.iter().all(|c| self.has(c.resource_type, c.amount))
+    /// Expects each resource at most once in `amounts`. Entries are checked one by one, so repeated
+    /// entries of one resource are not summed and can pass while their total is not held.
+    pub fn has_all(&self, amounts: &[ResourceAmount]) -> bool {
+        amounts.iter().all(|entry| self.has(*entry))
     }
-    pub fn has(&self, resource_type: ResourceType, amount: i32) -> bool {
-        self.get_info(resource_type).amount >= amount
+    pub fn add(&mut self, entry: impl Into<ResourceAmount>) {
+        let entry = entry.into();
+        let info = self.get_info_mut(entry.resource_type);
+        info.change_to(info.amount.saturating_add(entry.amount));
     }
-    pub fn add(&mut self, resource_type: ResourceType, amount: i32) {
-        let info = self.get_info_mut(resource_type);
-        info.amount = std::cmp::min(info.max_amount, info.amount + amount);
-        self.add_delta(resource_type, amount);
+    pub fn set(&mut self, entry: impl Into<ResourceAmount>) {
+        let entry = entry.into();
+        self.get_info_mut(entry.resource_type).change_to(entry.amount);
     }
-    pub fn set(&mut self, resource_type: ResourceType, amount: i32) {
-        let info = self.get_info_mut(resource_type);
-        let delta = amount - info.amount;
-        info.amount = std::cmp::min(info.max_amount, amount);
-        self.add_delta(resource_type, delta);
+    pub fn try_remove(&mut self, entry: impl Into<ResourceAmount>) -> bool {
+        let entry = entry.into();
+        let info = self.get_info_mut(entry.resource_type);
+        if info.amount < entry.amount { return false; }
+        info.change_to(info.amount - entry.amount);
+        true
     }
-    pub fn try_pay_cost(&mut self, cost: Cost) -> bool {
-        self.try_remove(cost.resource_type, cost.amount)
-    }
-    pub fn try_pay_costs(&mut self, costs: &[Cost]) -> bool {
-        if !self.can_cover_all(costs) { return false; }
-        for cost in costs {
-            self.try_remove(cost.resource_type, cost.amount);
+    /// Removes all of `amounts` or nothing. Same unique-resource expectation as [`Self::has_all`].
+    pub fn try_remove_all(&mut self, amounts: &[ResourceAmount]) -> bool {
+        if !self.has_all(amounts) { return false; }
+        for entry in amounts {
+            self.try_remove(*entry);
         }
         true
     }
-    pub fn try_remove(&mut self, resource_type: ResourceType, amount: i32) -> bool {
-        let info = self.get_info_mut(resource_type);
-        if info.amount < amount { return false; }
-        info.amount -= amount;
-        self.add_delta(resource_type, -amount);
-        true
+    /// Every non-zero net change since the last call, resetting them.
+    pub fn take_pending_deltas(&mut self) -> Vec<ResourceAmount> {
+        self.resources.iter_mut()
+            .filter(|(_, info)| info.pending_delta != 0)
+            .map(|(resource_type, info)| ResourceAmount::new(*resource_type, std::mem::take(&mut info.pending_delta)))
+            .collect()
+    }
+    /// Every tracked resource with its current amount, held or not, in `ResourceType::all` order.
+    pub fn iter(&self) -> impl Iterator<Item = ResourceAmount> + '_ {
+        ResourceType::all().map(|resource_type| ResourceAmount::new(resource_type, self.get(resource_type)))
     }
     fn get_info(&self, resource_type: ResourceType) -> &StockInfo {
-        self.current.get(&resource_type).unwrap_or_else(|| panic!("Resource type {resource_type:?} not found in stock"))
+        self.resources.get(&resource_type).unwrap_or_else(|| panic!("Resource type {resource_type:?} not found in stock"))
     }
     fn get_info_mut(&mut self, resource_type: ResourceType) -> &mut StockInfo {
-        self.current.get_mut(&resource_type).unwrap_or_else(|| panic!("Resource type {resource_type:?} not found in stock"))
-    }
-    fn add_delta(&mut self, resource_type: ResourceType, amount: i32) {
-        *self.delta.get_mut(&resource_type).unwrap_or_else(|| panic!("Resource type {resource_type:?} not found in delta")) += amount;
-    }
-    pub fn take_pending_deltas(&mut self) -> Vec<(ResourceType, i32)> {
-        let pending: Vec<_> = self.delta.iter().filter(|(_, d)| **d != 0).map(|(rt, d)| (*rt, *d)).collect();
-        self.delta.values_mut().for_each(|v| *v = 0);
-        pending
+        self.resources.get_mut(&resource_type).unwrap_or_else(|| panic!("Resource type {resource_type:?} not found in stock"))
     }
 }
 impl Default for Stock {
     fn default() -> Self {
-        let mut current = HashMap::new();
-        let mut delta = HashMap::new();
-        current.insert(ResourceType::DarkOre, StockInfo { amount: 5555, max_amount: MAX_DARK_ORE_STOCK });
-        delta.insert(ResourceType::DarkOre, 0);
-        for essence_type in EssenceType::iter() {
-            current.insert(ResourceType::Essence(essence_type), StockInfo { amount: 0, max_amount: MAX_ESSENCE_STOCK });
-            delta.insert(ResourceType::Essence(essence_type), 0);
-        }
-        Self { current, delta }
+        let resources = ResourceType::all()
+            .map(|resource_type| {
+                let (amount, max_amount) = match resource_type {
+                    ResourceType::DarkOre => (STARTING_DARK_ORE, MAX_DARK_ORE_STOCK),
+                    ResourceType::Essence(_) => (0, MAX_ESSENCE_STOCK),
+                    ResourceType::Shard(_) => (0, MAX_SHARD_STOCK),
+                };
+                (resource_type, StockInfo { amount, max_amount, pending_delta: 0 })
+            })
+            .collect();
+        Self { resources }
     }
 }
-
-

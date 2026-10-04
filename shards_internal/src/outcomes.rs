@@ -3,7 +3,7 @@ use bevy_egui::egui;
 use strum::IntoEnumIterator;
 
 use almanach::prelude::Almanach;
-use game_core::prelude::{DisplayDescription, DisplayIcon, DisplayName, ShardType};
+use game_core::prelude::{DisplayDescription, DisplayIcon, DisplayName, Shard, ShardTier, ShardType};
 use logging::prelude::*;
 use outcomes::prelude::*;
 use persistence::{prelude::*, rusqlite};
@@ -13,7 +13,7 @@ use shards::{
 };
 use states::prelude::MapLoadingStage;
 
-pub struct ShardOutcomesPlugin;
+pub(crate) struct ShardOutcomesPlugin;
 impl Plugin for ShardOutcomesPlugin {
     fn build(&self, app: &mut App) {
         app
@@ -59,9 +59,10 @@ fn on_insert_unlock_shard_blueprint_derive_display(
 ) {
     let entity = trigger.entity;
     let Ok(unlock) = outcomes.get(entity) else { return };
-    let info = almanach.get_shard_info(unlock.0);
+    // A blueprint covers every tier of its type; the T1 entry represents the type.
+    let info = almanach.get_resource_info(Shard::new(unlock.0, ShardTier::T1));
     commands.entity(entity).insert((
-        DisplayName(format!("Unlock {} Shard Blueprint", info.name)),
+        DisplayName(format!("Unlock {} Shard Blueprint", unlock.0)),
         DisplayDescription(info.description.clone()),
         DisplayIcon(info.icon.clone()),
         OutcomeEditorUi(ui_unlock_shard_blueprint_editor),

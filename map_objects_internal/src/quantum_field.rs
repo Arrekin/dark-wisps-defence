@@ -107,7 +107,7 @@ impl QuantumFieldLayers {
     pub fn is_current_layer_solved(&self) -> bool {
         self.current_layer_progress >= self.layers[self.current_layer].value
     }
-    pub fn get_current_layer_costs(&self) -> &[Cost] {
+    pub fn get_current_layer_costs(&self) -> &[ResourceAmount] {
         if self.is_solved() { return &[]; }
         &self.layers[self.current_layer].costs
     }
@@ -126,8 +126,10 @@ impl QuantumFieldLayers {
 
 /// A single layer requiring scan progress + resource payment to complete.
 pub(crate) struct QuantumFieldLayer {
-    pub value: f32,       // scan progress required to complete this layer
-    pub costs: Vec<Cost>, // resources required after scanning to finalize
+    /// Scan progress required to complete this layer.
+    pub value: f32,
+    /// Resources required after scanning to finalize.
+    pub costs: Vec<ResourceAmount>,
 }
 
 #[derive(Component, SSS)]
@@ -167,15 +169,16 @@ impl BuilderQuantumField {
             layers: vec![
                 QuantumFieldLayer {
                     value: 15000.0,
-                    costs: vec![Cost{ resource_type: ResourceType::DarkOre, amount: 100}, Cost{ resource_type: ResourceType::DarkOre, amount: 100}, Cost{ resource_type: ResourceType::DarkOre, amount: 100}],
+                    // Temporary placeholder showing three chips. Ignore the fact it's 3x the same resource.
+                    costs: vec![ResourceAmount::new(ResourceType::DarkOre, 100), ResourceAmount::new(ResourceType::DarkOre, 100), ResourceAmount::new(ResourceType::DarkOre, 100)],
                 },
                 QuantumFieldLayer {
                     value: 30000.0,
-                    costs: vec![Cost{ resource_type: ResourceType::DarkOre, amount: 200}],
+                    costs: vec![ResourceAmount::new(ResourceType::DarkOre, 200)],
                 },
                 QuantumFieldLayer {
                     value: 45000.0,
-                    costs: vec![Cost{ resource_type: ResourceType::DarkOre, amount: 300}],
+                    costs: vec![ResourceAmount::new(ResourceType::DarkOre, 300)],
                 },
             ],
         };
@@ -562,7 +565,7 @@ impl QuantumFieldActionButton {
             }
             QuantumFieldActionButton::PayCost => {
                 let Ok(mut quantum_field) = quantum_fields.get_mut(focused_entity) else { return; };
-                if stock.try_pay_costs(quantum_field.get_current_layer_costs()) {
+                if stock.try_remove_all(quantum_field.get_current_layer_costs()) {
                     // TODO: Paying the last layer solves the field but does not insert `QuantumFieldSolved`.
                     // Only `process_expeditions_system` (on further scan progress) and the load path insert it,
                     // so the field stays unmarked until a drone scans it again or the map reloads. The solved
@@ -640,7 +643,7 @@ fn on_focused_map_object_insert_update_quantum_field_panel(
                 },
                 QuantumFieldLayerCostPanel,
                 children![(
-                    BuilderCostChip::from(*cost),
+                    BuilderCostChip(*cost),
                     CostChipVisualFullPrice,
                 )],
             ));

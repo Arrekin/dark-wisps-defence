@@ -32,7 +32,6 @@ use serde::Serialize;
 
 use game_core::prelude::*;
 use logging::prelude::*;
-use resources::prelude::{Cost, EssenceType, ResourceType};
 use states::{AdminMode, prelude::*};
 
 use crate::{
@@ -228,10 +227,6 @@ impl LoadContext<'_> {
         self.query_row_cached("stats", "SELECT stat_value FROM stats WHERE stat_name = ?1", [stat_name], |row| row.get(0))
     }
 
-    pub fn stock_resource(&self, resource_name: &str) -> LoadResult<i32> {
-        self.query_row_cached("stock", "SELECT amount FROM stock WHERE resource_name = ?1", [resource_name], |row| row.get(0))
-    }
-
     pub fn grid_coords(&self, old_id: i64) -> LoadResult<GridCoords> {
         self.query_row_cached("grid_coords", "SELECT x, y FROM grid_coords WHERE entity_id = ?1", [old_id], |row| Ok(GridCoords { x: row.get(0)?, y: row.get(1)? }))
     }
@@ -248,36 +243,6 @@ impl LoadContext<'_> {
             ("Plus", _) => Ok(GridImprint::Plus { extents: width }),
             _ => Err(LoadError::unknown_value("grid imprint", format!("{shape} width={width} height={height:?}"))),
         }
-    }
-
-    #[log_tags(Tag::GameLoad)]
-    pub fn costs(&self, old_id: i64) -> LoadResult<Vec<Cost>> {
-        let mut stmt = self.conn.prepare_cached(
-            "SELECT resource_kind, essence_type, amount FROM costs WHERE entity_id = ?1 AND custom_key = 0 ORDER BY position",
-        )?;
-        let mut rows = stmt.query([old_id])?;
-        let mut costs = Vec::new();
-        while let Some(row) = rows.next()? {
-            let resource_kind: String = row.get(0)?;
-            let essence_type: Option<String> = row.get(1)?;
-            let amount: i32 = row.get(2)?;
-            let resource_type = match resource_kind.as_str() {
-                "DarkOre" => ResourceType::DarkOre,
-                "Essence" => {
-                    #[warn_dev("Essence cost of entity {old_id} has no essence_type — skipped")]
-                    let Some(essence_str) = essence_type else { continue };
-                    match essence_str.parse::<EssenceType>() {
-                        Ok(essence) => ResourceType::Essence(essence),
-                        #[warn_dev("Essence cost of entity {old_id} has unknown essence type '{essence_str}' — skipped")]
-                        Err(_) => continue,
-                    }
-                }
-                #[warn_dev("Cost of entity {old_id} has unknown resource_kind '{other}' — skipped")]
-                other => continue,
-            };
-            costs.push(Cost { resource_type, amount });
-        }
-        Ok(costs)
     }
 
     /// Reads the one row `query` selects through the connection's statement cache, so

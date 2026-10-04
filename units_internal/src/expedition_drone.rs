@@ -83,7 +83,7 @@ use units::{
     prelude::*,
 };
 
-pub struct ExpeditionDronePlugin;
+pub(crate) struct ExpeditionDronePlugin;
 impl Plugin for ExpeditionDronePlugin {
     fn build(&self, app: &mut App) {
         app

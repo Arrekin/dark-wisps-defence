@@ -6,6 +6,7 @@ mod map_file_name;
 mod map_info;
 mod map_list;
 pub mod moments;
+mod resource_lists;
 pub mod save;
 
 pub use rusqlite;

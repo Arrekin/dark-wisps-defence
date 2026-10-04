@@ -10,9 +10,9 @@ use bevy::prelude::*;
 use bevy_egui::{EguiPrimaryContextPass, egui};
 use strum::{AsRefStr, EnumIter, IntoEnumIterator};
 
-use game_core::prelude::{MapInfo, ShardType};
+use game_core::prelude::{MapInfo, Shard};
 use persistence::{LoadGameSignal, LoadMapConfig, MapFileName, SaveGameSignal, SaveTarget};
-use shards::prelude::*;
+use resources::prelude::Stock;
 use states::AdminMode;
 
 pub struct EditorPlugin;
@@ -226,40 +226,23 @@ fn tab_general(ui: &mut egui::Ui, world: &mut World) {
 }
 
 fn tab_shards(ui: &mut egui::Ui, world: &mut World) {
-    ui.heading("Shard Inventory");
-
-    ui.horizontal(|ui| {
-        ui.menu_button("+ Add Shard", |ui| {
-            for shard_type in ShardType::iter() {
-                if ui.button(shard_type.to_string()).clicked() {
-                    world.resource_mut::<ShardInventory>().add(shard_type, 1);
-                    ui.close();
-                }
-            }
-        });
-    });
-
+    ui.heading("Shard Stock");
     ui.separator();
 
-    let shards: Vec<(ShardType, usize)> = world.resource::<ShardInventory>().iter().collect();
-
-    if shards.is_empty() {
-        ui.label("No shards in inventory");
-    } else {
-        egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
-            for (shard_type, count) in shards {
-                ui.horizontal(|ui| {
-                    ui.label(format!("{shard_type}: {count}"));
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("−").clicked() && world.resource::<ShardInventory>().has(shard_type) {
-                            world.resource_mut::<ShardInventory>().remove(shard_type);
-                        }
-                        if ui.button("+").clicked() {
-                            world.resource_mut::<ShardInventory>().add(shard_type, 1);
-                        }
-                    });
+    egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
+        for shard in Shard::all() {
+            let count = world.resource::<Stock>().get(shard);
+            ui.horizontal(|ui| {
+                ui.label(format!("{shard}: {count}"));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.button("−").clicked() {
+                        world.resource_mut::<Stock>().try_remove((shard, 1));
+                    }
+                    if ui.button("+").clicked() {
+                        world.resource_mut::<Stock>().add((shard, 1));
+                    }
                 });
-            }
-        });
-    }
+            });
+        }
+    });
 }

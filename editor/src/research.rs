@@ -124,9 +124,11 @@ fn ui_research_editor(ui: &mut egui::Ui, world: &mut World, research: Entity) {
     });
 
     ui.heading("Costs");
-    let mut entity_ref = world.entity_mut(research);
-    let Some(mut research_data) = entity_ref.get_mut::<Research>() else { return };
-    super::cost_editor::ui_cost_editor(ui, &mut research_data.cost);
+    world.resource_scope(|world, almanach: Mut<Almanach>| {
+        let mut entity_ref = world.entity_mut(research);
+        let Some(mut research_data) = entity_ref.get_mut::<Research>() else { return };
+        super::cost_editor::ui_cost_editor(ui, &almanach, &mut research_data.cost);
+    });
 
     ui.separator();
     ui_outcomes_section(ui, world, research);

@@ -100,7 +100,7 @@ impl BuilderMiningComplex {
             sprite: asset_server.load("buildings/mining_complex.png"),
             top_sprite: None,
             grid_imprint: GridImprint::Rectangle { width: 3, height: 3 },
-            cost: vec![Cost { resource_type: ResourceType::DarkOre, amount: 100 }],
+            cost: vec![ResourceAmount::new(ResourceType::DarkOre, 100)],
             baseline: HashMap::from([(ModifierType::MaxIntegrityPoints, 100.)]),
             validate: mining_complex_validator,
             annotate: mining_complex_annotator,
@@ -239,7 +239,7 @@ fn mine_ore_system(
             let ore_entity = ore_in_range[ore_index];
             if let Ok(mut dark_ore) = dark_ores.get_mut(ore_entity) {
                 let mined_amount = std::cmp::min(dark_ore.amount, 100);
-                stock.add(ResourceType::DarkOre, mined_amount);
+                stock.add((ResourceType::DarkOre, mined_amount));
                 dark_ore.amount -= mined_amount;
             }
         }

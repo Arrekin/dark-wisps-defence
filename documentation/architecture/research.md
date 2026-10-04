@@ -50,7 +50,7 @@ Write a definition module in `research_internal/src/definitions/` that spawns th
 pub fn spawn_fire_shard_recipe_research(commands: &mut Commands, id: &ContentId) {
     commands.spawn_scene(bsn! {
         Research {
-            cost: {vec![Cost { resource_type: ResourceType::Essence(EssenceType::Fire), amount: 100 }]},
+            cost: {vec![ResourceAmount::new(EssenceType::Fire, 100)]},
             duration: {Duration::from_secs(30)},
         }
         ContentId({id.0.clone()})

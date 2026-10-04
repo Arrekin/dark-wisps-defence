@@ -8,7 +8,7 @@ use crate::{GridVersion, base::BaseGrid};
 pub struct EmitterEnergy(pub FloodEmissionsDetails);
 
 #[derive(Message, Debug)]
-pub struct EmitterChangedEvent {
+pub struct EmitterChangedMessage {
     pub emitter_entity: Entity,
     pub imprint: GridImprint,
     pub grid_coords: GridCoords,

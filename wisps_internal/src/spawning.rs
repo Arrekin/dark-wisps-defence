@@ -12,6 +12,10 @@ use persistence::{prelude::*, rusqlite};
 use resources::prelude::*;
 use wisps::{WispElectricType, WispFireType, WispLightType, WispWaterType, prelude::*};
 
+/// Resources added to the stock when the wisp dies.
+#[derive(Component)]
+pub(crate) struct DeathLoot(pub Vec<ResourceAmount>);
+
 #[derive(Component, SSS)]
 pub(crate) struct BuilderWisp {
     pub wisp_type: WispType,
@@ -56,10 +60,10 @@ impl BuilderWisp {
             .extend(0.);
 
         match builder.wisp_type {
-            WispType::Fire => entity_commands.insert((WispFireType, EssencesContainer::from(EssenceContainer::new(EssenceType::Fire, 1)))),
-            WispType::Water => entity_commands.insert((WispWaterType, EssencesContainer::from(EssenceContainer::new(EssenceType::Water, 1)))),
-            WispType::Light => entity_commands.insert((WispLightType, EssencesContainer::from(EssenceContainer::new(EssenceType::Light, 1)))),
-            WispType::Electric => entity_commands.insert((WispElectricType, EssencesContainer::from(EssenceContainer::new(EssenceType::Electric, 1)))),
+            WispType::Fire => entity_commands.insert((WispFireType, DeathLoot(vec![ResourceAmount::new(EssenceType::Fire, 1)]))),
+            WispType::Water => entity_commands.insert((WispWaterType, DeathLoot(vec![ResourceAmount::new(EssenceType::Water, 1)]))),
+            WispType::Light => entity_commands.insert((WispLightType, DeathLoot(vec![ResourceAmount::new(EssenceType::Light, 1)]))),
+            WispType::Electric => entity_commands.insert((WispElectricType, DeathLoot(vec![ResourceAmount::new(EssenceType::Electric, 1)]))),
         };
         entity_commands
             .insert((

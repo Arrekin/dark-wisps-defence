@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 
+use almanach::prelude::Almanach;
 use resources::prelude::Stock;
 use widgets::{
     common::utils::set_text_if_changed,
@@ -29,29 +30,29 @@ impl Plugin for CostChipPlugin {
 fn on_builder_add_spawn_cost_chip(
     trigger: On<Add, BuilderCostChip>,
     mut commands: Commands,
-    asset_server: Res<AssetServer>,
+    almanach: Res<Almanach>,
     builders: Query<&BuilderCostChip>,
 ) {
     let chip_entity = trigger.entity;
     let Ok(builder) = builders.get(chip_entity) else { return };
 
-    let resource_type = builder.resource_type;
-    let amount = builder.amount;
+    let cost = builder.0;
+    let info = almanach.get_resource_info(cost.resource_type);
 
     commands.entity(chip_entity)
         .remove::<BuilderCostChip>()
         .insert((
             BuilderChip {
-                icon: asset_server.load(resource_type.icon_path()),
-                text: Some(amount.to_string()),
+                icon: info.icon.clone(),
+                text: Some(cost.amount.to_string()),
             },
-            CostChip { resource_type, amount },
+            CostChip { cost },
         ));
 
     // The single-line resource name uses a content-sized tooltip.
     let tooltip = commands.spawn(BuilderTooltip::new(chip_entity).sized_to_content()).id();
     commands.entity(tooltip).with_child((
-        Text::new(resource_type.to_string()),
+        Text::new(info.name.clone()),
         TextFont::from_font_size(CHIP_FONT_SIZE),
         TextColor::from(Color::WHITE),
         TextLayout::no_wrap(),
@@ -73,7 +74,7 @@ fn on_builder_add_spawn_full_price_cost_strip(
         .insert(BuilderChipStrip)
         .with_children(|strip| {
             for cost in costs {
-                strip.spawn((BuilderCostChip::from(cost), CostChipVisualFullPrice));
+                strip.spawn((BuilderCostChip(cost), CostChipVisualFullPrice));
             }
         });
 }
@@ -88,7 +89,7 @@ fn sync_cost_chip_contents(
         let Some(text_entity) = children.text else { continue };
         let Ok(mut text) = texts.get_mut(text_entity) else { continue };
 
-        set_text_if_changed(&mut text, &chip.amount.to_string());
+        set_text_if_changed(&mut text, &chip.cost.amount.to_string());
     }
 }
 
@@ -106,10 +107,10 @@ fn update_cost_chip_borders(
         if !stock_changed && !chip.is_changed() { continue }
 
         let affordable = if is_full_price {
-            stock.has(chip.resource_type, chip.amount)
+            stock.has(chip.cost)
         } else {
             // Nothing owed cannot block, so a spent cost stays affordable.
-            chip.amount <= 0 || stock.has(chip.resource_type, 1)
+            chip.cost.amount <= 0 || stock.has((chip.cost.resource_type, 1))
         };
         *border_color = BorderColor::all(availability_color(affordable));
     }
