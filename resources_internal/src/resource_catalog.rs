@@ -5,7 +5,7 @@
 
 use bevy::prelude::*;
 
-use almanach::prelude::{AlmanachAppExt, ResourceInfo};
+use almanach::{ResourceInfo, prelude::AlmanachAppExt};
 use resources::prelude::{EssenceType, ResourceType};
 
 pub(crate) struct ResourceCatalogPlugin;

@@ -21,7 +21,7 @@ use std::{
 };
 
 use bevy::{
-    ecs::world::CommandQueue,
+    ecs::{system::command, world::CommandQueue},
     input::common_conditions::input_just_released,
     platform::collections::HashMap,
     prelude::*,
@@ -93,7 +93,7 @@ pub type LoadResult<T = ()> = Result<T, LoadError>;
 pub enum LoadError {
     Database(rusqlite::Error),
     /// The saved ID has no entity allocated in [`EntityIdMap`].
-    UnmappedEntity(i64),
+    UnmappedEntity(u32),
     /// Reading a named table failed, including finding no row where one is required.
     TableReadFailed { table: &'static str, error: rusqlite::Error },
     /// A required row of a child table is absent.
@@ -158,7 +158,7 @@ pub(crate) struct GameLoadRegistry {
 /// Maps saved IDs to entities allocated before loading begins, including entities populated in
 /// later stages.
 #[derive(Resource, Clone)]
-pub struct EntityIdMap(pub Arc<HashMap<i64, Entity>>);
+pub struct EntityIdMap(pub Arc<HashMap<u32, Entity>>);
 
 const CHUNK_ROWS: usize = 128;
 
@@ -167,7 +167,7 @@ pub struct LoadContext<'a> {
     pub conn: &'a rusqlite::Connection,
     /// The table the loader is registered for; names the loader in logs.
     table: &'static str,
-    entity_map: Arc<HashMap<i64, Entity>>,
+    entity_map: Arc<HashMap<u32, Entity>>,
     queue: CommandQueue,
     rows_since_flush: usize,
     sender: Sender<CommandQueue>,
@@ -200,10 +200,10 @@ impl LoadContext<'_> {
     pub fn for_each_entity(
         &mut self,
         query: &str,
-        mut load_entity: impl FnMut(&mut Self, i64, Entity, &rusqlite::Row) -> LoadResult,
+        mut load_entity: impl FnMut(&mut Self, u32, Entity, &rusqlite::Row) -> LoadResult,
     ) -> LoadResult {
         self.for_each_row(query, |ctx, row| {
-            let old_id: i64 = row.get(0)?;
+            let old_id: u32 = row.get(0)?;
             let _ = ctx.entity(old_id)
                 .and_then(|entity| load_entity(ctx, old_id, entity, row))
                 .inspect_err(|error| error_dev!("'{}' entity {old_id} skipped: {error}", ctx.table));
@@ -211,15 +211,15 @@ impl LoadContext<'_> {
         })
     }
 
-    pub fn world_position(&self, old_id: i64) -> LoadResult<Vec2> {
+    pub fn world_position(&self, old_id: u32) -> LoadResult<Vec2> {
         self.query_row_cached("world_positions", "SELECT x, y FROM world_positions WHERE entity_id = ?1", [old_id], |row| Ok(Vec2::new(row.get(0)?, row.get(1)?)))
     }
 
-    pub fn integrity_points(&self, old_id: i64) -> LoadResult<f32> {
+    pub fn integrity_points(&self, old_id: u32) -> LoadResult<f32> {
         self.query_row_cached("integrity_points", "SELECT current FROM integrity_points WHERE entity_id = ?1", [old_id], |row| row.get(0))
     }
 
-    pub fn disabled_by_player(&self, old_id: i64) -> LoadResult<bool> {
+    pub fn disabled_by_player(&self, old_id: u32) -> LoadResult<bool> {
         Ok(self.conn.prepare_cached("SELECT 1 FROM disabled_by_player WHERE entity_id = ?1")?.exists([old_id])?)
     }
 
@@ -227,11 +227,11 @@ impl LoadContext<'_> {
         self.query_row_cached("stats", "SELECT stat_value FROM stats WHERE stat_name = ?1", [stat_name], |row| row.get(0))
     }
 
-    pub fn grid_coords(&self, old_id: i64) -> LoadResult<GridCoords> {
+    pub fn grid_coords(&self, old_id: u32) -> LoadResult<GridCoords> {
         self.query_row_cached("grid_coords", "SELECT x, y FROM grid_coords WHERE entity_id = ?1", [old_id], |row| Ok(GridCoords { x: row.get(0)?, y: row.get(1)? }))
     }
 
-    pub fn grid_imprint(&self, old_id: i64) -> LoadResult<GridImprint> {
+    pub fn grid_imprint(&self, old_id: u32) -> LoadResult<GridImprint> {
         let (shape, width, height): (String, i32, Option<i32>) = self.query_row_cached(
             "grid_imprints",
             "SELECT shape, width, height FROM grid_imprints WHERE id = ?1",
@@ -264,12 +264,12 @@ impl LoadContext<'_> {
 /// Game side: maps saved IDs to entities and queues world changes for the main thread.
 impl LoadContext<'_> {
     /// Resolves a saved ID to the entity allocated for it before loading began.
-    pub fn entity(&self, old_id: i64) -> LoadResult<Entity> {
+    pub fn entity(&self, old_id: u32) -> LoadResult<Entity> {
         self.entity_map.get(&old_id).copied().ok_or(LoadError::UnmappedEntity(old_id))
     }
 
     /// Resolves an optional saved reference: no ID is `Ok(None)`, an unmapped ID is an error.
-    pub fn optional_entity(&self, old_id: Option<i64>) -> LoadResult<Option<Entity>> {
+    pub fn optional_entity(&self, old_id: Option<u32>) -> LoadResult<Option<Entity>> {
         old_id.map(|old_id| self.entity(old_id)).transpose()
     }
 
@@ -283,14 +283,17 @@ impl LoadContext<'_> {
     }
 
     pub fn insert_resource(&mut self, resource: impl Resource) {
-        self.push(move |world: &mut World| {
-            world.insert_resource(resource);
-        });
+        self.push(command::insert_resource(resource));
+    }
+
+    /// Triggers `event` when the batch is applied.
+    pub fn trigger<'a>(&mut self, event: impl Event<Trigger<'a>: Default>) {
+        self.push(command::trigger(event));
     }
 
     /// Queues a world change and counts it toward loading progress.
-    pub fn push(&mut self, change: impl FnOnce(&mut World) + Send + 'static) {
-        self.queue.push(change);
+    pub fn push(&mut self, change: impl Command) {
+        self.queue.push(change.handle_error());
         self.done_rows.fetch_add(1, Ordering::Relaxed);
         self.rows_since_flush += 1;
         if self.rows_since_flush >= CHUNK_ROWS {
@@ -380,22 +383,22 @@ pub(crate) fn build_entity_id_map(world: &mut World) {
         MapSource::File(map_path) => map_path.clone(),
     };
     let mut total_rows: usize = 0;
-    let mut map: HashMap<i64, Entity> = HashMap::new();
+    let mut map: HashMap<u32, Entity> = HashMap::new();
     #[debug_dev("EntityIdMap populated: {} entities; total_rows={total_rows}", map.len())]
     with_db_connection(&map_path, Migrations::Skip, |conn| {
         for loaders in world.resource::<GameLoadRegistry>().loaders.values() {
             for descriptor in loaders {
                 let table = descriptor.table;
-                let count: i64 = conn
+                let count: usize = conn
                     .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| row.get(0))
                     .inspect_err(|error| warn_dev!("Row count of '{table}' not read ({error}); progress counts it as 0"))
                     .unwrap_or(0);
-                total_rows += count as usize;
+                total_rows += count;
             }
         }
 
         let mut stmt = conn.prepare("SELECT id FROM entities")?;
-        let rows = stmt.query_map([], |row| row.get::<_, i64>(0))?;
+        let rows = stmt.query_map([], |row| row.get::<_, u32>(0))?;
         for row in rows {
             let old_id = row?;
             let new_entity = world.spawn_empty().id();

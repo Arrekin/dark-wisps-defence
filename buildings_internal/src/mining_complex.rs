@@ -8,7 +8,7 @@ use alteration::{
     effects::prelude::*,
     modifiers::prelude::*,
 };
-use almanach::prelude::*;
+use almanach::{BuildingInfo, ObjectPresentation, prelude::*};
 use buildings::prelude::*;
 use game_core::prelude::*;
 use grids::placement::{CellHighlight, GridsCollectionParam, PlacementModes, PlacementValidity, PlaceRequest};
@@ -102,6 +102,7 @@ impl BuilderMiningComplex {
             grid_imprint: GridImprint::Rectangle { width: 3, height: 3 },
             cost: vec![ResourceAmount::new(ResourceType::DarkOre, 100)],
             baseline: HashMap::from([(ModifierType::MaxIntegrityPoints, 100.)]),
+            sockets: vec![],
             validate: mining_complex_validator,
             annotate: mining_complex_annotator,
             placement: PlacementModes::default(),
@@ -186,11 +187,11 @@ fn collect_mining_complexes(
     if mining_complexes.is_empty() { return; }
 
     #[debug_dev("Saving {} mining complexes", rows.len())]
-    let rows: Vec<(i64, GridCoords, f32, bool)> = mining_complexes
+    let rows: Vec<(u32, GridCoords, f32, bool)> = mining_complexes
         .iter()
         .map(|(entity, coords, integrity_points, disabled_by_player)| {
             (
-                entity.index_u32() as i64,
+                entity.index_u32(),
                 *coords,
                 integrity_points.get_current(),
                 disabled_by_player,

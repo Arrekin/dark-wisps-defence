@@ -7,7 +7,7 @@ use alteration::{
     effects::prelude::*,
     modifiers::prelude::*,
 };
-use almanach::prelude::*;
+use almanach::{BuildingInfo, ObjectPresentation, prelude::*};
 use buildings::prelude::*;
 use game_core::prelude::*;
 use grids::{
@@ -80,6 +80,7 @@ impl BuilderMainBase {
                 (ModifierType::MaxIntegrityPoints, 10000.),
                 (ModifierType::EnergySupplyRange, 15.),
             ]),
+            sockets: vec![],
             validate: building_validator,
             annotate: annotate_non_empty,
             placement: PlacementModes::default(),
@@ -158,7 +159,7 @@ fn collect_main_bases(
     mut save: SaveWriter,
 ) {
     let (entity, &coords, integrity_points) = main_base.into_inner();
-    let id = entity.index_u32() as i64;
+    let id = entity.index_u32();
     let integrity_points = integrity_points.get_current();
     save.submit(move |ctx| {
         ctx.save_marker("main_bases", id)?;

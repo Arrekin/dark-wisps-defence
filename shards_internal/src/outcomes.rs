@@ -99,8 +99,8 @@ fn collect_unlock_shard_blueprint_outcomes(
     mut save: SaveWriter,
 ) {
     struct Snapshot {
-        id: i64,
-        parent_id: i64,
+        id: u32,
+        parent_id: u32,
         shard_type: ShardType,
     }
 
@@ -108,8 +108,8 @@ fn collect_unlock_shard_blueprint_outcomes(
     let snapshots: Vec<Snapshot> = outcomes
         .iter()
         .map(|(entity, unlock, outcome_of)| Snapshot {
-            id: entity.index_u32() as i64,
-            parent_id: outcome_of.0.index_u32() as i64,
+            id: entity.index_u32(),
+            parent_id: outcome_of.0.index_u32(),
             shard_type: unlock.0,
         })
         .collect();
@@ -131,7 +131,7 @@ fn collect_unlock_shard_blueprint_outcomes(
 
 fn load_unlock_shard_blueprint_outcomes(ctx: &mut LoadContext) -> LoadResult {
     ctx.for_each_entity("SELECT id, parent_id, shard_type FROM unlock_shard_blueprint_outcomes", |ctx, _, entity, row| {
-        let parent_old_id: i64 = row.get(1)?;
+        let parent_old_id: u32 = row.get(1)?;
         let shard_type = row.get_parsed::<ShardType>(2)?;
         let parent = ctx.entity(parent_old_id)?;
         ctx.insert(entity, (

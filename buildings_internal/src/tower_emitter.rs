@@ -7,7 +7,7 @@ use alteration::{
     effects::prelude::*,
     modifiers::prelude::*,
 };
-use almanach::prelude::*;
+use almanach::{BuildingInfo, ObjectPresentation, StatSocket, prelude::*};
 use buildings::prelude::*;
 use game_core::prelude::*;
 use grids::placement::{annotate_non_empty, PlacementModes, PlaceRequest};
@@ -61,6 +61,15 @@ impl BuilderTowerEmitter {
                 (ModifierType::AttackSpeed, 0.2),
                 (ModifierType::AttackDamage, 1.),
             ]),
+            sockets: vec![
+                StatSocket::new(ShardType::Speed, "Attack speed", ModifierType::AttackSpeed, [0.05, 0.1, 0.15]),
+                StatSocket::new(ShardType::Reach, "Attack range", ModifierType::AttackRange, [2., 4., 6.]),
+                StatSocket {
+                    shard_type: ShardType::Speed,
+                    description: "Projectile speed (no effect yet)".to_string(),
+                    contributions: Default::default(),
+                },
+            ],
             validate: building_validator,
             annotate: annotate_non_empty,
             placement: PlacementModes::default(),
@@ -106,7 +115,7 @@ impl BuilderTowerEmitter {
                 builder.grid_position,
                 grid_imprint,
                 NeedsPower,
-                ShardSlots::new(3),
+                ShardSlots::new(building_info.sockets.len()),
                 related![Indicators[
                     IndicatorType::NoPower,
                     IndicatorType::DisabledByPlayer,
@@ -118,27 +127,8 @@ impl BuilderTowerEmitter {
                     IndicatorDisplay::default(),
                 ],
             ))
-            .observe(Self::on_shard_apply_do_so)
             .observe(on_technical_state_changed_recompute_operational);
         commands.trigger(TechnicalStateChanged { entity, kind: TechnicalChange::JustSpawned });
-    }
-
-    fn on_shard_apply_do_so(
-        trigger: On<ShardApplyEvent>,
-        mut commands: Commands,
-    ) {
-        match trigger.shard.shard_type {
-            ShardType::Reach => {
-                commands.spawn(ShardEffect::from_modifiers(trigger.shard_target, HashMap::from([(ModifierType::AttackRange, 2.0)])));
-            }
-            ShardType::Strength => {
-                commands.spawn(ShardEffect::from_modifiers(trigger.shard_target, HashMap::from([(ModifierType::AttackDamage, 2.0)])));
-            }
-            ShardType::Speed => {
-                commands.spawn(ShardEffect::from_modifiers(trigger.shard_target, HashMap::from([(ModifierType::AttackSpeed, 0.05)])));
-            }
-            ShardType::Fire | ShardType::Water | ShardType::Light | ShardType::Electric => {}
-        }
     }
 }
 
@@ -160,11 +150,11 @@ fn collect_tower_emitters(
     if towers.is_empty() { return; }
 
     #[debug_dev("Saving {} tower emitters", rows.len())]
-    let rows: Vec<(i64, GridCoords, f32, bool)> = towers
+    let rows: Vec<(u32, GridCoords, f32, bool)> = towers
         .iter()
         .map(|(entity, coords, integrity_points, disabled_by_player)| {
             (
-                entity.index_u32() as i64,
+                entity.index_u32(),
                 *coords,
                 integrity_points.get_current(),
                 disabled_by_player,

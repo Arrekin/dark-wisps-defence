@@ -86,11 +86,11 @@ fn collect_dark_ores(
     if dark_ores.is_empty() { return; }
 
     #[debug_dev("Saving {} dark ores", rows.len())]
-    let rows: Vec<(i64, GridCoords, u32)> = dark_ores
+    let rows: Vec<(u32, GridCoords, u32)> = dark_ores
         .iter()
         .map(|(entity, coords, dark_ore)| {
             (
-                entity.index_u32() as i64,
+                entity.index_u32(),
                 *coords,
                 dark_ore.amount as u32,
             )

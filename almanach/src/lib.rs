@@ -1,13 +1,14 @@
 use bevy::{platform::collections::HashMap, prelude::*};
+use strum::EnumCount;
 
 use alteration::modifiers::prelude::ModifierType;
-use game_core::prelude::{BuildingType, ContentId, GridImprint, MapObject, Shard};
+use game_core::prelude::{BuildingType, ContentId, GridImprint, MapObject, Shard, ShardTier, ShardType};
 use grids::placement::{ObjectPlacementInfo, PlacementAnnotatorFn, PlacementModes, PlacementValidatorFn};
 use resources::prelude::{ResourceAmount, ResourceType};
 use states::prelude::MapLoadingStage;
 
 pub mod prelude {
-    pub use super::{AccessPattern, Almanach, AlmanachAppExt, BuildingInfo, ObjectPresentation, ObjectTooltipFn, ResearchSpawnFn, ResourceInfo, ShardInfo, ShardRecipe};
+    pub use super::{Almanach, AlmanachAppExt};
 }
 
 pub struct AlmanachPlugin;
@@ -233,6 +234,8 @@ pub struct BuildingInfo {
     pub grid_imprint: GridImprint,
     pub cost: Vec<ResourceAmount>,
     pub baseline: HashMap<ModifierType, f32>,
+    /// Stat shard sockets in slot order. Empty for buildings that take no shards.
+    pub sockets: Vec<StatSocket>,
     pub validate: PlacementValidatorFn,
     pub annotate: PlacementAnnotatorFn,
     pub sprite: Handle<Image>,
@@ -249,6 +252,36 @@ impl From<&BuildingInfo> for ObjectPlacementInfo {
             annotate: info.annotate,
             placement: info.placement,
         }
+    }
+}
+
+/// One stat shard socket of a building: which stat shard it takes and what each tier does in it.
+/// The building defines the values, so the same shard type can do different things in different
+/// buildings, and in different sockets of one building.
+#[derive(Clone)]
+pub struct StatSocket {
+    pub shard_type: ShardType,
+    /// Tells the player what the socket does, e.g. "Attack speed".
+    pub description: String,
+    /// Modifier contributions per tier, T1 first.
+    pub contributions: [HashMap<ModifierType, f32>; ShardTier::COUNT],
+}
+impl StatSocket {
+    /// A socket that raises one modifier, by `per_tier[tier]`.
+    pub fn new(shard_type: ShardType, description: impl Into<String>, modifier: ModifierType, per_tier: [f32; ShardTier::COUNT]) -> Self {
+        Self {
+            shard_type,
+            description: description.into(),
+            contributions: per_tier.map(|value| HashMap::from([(modifier, value)])),
+        }
+    }
+
+    pub fn accepts(&self, shard: Shard) -> bool {
+        shard.shard_type == self.shard_type
+    }
+
+    pub fn contributions_for(&self, tier: ShardTier) -> &HashMap<ModifierType, f32> {
+        &self.contributions[tier as usize]
     }
 }
 

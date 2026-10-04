@@ -161,14 +161,14 @@ fn collect_kill_wisps(
     if goals.is_empty() { return; }
     let save_as_scenario = save_runner.save_as_scenario;
     #[debug_dev("Saving {} kill wisps goals", rows.len())]
-    let rows: Vec<(i64, i64, ObjectiveState, usize, usize)> = goals
+    let rows: Vec<(u32, u32, ObjectiveState, usize, usize)> = goals
         .iter()
         .map(|(entity, goal, state, progress, goal_of)| {
             let state = if save_as_scenario { ObjectiveState::Inactive } else { *state };
             let current = if save_as_scenario { 0 } else { progress.current };
             (
-                entity.index_u32() as i64,
-                goal_of.0.index_u32() as i64,
+                entity.index_u32(),
+                goal_of.0.index_u32(),
                 state,
                 goal.target,
                 current,
@@ -190,7 +190,7 @@ fn collect_kill_wisps(
 
 fn load_kill_wisps(ctx: &mut LoadContext) -> LoadResult {
     ctx.for_each_entity("SELECT id, objective_id, state, target, current FROM goal_kill_wisps", |ctx, _, entity, row| {
-        let objective_old_id: i64 = row.get(1)?;
+        let objective_old_id: u32 = row.get(1)?;
         let state = row.get_parsed::<ObjectiveState>(2)?;
         let target: usize = row.get(3)?;
         let current: usize = row.get(4)?;

@@ -179,15 +179,15 @@ pub(crate) fn collect_objectives(
 ) {
     if objectives.is_empty() { return; }
     #[debug_dev("Saving {} objectives", rows.len())]
-    let rows: Vec<(i64, String, ObjectiveState, Option<i64>)> = objectives
+    let rows: Vec<(u32, String, ObjectiveState, Option<u32>)> = objectives
         .iter()
         .map(|(entity, details, state, activated_by)| {
             let state = if save_runner.save_as_scenario { ObjectiveState::Inactive } else { *state };
             (
-                entity.index_u32() as i64,
+                entity.index_u32(),
                 details.id_name.clone(),
                 state,
-                activated_by.map(|moment| moment.0.index_u32() as i64),
+                activated_by.map(|moment| moment.0.index_u32()),
             )
         })
         .collect();
@@ -208,7 +208,7 @@ pub(crate) fn load_objectives(ctx: &mut LoadContext) -> LoadResult {
     ctx.for_each_entity("SELECT id, id_name, state, activated_by FROM objectives", |ctx, old_id, entity, row| {
         let id_name: String = row.get(1)?;
         let state = row.get_parsed::<ObjectiveState>(2)?;
-        let activated_by: Option<i64> = row.get(3)?;
+        let activated_by: Option<u32> = row.get(3)?;
 
         // Lost-activation load rule: an Inactive objective whose activation moment failed
         // remap can never activate — load as Failed. Non-Inactive objectives

@@ -8,7 +8,7 @@ use alteration::{
     effects::prelude::*,
     modifiers::prelude::*,
 };
-use almanach::prelude::*;
+use almanach::{BuildingInfo, ObjectPresentation, StatSocket, prelude::*};
 use buildings::prelude::*;
 use game_core::{math::angle_difference, prelude::*};
 use grids::placement::{annotate_non_empty, PlacementModes, PlaceRequest};
@@ -62,6 +62,15 @@ impl BuilderTowerRocketLauncher {
                 (ModifierType::AttackSpeed, 0.33),
                 (ModifierType::AttackDamage, 50.),
             ]),
+            sockets: vec![
+                StatSocket::new(ShardType::Speed, "Attack speed", ModifierType::AttackSpeed, [0.1, 0.2, 0.3]),
+                StatSocket::new(ShardType::Reach, "Attack range", ModifierType::AttackRange, [2., 4., 6.]),
+                StatSocket {
+                    shard_type: ShardType::Speed,
+                    description: "Projectile speed (no effect yet)".to_string(),
+                    contributions: Default::default(),
+                },
+            ],
             validate: building_validator,
             annotate: annotate_non_empty,
             placement: PlacementModes::default(),
@@ -108,7 +117,7 @@ impl BuilderTowerRocketLauncher {
                 grid_imprint,
                 TowerTopRotation { speed: 1.0, current_angle: 0. },
                 NeedsPower,
-                ShardSlots::new(3),
+                ShardSlots::new(building_info.sockets.len()),
                 related![Indicators[
                     IndicatorType::NoPower,
                     IndicatorType::DisabledByPlayer,
@@ -120,7 +129,6 @@ impl BuilderTowerRocketLauncher {
                     IndicatorDisplay::default(),
                 ],
             ))
-            .observe(Self::on_shard_apply_do_so)
             .observe(on_technical_state_changed_recompute_operational);
         let world_size = grid_imprint.world_size();
         let tower_top = commands.spawn((
@@ -134,24 +142,6 @@ impl BuilderTowerRocketLauncher {
         )).id();
         commands.entity(entity).add_child(tower_top);
         commands.trigger(TechnicalStateChanged { entity, kind: TechnicalChange::JustSpawned });
-    }
-
-    fn on_shard_apply_do_so(
-        trigger: On<ShardApplyEvent>,
-        mut commands: Commands,
-    ) {
-        match trigger.shard.shard_type {
-            ShardType::Reach => {
-                commands.spawn(ShardEffect::from_modifiers(trigger.shard_target, HashMap::from([(ModifierType::AttackRange, 2.0)])));
-            }
-            ShardType::Strength => {
-                commands.spawn(ShardEffect::from_modifiers(trigger.shard_target, HashMap::from([(ModifierType::AttackDamage, 15.0)])));
-            }
-            ShardType::Speed => {
-                commands.spawn(ShardEffect::from_modifiers(trigger.shard_target, HashMap::from([(ModifierType::AttackSpeed, 0.1)])));
-            }
-            ShardType::Fire | ShardType::Water | ShardType::Light | ShardType::Electric => {}
-        }
     }
 }
 
@@ -173,11 +163,11 @@ fn collect_tower_rocket_launchers(
     if towers.is_empty() { return; }
 
     #[debug_dev("Saving {} tower rocket launchers", rows.len())]
-    let rows: Vec<(i64, GridCoords, f32, bool)> = towers
+    let rows: Vec<(u32, GridCoords, f32, bool)> = towers
         .iter()
         .map(|(entity, coords, integrity_points, disabled_by_player)| {
             (
-                entity.index_u32() as i64,
+                entity.index_u32(),
                 *coords,
                 integrity_points.get_current(),
                 disabled_by_player,

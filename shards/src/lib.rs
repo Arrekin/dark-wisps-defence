@@ -7,5 +7,5 @@ pub mod prelude {
     pub use crate::blueprints::{ShardBlueprintAcquired, ShardBlueprints};
     pub use crate::effect::ShardEffect;
     pub use crate::outcomes::UnlockShardBlueprint;
-    pub use crate::slots::{ShardApplyEvent, ShardSlots};
+    pub use crate::slots::{ShardSlots, ShardSocketOperation};
 }

@@ -7,7 +7,7 @@ pub(crate) mod tooltip;
 
 use bevy::{prelude::*, sprite_render::Material2dPlugin};
 
-use almanach::{WispInfo, prelude::*};
+use almanach::{ObjectPresentation, WispInfo, prelude::*};
 use game_core::motion::MotionSystems;
 use grids::placement::{annotate_non_empty, PlacementModes};
 use persistence::prelude::{AppGameLoadSaveExtension, CollectSave};

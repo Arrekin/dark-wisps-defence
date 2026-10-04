@@ -60,10 +60,10 @@ fn collect_summonings(
     if summonings.is_empty() { return; }
 
     struct Snapshot {
-        id: i64,
+        id: u32,
         summoning: Summoning,
         state: SummoningState,
-        activated_by: Option<i64>,
+        activated_by: Option<u32>,
         produced: i32,
         next_spawn_time: f32,
     }
@@ -78,10 +78,10 @@ fn collect_summonings(
                 (*state, runtime.produced, runtime.next_spawn_time)
             };
             Snapshot {
-                id: entity.index_u32() as i64,
+                id: entity.index_u32(),
                 summoning: summoning.clone(),
                 state,
-                activated_by: activated_by.map(|moment| moment.0.index_u32() as i64),
+                activated_by: activated_by.map(|moment| moment.0.index_u32()),
                 produced,
                 next_spawn_time,
             }
@@ -118,7 +118,7 @@ fn collect_summonings(
     });
 }
 
-fn save_tempo(ctx: &SaveContext, id: i64, tempo: &SpawnTempo) -> rusqlite::Result<()> {
+fn save_tempo(ctx: &SaveContext, id: u32, tempo: &SpawnTempo) -> rusqlite::Result<()> {
     match tempo {
         SpawnTempo::Continuous { seconds, jitter, bulk_count } => {
             ctx.tx.execute(
@@ -130,7 +130,7 @@ fn save_tempo(ctx: &SaveContext, id: i64, tempo: &SpawnTempo) -> rusqlite::Resul
     Ok(())
 }
 
-fn save_area(ctx: &SaveContext, id: i64, area: &SpawnArea) -> rusqlite::Result<()> {
+fn save_area(ctx: &SaveContext, id: u32, area: &SpawnArea) -> rusqlite::Result<()> {
     match area {
         SpawnArea::Coords { coords } => {
             for coord in coords {
@@ -157,7 +157,7 @@ fn save_area(ctx: &SaveContext, id: i64, area: &SpawnArea) -> rusqlite::Result<(
     Ok(())
 }
 
-fn save_wisp_types(ctx: &SaveContext, id: i64, wisp_types: &[WispType]) -> rusqlite::Result<()> {
+fn save_wisp_types(ctx: &SaveContext, id: u32, wisp_types: &[WispType]) -> rusqlite::Result<()> {
     for wisp_type in wisp_types {
         ctx.tx.execute(
             "INSERT OR REPLACE INTO summoning_wisp_types (summoning_id, wisp_type) VALUES (?1, ?2)",
@@ -174,7 +174,7 @@ fn load_summonings(ctx: &mut LoadContext) -> LoadResult {
         |ctx, old_id, entity, row| {
             let id_name: String = row.get(1)?;
             let state = row.get_parsed::<SummoningState>(2)?;
-            let activated_by_old_id: Option<i64> = row.get(3)?;
+            let activated_by_old_id: Option<u32> = row.get(3)?;
             let tempo_kind: String = row.get(4)?;
             let limit_count: Option<i32> = row.get(5)?;
             let area_kind: String = row.get(6)?;

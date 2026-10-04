@@ -29,7 +29,7 @@ use alteration::{
     effects::prelude::*,
     modifiers::prelude::*,
 };
-use almanach::prelude::*;
+use almanach::{BuildingInfo, ObjectPresentation, prelude::*};
 use buildings::prelude::*;
 use game_core::prelude::*;
 use grids::placement::{annotate_non_empty, PlacementModes, PlaceRequest};
@@ -117,6 +117,7 @@ impl BuilderExplorationCenter {
             grid_imprint: GridImprint::Rectangle { width: 4, height: 4 },
             cost: vec![ResourceAmount::new(ResourceType::DarkOre, 500)],
             baseline: HashMap::from([(ModifierType::MaxIntegrityPoints, 100.)]),
+            sockets: vec![],
             validate: building_validator,
             annotate: annotate_non_empty,
             placement: PlacementModes::default(),
@@ -198,11 +199,11 @@ fn collect_exploration_centers(
     if exploration_centers.is_empty() { return; }
 
     #[debug_dev("Saving {} exploration centers", rows.len())]
-    let rows: Vec<(i64, GridCoords, f32, bool)> = exploration_centers
+    let rows: Vec<(u32, GridCoords, f32, bool)> = exploration_centers
         .iter()
         .map(|(entity, coords, integrity_points, disabled_by_player)| {
             (
-                entity.index_u32() as i64,
+                entity.index_u32(),
                 *coords,
                 integrity_points.get_current(),
                 disabled_by_player,

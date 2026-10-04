@@ -35,13 +35,13 @@ fn collect_laser_darts(
     if laser_darts.is_empty() { return; }
 
     #[debug_dev("Saving {} laser darts", rows.len())]
-    let rows: Vec<(i64, Vec2, Option<i64>, Vec2, f32)> = laser_darts
+    let rows: Vec<(u32, Vec2, Option<u32>, Vec2, f32)> = laser_darts
         .iter()
         .map(|(entity, transform, target, damage)| {
             (
-                entity.index_u32() as i64,
+                entity.index_u32(),
                 transform.translation.xy(),
-                target.target_wisp.map(|wisp| wisp.index_u32() as i64),
+                target.target_wisp.map(|wisp| wisp.index_u32()),
                 target.target_vector,
                 damage.get(),
             )
@@ -62,7 +62,7 @@ fn collect_laser_darts(
 
 fn load_laser_darts(ctx: &mut LoadContext) -> LoadResult {
     ctx.for_each_entity("SELECT id, target_wisp_id, vector_x, vector_y, damage FROM laser_darts", |ctx, old_id, entity, row| {
-        let target_wisp_old_id: Option<i64> = row.get(1)?;
+        let target_wisp_old_id: Option<u32> = row.get(1)?;
         let vector_x: f32 = row.get(2)?;
         let vector_y: f32 = row.get(3)?;
         let damage: f32 = row.get(4)?;

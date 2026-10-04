@@ -40,11 +40,11 @@ fn collect_cannonballs(
     if cannonballs.is_empty() { return; }
 
     #[debug_dev("Saving {} cannonballs", rows.len())]
-    let rows: Vec<(i64, Vec2, Vec2, f32, f32)> = cannonballs
+    let rows: Vec<(u32, Vec2, Vec2, f32, f32)> = cannonballs
         .iter()
         .map(|(entity, transform, target, damage)| {
             (
-                entity.index_u32() as i64,
+                entity.index_u32(),
                 transform.translation.xy(),
                 target.target_position,
                 damage.get(),

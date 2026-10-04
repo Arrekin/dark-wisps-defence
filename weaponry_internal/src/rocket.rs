@@ -51,15 +51,15 @@ fn collect_rockets(
     if rockets.is_empty() { return; }
 
     #[debug_dev("Saving {} rockets", rows.len())]
-    let rows: Vec<(i64, Vec2, Option<i64>, f32, f32)> = rockets
+    let rows: Vec<(u32, Vec2, Option<u32>, f32, f32)> = rockets
         .iter()
         .map(|(entity, transform, target, damage)| {
             let (axis, angle) = transform.rotation.to_axis_angle();
             let rotation_z = if axis.z > 0.0 { angle } else { -angle };
             (
-                entity.index_u32() as i64,
+                entity.index_u32(),
                 transform.translation.xy(),
-                Some(target.0.index_u32() as i64),
+                Some(target.0.index_u32()),
                 rotation_z,
                 damage.get(),
             )
@@ -80,7 +80,7 @@ fn collect_rockets(
 
 fn load_rockets(ctx: &mut LoadContext) -> LoadResult {
     ctx.for_each_entity("SELECT id, target_wisp_id, rotation_z, damage FROM rockets", |ctx, old_id, entity, row| {
-        let target_wisp_old_id: Option<i64> = row.get(1)?;
+        let target_wisp_old_id: Option<u32> = row.get(1)?;
         let rotation_z: f32 = row.get(2)?;
         let damage: f32 = row.get(3)?;
         let world_position = ctx.world_position(old_id)?;

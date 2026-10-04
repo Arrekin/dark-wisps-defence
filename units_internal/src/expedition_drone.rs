@@ -560,14 +560,14 @@ fn collect_expedition_drones(
     if drones.is_empty() { return; }
 
     #[debug_dev("Saving {} expedition drones", rows.len())]
-    let rows: Vec<(i64, i64, DroneState, Option<i64>, f32, Vec2, f32, f32, Vec2)> = drones
+    let rows: Vec<(u32, u32, DroneState, Option<u32>, f32, Vec2, f32, f32, Vec2)> = drones
         .iter()
         .map(|(entity, drone, drone_state, home_base, fuel, transform)| {
             (
-                entity.index_u32() as i64,
-                home_base.0.index_u32() as i64,
+                entity.index_u32(),
+                home_base.0.index_u32(),
                 *drone_state,
-                drone.mission_target.map(|e| e.index_u32() as i64),
+                drone.mission_target.map(|e| e.index_u32()),
                 drone.heading,
                 drone.waypoint,
                 fuel.current,
@@ -592,11 +592,11 @@ fn collect_expedition_drones(
 #[log_tags(Tag::GameLoad)]
 fn load_expedition_drones(ctx: &mut LoadContext) -> LoadResult {
     ctx.for_each_entity("SELECT id, home_base_id, state, mission_target_id, heading, waypoint_x, waypoint_y, fuel_current, fuel_max FROM expedition_drones", |ctx, old_id, entity, row| {
-        let home_base_old_id: i64 = row.get(1)?;
+        let home_base_old_id: u32 = row.get(1)?;
         let state = row.get_parsed::<DroneState>(2)
             .inspect_err(|error| warn_dev!("ExpeditionDrone with old ID {old_id} loads as Stationed: {error}"))
             .unwrap_or(DroneState::Stationed);
-        let mission_target_old_id: Option<i64> = row.get(3)?;
+        let mission_target_old_id: Option<u32> = row.get(3)?;
         let heading: f32 = row.get(4)?;
         let waypoint_x: f32 = row.get(5)?;
         let waypoint_y: f32 = row.get(6)?;

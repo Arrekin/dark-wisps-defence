@@ -212,11 +212,11 @@ fn collect_quantum_fields(
     if quantum_fields.is_empty() { return; }
 
     #[debug_dev("Saving {} quantum fields", rows.len())]
-    let rows: Vec<(i64, GridCoords, GridImprint, usize, f32)> = quantum_fields
+    let rows: Vec<(u32, GridCoords, GridImprint, usize, f32)> = quantum_fields
         .iter()
         .map(|(entity, coords, imprint, quantum_field)| {
             (
-                entity.index_u32() as i64,
+                entity.index_u32(),
                 *coords,
                 *imprint,
                 quantum_field.current_layer,

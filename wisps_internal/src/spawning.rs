@@ -92,7 +92,7 @@ pub(crate) fn collect_wisps(
     if wisps.is_empty() { return; }
 
     #[debug_dev("Saving {} wisps", rows.len())]
-    let rows: Vec<(i64, WispType, GridCoords, f32, Vec2)> = wisps
+    let rows: Vec<(u32, WispType, GridCoords, f32, Vec2)> = wisps
         .iter()
         .map(|(entity, wisp_type, coords, integrity_points, transform, wisp_state)| {
             // TODO: Once the wisps logic is mature, save the full wisp state properly. Right now we are ignoring some states (for example, attacking) and simply allow wisp to retarget on spawn, and continue from there.
@@ -102,7 +102,7 @@ pub(crate) fn collect_wisps(
                 transform.translation.xy()
             };
             (
-                entity.index_u32() as i64,
+                entity.index_u32(),
                 *wisp_type,
                 *coords,
                 integrity_points.get_current(),

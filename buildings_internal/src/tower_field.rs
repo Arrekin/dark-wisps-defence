@@ -10,7 +10,7 @@ use alteration::{
     },
     modifiers::prelude::*,
 };
-use almanach::prelude::*;
+use almanach::{BuildingInfo, ObjectPresentation, StatSocket, prelude::*};
 use buildings::prelude::*;
 use game_core::prelude::*;
 use grids::placement::{annotate_non_empty, PlacementModes, PlaceRequest};
@@ -68,6 +68,14 @@ impl BuilderTowerField {
                 (ModifierType::MaxIntegrityPoints, 100.),
                 (ModifierType::AttackRange, FIELD_RANGE_CELLS),
             ]),
+            sockets: vec![
+                StatSocket::new(ShardType::Reach, "Field range", ModifierType::AttackRange, [2., 4., 6.]),
+                StatSocket {
+                    shard_type: ShardType::Strength,
+                    description: "Slow strength (no effect yet)".to_string(),
+                    contributions: Default::default(),
+                },
+            ],
             validate: building_validator,
             annotate: annotate_non_empty,
             placement: PlacementModes::default(),
@@ -112,7 +120,7 @@ impl BuilderTowerField {
                 builder.grid_position,
                 building_info.grid_imprint,
                 NeedsPower,
-                ShardSlots::new(2),
+                ShardSlots::new(building_info.sockets.len()),
                 related![Indicators[
                     IndicatorType::NoPower,
                     IndicatorType::DisabledByPlayer,
@@ -125,7 +133,6 @@ impl BuilderTowerField {
                 ],
             ))
             .observe(Self::on_insert_attack_range_resize_force_field)
-            .observe(Self::on_shard_apply_do_so)
             .observe(on_technical_state_changed_recompute_operational)
             .observe(Self::on_add_is_operational_grow_force_field)
             .observe(Self::on_remove_is_operational_shrink_force_field);
@@ -141,21 +148,6 @@ impl BuilderTowerField {
         let Some(generated_field) = generated_field else { return; };
         let Ok(mut field) = fields.get_mut(*generated_field.collection()) else { return; };
         field.radius = attack_range.get() * CELL_SIZE;
-    }
-
-    fn on_shard_apply_do_so(
-        trigger: On<ShardApplyEvent>,
-        mut commands: Commands,
-    ) {
-        match trigger.shard.shard_type {
-            ShardType::Reach => {
-                commands.spawn(ShardEffect::from_modifiers(
-                    trigger.shard_target,
-                    HashMap::from([(ModifierType::AttackRange, 2.0)]),
-                ));
-            }
-            ShardType::Strength | ShardType::Speed | ShardType::Fire | ShardType::Water | ShardType::Light | ShardType::Electric => {}
-        }
     }
 }
 
@@ -177,11 +169,11 @@ fn collect_tower_fields(
     if towers.is_empty() { return; }
 
     #[debug_dev("Saving {} tower fields", rows.len())]
-    let rows: Vec<(i64, GridCoords, f32, bool)> = towers
+    let rows: Vec<(u32, GridCoords, f32, bool)> = towers
         .iter()
         .map(|(entity, coords, integrity_points, disabled_by_player)| {
             (
-                entity.index_u32() as i64,
+                entity.index_u32(),
                 *coords,
                 integrity_points.get_current(),
                 disabled_by_player,

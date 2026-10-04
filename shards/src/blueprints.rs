@@ -32,7 +32,7 @@ impl ShardBlueprints {
         self.unlocked.retain(|unlocked| *unlocked != shard_type);
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = ShardType> + '_ {
+    pub fn iter(&self) -> impl Iterator<Item = ShardType> {
         self.unlocked.iter().copied()
     }
 }

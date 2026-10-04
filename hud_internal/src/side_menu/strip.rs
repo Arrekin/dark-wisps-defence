@@ -2,7 +2,7 @@
 
 use bevy::prelude::*;
 
-use almanach::prelude::*;
+use almanach::{AccessPattern, prelude::*};
 use game_core::prelude::*;
 use states::AdminMode;
 

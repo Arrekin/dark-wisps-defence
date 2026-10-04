@@ -114,11 +114,11 @@ fn collect_walls(
     if walls.is_empty() { return; }
 
     #[debug_dev("Saving {} walls", rows.len())]
-    let rows: Vec<(i64, GridCoords, String)> = walls
+    let rows: Vec<(u32, GridCoords, String)> = walls
         .iter()
         .map(|(entity, coords, key)| {
             (
-                entity.index_u32() as i64,
+                entity.index_u32(),
                 *coords,
                 // An out-of-range key means the style table shrank under a live wall. The empty
                 // name loads back as the default, with a warn.

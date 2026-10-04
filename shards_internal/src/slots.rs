@@ -1,60 +1,69 @@
 use bevy::prelude::*;
 
-use game_core::prelude::{Shard, ShardTier, ShardType, SSS};
+use almanach::prelude::Almanach;
+use game_core::prelude::{BuildingType, Shard, ShardTier, ShardType};
 use logging::prelude::*;
 use persistence::{prelude::*, rusqlite};
-use shards::prelude::ShardSlots;
+use resources::prelude::Stock;
+use shards::{
+    prelude::{ShardEffect, ShardSlots, ShardSocketOperation},
+    slots::{ShardSocketOperationKind, SocketedShard},
+};
 use states::prelude::MapLoadingStage;
 
 pub(crate) struct ShardSlotsPlugin;
 impl Plugin for ShardSlotsPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_observer(on_builder_add_populate_shard_slots)
+            .add_observer(on_shard_socket_operation_do_so)
             .add_systems(CollectSave, collect_shard_slots)
             .register_loader(MapLoadingStage::SpawnEffectInstances, "entity_shards", load_shard_slots);
     }
 }
 
-/// Save/load unit for a single shard slot assignment.
-///
-/// `ShardSlots` is a container component holding N slots, but persistence saves each slot
-/// as a separate row in `entity_shards`. This breaks the standard builder pattern (one
-/// component → one row → one entity spawn) because:
-/// - Save: `collect_shard_slots` produces N rows (one per occupied slot).
-/// - Load: the loader can only insert components via `LoadContext`, not mutate existing
-///   ones. So on load, `BuilderShardSlot` is inserted as a throwaway component on the existing
-///   entity; `on_builder_add_populate_shard_slots` copies the slot data into `ShardSlots` via `insert_at` and removes itself.
-///
-/// This is a workaround for a framework limitation (no one-to-many component persistence) and for
-/// the fact that `ShardSlots` is slated for a full rework. Not a pattern to replicate elsewhere.
-#[derive(Component, Clone, Copy, Debug, SSS)]
-pub(crate) struct BuilderShardSlot {
-    pub slot_index: usize,
-    pub shard: Shard,
-}
-impl BuilderShardSlot {
-    pub fn new(slot_index: usize, shard: Shard) -> Self {
-        Self { slot_index, shard }
-    }
-}
-
-#[log_tags(Tag::GameLoad)]
-fn on_builder_add_populate_shard_slots(
-    trigger: On<Add, BuilderShardSlot>,
+/// Sockets a shard, spawning the effect its socket defines for the shard's tier, or empties the slot.
+/// The socket comes from the target's `BuildingInfo`. Socketing takes the shard out of `Stock` unless
+/// it is restored from a save; the shard the slot held goes back to `Stock` and its effect is removed.
+#[log_tags(Tag::Shards)]
+fn on_shard_socket_operation_do_so(
+    trigger: On<ShardSocketOperation>,
     mut commands: Commands,
-    builders: Query<&BuilderShardSlot>,
-    mut shard_slots: Query<&mut ShardSlots>,
+    almanach: Res<Almanach>,
+    mut stock: ResMut<Stock>,
+    mut shard_targets: Query<(&BuildingType, &mut ShardSlots)>,
 ) {
-    let entity = trigger.entity;
-    let Ok(builder) = builders.get(entity) else { return; };
-    #[warn_dev("Entity {entity} has no ShardSlots component to load its shard into")]
-    let Ok(mut slots) = shard_slots.get_mut(entity) else {
-        commands.entity(entity).remove::<BuilderShardSlot>();
-        return;
+    let ShardSocketOperation { shard_target, slot_index, kind } = *trigger;
+    #[warn_dev("Entity {shard_target} has no ShardSlots for {kind:?}")]
+    let Ok((building_type, mut slots)) = shard_targets.get_mut(shard_target) else { return; };
+    let building_info = almanach.get_building_info(*building_type);
+    #[warn_dev("{building_type:?} has no socket {slot_index} for {kind:?}")]
+    let Some(socket) = building_info.sockets.get(slot_index) else { return; };
+
+    let released = match kind {
+        ShardSocketOperationKind::Socket(shard) | ShardSocketOperationKind::Restore(shard) => {
+            #[warn_dev("Socket {slot_index} of {building_type:?} takes {} shards, refused {shard}", socket.shard_type)]
+            if !socket.accepts(shard) { return; }
+            if matches!(kind, ShardSocketOperationKind::Socket(_)) {
+                #[warn_dev("{shard} is not in stock, socket {slot_index} of {building_type:?} left as is")]
+                if !stock.try_remove((shard, 1)) { return; }
+                info_player!("{shard} socketed into '{}'", building_info.name);
+            }
+            let effect = commands.spawn(ShardEffect::from_modifiers(shard_target, socket.contributions_for(shard.tier).clone())).id();
+            slots.socket(slot_index, SocketedShard { shard, effect })
+        }
+        ShardSocketOperationKind::Unsocket => {
+            let released = slots.unsocket(slot_index);
+            match released {
+                Some(released) => info_player!("{} unsocketed from '{}'", released.shard, building_info.name),
+                None => warn_dev!("Slot {slot_index} of {building_type:?} is already empty"),
+            }
+            released
+        }
     };
-    slots.insert_at(builder.slot_index, builder.shard, entity, &mut commands);
-    commands.entity(entity).remove::<BuilderShardSlot>();
+    if let Some(released) = released {
+        commands.entity(released.effect).try_despawn();
+        stock.add((released.shard, 1));
+    }
 }
 
 #[log_tags(Tag::GameSave)]
@@ -63,14 +72,10 @@ fn collect_shard_slots(
     mut save: SaveWriter,
 ) {
     #[debug_dev("Saving {} shard slots", rows.len())]
-    let rows: Vec<(i64, usize, Shard)> = shard_targets.iter()
+    let rows: Vec<(u32, usize, Shard)> = shard_targets.iter()
         .flat_map(|(entity, slots)| {
-            slots.iter_with_index().map(move |(slot_index, shard)| {
-                (
-                    entity.index_u32() as i64,
-                    slot_index,
-                    shard,
-                )
+            slots.iter().enumerate().filter_map(move |(slot_index, shard)| {
+                shard.map(|shard| (entity.index_u32(), slot_index, shard))
             })
         })
         .collect();
@@ -91,7 +96,7 @@ fn load_shard_slots(ctx: &mut LoadContext) -> LoadResult {
     ctx.for_each_entity("SELECT shard_target_id, shard_index, shard_type, shard_tier FROM entity_shards ORDER BY shard_target_id, shard_index", |ctx, _, entity, row| {
         let slot_index: usize = row.get(1)?;
         let shard = Shard::new(row.get_parsed::<ShardType>(2)?, row.get_parsed::<ShardTier>(3)?);
-        ctx.insert(entity, BuilderShardSlot::new(slot_index, shard));
+        ctx.trigger(ShardSocketOperation::restore(entity, slot_index, shard));
         Ok(())
     })
 }

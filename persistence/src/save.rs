@@ -43,26 +43,26 @@ pub struct SaveContext<'a> {
     pub tx: &'a rusqlite::Transaction<'a>,
 }
 impl SaveContext<'_> {
-    pub fn register_entity(&self, entity_id: i64) -> rusqlite::Result<usize> {
+    pub fn register_entity(&self, entity_id: u32) -> rusqlite::Result<usize> {
         self.tx.prepare_cached("INSERT OR IGNORE INTO entities (id) VALUES (?1)")?.execute([entity_id])
     }
 
     /// Save entity of the object in its dedicated table. Calls register_entity()
-    pub fn save_marker(&self, table_name: &str, entity_id: i64) -> rusqlite::Result<usize> {
+    pub fn save_marker(&self, table_name: &str, entity_id: u32) -> rusqlite::Result<usize> {
         self.register_entity(entity_id)?;
         let query = format!("INSERT OR REPLACE INTO {} (id) VALUES (?1)", table_name);
         self.tx.prepare_cached(&query)?.execute([entity_id])
     }
 
-    pub fn save_world_position(&self, entity_id: i64, position: Vec2) -> rusqlite::Result<usize> {
+    pub fn save_world_position(&self, entity_id: u32, position: Vec2) -> rusqlite::Result<usize> {
         self.tx.prepare_cached("INSERT INTO world_positions (entity_id, x, y) VALUES (?1, ?2, ?3)")?.execute((entity_id, position.x, position.y))
     }
 
-    pub fn save_integrity_points(&self, entity_id: i64, current: f32) -> rusqlite::Result<usize> {
+    pub fn save_integrity_points(&self, entity_id: u32, current: f32) -> rusqlite::Result<usize> {
         self.tx.prepare_cached("INSERT OR REPLACE INTO integrity_points (entity_id, current) VALUES (?1, ?2)")?.execute((entity_id, current))
     }
 
-    pub fn save_disabled_by_player(&self, entity_id: i64) -> rusqlite::Result<usize> {
+    pub fn save_disabled_by_player(&self, entity_id: u32) -> rusqlite::Result<usize> {
         self.tx.prepare_cached("INSERT INTO disabled_by_player (entity_id) VALUES (?1)")?.execute([entity_id])
     }
 
@@ -70,11 +70,11 @@ impl SaveContext<'_> {
         self.tx.prepare_cached("INSERT OR REPLACE INTO stats (stat_name, stat_value) VALUES (?1, ?2)")?.execute((stat_name, stat_value))
     }
 
-    pub fn save_grid_coords(&self, entity_id: i64, coords: GridCoords) -> rusqlite::Result<usize> {
+    pub fn save_grid_coords(&self, entity_id: u32, coords: GridCoords) -> rusqlite::Result<usize> {
         self.tx.prepare_cached("INSERT INTO grid_coords (entity_id, x, y) VALUES (?1, ?2, ?3)")?.execute((entity_id, coords.x, coords.y))
     }
 
-    pub fn save_grid_imprint(&self, entity_id: i64, imprint: GridImprint) -> rusqlite::Result<usize> {
+    pub fn save_grid_imprint(&self, entity_id: u32, imprint: GridImprint) -> rusqlite::Result<usize> {
         let (shape, width, height) = match imprint {
             GridImprint::Rectangle { width, height } => ("Rectangle", Some(width), Some(height)),
             // Stored as: shape="Plus", width=extents, height=NULL

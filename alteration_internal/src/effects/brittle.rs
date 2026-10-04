@@ -26,7 +26,7 @@ fn collect_brittle_effects(
 ) {
     if brittle_effects.is_empty() { return; }
     #[debug_dev("Saving {} brittle effects", rows.len())]
-    let rows: Vec<(i64, i64, Option<i64>, f32, Option<f64>)> = brittle_effects
+    let rows: Vec<(u32, u32, Option<u32>, f32, Option<f64>)> = brittle_effects
         .iter()
         .map(|(entity, effect_target, effect_source, contributions, expires_at)| {
             let damage_multiplier = contributions.0
@@ -34,9 +34,9 @@ fn collect_brittle_effects(
                 .copied()
                 .unwrap_or(1.0);
             (
-                entity.index_u32() as i64,
-                effect_target.0.index_u32() as i64,
-                effect_source.map(|source| source.0.index_u32() as i64),
+                entity.index_u32(),
+                effect_target.0.index_u32(),
+                effect_source.map(|source| source.0.index_u32()),
                 damage_multiplier,
                 expires_at.map(|expires_at| expires_at.0),
             )
@@ -57,8 +57,8 @@ fn collect_brittle_effects(
 #[log_tags(Tag::GameLoad)]
 fn load_brittle_effects(ctx: &mut LoadContext) -> LoadResult {
     ctx.for_each_entity("SELECT id, target_id, source_id, damage_multiplier, expires_at FROM brittle_effects", |ctx, old_id, entity, row| {
-        let old_target_id: i64 = row.get(1)?;
-        let old_source_id: Option<i64> = row.get(2)?;
+        let old_target_id: u32 = row.get(1)?;
+        let old_source_id: Option<u32> = row.get(2)?;
         let damage_multiplier: f32 = row.get(3)?;
         let expires_at: Option<f64> = row.get(4)?;
         let new_target = ctx.entity(old_target_id)?;

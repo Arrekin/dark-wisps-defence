@@ -29,7 +29,7 @@ pub(crate) fn collect_researches(
     if researches.is_empty() { return; }
 
     struct Snapshot {
-        id: i64,
+        id: u32,
         content_id: String,
         name: String,
         description: String,
@@ -52,7 +52,7 @@ pub(crate) fn collect_researches(
                 runtime.map(|runtime| runtime.progress)
             };
             Snapshot {
-                id: entity.index_u32() as i64,
+                id: entity.index_u32(),
                 content_id: content_id.0.clone(),
                 name: name.0.clone(),
                 description: description.0.clone(),

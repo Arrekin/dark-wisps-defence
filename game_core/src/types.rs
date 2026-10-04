@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use strum::{AsRefStr, Display, EnumIter, EnumString, IntoEnumIterator};
+use strum::{AsRefStr, Display, EnumCount, EnumIter, EnumString, IntoEnumIterator};
 
 #[derive(Component, Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum BuildingType {
@@ -76,7 +76,7 @@ pub enum ShardType {
 }
 
 /// Shard tier, T1 the lowest. Ordered: each tier above T1 is forged from shards of the tier below.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Display, EnumString, EnumIter, AsRefStr, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Display, EnumString, EnumIter, AsRefStr, Default, EnumCount)]
 pub enum ShardTier {
     #[default]
     T1,

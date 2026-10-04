@@ -186,13 +186,13 @@ fn collect_clear_quantum_fields(
 ) {
     if goals.is_empty() { return; }
     #[debug_dev("Saving {} clear quantum fields goals", rows.len())]
-    let rows: Vec<(i64, i64, ObjectiveState)> = goals
+    let rows: Vec<(u32, u32, ObjectiveState)> = goals
         .iter()
         .map(|(entity, state, goal_of)| {
             let state = if save_runner.save_as_scenario { ObjectiveState::Inactive } else { *state };
             (
-                entity.index_u32() as i64,
-                goal_of.0.index_u32() as i64,
+                entity.index_u32(),
+                goal_of.0.index_u32(),
                 state,
             )
         })
@@ -212,7 +212,7 @@ fn collect_clear_quantum_fields(
 
 fn load_clear_quantum_fields(ctx: &mut LoadContext) -> LoadResult {
     ctx.for_each_entity("SELECT id, objective_id, state FROM goal_clear_quantum_fields", |ctx, _, entity, row| {
-        let objective_old_id: i64 = row.get(1)?;
+        let objective_old_id: u32 = row.get(1)?;
         let state = row.get_parsed::<ObjectiveState>(2)?;
         let objective_entity = ctx.entity(objective_old_id)?;
         ctx.insert(entity, BuilderGoalClearQuantumFields::new(objective_entity).with_state(state));

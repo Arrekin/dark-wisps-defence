@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use almanach::prelude::{AlmanachAppExt, ResearchSpawnFn};
+use almanach::{ResearchSpawnFn, prelude::AlmanachAppExt};
 use persistence::{creating_new_map, prelude::{AppGameLoadSaveExtension, CollectSave}};
 use research::prelude::SeedResearches;
 use states::prelude::{GameState, MapLoadingStage};

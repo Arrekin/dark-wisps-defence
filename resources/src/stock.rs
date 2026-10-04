@@ -87,7 +87,7 @@ impl Stock {
             .collect()
     }
     /// Every tracked resource with its current amount, held or not, in `ResourceType::all` order.
-    pub fn iter(&self) -> impl Iterator<Item = ResourceAmount> + '_ {
+    pub fn iter(&self) -> impl Iterator<Item = ResourceAmount> {
         ResourceType::all().map(|resource_type| ResourceAmount::new(resource_type, self.get(resource_type)))
     }
     fn get_info(&self, resource_type: ResourceType) -> &StockInfo {

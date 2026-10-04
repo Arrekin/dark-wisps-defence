@@ -2,76 +2,79 @@ use bevy::prelude::*;
 
 use game_core::prelude::Shard;
 
-/// Fixed-capacity indexed shard slots attached to an entity.
+/// The shards socketed into an entity: slot `i` holds what is socketed into stat socket `i` of its
+/// building. The slot count is fixed at spawn to the building's socket count.
 ///
-/// Call `insert_at` to socket a shard; it writes the slot and triggers `ShardApplyEvent`
-/// atomically. Callers without a specific target index should use `first_free_slot` first.
+/// Trigger `ShardSocketOperation` to change what is socketed. Its observer keeps each slot's shard
+/// and the effect it applies in step.
 #[derive(Component)]
-pub struct ShardSlots {
-    slots: Vec<Option<Shard>>,
-}
+pub struct ShardSlots(Box<[Option<SocketedShard>]>);
 impl ShardSlots {
-    pub fn new(capacity: usize) -> Self {
-        Self { slots: vec![None; capacity] }
+    pub fn new(socket_count: usize) -> Self {
+        Self(vec![None; socket_count].into_boxed_slice())
     }
 
-    /// Sockets a shard into the given slot index, triggering `ShardApplyEvent`.
-    /// Panics if `slot_index >= capacity`.
-    pub fn insert_at(
-        &mut self,
-        slot_index: usize,
-        shard: Shard,
-        shard_target: Entity,
-        commands: &mut Commands,
-    ) {
-        assert!(slot_index < self.slots.len(), "ShardSlots::insert_at: invalid slot index {slot_index}");
-        self.slots[slot_index] = Some(shard);
-        commands.trigger(ShardApplyEvent { shard_target, shard });
+    /// The shard in a slot; `None` when empty.
+    pub fn shard(&self, slot_index: usize) -> Option<Shard> {
+        self.0.get(slot_index).copied().flatten().map(|socketed| socketed.shard)
     }
 
-    /// Returns the index of the first empty slot, or `None` if full.
-    pub fn first_free_slot(&self) -> Option<usize> {
-        self.slots.iter().position(|s| s.is_none())
+    /// Every slot's shard in slot-index order, `None` for empty ones.
+    pub fn iter(&self) -> impl Iterator<Item = Option<Shard>> {
+        self.0.iter().map(|slot| slot.map(|socketed| socketed.shard))
     }
 
-    pub fn capacity(&self) -> usize {
-        self.slots.len()
+    /// Puts a shard into a slot, returning what it replaced. Panics if `slot_index` has no slot.
+    pub fn socket(&mut self, slot_index: usize, socketed: SocketedShard) -> Option<SocketedShard> {
+        self.0[slot_index].replace(socketed)
     }
 
-    pub fn len(&self) -> usize {
-        self.slots.iter().filter(|s| s.is_some()).count()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
-    pub fn is_full(&self) -> bool {
-        self.slots.iter().all(|s| s.is_some())
-    }
-
-    pub fn get(&self, slot_index: usize) -> Option<Shard> {
-        self.slots.get(slot_index).and_then(|s| *s)
-    }
-
-    /// Iterates occupied slots as `(slot_index, Shard)`.
-    pub fn iter_with_index(&self) -> impl Iterator<Item = (usize, Shard)> + '_ {
-        self.slots.iter().enumerate().filter_map(|(i, s)| s.map(|t| (i, t)))
-    }
-
-    /// Iterates shards of occupied slots in slot-index order.
-    pub fn iter(&self) -> impl Iterator<Item = Shard> + '_ {
-        self.slots.iter().filter_map(|s| *s)
+    /// Empties a slot, returning what it held.
+    pub fn unsocket(&mut self, slot_index: usize) -> Option<SocketedShard> {
+        self.0.get_mut(slot_index).and_then(Option::take)
     }
 }
 
-/// Triggered by `ShardSlots::insert_at` when a shard is socketed.
+/// A shard held in a slot, with the `ShardEffect` entity it spawned. The effect is not saved;
+/// loading sockets the shard again, which spawns a new one.
+#[derive(Clone, Copy, Debug)]
+pub struct SocketedShard {
+    pub shard: Shard,
+    pub effect: Entity,
+}
+
+/// Changes what a slot holds:
+/// - `socket` takes the shard out of `Stock` and puts it into the slot. Does nothing if the socket
+///   does not accept the shard or `Stock` does not have it.
+/// - `restore` puts a saved shard into the slot without touching `Stock`. Does nothing if the socket
+///   does not accept the shard.
+/// - `unsocket` empties the slot.
 ///
-/// Each entity type registers a per-entity observer for this event in its builder's `on_add`.
-/// The observer is responsible for spawning the appropriate effect entity.
+/// Any shard the slot already held goes back to `Stock`.
 #[derive(EntityEvent, Clone, Copy)]
-pub struct ShardApplyEvent {
+pub struct ShardSocketOperation {
     #[event_target]
     pub shard_target: Entity,
-    pub shard: Shard,
+    pub slot_index: usize,
+    pub kind: ShardSocketOperationKind,
+}
+impl ShardSocketOperation {
+    pub fn socket(shard_target: Entity, slot_index: usize, shard: Shard) -> Self {
+        Self { shard_target, slot_index, kind: ShardSocketOperationKind::Socket(shard) }
+    }
+
+    pub fn restore(shard_target: Entity, slot_index: usize, shard: Shard) -> Self {
+        Self { shard_target, slot_index, kind: ShardSocketOperationKind::Restore(shard) }
+    }
+
+    pub fn unsocket(shard_target: Entity, slot_index: usize) -> Self {
+        Self { shard_target, slot_index, kind: ShardSocketOperationKind::Unsocket }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum ShardSocketOperationKind {
+    Socket(Shard),
+    Restore(Shard),
+    Unsocket,
 }

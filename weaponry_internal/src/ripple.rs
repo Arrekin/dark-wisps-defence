@@ -54,11 +54,11 @@ fn collect_ripples(
     if ripples.is_empty() { return; }
 
     #[debug_dev("Saving {} ripples", rows.len())]
-    let rows: Vec<(i64, Vec2, f32, f32)> = ripples
+    let rows: Vec<(u32, Vec2, f32, f32)> = ripples
         .iter()
         .map(|(entity, transform, ripple)| {
             (
-                entity.index_u32() as i64,
+                entity.index_u32(),
                 transform.translation.xy(),
                 ripple.max_radius,
                 ripple.current_radius,

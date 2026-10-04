@@ -28,8 +28,7 @@ impl Plugin for InfoPanelPlugin {
             .add_observer(on_insert_focused_map_object_show_building_info_panel)
             .add_observer(on_building_info_panel_enabled_toggle_tower_subpanel)
             .add_observer(on_rebuild_tower_shard_slots_ui_do_so)
-            .add_observer(ShardSlotOccupied::on_add_construct_occupied_slot_ui)
-            .add_observer(ShardSlotEmpty::on_add_construct_empty_slot_ui)
+            .add_observer(ShardSocketSlot::on_add_construct_socket_slot_ui)
             .add_observer(ShardSelectionPanel::on_add_construct_shard_selection_panel)
             .add_observer(ShardPickerItem::on_add_construct_shard_picker_item)
             .add_observer(ShardSelectionPanel::on_remove_focused_map_object_close_shard_selection_panel)
@@ -213,15 +212,10 @@ fn on_rebuild_tower_shard_slots_ui_do_so(
     let (shard_target, shard_slots) = focused_tower.into_inner();
     let container_entity = shards_container.into_inner();
     commands.entity(container_entity).despawn_children();
-    if let Some(panel) = existing_selection_panel {
-        commands.entity(panel.into_inner()).despawn();
-    }
+    if let Some(panel) = existing_selection_panel { commands.entity(panel.into_inner()).despawn(); }
 
-    for slot_index in 0..shard_slots.capacity() {
-        match shard_slots.get(slot_index) {
-            Some(shard) => { commands.entity(container_entity).with_child(ShardSlotOccupied { shard }); }
-            None => { commands.entity(container_entity).with_child(ShardSlotEmpty { shard_target, slot_index }); }
-        }
+    for (slot_index, shard) in shard_slots.iter().enumerate() {
+        commands.entity(container_entity).with_child(ShardSocketSlot { shard_target, slot_index, shard });
     }
 }
 
@@ -259,81 +253,70 @@ fn tower_subpanel_content_bundle() -> impl Bundle {
     )
 }
 
-// Shard slot: filled slot (read-only display)
+// Shard socket slot: shows the socket's stat and the socketed shard, opens the picker on click
 #[derive(Component)]
-struct ShardSlotOccupied {
-    shard: Shard,
+#[require(Button)]
+struct ShardSocketSlot {
+    shard_target: Entity,
+    slot_index: usize,
+    shard: Option<Shard>,
 }
-impl ShardSlotOccupied {
-    fn on_add_construct_occupied_slot_ui(
-        trigger: On<Add, ShardSlotOccupied>,
+impl ShardSocketSlot {
+    fn on_add_construct_socket_slot_ui(
+        trigger: On<Add, ShardSocketSlot>,
         mut commands: Commands,
         almanach: Res<Almanach>,
-        slots: Query<&ShardSlotOccupied>,
+        slots: Query<&ShardSocketSlot>,
+        building_types: Query<&BuildingType>,
     ) {
         let entity = trigger.entity;
         let Ok(slot) = slots.get(entity) else { return };
-        let shard_name = almanach.get_resource_info(ResourceType::Shard(slot.shard)).name.clone();
+        let Ok(building_type) = building_types.get(slot.shard_target) else { return };
+        let Some(socket) = almanach.get_building_info(*building_type).sockets.get(slot.slot_index) else { return };
+        let (content, background, border) = match slot.shard {
+            Some(shard) => (
+                almanach.get_resource_info(ResourceType::Shard(shard)).name.clone(),
+                Color::srgba(0.1, 0.3, 0.1, 0.9),
+                Color::srgba(0.2, 0.6, 0.2, 1.0),
+            ),
+            None => (
+                format!("+ {}", socket.shard_type),
+                Color::srgba(0.15, 0.15, 0.15, 0.9),
+                Color::srgba(0.4, 0.4, 0.4, 1.0),
+            ),
+        };
         commands.entity(entity)
             .insert((
                 Node {
-                    width: Val::Px(48.),
-                    height: Val::Px(48.),
+                    width: Val::Px(84.),
+                    min_height: Val::Px(48.),
                     margin: UiRect::all(Val::Px(3.)),
+                    padding: UiRect::all(Val::Px(3.)),
+                    flex_direction: FlexDirection::Column,
                     justify_content: JustifyContent::Center,
                     align_items: AlignItems::Center,
+                    row_gap: Val::Px(2.),
                     border: UiRect::all(Val::Px(1.)),
                     ..default()
                 },
-                BackgroundColor(Color::srgba(0.1, 0.3, 0.1, 0.9)),
-                BorderColor::all(Color::srgba(0.2, 0.6, 0.2, 1.0)),
-            ))
-            .with_children(|parent| {
-                parent.spawn((
-                    Text::new(shard_name),
-                    TextLayout::no_wrap(),
-                    TextFont::default().with_font_size(10.0),
-                    TextColor::from(Color::WHITE),
-                ));
-            });
-    }
-}
-
-// Shard slot: empty slot (clickable)
-#[derive(Component)]
-#[require(Button)]
-struct ShardSlotEmpty {
-    shard_target: Entity,
-    slot_index: usize,
-}
-impl ShardSlotEmpty {
-    fn on_add_construct_empty_slot_ui(
-        trigger: On<Add, ShardSlotEmpty>,
-        mut commands: Commands,
-    ) {
-        let entity = trigger.entity;
-        commands.entity(entity)
-            .insert((
-                Node {
-                    width: Val::Px(48.),
-                    height: Val::Px(48.),
-                    margin: UiRect::all(Val::Px(3.)),
-                    justify_content: JustifyContent::Center,
-                    align_items: AlignItems::Center,
-                    border: UiRect::all(Val::Px(1.)),
-                    ..default()
-                },
-                BackgroundColor(Color::srgba(0.15, 0.15, 0.15, 0.9)),
-                BorderColor::all(Color::srgba(0.4, 0.4, 0.4, 1.0)),
+                BackgroundColor(background),
+                BorderColor::all(border),
             ))
             .observe(Self::on_click_open_shard_selection_panel)
             .observe(recolor_background_on::<Pointer<Over>>(Color::srgba(0.2, 0.2, 0.4, 0.9)))
-            .observe(recolor_background_on::<Pointer<Out>>(Color::srgba(0.15, 0.15, 0.15, 0.9)))
+            .observe(recolor_background_on::<Pointer<Out>>(background))
             .with_children(|parent| {
                 parent.spawn((
-                    Text::new("+"),
-                    TextFont::default().with_font_size(20.0),
+                    Text::new(content),
+                    TextLayout::no_wrap(),
+                    TextFont::default().with_font_size(11.0),
                     TextColor::from(Color::WHITE),
+                ));
+                parent.spawn((
+                    Text::new(socket.description.clone()),
+                    TextLayout { justify: Justify::Center, ..default() },
+                    TextFont::default().with_font_size(9.0),
+                    TextColor::from(Color::srgb(0.6, 0.6, 0.6)),
                 ));
             });
     }
@@ -341,7 +324,7 @@ impl ShardSlotEmpty {
     fn on_click_open_shard_selection_panel(
         trigger: On<Pointer<Click>>,
         mut commands: Commands,
-        slots: Query<&ShardSlotEmpty>,
+        slots: Query<&ShardSocketSlot>,
         existing_panel: Option<Single<Entity, With<ShardSelectionPanel>>>,
     ) {
         let entity = trigger.entity;
@@ -363,13 +346,18 @@ impl ShardSelectionPanel {
     fn on_add_construct_shard_selection_panel(
         trigger: On<Add, ShardSelectionPanel>,
         mut commands: Commands,
+        almanach: Res<Almanach>,
         stock: Res<Stock>,
         panels: Query<&ShardSelectionPanel>,
+        shard_targets: Query<(&BuildingType, &ShardSlots)>,
     ) {
         let entity = trigger.entity;
         let Ok(panel) = panels.get(entity) else { return };
         let shard_target = panel.shard_target;
         let slot_index = panel.slot_index;
+        let Ok((building_type, shard_slots)) = shard_targets.get(shard_target) else { return };
+        let Some(socket) = almanach.get_building_info(*building_type).sockets.get(slot_index) else { return };
+        let is_occupied = shard_slots.shard(slot_index).is_some();
 
         commands.entity(entity)
             .insert((
@@ -402,7 +390,7 @@ impl ShardSelectionPanel {
                 ))
                 .with_children(|parent| {
                     parent.spawn((
-                        Text::new("Select Shard"),
+                        Text::new(format!("{} shard: {}", socket.shard_type, socket.description)),
                         TextFont::default().with_font_size(14.0),
                         TextColor::from(BLUE),
                         Node { margin: UiRect::bottom(Val::Px(4.)), ..default() },
@@ -410,7 +398,7 @@ impl ShardSelectionPanel {
 
                     let mut available: Vec<(Shard, i32)> = stock.iter()
                         .filter_map(|entry| match entry.resource_type {
-                            ResourceType::Shard(shard) if entry.amount > 0 => Some((shard, entry.amount)),
+                            ResourceType::Shard(shard) if entry.amount > 0 && socket.accepts(shard) => Some((shard, entry.amount)),
                             _ => None,
                         })
                         .collect();
@@ -424,8 +412,34 @@ impl ShardSelectionPanel {
                         ));
                     } else {
                         for (shard, count) in available {
-                            parent.spawn(ShardPickerItem { shard_target, slot_index, shard, count });
+                            parent.spawn(ShardPickerItem { shard, count });
                         }
+                    }
+
+                    if is_occupied {
+                        parent.spawn((
+                            Button,
+                            Node {
+                                justify_content: JustifyContent::Center,
+                                align_items: AlignItems::Center,
+                                padding: UiRect::axes(Val::Px(8.), Val::Px(4.)),
+                                margin: UiRect::top(Val::Px(4.)),
+                                border: UiRect::all(Val::Px(1.)),
+                                ..default()
+                            },
+                            BackgroundColor(Color::srgba(0.2, 0.2, 0.1, 0.9)),
+                            BorderColor::all(Color::srgba(0.5, 0.5, 0.2, 1.0)),
+                        ))
+                        .observe(Self::on_click_unsocket_shard)
+                        .observe(recolor_background_on::<Pointer<Over>>(Color::srgba(0.3, 0.3, 0.15, 0.95)))
+                        .observe(recolor_background_on::<Pointer<Out>>(Color::srgba(0.2, 0.2, 0.1, 0.9)))
+                        .with_children(|parent| {
+                            parent.spawn((
+                                Text::new("Unsocket"),
+                                TextFont::default().with_font_size(12.0),
+                                TextColor::from(Color::WHITE),
+                            ));
+                        });
                     }
 
                     parent.spawn((
@@ -441,7 +455,7 @@ impl ShardSelectionPanel {
                         BackgroundColor(Color::srgba(0.2, 0.1, 0.1, 0.9)),
                         BorderColor::all(Color::srgba(0.5, 0.2, 0.2, 1.0)),
                     ))
-                    .observe(Self::on_cancel_click_close_shard_selection_panel)
+                    .observe(Self::on_click_close_shard_selection_panel)
                     .observe(recolor_background_on::<Pointer<Over>>(Color::srgba(0.3, 0.15, 0.15, 0.95)))
                     .observe(recolor_background_on::<Pointer<Out>>(Color::srgba(0.2, 0.1, 0.1, 0.9)))
                     .with_children(|parent| {
@@ -455,7 +469,18 @@ impl ShardSelectionPanel {
             });
     }
 
-    fn on_cancel_click_close_shard_selection_panel(
+    fn on_click_unsocket_shard(
+        _trigger: On<Pointer<Click>>,
+        mut commands: Commands,
+        panel: Single<(Entity, &ShardSelectionPanel)>,
+    ) {
+        let (panel_entity, panel) = panel.into_inner();
+        commands.trigger(ShardSocketOperation::unsocket(panel.shard_target, panel.slot_index));
+        commands.entity(panel_entity).despawn();
+        commands.trigger(RebuildTowerShardSlotsUi);
+    }
+
+    fn on_click_close_shard_selection_panel(
         _trigger: On<Pointer<Click>>,
         mut commands: Commands,
         panel: Single<Entity, With<ShardSelectionPanel>>,
@@ -475,8 +500,6 @@ impl ShardSelectionPanel {
 // Selectable shard entry inside ShardSelectionPanel
 #[derive(Component)]
 struct ShardPickerItem {
-    shard_target: Entity,
-    slot_index: usize,
     shard: Shard,
     count: i32,
 }
@@ -503,7 +526,7 @@ impl ShardPickerItem {
                 BackgroundColor(Color::srgba(0.15, 0.15, 0.25, 0.9)),
                 BorderColor::all(Color::srgba(0.3, 0.3, 0.5, 1.0)),
             ))
-            .observe(Self::on_click_equip_shard)
+            .observe(Self::on_click_socket_shard)
             .observe(recolor_background_on::<Pointer<Over>>(Color::srgba(0.25, 0.3, 0.5, 0.95)))
             .observe(recolor_background_on::<Pointer<Out>>(Color::srgba(0.15, 0.15, 0.25, 0.9)))
             .with_children(|parent| {
@@ -515,26 +538,18 @@ impl ShardPickerItem {
             });
     }
 
-    #[log_tags(Tag::Shards)]
-    fn on_click_equip_shard(
+    fn on_click_socket_shard(
         trigger: On<Pointer<Click>>,
         mut commands: Commands,
-        mut stock: ResMut<Stock>,
         items: Query<&ShardPickerItem>,
-        mut shard_slots: Query<&mut ShardSlots>,
-        panel: Single<Entity, With<ShardSelectionPanel>>,
+        panel: Single<(Entity, &ShardSelectionPanel)>,
     ) {
         let entity = trigger.entity;
         let Ok(item) = items.get(entity) else { return };
+        let (panel_entity, panel) = panel.into_inner();
+        commands.trigger(ShardSocketOperation::socket(panel.shard_target, panel.slot_index, item.shard));
 
-        let Ok(mut slots) = shard_slots.get_mut(item.shard_target) else { return; };
-        if slots.get(item.slot_index).is_some() { return; }
-        if !stock.try_remove((item.shard, 1)) { return; }
-
-        #[info_player("{} shard equipped", item.shard)]
-        slots.insert_at(item.slot_index, item.shard, item.shard_target, &mut commands);
-
-        commands.entity(panel.into_inner()).despawn();
+        commands.entity(panel_entity).despawn();
         commands.trigger(RebuildTowerShardSlotsUi);
     }
 }

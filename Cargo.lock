@@ -132,6 +132,7 @@ dependencies = [
  "grids",
  "resources",
  "states",
+ "strum",
 ]
 
 [[package]]

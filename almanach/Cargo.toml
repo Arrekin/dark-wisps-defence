@@ -10,6 +10,7 @@ grids = { workspace = true }
 resources = { workspace = true }
 alteration = { workspace = true }
 states = { workspace = true }
+strum = { workspace = true }
 
 [lints]
 workspace = true

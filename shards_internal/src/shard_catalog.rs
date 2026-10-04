@@ -11,7 +11,7 @@ use std::time::Duration;
 use bevy::prelude::*;
 use strum::IntoEnumIterator;
 
-use almanach::prelude::{AlmanachAppExt, ResourceInfo, ShardInfo, ShardRecipe};
+use almanach::{ResourceInfo, ShardInfo, ShardRecipe, prelude::AlmanachAppExt};
 use game_core::prelude::{Shard, ShardTier, ShardType};
 use resources::prelude::{ResourceAmount, ResourceType};
 
