@@ -131,8 +131,8 @@ dependencies = [
  "game_core",
  "grids",
  "resources",
+ "shards",
  "states",
- "strum",
 ]
 
 [[package]]
@@ -141,6 +141,7 @@ version = "0.2.0"
 dependencies = [
  "bevy",
  "game_core",
+ "strum",
 ]
 
 [[package]]
@@ -5266,6 +5267,7 @@ dependencies = [
  "alteration",
  "bevy",
  "game_core",
+ "strum",
 ]
 
 [[package]]
@@ -5273,6 +5275,7 @@ name = "shards_internal"
 version = "0.2.0"
 dependencies = [
  "almanach",
+ "alteration",
  "bevy",
  "bevy_egui",
  "game_core",

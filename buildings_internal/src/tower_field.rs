@@ -10,7 +10,7 @@ use alteration::{
     },
     modifiers::prelude::*,
 };
-use almanach::{BuildingInfo, ObjectPresentation, StatSocket, prelude::*};
+use almanach::{BuildingInfo, ObjectPresentation, prelude::*};
 use buildings::prelude::*;
 use game_core::prelude::*;
 use grids::placement::{annotate_non_empty, PlacementModes, PlaceRequest};
@@ -69,12 +69,8 @@ impl BuilderTowerField {
                 (ModifierType::AttackRange, FIELD_RANGE_CELLS),
             ]),
             sockets: vec![
-                StatSocket::new(ShardType::Reach, "Field range", ModifierType::AttackRange, [2., 4., 6.]),
-                StatSocket {
-                    shard_type: ShardType::Strength,
-                    description: "Slow strength (no effect yet)".to_string(),
-                    contributions: Default::default(),
-                },
+                ("field_range".into(), ShardSocket::new(ShardType::Reach, "Field range", ModifierType::AttackRange, [2., 4., 6.])),
+                ("slow_strength".into(), ShardSocket::without_contributions(ShardType::Strength, "Slow strength (no effect yet)")),
             ],
             validate: building_validator,
             annotate: annotate_non_empty,
@@ -120,7 +116,6 @@ impl BuilderTowerField {
                 builder.grid_position,
                 building_info.grid_imprint,
                 NeedsPower,
-                ShardSlots::new(building_info.sockets.len()),
                 related![Indicators[
                     IndicatorType::NoPower,
                     IndicatorType::DisabledByPlayer,
@@ -136,6 +131,9 @@ impl BuilderTowerField {
             .observe(on_technical_state_changed_recompute_operational)
             .observe(Self::on_add_is_operational_grow_force_field)
             .observe(Self::on_remove_is_operational_shrink_force_field);
+        for (content_id, socket) in &building_info.sockets {
+            commands.trigger(ShardSocketUpsert::new(entity, content_id.clone(), socket.clone()));
+        }
         commands.trigger(TechnicalStateChanged { entity, kind: TechnicalChange::JustSpawned });
     }
 

@@ -133,6 +133,8 @@ pub trait LoadRowExtension {
     /// Reads a column holding a stored name and parses it into `T`; a name `T` does not know
     /// becomes [`LoadError::UnknownValue`] labelled with `T`'s type name.
     fn get_parsed<T: FromStr>(&self, index: usize) -> LoadResult<T>;
+    /// [`Self::get_parsed`] for a nullable column: NULL is `Ok(None)`.
+    fn get_parsed_optional<T: FromStr>(&self, index: usize) -> LoadResult<Option<T>>;
 }
 impl LoadRowExtension for rusqlite::Row<'_> {
     fn get_parsed<T: FromStr>(&self, index: usize) -> LoadResult<T> {
@@ -141,6 +143,11 @@ impl LoadRowExtension for rusqlite::Row<'_> {
             let kind = std::any::type_name::<T>().rsplit("::").next().unwrap_or_default();
             LoadError::unknown_value(kind, name)
         })
+    }
+
+    fn get_parsed_optional<T: FromStr>(&self, index: usize) -> LoadResult<Option<T>> {
+        let name: Option<String> = self.get(index)?;
+        name.map(|_| self.get_parsed(index)).transpose()
     }
 }
 

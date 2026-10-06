@@ -91,9 +91,6 @@ fn collect_summonings(
     save.submit(move |ctx| {
         for snapshot in &snapshots {
             ctx.register_entity(snapshot.id)?;
-            if let Some(activated_by_id) = snapshot.activated_by {
-                ctx.register_entity(activated_by_id)?;
-            }
 
             ctx.tx.execute(
                 "INSERT OR REPLACE INTO summonings (id, id_name, state, activated_by, tempo_kind, limit_count, area_kind, produced, next_spawn_time) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",

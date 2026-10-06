@@ -7,7 +7,7 @@ use alteration::{
     effects::prelude::*,
     modifiers::prelude::*,
 };
-use almanach::{BuildingInfo, ObjectPresentation, StatSocket, prelude::*};
+use almanach::{BuildingInfo, ObjectPresentation, prelude::*};
 use buildings::prelude::*;
 use game_core::{math::angle_difference, prelude::*};
 use grids::placement::{annotate_non_empty, PlacementModes, PlaceRequest};
@@ -61,9 +61,9 @@ impl BuilderTowerBlaster {
                 (ModifierType::AttackDamage, 1.),
             ]),
             sockets: vec![
-                StatSocket::new(ShardType::Speed, "Attack speed", ModifierType::AttackSpeed, [1., 2., 3.]),
-                StatSocket::new(ShardType::Reach, "Attack range", ModifierType::AttackRange, [2., 4., 6.]),
-                StatSocket::new(ShardType::Strength, "Damage", ModifierType::AttackDamage, [2., 4., 6.]),
+                ("attack_speed".into(), ShardSocket::new(ShardType::Speed, "Attack speed", ModifierType::AttackSpeed, [1., 2., 3.])),
+                ("attack_range".into(), ShardSocket::new(ShardType::Reach, "Attack range", ModifierType::AttackRange, [2., 4., 6.])),
+                ("damage".into(), ShardSocket::new(ShardType::Strength, "Damage", ModifierType::AttackDamage, [2., 4., 6.])),
             ],
             validate: building_validator,
             annotate: annotate_non_empty,
@@ -113,7 +113,6 @@ impl BuilderTowerBlaster {
                 grid_imprint,
                 TowerTopRotation { speed: 10.0, current_angle: 0. },
                 NeedsPower,
-                ShardSlots::new(building_info.sockets.len()),
                 related![Indicators[
                     IndicatorType::NoPower,
                     IndicatorType::DisabledByPlayer,
@@ -136,6 +135,9 @@ impl BuilderTowerBlaster {
             MarkerTowerRotationalTop(entity),
         )).id();
         commands.entity(entity).add_child(tower_top);
+        for (content_id, socket) in &building_info.sockets {
+            commands.trigger(ShardSocketUpsert::new(entity, content_id.clone(), socket.clone()));
+        }
         commands.trigger(TechnicalStateChanged { entity, kind: TechnicalChange::JustSpawned });
     }
 }

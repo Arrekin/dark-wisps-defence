@@ -18,7 +18,7 @@ use bevy::{
 };
 use bevy_egui::PrimaryEguiContext;
 
-use game_core::prelude::{CELL_SIZE, GridCoords, InsertSome};
+use game_core::prelude::{CELL_SIZE, GridCoords, OptionalCommands};
 
 const ZOOM_MIN: f32 = 1.;
 const ZOOM_MAX: f32 = 4.;

@@ -120,7 +120,7 @@ MapLoadingStage state machine (stages are ordering barriers)
     ├─► LoadMapInfo          build_entity_id_map (exclusive) → map_info loader
     ├─► LoadResources        global state (stats, stock, clock, ...)
     ├─► SpawnMapElements     entities (walls, buildings, wisps, projectiles, ...)
-    ├─► SpawnEffectInstances effects referencing entities (brittle, shard slots)
+    ├─► SpawnEffectInstances effects referencing entities (brittle, shard sockets)
     └─► Ready                on_map_load_ready (queues game_start_state, admin mode)
     ▼
 OnExit(GameState::Loading)   finish_map_load: LoadGameReport { Loaded } ·
@@ -159,7 +159,10 @@ fn load_my_entities(ctx: &mut LoadContext) -> LoadResult {
 
 ### Shared Tables
 
-- `entities` — master registry; all saved entities register here first (`ctx.register_entity`)
+- `entities` — master registry; all saved entities register here first (`ctx.register_entity`).
+  A collector registers only the entities it saves. Collectors run in any order, so a foreign key
+  to `entities` goes only on a row's own id; references to other entities resolve at load, where
+  an unsaved target fails `ctx.entity` and the loader logs it, then skips or degrades the row.
 - `grid_coords` — grid-based positions
 - `world_positions` — pixel-precise positions (smooth movement resume)
 - `integrity_points` — integrity-point values

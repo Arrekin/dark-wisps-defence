@@ -1,4 +1,7 @@
-use bevy::prelude::*;
+use bevy::{
+    ecs::relationship::Relationship,
+    prelude::*,
+};
 
 pub trait SSS: Send + Sync + 'static {}
 
@@ -9,15 +12,26 @@ pub trait Property {
     fn new(value: f32) -> Self;
 }
 
-/// Inserts an optional bundle, so builder observers chain optional components without `if let` blocks.
-pub trait InsertSome {
+/// Entity commands that do nothing on `None`. Keeps builder chains free of `if let`.
+pub trait OptionalCommands {
     fn insert_some(&mut self, bundle: Option<impl Bundle>) -> &mut Self;
+    /// Spawns a clone of each bundle as an entity related to this one through `R`.
+    fn with_related_some<'a, R: Relationship>(&mut self, bundles: Option<impl IntoIterator<Item = &'a (impl Bundle + Clone)>>) -> &mut Self;
 }
-impl InsertSome for EntityCommands<'_> {
+impl OptionalCommands for EntityCommands<'_> {
     fn insert_some(&mut self, bundle: Option<impl Bundle>) -> &mut Self {
         match bundle {
             Some(bundle) => self.insert(bundle),
             None => self,
         }
+    }
+
+    fn with_related_some<'a, R: Relationship>(&mut self, bundles: Option<impl IntoIterator<Item = &'a (impl Bundle + Clone)>>) -> &mut Self {
+        let Some(bundles) = bundles else { return self };
+        self.with_related_entities::<R>(|related| {
+            for bundle in bundles {
+                related.spawn(bundle.clone());
+            }
+        })
     }
 }

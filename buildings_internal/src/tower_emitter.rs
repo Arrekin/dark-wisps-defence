@@ -7,7 +7,7 @@ use alteration::{
     effects::prelude::*,
     modifiers::prelude::*,
 };
-use almanach::{BuildingInfo, ObjectPresentation, StatSocket, prelude::*};
+use almanach::{BuildingInfo, ObjectPresentation, prelude::*};
 use buildings::prelude::*;
 use game_core::prelude::*;
 use grids::placement::{annotate_non_empty, PlacementModes, PlaceRequest};
@@ -62,13 +62,9 @@ impl BuilderTowerEmitter {
                 (ModifierType::AttackDamage, 1.),
             ]),
             sockets: vec![
-                StatSocket::new(ShardType::Speed, "Attack speed", ModifierType::AttackSpeed, [0.05, 0.1, 0.15]),
-                StatSocket::new(ShardType::Reach, "Attack range", ModifierType::AttackRange, [2., 4., 6.]),
-                StatSocket {
-                    shard_type: ShardType::Speed,
-                    description: "Projectile speed (no effect yet)".to_string(),
-                    contributions: Default::default(),
-                },
+                ("attack_speed".into(), ShardSocket::new(ShardType::Speed, "Attack speed", ModifierType::AttackSpeed, [0.05, 0.1, 0.15])),
+                ("attack_range".into(), ShardSocket::new(ShardType::Reach, "Attack range", ModifierType::AttackRange, [2., 4., 6.])),
+                ("projectile_speed".into(), ShardSocket::without_contributions(ShardType::Speed, "Projectile speed (no effect yet)")),
             ],
             validate: building_validator,
             annotate: annotate_non_empty,
@@ -115,7 +111,6 @@ impl BuilderTowerEmitter {
                 builder.grid_position,
                 grid_imprint,
                 NeedsPower,
-                ShardSlots::new(building_info.sockets.len()),
                 related![Indicators[
                     IndicatorType::NoPower,
                     IndicatorType::DisabledByPlayer,
@@ -128,6 +123,9 @@ impl BuilderTowerEmitter {
                 ],
             ))
             .observe(on_technical_state_changed_recompute_operational);
+        for (content_id, socket) in &building_info.sockets {
+            commands.trigger(ShardSocketUpsert::new(entity, content_id.clone(), socket.clone()));
+        }
         commands.trigger(TechnicalStateChanged { entity, kind: TechnicalChange::JustSpawned });
     }
 }

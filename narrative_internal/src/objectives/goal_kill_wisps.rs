@@ -178,7 +178,6 @@ fn collect_kill_wisps(
     save.submit(move |ctx| {
         for (id, objective_id, state, target, current) in rows {
             ctx.register_entity(id)?;
-            ctx.register_entity(objective_id)?;
             ctx.tx.execute(
                 "INSERT OR REPLACE INTO goal_kill_wisps (id, objective_id, state, target, current) VALUES (?1, ?2, ?3, ?4, ?5)",
                 rusqlite::params![id, objective_id, state.as_ref(), target, current],

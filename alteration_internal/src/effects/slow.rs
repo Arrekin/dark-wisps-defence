@@ -4,7 +4,7 @@ use alteration::{
     effects::{prelude::*, slow::SlowEffect},
     modifiers::ModifierType,
 };
-use game_core::prelude::InsertSome;
+use game_core::prelude::OptionalCommands;
 
 pub(crate) struct SlowEffectPlugin;
 impl Plugin for SlowEffectPlugin {

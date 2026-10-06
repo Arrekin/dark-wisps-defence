@@ -119,7 +119,6 @@ fn collect_unlock_shard_blueprint_outcomes(
     save.submit(move |ctx| {
         for snap in &snapshots {
             ctx.register_entity(snap.id)?;
-            ctx.register_entity(snap.parent_id)?;
             ctx.tx.execute(
                 "INSERT OR REPLACE INTO unlock_shard_blueprint_outcomes (id, parent_id, shard_type) VALUES (?1, ?2, ?3)",
                 rusqlite::params![snap.id, snap.parent_id, snap.shard_type.as_ref()],

@@ -7,7 +7,7 @@ use alteration::{
     effects::prelude::*,
     modifiers::prelude::*,
 };
-use almanach::{BuildingInfo, ObjectPresentation, StatSocket, prelude::*};
+use almanach::{BuildingInfo, ObjectPresentation, prelude::*};
 use buildings::prelude::*;
 use game_core::prelude::*;
 use grids::{
@@ -65,9 +65,9 @@ impl BuilderTowerCannon {
                 (ModifierType::AttackDamage, 50.),
             ]),
             sockets: vec![
-                StatSocket::new(ShardType::Speed, "Attack speed", ModifierType::AttackSpeed, [0.15, 0.3, 0.45]),
-                StatSocket::new(ShardType::Reach, "Attack range", ModifierType::AttackRange, [2., 4., 6.]),
-                StatSocket::new(ShardType::Strength, "Damage", ModifierType::AttackDamage, [15., 30., 45.]),
+                ("attack_speed".into(), ShardSocket::new(ShardType::Speed, "Attack speed", ModifierType::AttackSpeed, [0.15, 0.3, 0.45])),
+                ("attack_range".into(), ShardSocket::new(ShardType::Reach, "Attack range", ModifierType::AttackRange, [2., 4., 6.])),
+                ("damage".into(), ShardSocket::new(ShardType::Strength, "Damage", ModifierType::AttackDamage, [15., 30., 45.])),
             ],
             validate: building_validator,
             annotate: annotate_non_empty,
@@ -116,7 +116,6 @@ impl BuilderTowerCannon {
                 builder.grid_position,
                 grid_imprint,
                 NeedsPower,
-                ShardSlots::new(building_info.sockets.len()),
                 related![Indicators[
                     IndicatorType::NoPower,
                     IndicatorType::DisabledByPlayer,
@@ -129,6 +128,9 @@ impl BuilderTowerCannon {
                 ],
             ))
             .observe(on_technical_state_changed_recompute_operational);
+        for (content_id, socket) in &building_info.sockets {
+            commands.trigger(ShardSocketUpsert::new(entity, content_id.clone(), socket.clone()));
+        }
         commands.trigger(TechnicalStateChanged { entity, kind: TechnicalChange::JustSpawned });
     }
 }

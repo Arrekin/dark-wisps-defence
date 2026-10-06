@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use game_core::prelude::{InsertSome, MomentHappened, MomentOfInterest};
+use game_core::prelude::{MomentHappened, MomentOfInterest, OptionalCommands};
 use logging::prelude::*;
 use narrative::prelude::*;
 use persistence::{prelude::*, rusqlite};

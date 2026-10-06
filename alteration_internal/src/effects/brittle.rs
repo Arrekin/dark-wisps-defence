@@ -4,7 +4,7 @@ use alteration::{
     effects::{brittle::BrittleEffect, prelude::*},
     modifiers::ModifierType,
 };
-use game_core::prelude::InsertSome;
+use game_core::prelude::OptionalCommands;
 use logging::prelude::*;
 use persistence::{prelude::*, rusqlite};
 use states::MapLoadingStage;

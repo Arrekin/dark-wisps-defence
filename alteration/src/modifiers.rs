@@ -1,5 +1,6 @@
 use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
+use strum::{AsRefStr, EnumString};
 
 use game_core::prelude::*;
 
@@ -17,7 +18,7 @@ pub mod prelude {
 //  MODIFIER TYPE
 ////////////////////////
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumString, AsRefStr)]
 pub enum ModifierType {
     AttackSpeed,
     AttackRange,

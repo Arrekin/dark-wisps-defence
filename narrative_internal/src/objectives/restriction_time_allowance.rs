@@ -219,7 +219,6 @@ fn collect_time_allowance(
     save.submit(move |ctx| {
         for (id, objective_id, state, seconds, elapsed) in rows {
             ctx.register_entity(id)?;
-            ctx.register_entity(objective_id)?;
             ctx.tx.execute(
                 "INSERT OR REPLACE INTO restriction_time_allowance (id, objective_id, state, seconds, elapsed) VALUES (?1, ?2, ?3, ?4, ?5)",
                 rusqlite::params![id, objective_id, state.as_ref(), seconds, elapsed],

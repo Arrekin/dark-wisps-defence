@@ -200,7 +200,6 @@ fn collect_clear_quantum_fields(
     save.submit(move |ctx| {
         for (id, objective_id, state) in rows {
             ctx.register_entity(id)?;
-            ctx.register_entity(objective_id)?;
             ctx.tx.execute(
                 "INSERT OR REPLACE INTO goal_clear_quantum_fields (id, objective_id, state) VALUES (?1, ?2, ?3)",
                 rusqlite::params![id, objective_id, state.as_ref()],

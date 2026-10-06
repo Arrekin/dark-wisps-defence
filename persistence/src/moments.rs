@@ -40,7 +40,6 @@ pub fn save_moments<M: MomentKind>(
     save.submit(move |ctx| {
         for (id, parent_id, kind, fired_count) in rows {
             ctx.register_entity(id)?;
-            ctx.register_entity(parent_id)?;
             ctx.tx.execute(
                 "INSERT OR REPLACE INTO moments (id, parent_id, kind, fired_count) VALUES (?1, ?2, ?3, ?4)",
                 rusqlite::params![id, parent_id, kind, fired_count],

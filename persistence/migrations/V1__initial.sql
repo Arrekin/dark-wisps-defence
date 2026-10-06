@@ -188,12 +188,29 @@ CREATE TABLE IF NOT EXISTS tower_fields (
 -- Shards
 -- ========================
 
-CREATE TABLE IF NOT EXISTS entity_shards (
-    shard_target_id INTEGER NOT NULL,
-    shard_index INTEGER NOT NULL,
+-- One row per socket, identified by its holder and content id. Socketed type and tier are NULL for
+-- an empty socket; accepted tier NULL accepts any tier.
+CREATE TABLE IF NOT EXISTS shard_sockets (
+    id INTEGER PRIMARY KEY,
+    holder_id INTEGER NOT NULL,
+    content_id TEXT NOT NULL,
     shard_type TEXT NOT NULL,
+    shard_tier TEXT,
+    description TEXT NOT NULL,
+    removed INTEGER NOT NULL,
+    socketed_shard_type TEXT,
+    socketed_shard_tier TEXT,
+    UNIQUE (holder_id, content_id)
+);
+
+-- Per-tier modifier contributions of a socket.
+CREATE TABLE IF NOT EXISTS shard_socket_contributions (
+    socket_row_id INTEGER NOT NULL,
     shard_tier TEXT NOT NULL,
-    PRIMARY KEY (shard_target_id, shard_index)
+    modifier_type TEXT NOT NULL,
+    value REAL NOT NULL,
+    PRIMARY KEY (socket_row_id, shard_tier, modifier_type),
+    FOREIGN KEY(socket_row_id) REFERENCES shard_sockets(id)
 );
 
 -- Shard types the player has unlocked for forging (membership only).
@@ -291,8 +308,7 @@ CREATE TABLE IF NOT EXISTS goal_kill_wisps (
     state TEXT NOT NULL,
     target INTEGER NOT NULL,
     current INTEGER NOT NULL DEFAULT 0,
-    FOREIGN KEY(id) REFERENCES entities(id),
-    FOREIGN KEY(objective_id) REFERENCES entities(id)
+    FOREIGN KEY(id) REFERENCES entities(id)
 );
 
 -- Clear-quantum-fields goals. Counter is derived at runtime from the live world
@@ -301,8 +317,7 @@ CREATE TABLE IF NOT EXISTS goal_clear_quantum_fields (
     id INTEGER PRIMARY KEY,
     objective_id INTEGER NOT NULL,
     state TEXT NOT NULL,
-    FOREIGN KEY(id) REFERENCES entities(id),
-    FOREIGN KEY(objective_id) REFERENCES entities(id)
+    FOREIGN KEY(id) REFERENCES entities(id)
 );
 
 -- Time allowance restrictions (maintenance polarity: satisfied at activation,
@@ -313,8 +328,7 @@ CREATE TABLE IF NOT EXISTS restriction_time_allowance (
     state TEXT NOT NULL,
     seconds REAL NOT NULL,
     elapsed REAL NOT NULL DEFAULT 0.0,
-    FOREIGN KEY(id) REFERENCES entities(id),
-    FOREIGN KEY(objective_id) REFERENCES entities(id)
+    FOREIGN KEY(id) REFERENCES entities(id)
 );
 
 -- Generic moments table. Each row is a moment entity owned by a parent
@@ -327,8 +341,7 @@ CREATE TABLE IF NOT EXISTS moments (
     parent_id INTEGER NOT NULL,
     kind TEXT NOT NULL,
     fired_count INTEGER NOT NULL DEFAULT 0,
-    FOREIGN KEY(id) REFERENCES entities(id),
-    FOREIGN KEY(parent_id) REFERENCES entities(id)
+    FOREIGN KEY(id) REFERENCES entities(id)
 );
 
 -- ========================
@@ -422,6 +435,5 @@ CREATE TABLE IF NOT EXISTS unlock_shard_blueprint_outcomes (
     id INTEGER PRIMARY KEY,
     parent_id INTEGER NOT NULL,
     shard_type TEXT NOT NULL,
-    FOREIGN KEY(id) REFERENCES entities(id),
-    FOREIGN KEY(parent_id) REFERENCES entities(id)
+    FOREIGN KEY(id) REFERENCES entities(id)
 );

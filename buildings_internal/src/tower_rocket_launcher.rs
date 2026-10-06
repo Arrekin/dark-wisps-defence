@@ -8,7 +8,7 @@ use alteration::{
     effects::prelude::*,
     modifiers::prelude::*,
 };
-use almanach::{BuildingInfo, ObjectPresentation, StatSocket, prelude::*};
+use almanach::{BuildingInfo, ObjectPresentation, prelude::*};
 use buildings::prelude::*;
 use game_core::{math::angle_difference, prelude::*};
 use grids::placement::{annotate_non_empty, PlacementModes, PlaceRequest};
@@ -63,13 +63,9 @@ impl BuilderTowerRocketLauncher {
                 (ModifierType::AttackDamage, 50.),
             ]),
             sockets: vec![
-                StatSocket::new(ShardType::Speed, "Attack speed", ModifierType::AttackSpeed, [0.1, 0.2, 0.3]),
-                StatSocket::new(ShardType::Reach, "Attack range", ModifierType::AttackRange, [2., 4., 6.]),
-                StatSocket {
-                    shard_type: ShardType::Speed,
-                    description: "Projectile speed (no effect yet)".to_string(),
-                    contributions: Default::default(),
-                },
+                ("attack_speed".into(), ShardSocket::new(ShardType::Speed, "Attack speed", ModifierType::AttackSpeed, [0.1, 0.2, 0.3])),
+                ("attack_range".into(), ShardSocket::new(ShardType::Reach, "Attack range", ModifierType::AttackRange, [2., 4., 6.])),
+                ("projectile_speed".into(), ShardSocket::without_contributions(ShardType::Speed, "Projectile speed (no effect yet)")),
             ],
             validate: building_validator,
             annotate: annotate_non_empty,
@@ -117,7 +113,6 @@ impl BuilderTowerRocketLauncher {
                 grid_imprint,
                 TowerTopRotation { speed: 1.0, current_angle: 0. },
                 NeedsPower,
-                ShardSlots::new(building_info.sockets.len()),
                 related![Indicators[
                     IndicatorType::NoPower,
                     IndicatorType::DisabledByPlayer,
@@ -141,6 +136,9 @@ impl BuilderTowerRocketLauncher {
             MarkerTowerRotationalTop(entity),
         )).id();
         commands.entity(entity).add_child(tower_top);
+        for (content_id, socket) in &building_info.sockets {
+            commands.trigger(ShardSocketUpsert::new(entity, content_id.clone(), socket.clone()));
+        }
         commands.trigger(TechnicalStateChanged { entity, kind: TechnicalChange::JustSpawned });
     }
 }
