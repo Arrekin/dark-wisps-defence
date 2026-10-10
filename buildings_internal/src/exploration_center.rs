@@ -555,7 +555,7 @@ impl BuilderDroneActionButton {
         let text_entity = commands.spawn((
             Text::new(text),
             TextColor::from(if is_active { Color::WHITE } else { Color::srgba(0.6, 0.6, 0.6, 1.) }),
-            TextFont::default().with_font_size(10.0),
+            TextFont::from_font_size(10.0),
         )).id();
 
         commands.entity(entity)
@@ -725,7 +725,7 @@ impl BuilderSlotTooltip {
         let text_entity = commands.spawn((
             Text::new(builder.data.text()),
             TextColor::from(Color::WHITE),
-            TextFont::default().with_font_size(11.0),
+            TextFont::from_font_size(11.0),
         )).id();
 
         // Initialize tooltip without camera - on_data_changed will add it if needed
@@ -827,7 +827,7 @@ impl BuyDroneSlot {
             children![(
                 Text::new("+"),
                 TextColor::from(BLUE),
-                TextFont::default().with_font_size(20.0),
+                TextFont::from_font_size(20.0),
             )],
             related![Tooltips[BuilderSlotTooltip::new_buy()]],
         ))
@@ -944,7 +944,7 @@ impl TargetSelectionPanel {
         commands.entity(entity).with_child((
             Text::new("Select Target"),
             TextColor::from(Color::WHITE),
-            TextFont::default().with_font_size(14.0),
+            TextFont::from_font_size(14.0),
             Node { margin: UiRect::bottom(Val::Px(8.)), ..default() },
         ));
 
@@ -965,7 +965,7 @@ impl TargetSelectionPanel {
             commands.entity(scroll_container).with_child((
                 Text::new("No valid targets"),
                 TextColor::from(Color::srgba(0.6, 0.6, 0.6, 1.)),
-                TextFont::default().with_font_size(12.0),
+                TextFont::from_font_size(12.0),
             ));
         } else {
             for item in target_items {
@@ -987,7 +987,7 @@ impl TargetSelectionPanel {
             children![(
                 Text::new("Cancel"),
                 TextColor::from(Color::WHITE),
-                TextFont::default().with_font_size(12.0),
+                TextFont::from_font_size(12.0),
             )],
         )).observe(Self::on_cancel_click_close_target_selection_panel).id();
         commands.entity(entity).add_child(cancel_button);
@@ -1108,12 +1108,12 @@ impl TargetListItem {
                         (
                             Text::new(name.to_string()),
                             TextColor::from(Color::WHITE),
-                            TextFont::default().with_font_size(12.0),
+                            TextFont::from_font_size(12.0),
                         ),
                         (
-                            Text::new(format!("at ({}, {})", coords.x, coords.y)),
+                            Text::new(format!("at {coords}")),
                             TextColor::from(Color::srgba(0.7, 0.7, 0.7, 1.)),
-                            TextFont::default().with_font_size(10.0),
+                            TextFont::from_font_size(10.0),
                         ),
                         // Fuel cost indicator
                         (
@@ -1126,12 +1126,12 @@ impl TargetListItem {
                                 (
                                     Text::new("Fuel needed for travel: "),
                                     TextColor::from(Color::srgba(0.6, 0.6, 0.6, 1.)),
-                                    TextFont::default().with_font_size(10.0),
+                                    TextFont::from_font_size(10.0),
                                 ),
                                 (
                                     Text::new(fuel_text),
                                     TextColor::from(fuel_color),
-                                    TextFont::default().with_font_size(10.0),
+                                    TextFont::from_font_size(10.0),
                                 ),
                             ],
                         ),

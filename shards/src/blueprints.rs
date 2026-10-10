@@ -1,37 +1,33 @@
+use std::collections::BTreeSet;
+
 use bevy::prelude::*;
 
 use game_core::prelude::ShardType;
 
-/// Announced when a shard blueprint is granted at runtime, so reactors (e.g. research obsolescence)
-/// can respond without polling. Granters trigger this after calling `ShardBlueprints::unlock`.
+/// Announces a newly granted blueprint. Callers trigger this after `ShardBlueprints::unlock` succeeds.
 #[derive(Event)]
 pub struct ShardBlueprintAcquired(pub ShardType);
 
 #[derive(Resource, Default, Clone)]
 pub struct ShardBlueprints {
-    unlocked: Vec<ShardType>,
+    unlocked: BTreeSet<ShardType>,
 }
 impl ShardBlueprints {
     pub fn is_unlocked(&self, shard_type: ShardType) -> bool {
         self.unlocked.contains(&shard_type)
     }
 
-    /// Grants a blueprint. Returns `true` if newly granted, `false` if already held — the lane owns
-    /// its own dedup, so callers need not pre-check `is_unlocked`.
+    /// Grants a blueprint. Returns `true` if newly granted.
     pub fn unlock(&mut self, shard_type: ShardType) -> bool {
-        if self.unlocked.contains(&shard_type) {
-            return false;
-        }
-        self.unlocked.push(shard_type);
-        true
+        self.unlocked.insert(shard_type)
     }
 
-    /// Revokes a previously-granted blueprint. Blueprints are rights that can be taken away; a
-    /// revoked blueprint is simply not saved (the saver writes current membership).
+    /// Revokes a granted blueprint.
     pub fn revoke(&mut self, shard_type: ShardType) {
-        self.unlocked.retain(|unlocked| *unlocked != shard_type);
+        self.unlocked.remove(&shard_type);
     }
 
+    /// Unlocked shard types, in `ShardType` order.
     pub fn iter(&self) -> impl Iterator<Item = ShardType> {
         self.unlocked.iter().copied()
     }

@@ -5,7 +5,7 @@ mod admin_mode;
 mod ui_interaction;
 mod map_loading_stage;
 
-pub use game_state::{GameState, SetGamePaused, SetGamePausedReport, SetGamePausedResult};
+pub use game_state::{GameState, SetGamePaused, SetGamePausedReport, SetGamePausedResult, map_is_live};
 pub use admin_mode::AdminMode;
 pub use ui_interaction::UiInteraction;
 pub use map_loading_stage::MapLoadingStage;

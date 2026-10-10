@@ -193,6 +193,11 @@ impl Almanach {
             .unwrap_or_else(|| panic!("Shard {shard:?} not found in almanach"))
     }
 
+    /// Every registered shard, in no particular order.
+    pub fn shards(&self) -> impl Iterator<Item = (Shard, &ShardInfo)> {
+        self.shards.iter().map(|(&shard, info)| (shard, info))
+    }
+
     pub fn get_shard_info_mut(&mut self, shard: Shard) -> &mut ShardInfo {
         self.shards.get_mut(&shard)
             .unwrap_or_else(|| panic!("Shard {shard:?} not found in almanach"))
@@ -384,17 +389,24 @@ pub struct ResourceInfo {
 // SHARD INFO
 // ============================================================================
 
-/// The cost and forge duration required to craft one shard.
+/// Resource costs and forging duration for one shard.
 #[derive(Clone)]
 pub struct ShardRecipe {
-    pub cost: Vec<ResourceAmount>,
+    /// Resources consumed from `Stock` when forging starts.
+    pub pickup_cost: Vec<ResourceAmount>,
+    /// Ingredients gathered by child orders and consumed when forging starts.
+    pub reserved_cost: Vec<ResourceAmount>,
     pub duration: std::time::Duration,
 }
+impl ShardRecipe {
+    /// All cost entries: pickup costs followed by reserved ingredients.
+    pub fn cost(&self) -> impl Iterator<Item = ResourceAmount> + '_ {
+        self.pickup_cost.iter().chain(self.reserved_cost.iter()).copied()
+    }
+}
 
-/// Shard-specific metadata for one shard (type and tier). Its name, description and icon are its
-/// [`ResourceInfo`].
-///
-/// A `None` recipe means this shard cannot be forged and will not appear in the forge's button list.
+/// Forging metadata for one shard type and tier. Display metadata lives in [`ResourceInfo`].
+/// A `None` recipe means the shard cannot be forged.
 #[derive(Clone)]
 pub struct ShardInfo {
     pub recipe: Option<ShardRecipe>,

@@ -1,10 +1,7 @@
 //! # Shard Catalog
 //!
-//! Registers every shard into the [`Almanach`] at startup — its presentation (name,
-//! description, icon) as a resource and its forge recipe as a shard — the single source of
-//! truth that shard UI and crafting read from. Every shard type is registered in every tier.
-//!
-//! Recipe costs and durations are placeholder tuning; adjust during a global balance pass.
+//! Registers every shard type and tier in the Almanach, with display metadata in `ResourceInfo`
+//! and a forging recipe in `ShardInfo`. Recipe costs and durations are provisional balance values.
 
 use std::time::Duration;
 
@@ -38,10 +35,11 @@ impl Plugin for ShardCatalogPlugin {
                     ShardTier::T2 => (200, 12),
                     ShardTier::T3 => (400, 16),
                 };
-                let mut cost = vec![ResourceAmount::new(ResourceType::DarkOre, dark_ore)];
-                if let Some(below) = tier.below() {
-                    cost.push(ResourceAmount::new(Shard::new(shard_type, below), LOWER_TIER_SHARDS_PER_RECIPE));
-                }
+                let pickup_cost = vec![ResourceAmount::new(ResourceType::DarkOre, dark_ore)];
+                let reserved_cost = tier.below()
+                    .map(|below| ResourceAmount::new(Shard::new(shard_type, below), LOWER_TIER_SHARDS_PER_RECIPE))
+                    .into_iter()
+                    .collect();
                 app.register_shard(
                     Shard::new(shard_type, tier),
                     ResourceInfo {
@@ -50,7 +48,7 @@ impl Plugin for ShardCatalogPlugin {
                         icon: icon.clone(),
                     },
                     ShardInfo {
-                        recipe: Some(ShardRecipe { cost, duration: Duration::from_secs(duration_secs) }),
+                        recipe: Some(ShardRecipe { pickup_cost, reserved_cost, duration: Duration::from_secs(duration_secs) }),
                     },
                 );
             }

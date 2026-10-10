@@ -170,7 +170,7 @@ pub(crate) fn on_wisp_place_request_do_so(
 
     let validity = (almanach.wisps.validate)(MapObject::Wisp(wisp_type), *coords, *grid_imprint, &grids);
     if validity == PlacementValidity::Invalid { return; }
-    #[debug_dev("{} wisp placed at ({}, {})", wisp_type.as_ref(), coords.x, coords.y)]
+    #[debug_dev("{} wisp placed at {coords}", wisp_type.as_ref())]
     commands.spawn(BuilderWisp::new(wisp_type, *coords));
 }
 
@@ -186,7 +186,7 @@ pub(crate) fn on_wisp_remove_request_do_so(
     let coords = placer.into_inner();
     let wisp_entities = wisps_grid[*coords].clone();
     for wisp_entity in wisp_entities {
-        #[debug_dev("Wisp removed at ({}, {})", coords.x, coords.y)]
+        #[debug_dev("Wisp removed at {coords}")]
         if wisps.contains(wisp_entity) {
             wisps_grid.wisp_remove(*coords, wisp_entity);
             commands.entity(wisp_entity).despawn();

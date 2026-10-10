@@ -18,7 +18,7 @@ impl Plugin for StartingShardsPlugin {
 const STARTING_SHARDS_PER_KIND: i32 = 10;
 
 fn seed_starting_shards(mut stock: ResMut<Stock>) {
-    for shard_type in [ShardType::Strength, ShardType::Speed, ShardType::Reach] {
+    for shard_type in ShardType::STATS {
         for tier in ShardTier::iter() {
             stock.add((Shard::new(shard_type, tier), STARTING_SHARDS_PER_KIND));
         }

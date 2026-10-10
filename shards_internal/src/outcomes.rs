@@ -9,7 +9,7 @@ use outcomes::prelude::*;
 use persistence::{prelude::*, rusqlite};
 use shards::{
     blueprints::{ShardBlueprintAcquired, ShardBlueprints},
-    prelude::UnlockShardBlueprint,
+    outcomes::UnlockShardBlueprint,
 };
 use states::prelude::MapLoadingStage;
 

@@ -91,12 +91,12 @@ impl<'w, 's> BuildingPlacementManager<'w, 's> {
         let (coords, imprint) = (self.coords(), self.imprint());
         let building_info = self.almanach.get_building_info(building_type);
 
-        #[info_player("'{}' cannot be placed at ({}, {})", building_info.name, coords.x, coords.y)]
+        #[info_player("'{}' cannot be placed at {coords}", building_info.name)]
         if !self.is_site_valid(building_type, coords, imprint) { return None; }
         #[info_player("Not enough resources")]
         if !self.stock.try_remove_all(&building_info.cost) { return None; }
 
-        #[info_player("'{}' placed at ({}, {})", building_info.name, coords.x, coords.y)]
+        #[info_player("'{}' placed at {coords}", building_info.name)]
         self.grids.reserved_coords.reserve(coords, imprint);
         Some(coords)
     }
@@ -107,10 +107,10 @@ impl<'w, 's> BuildingPlacementManager<'w, 's> {
         let (coords, imprint) = (self.coords(), self.imprint());
         let building_info = self.almanach.get_building_info(building_type);
 
-        #[info_player("'{}' cannot be placed at ({}, {})", building_info.name, coords.x, coords.y)]
+        #[info_player("'{}' cannot be placed at {coords}", building_info.name)]
         if !self.is_site_valid(building_type, coords, imprint) { return None; }
 
-        #[info_player("'{}' placed at ({}, {})", building_info.name, coords.x, coords.y)]
+        #[info_player("'{}' placed at {coords}", building_info.name)]
         self.grids.reserved_coords.reserve(coords, imprint);
         Some(coords)
     }

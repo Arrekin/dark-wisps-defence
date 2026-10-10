@@ -71,7 +71,7 @@ impl GridPlacerUiForWall {
                                 PlacementStyle(key.0),
                             ))
                             .trigger(|entity| ObjectFaceRequest::ui(entity, MapObject::Wall));
-                        button.spawn((Text::new(entry.name.clone()), TextFont::default().with_font_size(10.0)));
+                        button.spawn((Text::new(entry.name.clone()), TextFont::from_font_size(10.0)));
                     })
                     .observe(WallStyleButton::on_click_select_style);
                 }

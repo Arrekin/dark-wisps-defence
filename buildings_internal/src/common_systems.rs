@@ -139,7 +139,7 @@ fn on_building_destroy_request_do_so(
     let building_to_destroy = trigger.0;
     let Ok((grid_imprint, grid_coords, building_type)) = buildings.get(building_to_destroy) else { return; };
 
-    #[info_player("'{}' destroyed at ({}, {})", almanach.get_building_info(*building_type).name, grid_coords.x, grid_coords.y)]
+    #[info_player("'{}' destroyed at {grid_coords}", almanach.get_building_info(*building_type).name)]
     commands.entity(building_to_destroy).despawn();
     grid_imprint.iter(*grid_coords).for_each(|coords| {
         commands.spawn(BuilderExplosion(coords));

@@ -242,7 +242,7 @@ fn on_add_objective_details_spawn_row(
 
     let title = commands.spawn((
         Text::new(details.id_name.clone()),
-        TextFont::default().with_font_size(12.),
+        TextFont::from_font_size(12.),
         ObjectiveTitle,
     )).id();
 
@@ -377,7 +377,7 @@ fn on_rebuild_objectives_panel_do_so(
                 if let Ok(display_line) = display_lines.get(goal_entity) {
                     let text = commands.spawn((
                         Text::new(display_line.0.clone()),
-                        TextFont::default().with_font_size(10.),
+                        TextFont::from_font_size(10.),
                         ObjectiveDisplayLineText(goal_entity),
                     )).id();
                     commands.entity(row.content).add_child(text);

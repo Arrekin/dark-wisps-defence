@@ -89,7 +89,7 @@ fn initialize_badges_system(
         )).with_children(|parent| {
             parent.spawn((
                 Text::new("####"),
-                TextFont::default().with_font_size(12.),
+                TextFont::from_font_size(12.),
                 Node {
                     top: Val::Px(83.),
                     left: Val::Px(39.),
@@ -143,7 +143,7 @@ fn initialize_badges_system(
                         // Essence amount
                         parent.spawn((
                             Text::new("###"),
-                            TextFont::default().with_font_size(12.),
+                            TextFont::from_font_size(12.),
                             Node {
                                 left: Val::Px(2.),
                                 ..default()

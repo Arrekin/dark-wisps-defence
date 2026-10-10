@@ -134,6 +134,11 @@ impl From<GridCoords> for (i32, i32) {
         (coords.x, coords.y)
     }
 }
+impl std::fmt::Display for GridCoords {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({}, {})", self.x, self.y)
+    }
+}
 
 
 #[derive(Component, Clone, Copy, Debug, PartialEq)]

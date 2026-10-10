@@ -16,6 +16,8 @@ shards = { workspace = true }
 almanach = { workspace = true }
 resources = { workspace = true }
 outcomes = { workspace = true }
+buildings = { workspace = true }
+widgets = { workspace = true }
 
 [lints]
 workspace = true

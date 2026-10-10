@@ -144,7 +144,7 @@ impl BuilderTowerField {
     ) {
         let Ok((generated_field, attack_range)) = towers.get(trigger.entity) else { return; };
         let Some(generated_field) = generated_field else { return; };
-        let Ok(mut field) = fields.get_mut(*generated_field.collection()) else { return; };
+        let Ok(mut field) = fields.get_mut(generated_field.field()) else { return; };
         field.radius = attack_range.get() * CELL_SIZE;
     }
 }
@@ -214,8 +214,7 @@ impl BuilderTowerField {
         let Ok((generated_field, attack_range, transform)) = towers.get(tower_entity) else { return; };
 
         if let Some(generated_field) = generated_field {
-            let field_entity = generated_field.collection();
-            commands.entity(*field_entity).insert(ForceFieldState::Growing);
+            commands.entity(generated_field.field()).insert(ForceFieldState::Growing);
         } else {
             let radius = attack_range.get() * CELL_SIZE;
             commands.spawn(BuilderForceField::new(radius, tower_entity, transform.translation))
@@ -231,8 +230,7 @@ impl BuilderTowerField {
         towers: Query<&GeneratedForceField, With<TowerField>>,
     ) {
         let Ok(generated_field) = towers.get(trigger.entity) else { return; };
-        let field_entity = generated_field.collection();
-        commands.entity(*field_entity).insert(ForceFieldState::Shrinking);
+        commands.entity(generated_field.field()).insert(ForceFieldState::Shrinking);
     }
 
     fn on_field_entered_apply_effect(
@@ -285,7 +283,6 @@ fn on_tower_field_despawn_shrink_orphaned_force_field(
 ) {
     let tower_entity = trigger.entity;
     let Ok(generated_field) = towers.get(tower_entity) else { return; };
-    let field_entity = generated_field.collection();
     // Begin shrinking the orphaned force field — it will self-despawn when progress reaches 0.
-    commands.entity(*field_entity).insert(ForceFieldState::Shrinking);
+    commands.entity(generated_field.field()).insert(ForceFieldState::Shrinking);
 }

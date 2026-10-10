@@ -1,5 +1,6 @@
 pub mod common;
 pub mod healthbar;
+pub mod palette;
 pub mod progress_bar;
 pub mod rune;
 pub mod chips;

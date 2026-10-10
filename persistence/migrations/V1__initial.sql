@@ -138,13 +138,8 @@ CREATE TABLE IF NOT EXISTS exploration_centers (
     FOREIGN KEY(id) REFERENCES entities(id)
 );
 
--- The nullable forging_* columns hold an in-progress craft so a forge resumes mid-job
--- across save/load; all are NULL when the forge is idle.
 CREATE TABLE IF NOT EXISTS forges (
     id INTEGER PRIMARY KEY,
-    forging_shard_type TEXT,
-    forging_remaining_secs REAL,
-    forging_shard_tier TEXT,
     FOREIGN KEY(id) REFERENCES entities(id)
 );
 
@@ -188,8 +183,9 @@ CREATE TABLE IF NOT EXISTS tower_fields (
 -- Shards
 -- ========================
 
--- One row per socket, identified by its holder and content id. Socketed type and tier are NULL for
--- an empty socket; accepted tier NULL accepts any tier.
+-- One row per socket, identified by holder_id and content_id. A NULL shard_tier accepts any tier.
+-- socketed_shard_type and socketed_shard_tier are NULL when empty. State is Active, Disabled, or Removed.
+-- awaited_order_id links to a pending root order; NULL means no order.
 CREATE TABLE IF NOT EXISTS shard_sockets (
     id INTEGER PRIMARY KEY,
     holder_id INTEGER NOT NULL,
@@ -197,9 +193,10 @@ CREATE TABLE IF NOT EXISTS shard_sockets (
     shard_type TEXT NOT NULL,
     shard_tier TEXT,
     description TEXT NOT NULL,
-    removed INTEGER NOT NULL,
+    state TEXT NOT NULL,
     socketed_shard_type TEXT,
     socketed_shard_tier TEXT,
+    awaited_order_id INTEGER,
     UNIQUE (holder_id, content_id)
 );
 
@@ -216,6 +213,34 @@ CREATE TABLE IF NOT EXISTS shard_socket_contributions (
 -- Shard types the player has unlocked for forging (membership only).
 CREATE TABLE IF NOT EXISTS shard_blueprints (
     shard_type TEXT PRIMARY KEY
+);
+
+-- Single row: the entity holding the global forging queue.
+CREATE TABLE IF NOT EXISTS global_forging_queue (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    entity_id INTEGER NOT NULL,
+    FOREIGN KEY(entity_id) REFERENCES entities(id)
+);
+
+-- Root orders store queue_holder_id and queue_position; ingredient orders store parent_id.
+-- forge_id and remaining_secs are NULL unless the order is in progress.
+CREATE TABLE IF NOT EXISTS shard_orders (
+    id INTEGER PRIMARY KEY,
+    shard_type TEXT NOT NULL,
+    shard_tier TEXT NOT NULL,
+    queue_holder_id INTEGER,
+    queue_position INTEGER,
+    parent_id INTEGER,
+    forge_id INTEGER,
+    remaining_secs REAL,
+    FOREIGN KEY(id) REFERENCES entities(id)
+);
+
+-- Whether each Forge accepts orders from the global queue.
+CREATE TABLE IF NOT EXISTS forge_queue (
+    forge_id INTEGER PRIMARY KEY,
+    works_global INTEGER NOT NULL,
+    FOREIGN KEY(forge_id) REFERENCES entities(id)
 );
 
 -- ========================

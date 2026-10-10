@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use bevy::prelude::*;
 
-use game_core::prelude::SSS;
+use game_core::prelude::{SSS, Shard};
 
 use crate::common::{ResourceAmount, ResourceType};
 
@@ -20,6 +20,10 @@ pub struct StockChangedMessage {
     pub delta: i32,
     pub new_amount: i32,
 }
+
+/// Reports a net stock increase for one shard type and tier, once per frame.
+#[derive(Event, Clone, Copy, Debug)]
+pub struct ShardStockAcquired(pub Shard);
 
 #[derive(Clone)]
 struct StockInfo {

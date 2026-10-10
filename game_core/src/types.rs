@@ -74,6 +74,9 @@ pub enum ShardType {
     Light,
     Electric,
 }
+impl ShardType {
+    pub const STATS: [ShardType; 3] = [ShardType::Strength, ShardType::Speed, ShardType::Reach];
+}
 
 /// Shard tier, T1 the lowest. Ordered: each tier above T1 is forged from shards of the tier below.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Display, EnumString, EnumIter, AsRefStr, Default, EnumCount)]

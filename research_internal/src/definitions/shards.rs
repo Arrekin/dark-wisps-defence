@@ -6,7 +6,7 @@ use game_core::prelude::*;
 use outcomes::prelude::*;
 use research::prelude::*;
 use resources::prelude::*;
-use shards::prelude::UnlockShardBlueprint;
+use shards::outcomes::UnlockShardBlueprint;
 
 pub fn spawn_fire_shard_recipe_research(commands: &mut Commands, id: &ContentId) {
     commands.spawn_scene(bsn! {

@@ -160,7 +160,7 @@ fn on_wall_place_request_do_so(
     let (coords, grid_imprint, placement_style) = placer.into_inner();
     let validity = (almanach.walls.validate)(MapObject::Wall, *coords, *grid_imprint, &grids);
     if validity == PlacementValidity::Invalid { return; }
-    #[debug_dev("Wall placed at ({}, {})", coords.x, coords.y)]
+    #[debug_dev("Wall placed at {coords}")]
     commands.spawn(BuilderWall::new(*coords, *placement_style));
     grids.reserved_coords.reserve(*coords, *grid_imprint);
 }
@@ -174,7 +174,7 @@ fn on_wall_remove_request_do_so(
 ) {
     let RemoveRequest(MapObject::Wall) = *trigger else { return };
     let coords = placer.into_inner();
-    #[debug_dev("Wall removed at ({}, {})", coords.x, coords.y)]
+    #[debug_dev("Wall removed at {coords}")]
     if let GridStructureType::Wall(entity) = grids.obstacle_grid[*coords].structure {
         commands.entity(entity).despawn();
     }

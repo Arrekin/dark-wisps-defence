@@ -17,6 +17,7 @@ use research::prelude::{ResearchActive, ResearchUISelected};
 use states::prelude::UiInteraction;
 use widgets::{
     common::utils::set_ui_free_on,
+    palette::ABYSS_BACKGROUND,
     prelude::{BuilderCloseButton, TextRole},
 };
 
@@ -59,14 +60,6 @@ const ACTIVE_VIEW_EMPTY_TEXT: &str = "Nothing is being researched.";
 const SELECTED_VIEW_TITLE: &str = "Selected";
 const SELECTED_VIEW_EMPTY_TEXT: &str = "Select a research tile to inspect it.";
 
-/// Root of the panel's value ladder: almost black, so the card and tiles raised on top of
-/// it read as steps up rather than a flat wash. `Srgba::rgb_u8` is not `const`, so this is
-/// a function rather than joining the constants above.
-fn panel_background() -> Color {
-    // #03040A abyss background
-    Color::Srgba(Srgba::rgb_u8(0x03, 0x04, 0x0A))
-}
-
 // ============================================================================
 // COMPONENTS
 // ============================================================================
@@ -108,7 +101,8 @@ fn spawn_research_panel(mut commands: Commands) {
             display: Display::None,
             ..default()
         },
-        BackgroundColor::from(panel_background()),
+        // A darker background makes the cards and tiles appear raised.
+        BackgroundColor::from(ABYSS_BACKGROUND),
         GlobalZIndex(PANEL_Z_INDEX),
     )).add_children(&[header, band, grid]);
 }

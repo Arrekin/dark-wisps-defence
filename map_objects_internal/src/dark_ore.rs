@@ -125,7 +125,7 @@ fn despawn_depleted_dark_ores(
 ) {
     for (entity, dark_ore, coords) in dark_ores.iter() {
         if dark_ore.amount <= 0 {
-            #[debug_dev("Dark ore at ({}, {}) depleted", coords.x, coords.y)]
+            #[debug_dev("Dark ore at {coords} depleted")]
             commands.entity(entity).despawn();
         }
     }
@@ -143,7 +143,7 @@ fn on_dark_ore_place_request_do_so(
     let (coords, grid_imprint) = placer.into_inner();
     let validity = (almanach.dark_ore.validate)(MapObject::DarkOre, *coords, *grid_imprint, &grids);
     if validity == PlacementValidity::Invalid { return; }
-    #[debug_dev("Dark ore placed at ({}, {})", coords.x, coords.y)]
+    #[debug_dev("Dark ore placed at {coords}")]
     commands.spawn(BuilderDarkOre::new(*coords, almanach.dark_ore.max_field_saturation));
     grids.reserved_coords.reserve(*coords, *grid_imprint);
 }
@@ -157,7 +157,7 @@ fn on_dark_ore_remove_request_do_so(
 ) {
     let RemoveRequest(MapObject::DarkOre) = *trigger else { return };
     let coords = placer.into_inner();
-    #[debug_dev("Dark ore removed at ({}, {})", coords.x, coords.y)]
+    #[debug_dev("Dark ore removed at {coords}")]
     if let Some(entity) = grids.obstacle_grid[*coords].dark_ore {
         commands.entity(entity).despawn();
     }

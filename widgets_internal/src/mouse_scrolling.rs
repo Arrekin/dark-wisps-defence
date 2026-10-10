@@ -4,6 +4,7 @@
 //! event is triggered as a `UiScrollEvent` on every hovered entity and bubbles up the hierarchy;
 //! a scrollable node consumes the delta on its axes unless it is already at its limit. Nested
 //! containers therefore scroll inner-first, and the outer one takes over at the inner one's end.
+//! Horizontal-only containers also accept vertical wheel input.
 
 use bevy::{
     input::mouse::{MouseScrollUnit, MouseWheel},
@@ -79,15 +80,21 @@ impl UiScrollEvent {
             }
         }
 
-        if node.overflow.x == OverflowAxis::Scroll && delta.x != 0. {
-            let at_limit = if delta.x > 0. {
+        // Use the dominant axis so both vertical mouse wheels and horizontal gestures scroll this row.
+        let horizontal_only = node.overflow.x == OverflowAxis::Scroll && node.overflow.y != OverflowAxis::Scroll;
+        let delta_x = if horizontal_only && delta.y.abs() > delta.x.abs() { delta.y } else { delta.x };
+        if node.overflow.x == OverflowAxis::Scroll && delta_x != 0. {
+            let at_limit = if delta_x > 0. {
                 scroll_position.x >= max_offset.x
             } else {
                 scroll_position.x <= 0.
             };
             if !at_limit {
-                scroll_position.x = (scroll_position.x + delta.x).clamp(0., max_offset.x.max(0.));
+                scroll_position.x = (scroll_position.x + delta_x).clamp(0., max_offset.x.max(0.));
                 delta.x = 0.;
+                if horizontal_only {
+                    delta.y = 0.;
+                }
             }
         }
 

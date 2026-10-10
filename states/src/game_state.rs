@@ -12,6 +12,12 @@ pub enum GameState {
     Paused,
     Loading,
 }
+
+/// Run condition: true only in `Running` or `Paused`.
+pub fn map_is_live(game_state: Option<Res<State<GameState>>>) -> bool {
+    game_state.is_some_and(|game_state| matches!(game_state.get(), GameState::Running | GameState::Paused))
+}
+
 impl GameState {
     pub(crate) fn toggle_pause(
         mut commands: Commands,

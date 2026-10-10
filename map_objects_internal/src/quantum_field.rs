@@ -301,7 +301,7 @@ fn on_quantum_field_place_request_do_so(
     let (coords, grid_imprint) = placer.into_inner();
     let validity = (almanach.quantum_fields.validate)(MapObject::QuantumField, *coords, *grid_imprint, &grids);
     if validity == PlacementValidity::Invalid { return; }
-    #[debug_dev("Quantum field placed at ({}, {})", coords.x, coords.y)]
+    #[debug_dev("Quantum field placed at {coords}")]
     commands.spawn(BuilderQuantumField::new(*coords, *grid_imprint));
     grids.reserved_coords.reserve(*coords, *grid_imprint);
 }
@@ -315,7 +315,7 @@ fn on_quantum_field_remove_request_do_so(
 ) {
     let RemoveRequest(MapObject::QuantumField) = *trigger else { return };
     let coords = placer.into_inner();
-    #[debug_dev("Quantum field removed at ({}, {})", coords.x, coords.y)]
+    #[debug_dev("Quantum field removed at {coords}")]
     if let Some(entity) = grids.obstacle_grid[*coords].quantum_field {
         commands.entity(entity).despawn();
     }
@@ -465,7 +465,7 @@ impl ArrowButton {
                 BackgroundColor(Color::BLACK),
                 children![(
                     Text::new(arrow_button.text()),
-                    TextFont::default().with_font_size(12.)
+                    TextFont::from_font_size(12.)
                 )],
             ))
             .observe(Self::on_click_adjust_quantum_field_size);
@@ -536,7 +536,7 @@ impl QuantumFieldActionButton {
             children![(
                 Text::new("Send Expeditions / Stop Expeditions / Pay cost"),
                 TextColor::from(BLUE),
-                TextFont::default().with_font_size(12.0),
+                TextFont::from_font_size(12.0),
                 QuantumFieldActionButtonText,
             )],
         )).observe(Self::on_click_execute_action);
@@ -730,7 +730,7 @@ fn initialize_quantum_field_panel_content_system(
                                 children![(
                                     Text::new("Quantum Layer #/#"),
                                     TextColor::from(BLUE),
-                                    TextFont::default().with_font_size(16.0),
+                                    TextFont::from_font_size(16.0),
                                     QuantumFieldLayerText,
                                 )]
                             ),

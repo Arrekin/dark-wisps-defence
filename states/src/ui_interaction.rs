@@ -10,6 +10,7 @@ pub enum UiInteraction {
     PlaceGridObject,
     DisplayInfoPanel,
     ResearchPanel,
+    ForgingPanel,
 }
 impl UiInteraction {
     /// On Escape: opens the main menu from `Free`, otherwise returns to `Free`.

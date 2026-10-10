@@ -10,6 +10,11 @@ pub struct ForceFieldGeneratedBy(pub Entity);
 #[derive(Component)]
 #[relationship_target(relationship = ForceFieldGeneratedBy)]
 pub struct GeneratedForceField(Entity);
+impl GeneratedForceField {
+    pub fn field(&self) -> Entity {
+        self.0
+    }
+}
 
 // ── ForceFieldState ────────────────────────────────────────────────────────────────────
 

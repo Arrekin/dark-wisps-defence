@@ -18,9 +18,9 @@ impl Plugin for ShardBlueprintsPlugin {
 }
 
 fn seed_starting_blueprints(mut blueprints: ResMut<ShardBlueprints>) {
-    blueprints.unlock(ShardType::Reach);
-    blueprints.unlock(ShardType::Strength);
-    blueprints.unlock(ShardType::Speed);
+    for shard_type in ShardType::STATS {
+        blueprints.unlock(shard_type);
+    }
 }
 
 fn collect_shard_blueprints(blueprints: Res<ShardBlueprints>, mut save: SaveWriter) {

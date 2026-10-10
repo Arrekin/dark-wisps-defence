@@ -206,11 +206,16 @@ impl AdminSection {
     }
 }
 
-/// Opens the research panel on click. The research icon is a panel toggle, not a strip of
-/// placeable tiles.
 pub(crate) fn on_click_open_research_panel(
     _trigger: On<Pointer<Click>>,
     mut next_ui_state: ResMut<NextState<UiInteraction>>,
 ) {
     next_ui_state.set(UiInteraction::ResearchPanel);
+}
+
+pub(crate) fn on_click_open_forging_panel(
+    _trigger: On<Pointer<Click>>,
+    mut next_ui_state: ResMut<NextState<UiInteraction>>,
+) {
+    next_ui_state.set(UiInteraction::ForgingPanel);
 }

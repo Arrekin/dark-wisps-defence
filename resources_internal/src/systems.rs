@@ -2,8 +2,8 @@ use bevy::prelude::*;
 
 use persistence::{prelude::*, rusqlite};
 use resources::{
-    common::ResourceAmount,
-    stock::{Stock, StockChangedMessage},
+    common::{ResourceAmount, ResourceType},
+    stock::{ShardStockAcquired, Stock, StockChangedMessage},
 };
 
 pub(crate) fn collect_stock(stock: Res<Stock>, mut save: SaveWriter) {
@@ -29,7 +29,9 @@ pub(crate) fn load_stock(ctx: &mut LoadContext) -> LoadResult {
     Ok(())
 }
 
-pub(crate) fn emit_stock_changed_messages(
+/// Reports net stock changes and triggers `ShardStockAcquired` for positive shard deltas.
+pub(crate) fn emit_stock_changes(
+    mut commands: Commands,
     mut stock: ResMut<Stock>,
     mut stock_changed_messages: MessageWriter<StockChangedMessage>,
 ) {
@@ -41,5 +43,8 @@ pub(crate) fn emit_stock_changed_messages(
             delta: delta.amount,
             new_amount: stock.get(delta.resource_type),
         });
+        if let ResourceType::Shard(shard) = delta.resource_type && delta.amount > 0 {
+            commands.trigger(ShardStockAcquired(shard));
+        }
     }
 }

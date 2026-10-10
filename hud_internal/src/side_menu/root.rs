@@ -6,7 +6,7 @@ use strum::IntoEnumIterator;
 use game_core::prelude::*;
 
 use super::{
-    section::{AdminSection, SectionOffering, on_click_open_research_panel, side_menu_section},
+    section::{AdminSection, SectionOffering, on_click_open_forging_panel, on_click_open_research_panel, side_menu_section},
     tile::PlacementTile,
 };
 
@@ -30,7 +30,7 @@ impl SideMenu {
                 side_menu_section("ui/side_menu_towers.png", bsn_list![], template_value(SectionOffering::Towers)),
                 side_menu_section("ui/side_menu_buildings.png", bsn_list![], template_value(SectionOffering::Buildings)),
                 side_menu_section("ui/side_menu_research.png", bsn_list![], bsn!{ on(on_click_open_research_panel) }),
-                side_menu_section("ui/side_menu_upgrades.png", bsn_list![], bsn!{}),
+                side_menu_section("ui/side_menu_forging.png", bsn_list![], bsn!{ on(on_click_open_forging_panel) }),
                 side_menu_section("ui/side_menu_consumables.png", bsn_list![], bsn!{}),
                 side_menu_section("ui/side_menu_admin_objects.png", bsn_list![
                     template(|_: &mut TemplateContext| Ok(PlacementTile(MapObject::DarkOre))),

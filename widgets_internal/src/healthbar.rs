@@ -62,7 +62,7 @@ fn on_builder_add_spawn_healthbar(
             )).with_children(|overlay| {
                 children_ref.value_text = overlay.spawn((
                     Text::default(),
-                    TextFont::default().with_font_size(builder.font_size),
+                    TextFont::from_font_size(builder.font_size),
                     TextColor::BLACK,
                     TextLayout::no_wrap(),
                 )).id();
