@@ -66,7 +66,7 @@ impl BuilderGoalKillWisps {
     }
 
     fn on_builder_add_spawn_goal_kill_wisps(
-        trigger: On<Add, BuilderGoalKillWisps>,
+        trigger: On<Add<BuilderGoalKillWisps>>,
         mut commands: Commands,
         builders: Query<&BuilderGoalKillWisps>,
     ) {

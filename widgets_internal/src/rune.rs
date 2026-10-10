@@ -17,7 +17,7 @@ impl Plugin for RunePlugin {
 }
 
 fn on_builder_add_spawn_rune(
-    trigger: On<Add, BuilderRune>,
+    trigger: On<Add<BuilderRune>>,
     mut commands: Commands,
     time: Res<Time>,
     mut materials: ResMut<Assets<RuneMaterial>>,

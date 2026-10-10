@@ -19,10 +19,6 @@ pub struct WispsPlugin;
 impl Plugin for WispsPlugin {
     fn build(&self, app: &mut App) {
         app
-            .register_shader_library("shaders/wisps/fire_look.wgsl")
-            .register_shader_library("shaders/wisps/water_look.wgsl")
-            .register_shader_library("shaders/wisps/light_look.wgsl")
-            .register_shader_library("shaders/wisps/electric_look.wgsl")
             .add_plugins((
                 Material2dPlugin::<materials::WispFireMaterial>::default(),
                 Material2dPlugin::<materials::WispWaterMaterial>::default(),

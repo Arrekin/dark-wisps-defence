@@ -84,7 +84,7 @@ fn load_cannonballs(ctx: &mut LoadContext) -> LoadResult {
 }
 
 fn on_builder_add_spawn_cannonball(
-    trigger: On<Add, BuilderCannonball>,
+    trigger: On<Add<BuilderCannonball>>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     builders: Query<&BuilderCannonball>,

@@ -73,12 +73,12 @@ pub(crate) struct WispFireMaterial {
 impl WispFireMaterial {
     /// Transparent padding around the orb so its flame licks have room to reach
     /// beyond the cell; the orb keeps its on-screen size while only the margin grows.
-    /// Mirrored by `QUAD_SCALE` in `assets/shaders/wisps/fire_look.wgsl` — keep the two equal.
+    /// Mirrored by `QUAD_SCALE` in `assets/shaders/wisps/fire_look.wesl` — keep the two equal.
     pub const QUAD_SCALE: f32 = 2.5;
 }
 impl Material2d for WispFireMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/wisps/fire_quad.wgsl".into()
+        "shaders/wisps/fire_quad.wesl".into()
     }
     fn alpha_mode(&self) -> AlphaMode2d {
         AlphaMode2d::Blend
@@ -154,13 +154,13 @@ pub(crate) struct WispWaterMaterial {
 impl WispWaterMaterial {
     /// Transparent padding around the droplet so its energetic wobble and lunge
     /// have room inside the mesh; the droplet keeps its on-screen size while only
-    /// the margin grows. Mirrored by `QUAD_SCALE` in `assets/shaders/wisps/water_look.wgsl`
+    /// the margin grows. Mirrored by `QUAD_SCALE` in `assets/shaders/wisps/water_look.wesl`
     /// (which scales UV by it) — keep the two equal, or the droplet mis-scales.
     pub const QUAD_SCALE: f32 = 2.4;
 }
 impl Material2d for WispWaterMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/wisps/water_quad.wgsl".into()
+        "shaders/wisps/water_quad.wesl".into()
     }
     fn alpha_mode(&self) -> AlphaMode2d {
         AlphaMode2d::Blend
@@ -218,7 +218,7 @@ pub(crate) struct WispLightMaterial {
 }
 impl Material2d for WispLightMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/wisps/light_quad.wgsl".into()
+        "shaders/wisps/light_quad.wesl".into()
     }
     fn alpha_mode(&self) -> AlphaMode2d {
         AlphaMode2d::Blend
@@ -277,7 +277,7 @@ pub(crate) struct WispElectricMaterial {
 }
 impl Material2d for WispElectricMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/wisps/electric_quad.wgsl".into()
+        "shaders/wisps/electric_quad.wesl".into()
     }
     fn alpha_mode(&self) -> AlphaMode2d {
         AlphaMode2d::Blend

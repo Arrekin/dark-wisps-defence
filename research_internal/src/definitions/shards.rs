@@ -19,7 +19,7 @@ pub fn spawn_fire_shard_recipe_research(commands: &mut Commands, id: &ContentId)
         DisplayDescription("Unlocks the blueprint to forge Fire shards.")
         DisplayIconSwitcher("ui/shards/shard_fire.png")
         HasOutcomes [
-            UnlockShardBlueprint({ShardType::Fire})
+            UnlockShardBlueprint(ShardType::Fire)
         ]
     });
 }
@@ -35,7 +35,7 @@ pub fn spawn_water_shard_recipe_research(commands: &mut Commands, id: &ContentId
         DisplayDescription("Unlocks the blueprint to forge Water shards.")
         DisplayIconSwitcher("ui/shards/shard_water.png")
         HasOutcomes [
-            UnlockShardBlueprint({ShardType::Water})
+            UnlockShardBlueprint(ShardType::Water)
         ]
     });
 }
@@ -51,7 +51,7 @@ pub fn spawn_light_shard_recipe_research(commands: &mut Commands, id: &ContentId
         DisplayDescription("Unlocks the blueprint to forge Light shards.")
         DisplayIconSwitcher("ui/shards/shard_light.png")
         HasOutcomes [
-            UnlockShardBlueprint({ShardType::Light})
+            UnlockShardBlueprint(ShardType::Light)
         ]
     });
 }
@@ -67,7 +67,7 @@ pub fn spawn_electric_shard_recipe_research(commands: &mut Commands, id: &Conten
         DisplayDescription("Unlocks the blueprint to forge Electric shards.")
         DisplayIconSwitcher("ui/shards/shard_electric.png")
         HasOutcomes [
-            UnlockShardBlueprint({ShardType::Electric})
+            UnlockShardBlueprint(ShardType::Electric)
         ]
     });
 }

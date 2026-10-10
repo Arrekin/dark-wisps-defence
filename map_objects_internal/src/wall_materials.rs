@@ -31,7 +31,7 @@ pub(crate) struct WallSwatchMaterial {
 }
 impl UiMaterial for WallSwatchMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/walls/face.wgsl".into()
+        "shaders/walls/face.wesl".into()
     }
 }
 
@@ -45,7 +45,7 @@ pub(crate) struct WallQuadMaterial {
 }
 impl Material2d for WallQuadMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/walls/quad.wgsl".into()
+        "shaders/walls/quad.wesl".into()
     }
     fn alpha_mode(&self) -> AlphaMode2d {
         AlphaMode2d::Blend

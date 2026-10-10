@@ -15,13 +15,12 @@ use bevy::{
 use game_core::prelude::{Bounds, GridCoords, MapInfo, ZDepth};
 use map_objects::{prelude::Wall, wall_style::{WallCanvasDebug, WallStyle, WallStyleKey, WallStyles}};
 use states::prelude::MapLoadingStage;
-use visuals::prelude::{MapCanvasBundle, ShaderLibraryAppExt};
+use visuals::prelude::MapCanvasBundle;
 
 pub(crate) struct WallCanvasPlugin;
 impl Plugin for WallCanvasPlugin {
     fn build(&self, app: &mut App) {
         app
-            .register_shader_library("shaders/walls/look.wgsl")
             .add_plugins(Material2dPlugin::<WallCanvasMaterial>::default())
             .init_resource::<WallCanvasRebuildRequested>()
             .init_resource::<WallCanvasDebug>()
@@ -38,7 +37,7 @@ impl Plugin for WallCanvasPlugin {
     }
 }
 
-/// Field order and types mirror `WallCanvasSettings` in `assets/shaders/walls/canvas.wgsl`.
+/// Field order and types mirror `WallCanvasSettings` in `assets/shaders/walls/canvas.wesl`.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, ShaderType, Default)]
 struct WallCanvasSettings {
@@ -64,7 +63,7 @@ struct WallCanvasMaterial {
 }
 impl Material2d for WallCanvasMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/walls/canvas.wgsl".into()
+        "shaders/walls/canvas.wesl".into()
     }
 
     fn alpha_mode(&self) -> AlphaMode2d {
@@ -91,9 +90,9 @@ impl WallCanvas {
         // Bind initialized buffers on the material's spawn frame.
         let map_bounds = map_info.grid_bounds;
         let cell_count = map_bounds.area();
-        let cells = buffers.add(ShaderBuffer::from(vec![0u32; cell_count].as_slice()));
+        let cells = buffers.add(ShaderBuffer::from(vec![0u32; cell_count]));
         let style_values: Vec<WallStyle> = styles.entries.iter().map(|entry| entry.style).collect();
-        let style_buffer = buffers.add(ShaderBuffer::from(style_values.as_slice()));
+        let style_buffer = buffers.add(ShaderBuffer::from(style_values));
 
         let material = materials.add(WallCanvasMaterial {
             cells,
@@ -133,27 +132,25 @@ fn rebuild_wall_canvas(
     map_info: Res<MapInfo>,
     walls: Query<(&GridCoords, &WallStyleKey), With<Wall>>,
     wall_canvas: Single<&MeshMaterial2d<WallCanvasMaterial>, With<WallCanvas>>,
-    // Reused so the fill does not reallocate; `set_data` still copies it into a fresh byte buffer.
-    mut cell_data: Local<Vec<u32>>,
 ) -> Result<()> {
     rebuild_requested.clear();
 
     let material = materials.get(wall_canvas.into_inner())
         .ok_or("WallCanvas material asset missing")?;
+    let mut buffer = buffers.get_mut(&material.cells)
+        .ok_or("WallCanvas cells buffer asset missing")?;
 
     let map_bounds = map_info.grid_bounds;
-    cell_data.clear();
-    cell_data.resize(map_bounds.area(), 0);
+    buffer.clear();
+    buffer.extend(core::iter::repeat_n(0u32, map_bounds.area()));
+    let cell_data = buffer.cast_slice_mut::<u32>()
+        .ok_or("WallCanvas cells buffer is uninitialized")?;
     for (coords, key) in walls.iter() {
         let Some(index) = map_bounds.index_checked(*coords) else { continue; };
         // +1 because the cell buffer reserves 0 for open ground; style indices are 0-based
         // in the table itself.
         cell_data[index] = key.0 + 1;
     }
-
-    let mut buffer = buffers.get_mut(&material.cells)
-        .ok_or("WallCanvas cells buffer asset missing")?;
-    buffer.set_data(&*cell_data);
     Ok(())
 }
 
@@ -165,10 +162,10 @@ fn apply_wall_canvas_styles(
 ) -> Result<()> {
     let material = materials.get(wall_canvas.into_inner())
         .ok_or("WallCanvas material asset missing")?;
-    let style_values: Vec<WallStyle> = styles.entries.iter().map(|entry| entry.style).collect();
     let mut buffer = buffers.get_mut(&material.styles)
         .ok_or("WallCanvas styles buffer asset missing")?;
-    buffer.set_data(&style_values);
+    buffer.clear();
+    buffer.extend(styles.entries.iter().map(|entry| entry.style));
     Ok(())
 }
 
@@ -184,14 +181,14 @@ fn apply_wall_canvas_debug(
 }
 
 fn on_style_insert_request_wall_canvas_rebuild(
-    _trigger: On<Insert, WallStyleKey>,
+    _trigger: On<Insert<WallStyleKey>>,
     mut rebuild_requested: ResMut<WallCanvasRebuildRequested>,
 ) {
     rebuild_requested.request();
 }
 
 fn on_style_remove_request_wall_canvas_rebuild(
-    _trigger: On<Remove, WallStyleKey>,
+    _trigger: On<Remove<WallStyleKey>>,
     mut rebuild_requested: ResMut<WallCanvasRebuildRequested>,
 ) {
     rebuild_requested.request();

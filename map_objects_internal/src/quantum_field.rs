@@ -21,6 +21,7 @@
 use bevy::{
     color::palettes::css::{AQUA, BLUE},
     prelude::*,
+    ui_widgets::Button,
 };
 
 use almanach::{Almanach, ObjectPresentation, QuantumFieldInfo, prelude::AlmanachAppExt};
@@ -156,7 +157,7 @@ impl BuilderQuantumField {
     }
 
     fn on_builder_add_spawn_quantum_field(
-        trigger: On<Add, BuilderQuantumField>,
+        trigger: On<Add<BuilderQuantumField>>,
         mut commands: Commands,
         builders: Query<&BuilderQuantumField>,
     ) {
@@ -383,7 +384,7 @@ impl GridPlacerUiForQuantumField {
     }
 
     fn on_add_construct_grid_placer_ui(
-        trigger: On<Add, GridPlacerUiForQuantumField>,
+        trigger: On<Add<GridPlacerUiForQuantumField>>,
         mut commands: Commands,
         grid_placer_ui_for_quantum_field: Single<&GridPlacerUiForQuantumField>,
     ) {
@@ -447,7 +448,7 @@ impl ArrowButton {
     }
 
     fn on_add_construct_arrow_button(
-        trigger: On<Add, ArrowButton>,
+        trigger: On<Add<ArrowButton>>,
         mut commands: Commands,
         arrows: Query<&ArrowButton>,
     ) {
@@ -473,7 +474,7 @@ impl ArrowButton {
 
     #[log_tags(Tag::MapObjects)]
     fn on_click_adjust_quantum_field_size(
-        trigger: On<Pointer<Click>>,
+        trigger: On<PointerClick>,
         mut commands: Commands,
         ui: Single<(&Children, &mut GridPlacerUiForQuantumField)>,
         arrows: Query<&ArrowButton>,
@@ -520,7 +521,7 @@ enum QuantumFieldActionButton {
 }
 impl QuantumFieldActionButton {
     fn on_add_construct_action_button(
-        trigger: On<Add, QuantumFieldActionButton>,
+        trigger: On<Add<QuantumFieldActionButton>>,
         mut commands: Commands,
     ) {
         commands.entity(trigger.entity).insert((
@@ -544,7 +545,7 @@ impl QuantumFieldActionButton {
 
     #[log_tags(Tag::MapObjects)]
     fn on_click_execute_action(
-        _trigger: On<Pointer<Click>>,
+        _trigger: On<PointerClick>,
         mut commands: Commands,
         mut stock: ResMut<Stock>,
         focused_quantum_field: Single<Entity, With<FocusedMapObject>>,
@@ -614,7 +615,7 @@ fn update_quantum_field_info_panel_system(
 }
 
 fn on_focused_map_object_insert_update_quantum_field_panel(
-    trigger: On<Insert, FocusedMapObject>,
+    trigger: On<Insert<FocusedMapObject>>,
     mut commands: Commands,
     quantum_fields: Query<&QuantumFieldLayers>,
     quantum_field_panel: Single<&mut Node, With<QuantumFieldPanel>>,
@@ -771,7 +772,7 @@ pub(crate) fn quantum_field_tooltip(commands: &mut Commands, anchor: Entity, _ma
 }
 
 fn on_builder_add_spawn_quantum_field_tooltip(
-    trigger: On<Add, BuilderQuantumFieldSideMenuTooltip>,
+    trigger: On<Add<BuilderQuantumFieldSideMenuTooltip>>,
     mut commands: Commands,
     almanach: Res<Almanach>,
     builders: Query<&BuilderQuantumFieldSideMenuTooltip>,

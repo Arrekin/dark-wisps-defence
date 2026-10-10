@@ -86,7 +86,7 @@ impl BuilderTowerEmitter {
     }
 
     pub fn on_builder_add_spawn_tower_emitter(
-        trigger: On<Add, BuilderTowerEmitter>,
+        trigger: On<Add<BuilderTowerEmitter>>,
         mut commands: Commands,
         almanach: Res<Almanach>,
         builders: Query<&BuilderTowerEmitter>,

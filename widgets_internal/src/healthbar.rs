@@ -20,7 +20,7 @@ struct HealthbarChildren {
 }
 
 fn on_builder_add_spawn_healthbar(
-    trigger: On<Add, BuilderHealthbar>,
+    trigger: On<Add<BuilderHealthbar>>,
     mut commands: Commands,
     builders: Query<&BuilderHealthbar>,
 ) {

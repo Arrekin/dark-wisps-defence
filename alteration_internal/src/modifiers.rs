@@ -17,7 +17,7 @@ impl Plugin for ModifiersPlugin {
 }
 
 fn on_insert_modifier_contributions_apply_to_bank(
-    trigger: On<Insert, ModifierContributions>,
+    trigger: On<Insert<ModifierContributions>>,
     mut commands: Commands,
     instances: Query<(&EffectTarget, &ModifierContributions)>,
     mut banks: Query<&mut ModifierBank>,
@@ -31,7 +31,7 @@ fn on_insert_modifier_contributions_apply_to_bank(
 }
 
 fn on_remove_modifier_contributions_remove_from_bank(
-    trigger: On<Remove, ModifierContributions>,
+    trigger: On<Remove<ModifierContributions>>,
     mut commands: Commands,
     instances: Query<(&EffectTarget, &ModifierContributions)>,
     mut banks: Query<&mut ModifierBank>,
@@ -45,7 +45,7 @@ fn on_remove_modifier_contributions_remove_from_bank(
 }
 
 fn on_insert_max_integrity_points_clamp_integrity_points(
-    trigger: On<Insert, MaxIntegrityPoints>,
+    trigger: On<Insert<MaxIntegrityPoints>>,
     mut integrity_points_components: Query<(&mut IntegrityPoints, &MaxIntegrityPoints)>,
 ) {
     let Ok((mut integrity_points, max_integrity_points)) = integrity_points_components.get_mut(trigger.entity) else { return; };

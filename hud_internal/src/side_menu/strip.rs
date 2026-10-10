@@ -1,6 +1,6 @@
 //! Flyout strips and Almanach-backed tile population for side-menu sections.
 
-use bevy::prelude::*;
+use bevy::{prelude::*, ui_widgets::Button};
 
 use almanach::{AccessPattern, prelude::*};
 use game_core::prelude::*;

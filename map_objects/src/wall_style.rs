@@ -1,12 +1,14 @@
 //! A wall style is the parameter set the wall shader draws with.
 
-use bevy::{prelude::*, render::render_resource::ShaderType};
+use bevy::{prelude::*, render::render_resource::{ShaderSize, ShaderType}};
+use bytemuck::{Pod, Zeroable};
 use strum::{AsRefStr, EnumIter};
 
 use grids::placement::PlacementStyle;
 
 /// World-pixel silhouette geometry shared by every cell drawn with a style.
-#[derive(ShaderType, Clone, Copy, Debug)]
+#[repr(C)]
+#[derive(ShaderType, Pod, Zeroable, Clone, Copy, Debug)]
 pub struct WallStyleGeometry {
     pub bevel_width: f32,
     pub contour_width: f32,
@@ -15,16 +17,28 @@ pub struct WallStyleGeometry {
 }
 
 /// World-pixel surface-noise scale and contact-shadow length for a style.
-#[derive(ShaderType, Clone, Copy, Debug)]
+#[repr(C)]
+#[derive(ShaderType, Pod, Zeroable, Clone, Copy, Debug)]
 pub struct WallStyleSurface {
     pub plate_noise_scale: f32,
     pub shadow_length: f32,
+    /// Fills the struct to 16 bytes. This keeps `WallStyle` at a multiple of its 16-byte
+    /// alignment, and uniform layout requires 16 bytes for a nested struct.
+    pub _padding: Vec2,
+}
+impl WallStyleSurface {
+    pub fn new(plate_noise_scale: f32, shadow_length: f32) -> Self {
+        Self { plate_noise_scale, shadow_length, _padding: Vec2::ZERO }
+    }
 }
 
 /// GPU-side parameter set for wall shaders. Field order and types mirror the
-/// `WallStyle` struct in `assets/shaders/walls/look.wgsl` exactly; [`ShaderType`] supplies
-/// the matching storage-buffer layout.
-#[derive(ShaderType, Clone, Copy, Debug)]
+/// `WallStyle` struct in `assets/shaders/walls/look.wesl` exactly.
+///
+/// The wall canvas uploads it as raw bytes into a storage array, so its Rust layout must equal
+/// the WGSL layout. The swatch material binds it as a uniform through [`ShaderType`].
+#[repr(C)]
+#[derive(ShaderType, Pod, Zeroable, Clone, Copy, Debug)]
 pub struct WallStyle {
     pub body_low: LinearRgba,
     pub body_high: LinearRgba,
@@ -34,6 +48,11 @@ pub struct WallStyle {
     pub geometry: WallStyleGeometry,
     pub surface: WallStyleSurface,
 }
+
+const _: () = assert!(
+    size_of::<WallStyle>() as u64 == <WallStyle as ShaderSize>::SHADER_SIZE.get(),
+    "WallStyle's Rust layout must match its WGSL layout",
+);
 
 /// A named entry in the style table. `WallStyle` is the GPU-uploaded payload; `name` is
 /// the stable identity that survives save/load.
@@ -84,7 +103,7 @@ impl WallStyles {
                             hairline_width: 1.0,
                             erosion_amount: 0.0,
                         },
-                        surface: WallStyleSurface { plate_noise_scale, shadow_length },
+                        surface: WallStyleSurface::new(plate_noise_scale, shadow_length),
                     },
                 },
                 WallStyleEntry {
@@ -101,7 +120,7 @@ impl WallStyles {
                             hairline_width: 1.0,
                             erosion_amount: 4.0,
                         },
-                        surface: WallStyleSurface { plate_noise_scale, shadow_length },
+                        surface: WallStyleSurface::new(plate_noise_scale, shadow_length),
                     },
                 },
                 WallStyleEntry {
@@ -118,7 +137,7 @@ impl WallStyles {
                             hairline_width: 1.0,
                             erosion_amount: 1.6,
                         },
-                        surface: WallStyleSurface { plate_noise_scale, shadow_length },
+                        surface: WallStyleSurface::new(plate_noise_scale, shadow_length),
                     },
                 },
             ],
@@ -146,7 +165,7 @@ impl WallStyles {
 }
 
 /// Which term the wall shader draws instead of the finished wall. Discriminants are the
-/// `DEBUG_*` constants in `assets/shaders/walls/canvas.wgsl`; the two must stay in step.
+/// `DEBUG_*` constants in `assets/shaders/walls/canvas.wesl`; the two must stay in step.
 #[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq, EnumIter, AsRefStr)]
 #[repr(u32)]
 pub enum WallCanvasDebug {

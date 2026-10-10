@@ -38,7 +38,7 @@ impl Plugin for ForceFieldPlugin {
 }
 
 fn on_builder_add_spawn_force_field(
-    trigger: On<Add, BuilderForceField>,
+    trigger: On<Add<BuilderForceField>>,
     mut commands: Commands,
     builders: Query<&BuilderForceField>,
 ) {

@@ -25,7 +25,7 @@ impl Plugin for EmissionsPlugin {
 }
 
 fn on_add_emitter_energy_register_emitter(
-    trigger: On<Add, EmitterEnergy>,
+    trigger: On<Add<EmitterEnergy>>,
     mut commands: Commands,
 ) {
     let entity = trigger.entity;
@@ -35,7 +35,7 @@ fn on_add_emitter_energy_register_emitter(
 }
 
 fn on_insert_emitter_coords_or_operational_emit_added_message(
-    trigger: On<Insert, (GridCoords, GridImprint, IsOperational)>,
+    trigger: On<Insert<(GridCoords, GridImprint, IsOperational)>>,
     mut emitter_changed_messages: MessageWriter<EmitterChangedMessage>,
     emitters: Query<(&GridCoords, &GridImprint, &EmitterEnergy), With<IsOperational>>,
 ) {
@@ -50,7 +50,7 @@ fn on_insert_emitter_coords_or_operational_emit_added_message(
 }
 
 fn on_discard_emitter_coords_or_operational_emit_removed_message(
-    trigger: On<Discard, (GridCoords, GridImprint, IsOperational)>,
+    trigger: On<Discard<(GridCoords, GridImprint, IsOperational)>>,
     mut emitter_changed_messages: MessageWriter<EmitterChangedMessage>,
     emitters: Query<(&GridCoords, &GridImprint, &EmitterEnergy), With<IsOperational>>,
 ) {
@@ -65,14 +65,14 @@ fn on_discard_emitter_coords_or_operational_emit_removed_message(
 }
 
 fn on_insert_emissions_spread_affector_flag_for_recalculation(
-    _trigger: On<Insert, EmissionsGridSpreadAffector>,
+    _trigger: On<Insert<EmissionsGridSpreadAffector>>,
     mut recalculate_all: ResMut<EmissionsEnergyRecalculateAll>,
 ) {
     recalculate_all.0 = true;
 }
 
 fn on_remove_emissions_spread_affector_flag_for_recalculation(
-    _trigger: On<Remove, EmissionsGridSpreadAffector>,
+    _trigger: On<Remove<EmissionsGridSpreadAffector>>,
     mut recalculate_all: ResMut<EmissionsEnergyRecalculateAll>,
 ) {
     recalculate_all.0 = true;

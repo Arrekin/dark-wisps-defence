@@ -85,7 +85,7 @@ struct GpuForceFieldBuffer {
 /// Main-world resource holding this frame's field entries (cloned into render world each frame).
 #[derive(Resource, Default, Clone)]
 struct ForceFieldEntries(Vec<GpuForceFieldEntry>);
-impl ExtractResource for ForceFieldEntries {
+impl ExtractResource<RenderApp> for ForceFieldEntries {
     type Source = ForceFieldEntries;
     fn extract_resource(source: &Self::Source) -> Self { source.clone() }
 }
@@ -154,7 +154,7 @@ impl FieldRippleEntries {
         self.heap.push(ripple);
     }
 }
-impl ExtractResource for FieldRippleEntries {
+impl ExtractResource<RenderApp> for FieldRippleEntries {
     type Source = FieldRippleEntries;
     fn extract_resource(source: &Self::Source) -> Self { source.clone() }
 }
@@ -235,6 +235,7 @@ fn on_field_entered_create_ripple(
 
 /// Per-camera uniform: projection parameters, global time, and field count.
 #[derive(Component, ExtractComponent, Clone, Copy, ShaderType, Default)]
+#[extract_app(RenderApp)]
 pub(crate) struct ForceFieldPostProcess {
     camera_world_pos: Vec2,
     viewport_world_size: Vec2,
@@ -243,7 +244,7 @@ pub(crate) struct ForceFieldPostProcess {
 }
 impl ForceFieldPostProcess {
     fn on_add_camera_attach_post_process(
-        trigger: On<Add, PostProcessCamera>,
+        trigger: On<Add<PostProcessCamera>>,
         mut commands: Commands,
     ) {
         commands.entity(trigger.entity).insert(ForceFieldPostProcess::default());
@@ -383,7 +384,7 @@ fn init_force_field_pipeline(
         min_filter: FilterMode::Linear,
         ..default()
     });
-    let shader = asset_server.load("shaders/weaponry/force_field_post_process.wgsl");
+    let shader = asset_server.load("shaders/weaponry/force_field_post_process.wesl");
 
     let make_pipeline = |format| RenderPipelineDescriptor {
         label: Some("force_field_post_process_pipeline".into()),

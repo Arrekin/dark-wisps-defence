@@ -1,6 +1,6 @@
 //! Side-menu tile frames, placement interaction, and registered object presentation.
 
-use bevy::{prelude::*, ui::FocusPolicy};
+use bevy::{prelude::*, ui::FocusPolicy, ui_widgets::Button};
 
 use almanach::prelude::*;
 use game_core::prelude::*;
@@ -35,7 +35,7 @@ pub(crate) struct TileChildren {
 }
 
 pub(crate) fn on_add_tile_build(
-    trigger: On<Add, Tile>,
+    trigger: On<Add<Tile>>,
     mut commands: Commands,
 ) {
     let tile_entity = trigger.entity;
@@ -74,7 +74,7 @@ pub(crate) fn on_add_tile_build(
 pub(crate) struct PlacementTile(pub MapObject);
 
 pub(crate) fn on_add_placement_tile_watch_click(
-    trigger: On<Add, PlacementTile>,
+    trigger: On<Add<PlacementTile>>,
     mut commands: Commands,
 ) {
     commands.entity(trigger.entity).observe(on_click_placement_tile_request_placement);
@@ -82,7 +82,7 @@ pub(crate) fn on_add_placement_tile_watch_click(
 
 /// Applies the object's registered face and optional tooltip to a placement tile.
 pub(crate) fn on_add_tile_children_apply_presentation(
-    trigger: On<Add, TileChildren>,
+    trigger: On<Add<TileChildren>>,
     mut commands: Commands,
     almanach: Res<Almanach>,
     tiles: Query<(&PlacementTile, &TileChildren)>,
@@ -101,7 +101,7 @@ pub(crate) fn on_add_tile_children_apply_presentation(
 
 /// Stops propagation because a click on the parent section cancels its active placement.
 fn on_click_placement_tile_request_placement(
-    mut trigger: On<Pointer<Click>>,
+    mut trigger: On<PointerClick>,
     mut grid_object_placer_request: ResMut<GridObjectPlacerRequest>,
     tiles: Query<&PlacementTile>,
 ) {

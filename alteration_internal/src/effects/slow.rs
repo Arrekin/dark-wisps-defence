@@ -15,7 +15,7 @@ impl Plugin for SlowEffectPlugin {
 }
 
 fn on_builder_add_spawn_slow_effect(
-    trigger: On<Add, BuilderSlowEffect>,
+    trigger: On<Add<BuilderSlowEffect>>,
     mut commands: Commands,
     builders: Query<&BuilderSlowEffect>,
 ) {

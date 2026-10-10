@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use game_core::prelude::{GridCoords, GridImprint};
 
 fn on_insert_grid_coords_sync_transform(
-    trigger: On<Insert, GridCoords>,
+    trigger: On<Insert<GridCoords>>,
     mut transforms: Query<(&mut Transform, &GridCoords, &GridImprint)>,
 ) {
     let entity = trigger.entity;

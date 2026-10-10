@@ -10,7 +10,7 @@ use persistence::{prelude::*, rusqlite};
 // ============================================================================
 
 pub(crate) fn on_builder_add_spawn_objective(
-    trigger: On<Add, BuilderObjective>,
+    trigger: On<Add<BuilderObjective>>,
     mut commands: Commands,
     builders: Query<&BuilderObjective>,
 ) {
@@ -33,7 +33,7 @@ pub(crate) fn on_builder_add_spawn_objective(
 /// new state. Works identically on objectives and goals. Markers are never
 /// inserted directly — this is the single entry point that derives them.
 pub(crate) fn on_insert_objective_state_sync_markers(
-    trigger: On<Insert, ObjectiveState>,
+    trigger: On<Insert<ObjectiveState>>,
     mut commands: Commands,
     states: Query<&ObjectiveState>,
 ) {
@@ -157,7 +157,7 @@ pub(crate) fn on_moment_happened_activate(
 /// while the objective itself is being despawned (components still readable),
 /// and the queued insert must no-op on a gone entity.
 pub(crate) fn on_remove_moment_of_interest_fail_inactive(
-    trigger: On<Remove, MomentOfInterest>,
+    trigger: On<Remove<MomentOfInterest>>,
     mut commands: Commands,
     objectives: Query<(), (With<ObjectiveDetails>, With<ObjectiveInactive>)>,
 ) {

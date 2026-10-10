@@ -35,7 +35,7 @@ impl Plugin for WispFacePlugin {
 pub(crate) struct WispFireFaceMaterial {}
 impl UiMaterial for WispFireFaceMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/wisps/fire_face.wgsl".into()
+        "shaders/wisps/fire_face.wesl".into()
     }
 }
 
@@ -43,7 +43,7 @@ impl UiMaterial for WispFireFaceMaterial {
 pub(crate) struct WispWaterFaceMaterial {}
 impl UiMaterial for WispWaterFaceMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/wisps/water_face.wgsl".into()
+        "shaders/wisps/water_face.wesl".into()
     }
 }
 
@@ -51,7 +51,7 @@ impl UiMaterial for WispWaterFaceMaterial {
 pub(crate) struct WispLightFaceMaterial {}
 impl UiMaterial for WispLightFaceMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/wisps/light_face.wgsl".into()
+        "shaders/wisps/light_face.wesl".into()
     }
 }
 
@@ -59,7 +59,7 @@ impl UiMaterial for WispLightFaceMaterial {
 pub(crate) struct WispElectricFaceMaterial {}
 impl UiMaterial for WispElectricFaceMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/wisps/electric_face.wgsl".into()
+        "shaders/wisps/electric_face.wesl".into()
     }
 }
 

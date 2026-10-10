@@ -87,7 +87,7 @@ impl BuilderTowerBlaster {
     }
 
     pub fn on_builder_add_spawn_tower_blaster(
-        trigger: On<Add, BuilderTowerBlaster>,
+        trigger: On<Add<BuilderTowerBlaster>>,
         mut commands: Commands,
         almanach: Res<Almanach>,
         builders: Query<&BuilderTowerBlaster>,

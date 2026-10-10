@@ -75,7 +75,7 @@ fn load_laser_darts(ctx: &mut LoadContext) -> LoadResult {
 }
 
 fn on_builder_add_spawn_laser_dart(
-    trigger: On<Add, BuilderLaserDart>,
+    trigger: On<Add<BuilderLaserDart>>,
     mut commands: Commands,
     builders: Query<&BuilderLaserDart>,
 ) {

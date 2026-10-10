@@ -4,7 +4,7 @@ use states::prelude::UiInteraction;
 
 
 /// Recolor BackgroundColor with the given color on the specifed trigger.
-/// Example use: `.observe(recolor_background_on::<Pointer<Out>>(Color::NONE))`
+/// Example use: `.observe(recolor_background_on::<PointerOut>(Color::NONE))`
 pub fn recolor_background_on<E: EntityEvent>(color: Color) -> impl Fn(On<E>, Query<&mut BackgroundColor>) {
     move |event, mut background_colors| {
         let Ok(mut background_color) = background_colors.get_mut(event.event_target()) else {
@@ -29,7 +29,7 @@ pub fn set_text_if_changed(text: &mut Mut<Text>, content: &str) {
 }
 
 /// Set `UiInteraction` back to `Free` on the given trigger event.
-/// Example use: `.observe(set_ui_free_on::<Pointer<Click>>)`
+/// Example use: `.observe(set_ui_free_on::<PointerClick>)`
 pub fn set_ui_free_on<E: Event>(
     _trigger: On<E>,
     mut next_ui_state: ResMut<NextState<UiInteraction>>,

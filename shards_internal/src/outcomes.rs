@@ -52,7 +52,7 @@ fn ui_unlock_shard_blueprint_editor(ui: &mut egui::Ui, entity: &mut EntityWorldM
 }
 
 fn on_insert_unlock_shard_blueprint_derive_display(
-    trigger: On<Insert, UnlockShardBlueprint>,
+    trigger: On<Insert<UnlockShardBlueprint>>,
     mut commands: Commands,
     almanach: Res<Almanach>,
     outcomes: Query<&UnlockShardBlueprint>,

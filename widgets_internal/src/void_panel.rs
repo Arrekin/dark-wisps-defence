@@ -19,7 +19,7 @@ impl Plugin for VoidPanelPlugin {
 // ============================================================================
 
 fn on_builder_add_spawn_void_panel(
-    trigger: On<Add, BuilderVoidPanel>,
+    trigger: On<Add<BuilderVoidPanel>>,
     mut commands: Commands,
     mut materials: ResMut<Assets<VoidPanelMaterial>>,
     builders: Query<&BuilderVoidPanel>,
@@ -33,12 +33,12 @@ fn on_builder_add_spawn_void_panel(
     commands.entity(entity)
         .remove::<BuilderVoidPanel>()
         .insert((MaterialNode(material), panel))
-        .observe(move |trigger: On<Pointer<Over>>, mut panels: Query<&mut VoidPanel>| {
+        .observe(move |trigger: On<PointerOver>, mut panels: Query<&mut VoidPanel>| {
             if let Ok(mut panel) = panels.get_mut(trigger.entity) {
                 panel.set_hover(true);
             }
         })
-        .observe(move |trigger: On<Pointer<Out>>, mut panels: Query<&mut VoidPanel>| {
+        .observe(move |trigger: On<PointerOut>, mut panels: Query<&mut VoidPanel>| {
             if let Ok(mut panel) = panels.get_mut(trigger.entity) {
                 panel.set_hover(false);
             }

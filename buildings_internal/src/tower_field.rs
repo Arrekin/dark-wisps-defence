@@ -92,7 +92,7 @@ impl BuilderTowerField {
     }
 
     pub fn on_builder_add_spawn_tower_field(
-        trigger: On<Add, BuilderTowerField>,
+        trigger: On<Add<BuilderTowerField>>,
         mut commands: Commands,
         almanach: Res<Almanach>,
         builders: Query<&BuilderTowerField>,
@@ -138,7 +138,7 @@ impl BuilderTowerField {
     }
 
     fn on_insert_attack_range_resize_force_field(
-        trigger: On<Insert, AttackRange>,
+        trigger: On<Insert<AttackRange>>,
         towers: Query<(Option<&GeneratedForceField>, &AttackRange), With<TowerField>>,
         mut fields: Query<&mut ForceField>,
     ) {
@@ -206,7 +206,7 @@ fn load_tower_fields(ctx: &mut LoadContext) -> LoadResult {
 
 impl BuilderTowerField {
     fn on_add_is_operational_grow_force_field(
-        trigger: On<Add, IsOperational>,
+        trigger: On<Add<IsOperational>>,
         mut commands: Commands,
         towers: Query<(Option<&GeneratedForceField>, &AttackRange, &Transform), With<TowerField>>,
     ) {
@@ -225,7 +225,7 @@ impl BuilderTowerField {
     }
 
     fn on_remove_is_operational_shrink_force_field(
-        trigger: On<Remove, IsOperational>,
+        trigger: On<Remove<IsOperational>>,
         mut commands: Commands,
         towers: Query<&GeneratedForceField, With<TowerField>>,
     ) {
@@ -260,7 +260,7 @@ impl BuilderTowerField {
     }
 
     fn on_field_despawn_remove_all_effects(
-        trigger: On<Despawn, ForceField>,
+        trigger: On<Despawn<ForceField>>,
         mut commands: Commands,
         sources: Query<&EffectSourceOf>,
         effects: Query<(), With<FieldEffect>>,
@@ -277,7 +277,7 @@ impl BuilderTowerField {
 }
 
 fn on_tower_field_despawn_shrink_orphaned_force_field(
-    trigger: On<Despawn, TowerField>,
+    trigger: On<Despawn<TowerField>>,
     mut commands: Commands,
     towers: Query<&GeneratedForceField>,
 ) {

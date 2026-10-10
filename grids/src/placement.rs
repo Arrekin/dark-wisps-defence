@@ -64,7 +64,7 @@ impl PlacementModes {
 }
 
 /// Placement validity state returned by validators. Discriminants are the `VALIDITY_*` constants
-/// in `assets/shaders/grids/grid_placer.wgsl`; the two must stay in step.
+/// in `assets/shaders/grids/grid_placer.wesl`; the two must stay in step.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u32)]
 pub enum PlacementValidity {

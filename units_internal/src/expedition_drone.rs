@@ -187,7 +187,7 @@ fn on_deployment_request_drone_do_so(
 
 #[log_tags(Tag::Units)]
 fn on_state_changed_handle_drone_state_change(
-    trigger: On<Insert, DroneState>,
+    trigger: On<Insert<DroneState>>,
     mut commands: Commands,
     mut drones: Query<(&DroneState, &mut ExpeditionDrone, &mut Visibility)>,
     targets: Query<&Transform>,
@@ -529,7 +529,7 @@ impl Default for ScanningBeamMaterial {
 
 impl Material2d for ScanningBeamMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/units/scanning_beam.wgsl".into()
+        "shaders/units/scanning_beam.wesl".into()
     }
     fn alpha_mode(&self) -> AlphaMode2d {
         AlphaMode2d::Blend
@@ -545,7 +545,7 @@ pub(crate) struct ScanSpotMaterial {
 
 impl Material2d for ScanSpotMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/units/scan_spot.wgsl".into()
+        "shaders/units/scan_spot.wesl".into()
     }
     fn alpha_mode(&self) -> AlphaMode2d {
         AlphaMode2d::Blend
@@ -622,7 +622,7 @@ fn load_expedition_drones(ctx: &mut LoadContext) -> LoadResult {
 /// Visual entities hold references to drone; beam also references spot for positioning.
 #[log_tags(Tag::Units)]
 fn on_builder_add_spawn_expedition_drone(
-    trigger: On<Add, BuilderExpeditionDrone>,
+    trigger: On<Add<BuilderExpeditionDrone>>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut meshes: ResMut<Assets<Mesh>>,

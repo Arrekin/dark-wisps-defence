@@ -7,10 +7,10 @@ use research::prelude::*;
 use crate::ui::tile::ResearchTileOf;
 
 /// Spawns a tile entity bound to the research when it's enabled (first
-/// `ResearchState` insert). The `On<Add, ResearchTileOf>` observer builds
+/// `ResearchState` insert). The `On<Add<ResearchTileOf>>` observer builds
 /// the UI.
 pub(crate) fn on_add_research_state_spawn_tile(
-    trigger: On<Add, ResearchState>,
+    trigger: On<Add<ResearchState>>,
     mut commands: Commands,
 ) {
     let research = trigger.entity;
@@ -21,7 +21,7 @@ pub(crate) fn on_add_research_state_spawn_tile(
 /// The single entry point for marker components — they are never inserted
 /// directly. Swaps them to match the newly inserted `ResearchState`.
 pub(crate) fn on_insert_research_state_sync_markers(
-    trigger: On<Insert, ResearchState>,
+    trigger: On<Insert<ResearchState>>,
     mut commands: Commands,
     states: Query<&ResearchState>,
 ) {
@@ -37,7 +37,7 @@ pub(crate) fn on_insert_research_state_sync_markers(
 }
 
 pub(crate) fn on_insert_display_icon_fire_research_display_data_updated(
-    trigger: On<Insert, DisplayIcon>,
+    trigger: On<Insert<DisplayIcon>>,
     mut commands: Commands,
     researches: Query<(), With<Research>>,
 ) {

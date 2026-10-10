@@ -16,7 +16,7 @@ impl Plugin for FillBarPlugin {
 /// of `FillBar` counts as a change, so the first `sync_fill_bars` happens
 /// on the next frame with no separate init path.
 fn on_builder_add_spawn_fill_bar(
-    trigger: On<Add, BuilderFillBar>,
+    trigger: On<Add<BuilderFillBar>>,
     mut commands: Commands,
     builders: Query<&BuilderFillBar>,
 ) {

@@ -12,7 +12,7 @@ impl Plugin for TextCommandButtonPlugin {
 }
 
 fn on_builder_add_spawn_text_command_button(
-    trigger: On<Add, BuilderTextCommandButton>,
+    trigger: On<Add<BuilderTextCommandButton>>,
     mut commands: Commands,
     builders: Query<&BuilderTextCommandButton>,
 ) {

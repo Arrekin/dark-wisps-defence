@@ -42,7 +42,7 @@ impl BuilderWisp {
     }
 
     pub fn on_builder_add_spawn_wisp(
-        trigger: On<Add, BuilderWisp>,
+        trigger: On<Add<BuilderWisp>>,
         mut commands: Commands,
         mut wisps_grid: ResMut<WispsGrid>,
         builders: Query<&BuilderWisp>,

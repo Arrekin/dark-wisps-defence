@@ -122,7 +122,7 @@ fn spawn_header(commands: &mut Commands) -> Entity {
             height: Val::Px(CLOSE_BUTTON_SIZE),
             ..default()
         },
-    )).observe(set_ui_free_on::<Pointer<Click>>).id();
+    )).observe(set_ui_free_on::<PointerClick>).id();
 
     commands.spawn(Node {
         width: Val::Percent(100.),

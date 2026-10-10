@@ -15,7 +15,7 @@ impl Plugin for EffectVisualsPlugin {
 }
 
 fn on_insert_effect_visual_contribution_set_state(
-    trigger: On<Insert, EffectVisualContribution>,
+    trigger: On<Insert<EffectVisualContribution>>,
     contributions: Query<(&EffectTarget, &EffectVisualContribution)>,
     mut states: Query<&mut EffectVisualState>,
 ) {
@@ -26,7 +26,7 @@ fn on_insert_effect_visual_contribution_set_state(
 }
 
 fn on_remove_effect_visual_contribution_clear_state(
-    trigger: On<Remove, EffectVisualContribution>,
+    trigger: On<Remove<EffectVisualContribution>>,
     targets: Query<&EffectTarget>,
     mut states: Query<&mut EffectVisualState>,
 ) {

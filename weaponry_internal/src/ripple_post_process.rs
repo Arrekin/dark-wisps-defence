@@ -76,7 +76,7 @@ struct GpuRippleBuffer {
 /// receives `&Source`, so the clone at the extraction boundary is unavoidable).
 #[derive(Resource, Default, Clone)]
 struct RippleEntries(Vec<GpuRippleEntry>);
-impl ExtractResource for RippleEntries {
+impl ExtractResource<RenderApp> for RippleEntries {
     type Source = RippleEntries;
     fn extract_resource(source: &Self::Source) -> Self { source.clone() }
 }
@@ -108,6 +108,7 @@ impl GpuRippleStorage {
 
 /// Per-camera uniform. Only carries projection parameters and the shared ripple count.
 #[derive(Component, ExtractComponent, Clone, Copy, ShaderType, Default)]
+#[extract_app(RenderApp)]
 pub(crate) struct RipplePostProcess {
     camera_world_pos: Vec2,
     viewport_world_size: Vec2,
@@ -115,7 +116,7 @@ pub(crate) struct RipplePostProcess {
 }
 impl RipplePostProcess {
     fn on_add_camera_attach_post_process(
-        trigger: On<Add, PostProcessCamera>,
+        trigger: On<Add<PostProcessCamera>>,
         mut commands: Commands,
     ) {
         commands.entity(trigger.entity).insert(RipplePostProcess::default());
@@ -258,7 +259,7 @@ fn init_ripple_pipeline(
         min_filter: FilterMode::Linear,
         ..default()
     });
-    let shader = asset_server.load("shaders/weaponry/ripple_post_process.wgsl");
+    let shader = asset_server.load("shaders/weaponry/ripple_post_process.wesl");
 
     let make_pipeline = |format| RenderPipelineDescriptor {
         label: Some("ripple_post_process_pipeline".into()),

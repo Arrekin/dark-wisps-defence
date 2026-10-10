@@ -38,7 +38,7 @@ impl Plugin for CommonSystemsPlugin {
 }
 
 fn on_insert_attack_speed_sync_shooting_timer(
-    trigger: On<Insert, AttackSpeed>,
+    trigger: On<Insert<AttackSpeed>>,
     mut timers: Query<(&mut TowerShootingTimer, &AttackSpeed)>,
 ) {
     let entity = trigger.entity;

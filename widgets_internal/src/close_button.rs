@@ -15,7 +15,7 @@ impl Plugin for CloseButtonPlugin {
 }
 
 fn on_builder_add_spawn_close_button(
-    trigger: On<Add, BuilderCloseButton>,
+    trigger: On<Add<BuilderCloseButton>>,
     mut commands: Commands,
     mut materials: ResMut<Assets<CloseButtonMaterial>>,
     builders: Query<&BuilderCloseButton>,
@@ -29,12 +29,12 @@ fn on_builder_add_spawn_close_button(
     commands.entity(entity)
         .remove::<BuilderCloseButton>()
         .insert((MaterialNode(material), button))
-        .observe(|trigger: On<Pointer<Over>>, mut buttons: Query<&mut CloseButton>| {
+        .observe(|trigger: On<PointerOver>, mut buttons: Query<&mut CloseButton>| {
             if let Ok(mut button) = buttons.get_mut(trigger.entity) {
                 button.set_hover(true);
             }
         })
-        .observe(|trigger: On<Pointer<Out>>, mut buttons: Query<&mut CloseButton>| {
+        .observe(|trigger: On<PointerOut>, mut buttons: Query<&mut CloseButton>| {
             if let Ok(mut button) = buttons.get_mut(trigger.entity) {
                 button.set_hover(false);
             }

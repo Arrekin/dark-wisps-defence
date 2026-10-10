@@ -16,13 +16,12 @@ use almanach::Almanach;
 use game_core::prelude::{Bounds, GridCoords, MapInfo, ZDepth};
 use map_objects::prelude::DarkOre;
 use states::prelude::MapLoadingStage;
-use visuals::prelude::{MapCanvasBundle, ShaderLibraryAppExt};
+use visuals::prelude::MapCanvasBundle;
 
 pub(crate) struct DarkOreCanvasPlugin;
 impl Plugin for DarkOreCanvasPlugin {
     fn build(&self, app: &mut App) {
         app
-            .register_shader_library("shaders/dark_ore/look.wgsl")
             .add_plugins(Material2dPlugin::<DarkOreCanvasMaterial>::default())
             .init_resource::<DarkOreCanvasRebuildRequested>()
             .add_systems(OnEnter(MapLoadingStage::LoadResources), DarkOreCanvas::create)
@@ -35,7 +34,7 @@ impl Plugin for DarkOreCanvasPlugin {
     }
 }
 
-/// Field order and types mirror `DarkOreCanvasSettings` in `assets/shaders/dark_ore/canvas.wgsl`.
+/// Field order and types mirror `DarkOreCanvasSettings` in `assets/shaders/dark_ore/canvas.wesl`.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, ShaderType, Default)]
 struct DarkOreCanvasSettings {
@@ -59,7 +58,7 @@ struct DarkOreCanvasMaterial {
 
 impl Material2d for DarkOreCanvasMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/dark_ore/canvas.wgsl".into()
+        "shaders/dark_ore/canvas.wesl".into()
     }
 
     fn alpha_mode(&self) -> AlphaMode2d {
@@ -83,7 +82,7 @@ impl DarkOreCanvas {
 
         let map_bounds = map_info.grid_bounds;
         let cell_count = map_bounds.area();
-        let cells = buffers.add(ShaderBuffer::from(vec![0f32; cell_count].as_slice()));
+        let cells = buffers.add(ShaderBuffer::from(vec![0f32; cell_count]));
 
         let material = materials.add(DarkOreCanvasMaterial {
             cells,
@@ -125,7 +124,7 @@ fn request_rebuild_on_dark_ore_changed(
 }
 
 fn on_dark_ore_remove_request_rebuild(
-    _trigger: On<Remove, DarkOre>,
+    _trigger: On<Remove<DarkOre>>,
     mut rebuild_requested: ResMut<DarkOreCanvasRebuildRequested>,
 ) {
     rebuild_requested.request();
@@ -139,26 +138,24 @@ fn rebuild_dark_ore_canvas(
     almanach: Res<Almanach>,
     dark_ores: Query<(&GridCoords, &DarkOre)>,
     dark_ore_canvas: Single<&MeshMaterial2d<DarkOreCanvasMaterial>, With<DarkOreCanvas>>,
-    // Reused so the fill does not reallocate; `set_data` still copies it into a fresh byte buffer.
-    mut cell_data: Local<Vec<f32>>,
 ) -> Result<()> {
     rebuild_requested.clear();
 
     let material = materials.get(dark_ore_canvas.into_inner())
         .ok_or("DarkOreCanvas material asset missing")?;
+    let mut buffer = buffers.get_mut(&material.cells)
+        .ok_or("DarkOreCanvas cells buffer asset missing")?;
 
     let max_field_saturation = almanach.dark_ore.max_field_saturation as f32;
 
     let map_bounds = map_info.grid_bounds;
-    cell_data.clear();
-    cell_data.resize(map_bounds.area(), 0.0);
+    buffer.clear();
+    buffer.extend(core::iter::repeat_n(0f32, map_bounds.area()));
+    let cell_data = buffer.cast_slice_mut::<f32>()
+        .ok_or("DarkOreCanvas cells buffer is uninitialized")?;
     for (coords, dark_ore) in dark_ores.iter() {
         let Some(index) = map_bounds.index_checked(*coords) else { continue; };
         cell_data[index] = (dark_ore.amount as f32 / max_field_saturation).clamp(0.0, 1.0);
     }
-
-    let mut buffer = buffers.get_mut(&material.cells)
-        .ok_or("DarkOreCanvas cells buffer asset missing")?;
-    buffer.set_data(&*cell_data);
     Ok(())
 }

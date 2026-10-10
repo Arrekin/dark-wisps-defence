@@ -87,7 +87,7 @@ impl BuilderTowerRocketLauncher {
     }
 
     pub fn on_builder_add_spawn_tower_rocket_launcher(
-        trigger: On<Add, BuilderTowerRocketLauncher>,
+        trigger: On<Add<BuilderTowerRocketLauncher>>,
         mut commands: Commands,
         almanach: Res<Almanach>,
         builders: Query<&BuilderTowerRocketLauncher>,

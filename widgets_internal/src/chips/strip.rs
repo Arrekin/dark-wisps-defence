@@ -16,7 +16,7 @@ impl Plugin for ChipStripPlugin {
 /// is what `MouseScrollingPlugin` writes, so the strip is scrollable the moment
 /// its children overflow.
 fn on_builder_add_spawn_chip_strip(
-    trigger: On<Add, BuilderChipStrip>,
+    trigger: On<Add<BuilderChipStrip>>,
     mut commands: Commands,
 ) {
     commands.entity(trigger.entity)

@@ -29,7 +29,7 @@ impl Plugin for ChipPlugin {
 /// Builds the shared icon/text tree and records its entities in `ChipChildren`. Specializations
 /// own tooltip and visual-state behavior.
 fn on_builder_add_spawn_chip(
-    trigger: On<Add, BuilderChip>,
+    trigger: On<Add<BuilderChip>>,
     mut commands: Commands,
     builders: Query<&BuilderChip>,
 ) {
@@ -82,7 +82,7 @@ fn on_builder_add_spawn_chip(
 // ============================================================================
 
 fn on_add_chips_faded_dim_chips(
-    trigger: On<Add, ChipsFaded>,
+    trigger: On<Add<ChipsFaded>>,
     mut commands: Commands,
     faded: Query<&ChipsFaded>,
     chips: Query<&ChipChildren>,
@@ -102,7 +102,7 @@ fn on_add_chips_faded_dim_chips(
 }
 
 fn on_remove_chips_faded_restore_chips(
-    trigger: On<Remove, ChipsFaded>,
+    trigger: On<Remove<ChipsFaded>>,
     mut commands: Commands,
     chips: Query<&ChipChildren>,
     children: Query<&Children>,

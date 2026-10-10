@@ -209,7 +209,7 @@ impl<Marker: Component> Default for ResearchDetailViewSource<Marker> {
 /// The research that just gained the marker is the one to show, and it is the
 /// trigger target, so nothing has to be searched for.
 fn on_insert_research_marker_show_in_detail_view<Marker: Component>(
-    trigger: On<Insert, Marker>,
+    trigger: On<Insert<Marker>>,
     mut commands: Commands,
     view: Single<Entity, With<ResearchDetailViewSource<Marker>>>,
 ) {
@@ -223,7 +223,7 @@ fn on_insert_research_marker_show_in_detail_view<Marker: Component>(
 /// view is left with nothing to show. Resolving that here rather than querying
 /// also sidesteps `On<Remove>` firing while the component is still attached.
 fn on_remove_research_marker_clear_detail_view<Marker: Component>(
-    _: On<Remove, Marker>,
+    _: On<Remove<Marker>>,
     mut commands: Commands,
     view: Single<Entity, With<ResearchDetailViewSource<Marker>>>,
 ) {
@@ -268,7 +268,7 @@ fn on_show_research_in_detail_view_rebuild_content(
 /// content builder in its empty shape. A freshly spawned view is therefore
 /// already correct before any marker exists.
 fn on_builder_add_spawn_research_detail_view(
-    trigger: On<Add, BuilderResearchDetailView>,
+    trigger: On<Add<BuilderResearchDetailView>>,
     mut commands: Commands,
     builders: Query<&BuilderResearchDetailView>,
 ) {
@@ -323,7 +323,7 @@ fn on_builder_add_spawn_research_detail_view(
 /// `DisplayIcon` is inserted after the research spawns, and `ResearchDisplayDataUpdated`
 /// then rebuilds the card.
 fn on_builder_insert_rebuild_research_detail_view_content(
-    trigger: On<Insert, BuilderResearchDetailViewContent>,
+    trigger: On<Insert<BuilderResearchDetailViewContent>>,
     mut commands: Commands,
     builders: Query<&BuilderResearchDetailViewContent>,
     researches: Query<(Entity, &DisplayName, &DisplayDescription, &DisplayIcon, &Research, Option<&HasOutcomes>)>,

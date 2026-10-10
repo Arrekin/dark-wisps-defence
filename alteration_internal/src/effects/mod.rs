@@ -29,7 +29,7 @@ impl Plugin for EffectsPlugin {
 }
 
 fn on_insert_expires_at_enqueue_expiry(
-    trigger: On<Insert, ExpiresAt>,
+    trigger: On<Insert<ExpiresAt>>,
     mut queue: ResMut<EffectsExpiryQueue>,
     expires: Query<&ExpiresAt>,
 ) {

@@ -8,6 +8,7 @@ use bevy::{
     ecs::component::ComponentIdFor,
     picking::hover::Hovered,
     prelude::*,
+    ui_widgets::Button,
 };
 
 use game_core::prelude::MapObject;
@@ -30,6 +31,42 @@ const STRIP_LEFT: f32 = SIDE_MENU_SECTION_SIZE - 1.;
 #[derive(Component, Default, Clone)]
 #[require(Button, Hovered, SectionLatch)]
 pub(crate) struct SideMenuSection;
+impl SideMenuSection {
+    /// Builds a section icon and its flyout strip. `extra` attaches section-specific markers or
+    /// observers.
+    pub(crate) fn scene(icon_path: &'static str, content: impl SceneList, extra: impl Scene) -> impl Scene {
+        bsn! {
+            SideMenuSection
+            Node {
+                width: Val::Px(SIDE_MENU_SECTION_SIZE),
+                height: Val::Px(SIDE_MENU_SECTION_SIZE),
+            }
+            ImageNode {
+                image: {icon_path},
+                color: {WHITE.with_alpha(NOT_HOVERED_ALPHA)},
+            }
+            @extra
+            Children [
+                SideMenuStrip
+                Node {
+                    flex_direction: FlexDirection::Row,
+                    align_items: AlignItems::Center,
+                    left: {Val::Px(STRIP_LEFT)},
+                    padding: UiRect::all(Val::Px(STRIP_TILE_INSET)),
+                    column_gap: Val::Px(STRIP_TILE_INSET),
+                }
+                Visibility::Hidden
+                GlobalZIndex(-1)
+                BuilderVoidPanel::default()
+                    .with_corner_cut(0.)
+                    .with_edge_brightness(STRIP_EDGE_BRIGHTNESS)
+                    .with_rim_intensity(0.)
+                    .with_hairline_strength(0.)
+                Children [ {content} ]
+            ]
+        }
+    }
+}
 
 /// Keeps a section open during placement. `OnObject` identifies the only tile shown after the
 /// pointer leaves the section.
@@ -49,54 +86,13 @@ pub(crate) enum SectionOffering {
     Buildings,
 }
 
-/// Builds a section icon and its flyout strip. `extra` attaches section-specific markers or
-/// observers.
-///
-/// This remains a free function because `bsn!` parses `Type::method` as a component constructor.
-pub(crate) fn side_menu_section(icon_path: &'static str, content: impl SceneList, extra: impl Scene) -> impl Scene {
-    bsn! {
-        SideMenuSection
-        Node {
-            width: Val::Px(SIDE_MENU_SECTION_SIZE),
-            height: Val::Px(SIDE_MENU_SECTION_SIZE),
-        }
-        ImageNode {
-            image: {icon_path},
-            color: {WHITE.with_alpha(NOT_HOVERED_ALPHA)},
-        }
-        {extra}
-        Children [
-            (
-                SideMenuStrip
-                Node {
-                    flex_direction: FlexDirection::Row,
-                    align_items: AlignItems::Center,
-                    left: {Val::Px(STRIP_LEFT)},
-                    padding: UiRect::all(Val::Px(STRIP_TILE_INSET)),
-                    column_gap: Val::Px(STRIP_TILE_INSET),
-                }
-                Visibility::Hidden
-                GlobalZIndex(-1)
-                {template_value(
-                    BuilderVoidPanel::default()
-                        .with_corner_cut(0.)
-                        .with_edge_brightness(STRIP_EDGE_BRIGHTNESS)
-                        .with_rim_intensity(0.)
-                        .with_hairline_strength(0.)
-                )}
-                Children [ {content} ]
-            )
-        ]
-    }
-}
-
 /// A section is raised — icon lit, strip shown — while the pointer is inside it or while it is
 /// latched.
 ///
 /// `Hovered` includes descendants, so it remains set while the pointer crosses the icon, strip,
 /// and tiles.
 pub(crate) fn on_insert_section_state_manage_strip(
-    trigger: On<Insert, (Hovered, SectionLatch)>,
+    trigger: On<Insert<(Hovered, SectionLatch)>>,
     latch_id: ComponentIdFor<SectionLatch>,
     mut sections: Query<(&Hovered, &SectionLatch, &mut ImageNode, &Children), With<SideMenuSection>>,
     mut strips: Query<(&Children, &mut Visibility), With<SideMenuStrip>>,
@@ -170,7 +166,7 @@ pub(crate) fn on_begin_placing_latch_owning_section(
 
 /// Clicking the section latched to the running placement cancels the session.
 pub(crate) fn on_click_section_cancel_placement(
-    trigger: On<Pointer<Click>>,
+    trigger: On<PointerClick>,
     mut next_ui_state: ResMut<NextState<UiInteraction>>,
     sections: Query<&SectionLatch, With<SideMenuSection>>,
 ) {
@@ -207,14 +203,14 @@ impl AdminSection {
 }
 
 pub(crate) fn on_click_open_research_panel(
-    _trigger: On<Pointer<Click>>,
+    _trigger: On<PointerClick>,
     mut next_ui_state: ResMut<NextState<UiInteraction>>,
 ) {
     next_ui_state.set(UiInteraction::ResearchPanel);
 }
 
 pub(crate) fn on_click_open_forging_panel(
-    _trigger: On<Pointer<Click>>,
+    _trigger: On<PointerClick>,
     mut next_ui_state: ResMut<NextState<UiInteraction>>,
 ) {
     next_ui_state.set(UiInteraction::ForgingPanel);

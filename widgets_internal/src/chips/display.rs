@@ -35,7 +35,7 @@ impl Plugin for DisplayChipPlugin {
 /// Builds an icon-only chip linked to its display subject. Name and description appear in its
 /// tooltip; missing display components leave their corresponding content empty.
 fn on_builder_add_spawn_display_chip(
-    trigger: On<Add, BuilderDisplayChip>,
+    trigger: On<Add<BuilderDisplayChip>>,
     mut commands: Commands,
     builders: Query<&BuilderDisplayChip>,
     subjects: Query<(Option<&DisplayIcon>, Option<&DisplayName>, Option<&DisplayDescription>)>,

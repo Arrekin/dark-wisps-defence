@@ -35,7 +35,7 @@ pub struct ObjectiveDetails {
 }
 
 /// State enum — single entry point for state changes. Inserting this fires
-/// `On<Insert, ObjectiveState>` which swaps markers. Persisted as a string
+/// `On<Insert<ObjectiveState>>` which swaps markers. Persisted as a string
 /// (strum derives for DB serialization).
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq, Default, EnumString, AsRefStr)]
 #[component(immutable)]
@@ -76,7 +76,7 @@ impl ObjectiveCounterProgress {
 }
 
 /// Fn-pointer component on goals, attached by each goal module's
-/// `On<Add, ConfigComponent>` observer. Always present (no gating — editor is
+/// `On<Add<ConfigComponent>>` observer. Always present (no gating — editor is
 /// player-facing). Called by the editor's exclusive system with a cloned
 /// `egui::Context` + `&mut EntityWorldMut` for the goal.
 ///

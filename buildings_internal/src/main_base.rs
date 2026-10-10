@@ -99,7 +99,7 @@ impl BuilderMainBase {
     }
 
     pub fn on_builder_add_spawn_main_base(
-        trigger: On<Add, BuilderMainBase>,
+        trigger: On<Add<BuilderMainBase>>,
         mut commands: Commands,
         almanach: Res<Almanach>,
         builders: Query<&BuilderMainBase>,

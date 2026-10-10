@@ -82,7 +82,7 @@ impl BuilderEnergyRelay {
     }
 
     pub fn on_builder_add_spawn_energy_relay(
-        trigger: On<Add, BuilderEnergyRelay>,
+        trigger: On<Add<BuilderEnergyRelay>>,
         mut commands: Commands,
         almanach: Res<Almanach>,
         builders: Query<&BuilderEnergyRelay>,
@@ -189,13 +189,13 @@ fn load_energy_relays(ctx: &mut LoadContext) -> LoadResult {
 
 impl BuilderEnergyRelay {
     fn on_add_is_operational_insert_color_pulsation(
-        trigger: On<Add, IsOperational>,
+        trigger: On<Add<IsOperational>>,
         mut commands: Commands,
     ) {
         commands.entity(trigger.entity).insert(ColorPulsation::new(1.0, 1.8, 3.0));
     }
     fn on_remove_is_operational_remove_color_pulsation(
-        trigger: On<Remove, IsOperational>,
+        trigger: On<Remove<IsOperational>>,
         mut commands: Commands,
     ) {
         commands.entity(trigger.entity).try_remove::<ColorPulsation>();

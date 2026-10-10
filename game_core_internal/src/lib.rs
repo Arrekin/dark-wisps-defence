@@ -58,7 +58,7 @@ fn on_moment_happened_propagate_to_watchers(
 }
 
 fn on_insert_zdepth_apply_zdepth(
-    trigger: On<Insert, ZDepth>,
+    trigger: On<Insert<ZDepth>>,
     mut transforms: Query<(&mut Transform, &ZDepth)>,
 ) {
     let entity = trigger.entity;
@@ -67,7 +67,7 @@ fn on_insert_zdepth_apply_zdepth(
 }
 
 fn on_add_display_icon_switcher_load_display_icon(
-    trigger: On<Add, DisplayIconSwitcher>,
+    trigger: On<Add<DisplayIconSwitcher>>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     switchers: Query<&DisplayIconSwitcher>,
@@ -116,16 +116,16 @@ fn process_damage(
 // Technical State — global observers
 // ============================================================================
 
-fn on_insert_is_powered_emit_technical_state_changed(trigger: On<Insert, IsPowered>, mut commands: Commands) {
+fn on_insert_is_powered_emit_technical_state_changed(trigger: On<Insert<IsPowered>>, mut commands: Commands) {
     commands.trigger(TechnicalStateChanged { entity: trigger.entity, kind: TechnicalChange::PowerGained });
 }
-fn on_remove_is_powered_emit_technical_state_changed(trigger: On<Remove, IsPowered>, mut commands: Commands) {
+fn on_remove_is_powered_emit_technical_state_changed(trigger: On<Remove<IsPowered>>, mut commands: Commands) {
     commands.trigger(TechnicalStateChanged { entity: trigger.entity, kind: TechnicalChange::PowerLost });
 }
-fn on_insert_disabled_by_player_emit_technical_state_changed(trigger: On<Insert, DisabledByPlayer>, mut commands: Commands) {
+fn on_insert_disabled_by_player_emit_technical_state_changed(trigger: On<Insert<DisabledByPlayer>>, mut commands: Commands) {
     commands.trigger(TechnicalStateChanged { entity: trigger.entity, kind: TechnicalChange::PlayerDisabled });
 }
-fn on_remove_disabled_by_player_emit_technical_state_changed(trigger: On<Remove, DisabledByPlayer>, mut commands: Commands) {
+fn on_remove_disabled_by_player_emit_technical_state_changed(trigger: On<Remove<DisabledByPlayer>>, mut commands: Commands) {
     commands.trigger(TechnicalStateChanged { entity: trigger.entity, kind: TechnicalChange::PlayerEnabled });
 }
 
@@ -134,7 +134,7 @@ fn on_remove_disabled_by_player_emit_technical_state_changed(trigger: On<Remove,
 // ============================================================================
 
 fn on_add_needs_power_init_power_state(
-    trigger: On<Add, NeedsPower>,
+    trigger: On<Add<NeedsPower>>,
     mut commands: Commands,
     energy_supply_grid: Res<EnergySupplyGrid>,
     consumers: Query<(&GridCoords, &GridImprint), With<NeedsPower>>,
@@ -151,7 +151,7 @@ fn on_add_needs_power_init_power_state(
 
 /// Local observer triggered when GridCoords or GridImprint changes on NeedsPower entities
 fn on_insert_needs_power_coords_refresh_power_state(
-    trigger: On<Insert, (GridCoords, GridImprint)>,
+    trigger: On<Insert<(GridCoords, GridImprint)>>,
     mut commands: Commands,
     energy_supply_grid: Res<EnergySupplyGrid>,
     consumers: Query<(&GridCoords, &GridImprint, Has<IsPowered>), With<NeedsPower>>,

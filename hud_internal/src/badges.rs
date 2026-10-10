@@ -125,8 +125,8 @@ fn initialize_badges_system(
                         },
                         EssenceBadge,
                     ))
-                    .observe(recolor_background_on::<Pointer<Over>>(Color::srgba(0., 0.3, 0.9, 0.3)))
-                    .observe(recolor_background_on::<Pointer<Out>>(Color::NONE))
+                    .observe(recolor_background_on::<PointerOver>(Color::srgba(0., 0.3, 0.9, 0.3)))
+                    .observe(recolor_background_on::<PointerOut>(Color::NONE))
                     .with_children(|parent| {
                         // Essence circle
                         let (background_color, border_color) = essence_type_to_badge_colors(essence_type);

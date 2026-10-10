@@ -59,7 +59,7 @@ impl BuilderGoalClearQuantumFields {
     }
 
     fn on_builder_add_spawn_goal_clear_quantum_fields(
-        trigger: On<Add, BuilderGoalClearQuantumFields>,
+        trigger: On<Add<BuilderGoalClearQuantumFields>>,
         mut commands: Commands,
         builders: Query<&BuilderGoalClearQuantumFields>,
     ) {
@@ -87,7 +87,7 @@ impl BuilderGoalClearQuantumFields {
 
 /// Sink event: recompute the goal's counter from the live world. Fired by
 /// the builder spawn observer, the activation observer, and global
-/// `On<Add, QuantumFieldSolved>` / `On<Add, QuantumField>` observers. All actual
+/// `On<Add<QuantumFieldSolved>>` / `On<Add<QuantumField>>` observers. All actual
 /// recomputation logic lives in `on_refresh_clear_quantum_fields_goal_do_so`.
 #[derive(Event)]
 struct RefreshClearQuantumFieldsGoal {
@@ -99,7 +99,7 @@ struct RefreshClearQuantumFieldsGoal {
 /// solved field changes `current`. The refresh observer recomputes counter +
 /// display; the satisfaction check is done here (progress-change site).
 fn on_add_quantum_field_or_solved_request_refresh(
-    _trigger: On<Add, (QuantumField, QuantumFieldSolved)>,
+    _trigger: On<Add<(QuantumField, QuantumFieldSolved)>>,
     mut commands: Commands,
     goals: Query<Entity, (With<GoalClearQuantumFields>, With<ObjectiveInProgress>)>,
     quantum_fields: Query<Entity, With<QuantumField>>,

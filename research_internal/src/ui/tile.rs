@@ -95,11 +95,11 @@ pub(crate) struct ResearchTile {
 }
 
 // ============================================================================
-// TILE BUILD — On<Add, ResearchTileOf> builds UI + registers data observer
+// TILE BUILD — On<Add<ResearchTileOf>> builds UI + registers data observer
 // ============================================================================
 
 fn on_add_research_tile_of_build_tile(
-    trigger: On<Add, ResearchTileOf>,
+    trigger: On<Add<ResearchTileOf>>,
     mut commands: Commands,
     tiles: Query<&ResearchTileOf>,
     grid: Single<Entity, With<ResearchTileGrid>>,
@@ -252,7 +252,7 @@ fn on_research_display_data_updated_fill_tile(
 // ============================================================================
 
 fn on_insert_research_state_refresh_tile(
-    trigger: On<Insert, ResearchState>,
+    trigger: On<Insert<ResearchState>>,
     mut commands: Commands,
     researches: Query<(&ResearchState, &ResearchTileLink)>,
     mut tiles: Query<(&ResearchTile, &mut VoidPanel)>,
@@ -315,7 +315,7 @@ fn on_insert_research_state_refresh_tile(
 // ============================================================================
 
 fn on_click_research_tile_select(
-    trigger: On<Pointer<Click>>,
+    trigger: On<PointerClick>,
     mut commands: Commands,
     tiles: Query<&ResearchTile>,
     selected_research: Option<Single<Entity, With<ResearchUISelected>>>,
@@ -335,7 +335,7 @@ fn on_click_research_tile_select(
 }
 
 fn on_add_research_ui_selected_light_tile(
-    trigger: On<Add, ResearchUISelected>,
+    trigger: On<Add<ResearchUISelected>>,
     links: Query<&ResearchTileLink>,
     mut panels: Query<&mut VoidPanel, With<ResearchTile>>,
 ) {
@@ -345,7 +345,7 @@ fn on_add_research_ui_selected_light_tile(
 }
 
 fn on_remove_research_ui_selected_dim_tile(
-    trigger: On<Remove, ResearchUISelected>,
+    trigger: On<Remove<ResearchUISelected>>,
     links: Query<&ResearchTileLink>,
     mut panels: Query<&mut VoidPanel, With<ResearchTile>>,
 ) {
@@ -361,7 +361,7 @@ fn on_remove_research_ui_selected_dim_tile(
 // ============================================================================
 
 fn on_add_research_active_surge_tile(
-    trigger: On<Add, ResearchActive>,
+    trigger: On<Add<ResearchActive>>,
     links: Query<&ResearchTileLink>,
     mut panels: Query<&mut VoidPanel, With<ResearchTile>>,
 ) {
@@ -371,7 +371,7 @@ fn on_add_research_active_surge_tile(
 }
 
 fn on_remove_research_active_still_tile(
-    trigger: On<Remove, ResearchActive>,
+    trigger: On<Remove<ResearchActive>>,
     links: Query<&ResearchTileLink>,
     mut panels: Query<&mut VoidPanel, With<ResearchTile>>,
 ) {

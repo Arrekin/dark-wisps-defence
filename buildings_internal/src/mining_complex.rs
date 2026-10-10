@@ -125,7 +125,7 @@ impl BuilderMiningComplex {
     }
 
     pub fn on_builder_add_spawn_mining_complex(
-        trigger: On<Add, BuilderMiningComplex>,
+        trigger: On<Add<BuilderMiningComplex>>,
         mut commands: Commands,
         almanach: Res<Almanach>,
         builders: Query<&BuilderMiningComplex>,

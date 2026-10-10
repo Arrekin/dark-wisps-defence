@@ -1,4 +1,4 @@
-use bevy::prelude::*;
+use bevy::{prelude::*, ui_widgets::Button};
 
 use game_core::prelude::ResponseRequest;
 use logging::prelude::*;
@@ -22,7 +22,7 @@ impl Plugin for MainMenuPlugin {
 #[derive(Component)]
 struct MainMenuRoot;
 impl MainMenuRoot {
-    fn on_add_build_main_menu(trigger: On<Add, MainMenuRoot>, mut commands: Commands) {
+    fn on_add_build_main_menu(trigger: On<Add<MainMenuRoot>>, mut commands: Commands) {
         commands.entity(trigger.entity).apply_scene(bsn! {
             Node {
                 position_type: PositionType::Absolute,
@@ -36,17 +36,16 @@ impl MainMenuRoot {
             BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.7))
             Visibility::Hidden
             Children [
-                (
-                    Node {
-                        flex_direction: FlexDirection::Column,
-                        row_gap: Val::Px(10.0),
-                        align_items: AlignItems::Center,
-                    }
-                    Children [
-                        LoadMapButton,
-                        MapListContainer,
-                    ]
-                )
+                Node {
+                    flex_direction: FlexDirection::Column,
+                    row_gap: Val::Px(10.0),
+                    align_items: AlignItems::Center,
+                }
+                Children [
+                    LoadMapButton
+                    --
+                    MapListContainer
+                ]
             ]
         });
     }
@@ -56,7 +55,7 @@ impl MainMenuRoot {
 #[require(Button)]
 struct LoadMapButton;
 impl LoadMapButton {
-    fn on_add_build_load_map_button(trigger: On<Add, LoadMapButton>, mut commands: Commands) {
+    fn on_add_build_load_map_button(trigger: On<Add<LoadMapButton>>, mut commands: Commands) {
         commands.entity(trigger.entity)
             .apply_scene(bsn! {
                 Node {
@@ -67,14 +66,14 @@ impl LoadMapButton {
                 }
                 BackgroundColor(Color::srgba(0.2, 0.2, 0.8, 1.0))
                 Children [
-                    ( Text("Load Map") template_value(TextLayout::no_wrap()) )
+                    Text("Load Map") TextLayout::no_wrap()
                 ]
                 on(Self::on_click_toggle_map_list)
             });
     }
 
     fn on_click_toggle_map_list(
-        _trigger: On<Pointer<Click>>,
+        _trigger: On<PointerClick>,
         mut commands: Commands,
         mut map_list: ResMut<GameMapList>,
         map_list_container: Single<(Entity, &mut Node), With<MapListContainer>>,
@@ -101,7 +100,7 @@ impl LoadMapButton {
 #[require(Node)]
 struct MapListContainer;
 impl MapListContainer {
-    fn on_add_build_map_list_container(trigger: On<Add, MapListContainer>, mut commands: Commands) {
+    fn on_add_build_map_list_container(trigger: On<Add<MapListContainer>>, mut commands: Commands) {
         commands.entity(trigger.entity).apply_scene(bsn! {
             Node {
                 display: Display::None,
@@ -122,7 +121,7 @@ struct MapEntryButton {
 }
 impl MapEntryButton {
     fn on_add_build_map_entry_button(
-        trigger: On<Add, MapEntryButton>,
+        trigger: On<Add<MapEntryButton>>,
         mut commands: Commands,
         entries: Query<&MapEntryButton>,
     ) {
@@ -140,14 +139,14 @@ impl MapEntryButton {
                 }
                 BackgroundColor(Color::srgba(0.3, 0.3, 0.3, 1.0))
                 Children [
-                    ( Text(name) template_value(TextLayout::no_wrap()) )
+                    Text(name) TextLayout::no_wrap()
                 ]
                 on(Self::on_click_load_selected_map)
             });
     }
 
     #[log_tags(Tag::Ui)]
-    fn on_click_load_selected_map(trigger: On<Pointer<Click>>, mut commands: Commands, entries: Query<&MapEntryButton>) {
+    fn on_click_load_selected_map(trigger: On<PointerClick>, mut commands: Commands, entries: Query<&MapEntryButton>) {
         let entity = trigger.entity;
         let Ok(entry) = entries.get(entity) else { return; };
         #[debug_dev("Map selected: {} ({})", entry.name, entry.file_name.as_str())]

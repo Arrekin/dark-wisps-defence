@@ -17,7 +17,7 @@ use bevy::{
     input_focus::{FocusCause, InputFocus, tab_navigation::{NavAction, TabIndex}},
     prelude::*,
     ui_widgets::{
-        Activate, MenuAction, MenuButton, MenuEvent, MenuFocusState, MenuItem, MenuPopup,
+        Activate, Button, MenuAction, MenuButton, MenuEvent, MenuFocusState, MenuItem, MenuPopup,
         popover::{Popover, PopoverAlign, PopoverPlacement, PopoverSide},
     },
 };
@@ -61,11 +61,11 @@ impl Plugin for ForgingPanelPlugin {
                 update_forge_tiles,
                 update_queued_order_tiles,
             ).chain().run_if(in_state(UiInteraction::ForgingPanel)))
-            .add_observer(mark_panel_stale_on::<Insert, InForgingQueue>)
-            .add_observer(mark_panel_stale_on::<Remove, InForgingQueue>)
-            .add_observer(mark_panel_stale_on::<Add, Forge>)
-            .add_observer(mark_panel_stale_on::<Remove, Forge>)
-            .add_observer(mark_panel_stale_on::<ShardBlueprintAcquired, ()>);
+            .add_observer(mark_panel_stale_on::<Insert<InForgingQueue>>)
+            .add_observer(mark_panel_stale_on::<Remove<InForgingQueue>>)
+            .add_observer(mark_panel_stale_on::<Add<Forge>>)
+            .add_observer(mark_panel_stale_on::<Remove<Forge>>)
+            .add_observer(mark_panel_stale_on::<ShardBlueprintAcquired>);
     }
 }
 
@@ -150,7 +150,7 @@ fn spawn_forging_panel(mut commands: Commands) {
     let close_button = commands.spawn((
         BuilderCloseButton::default(),
         Node { width: Val::Px(CLOSE_BUTTON_SIZE), height: Val::Px(CLOSE_BUTTON_SIZE), ..default() },
-    )).observe(set_ui_free_on::<Pointer<Click>>).id();
+    )).observe(set_ui_free_on::<PointerClick>).id();
     let queue_dropdown = spawn_queue_dropdown(&mut commands);
     let header = commands.spawn(Node {
         width: Val::Percent(100.),
@@ -228,7 +228,7 @@ fn on_forging_panel_select_request_do_so(
 // STALENESS
 // ============================================================================
 
-fn mark_panel_stale_on<E: Event, B: Bundle>(_trigger: On<E, B>, mut commands: Commands) {
+fn mark_panel_stale_on<P: EventPattern>(_trigger: On<P>, mut commands: Commands) {
     commands.insert_resource(ForgingPanelStale);
 }
 
@@ -269,8 +269,8 @@ fn rebuild_panel(
         let entry = spawn_queue_entry(&mut commands, forge);
         commands.entity(entry)
             .insert((QueueEntry { forge: forge.map(|(forge, _)| forge) }, MenuItem, TabIndex(0)))
-            .observe(recolor_background_on::<Pointer<Over>>(TILE_HOVER_BACKGROUND))
-            .observe(recolor_background_on::<Pointer<Out>>(TILE_BACKGROUND))
+            .observe(recolor_background_on::<PointerOver>(TILE_HOVER_BACKGROUND))
+            .observe(recolor_background_on::<PointerOut>(TILE_BACKGROUND))
             .observe(on_activate_show_entry_queue);
         commands.entity(*queue_dropdown_list).add_child(entry);
     }
@@ -372,7 +372,7 @@ struct ForgeStatusText {
 /// Toggles global orders for a Forge. The widget button stops event propagation so clicking it
 /// does not select the containing queue entry.
 #[derive(Component)]
-#[require(bevy::ui_widgets::Button)]
+#[require(Button)]
 struct GlobalQueueToggle {
     forge: Entity,
 }
@@ -381,8 +381,6 @@ fn spawn_queue_dropdown(commands: &mut Commands) -> Entity {
     let button = commands.spawn((
         QueueDropdownButton,
         MenuButton,
-        // The widget Button supplies press handling and Activate events; the required UI Button does not.
-        bevy::ui_widgets::Button,
         Node { border_radius: BorderRadius::all(Val::Px(4.)), ..default() },
     )).id();
     let list = commands.spawn((
@@ -465,8 +463,8 @@ fn spawn_queue_entry(commands: &mut Commands, forge: Option<(Entity, GridCoords)
         },
         BackgroundColor::from(TOGGLE_BACKGROUND),
     ))
-        .observe(recolor_background_on::<Pointer<Over>>(TOGGLE_HOVER_BACKGROUND))
-        .observe(recolor_background_on::<Pointer<Out>>(TOGGLE_BACKGROUND))
+        .observe(recolor_background_on::<PointerOver>(TOGGLE_HOVER_BACKGROUND))
+        .observe(recolor_background_on::<PointerOut>(TOGGLE_BACKGROUND))
         .observe(on_click_toggle_global_queue)
         .id();
     commands.entity(entry).add_children(&[preview, texts, toggle]);
@@ -503,7 +501,7 @@ fn on_activate_show_entry_queue(
 
 #[log_tags(Tag::Forge)]
 fn on_click_toggle_global_queue(
-    trigger: On<Pointer<Click>>,
+    trigger: On<PointerClick>,
     toggles: Query<&GlobalQueueToggle>,
     mut forges: Query<(&GridCoords, &mut WorksGlobalQueue)>,
 ) {
@@ -557,15 +555,15 @@ fn spawn_order_shard_button(commands: &mut Commands, almanach: &Almanach, shard:
     let button = spawn_shard_tile(commands, info.icon.clone(), &[name, cost_strip], &[]);
     commands.entity(button)
         .insert(OrderShardButton { shard, queue })
-        .observe(recolor_background_on::<Pointer<Over>>(TILE_HOVER_BACKGROUND))
-        .observe(recolor_background_on::<Pointer<Out>>(TILE_BACKGROUND))
+        .observe(recolor_background_on::<PointerOver>(TILE_HOVER_BACKGROUND))
+        .observe(recolor_background_on::<PointerOut>(TILE_BACKGROUND))
         .observe(on_click_place_shard_order);
     button
 }
 
 #[log_tags(Tag::Shards)]
 fn on_click_place_shard_order(
-    trigger: On<Pointer<Click>>,
+    trigger: On<PointerClick>,
     mut commands: Commands,
     buttons: Query<&OrderShardButton>,
 ) {
@@ -613,14 +611,14 @@ fn spawn_forge_tile(commands: &mut Commands, forge: Entity, coords: GridCoords) 
         BorderColor::all(Color::NONE),
     ))
         .add_children(&[coords_text, status, bar])
-        .observe(recolor_background_on::<Pointer<Over>>(TILE_HOVER_BACKGROUND))
-        .observe(recolor_background_on::<Pointer<Out>>(TILE_BACKGROUND))
+        .observe(recolor_background_on::<PointerOver>(TILE_HOVER_BACKGROUND))
+        .observe(recolor_background_on::<PointerOut>(TILE_BACKGROUND))
         .observe(on_click_toggle_forge_selection)
         .id()
 }
 
 fn on_click_toggle_forge_selection(
-    trigger: On<Pointer<Click>>,
+    trigger: On<PointerClick>,
     mut commands: Commands,
     selection: Res<ForgingPanelSelection>,
     tiles: Query<&ForgeTile>,
@@ -753,14 +751,14 @@ fn spawn_cancel_control(commands: &mut Commands, label: &str, control: CancelCon
         BackgroundColor::from(CANCEL_BACKGROUND),
     ))
         .add_child(label)
-        .observe(recolor_background_on::<Pointer<Over>>(CANCEL_HOVER_BACKGROUND))
-        .observe(recolor_background_on::<Pointer<Out>>(CANCEL_BACKGROUND))
+        .observe(recolor_background_on::<PointerOver>(CANCEL_HOVER_BACKGROUND))
+        .observe(recolor_background_on::<PointerOut>(CANCEL_BACKGROUND))
         .observe(on_click_cancel_control)
         .id()
 }
 
 fn on_click_cancel_control(
-    trigger: On<Pointer<Click>>,
+    trigger: On<PointerClick>,
     mut commands: Commands,
     buttons: Query<(&CancelControl, &ChildOf)>,
     order_tree: OrderTreeParam,

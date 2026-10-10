@@ -5,7 +5,7 @@ use bevy::{
     prelude::*,
     reflect::TypePath,
     render::{
-        render_resource::{AsBindGroup, ShaderType},
+        render_resource::AsBindGroup,
         storage::ShaderBuffer,
     },
     shader::ShaderRef,
@@ -24,6 +24,7 @@ use grids::{
 };
 use hud::prelude::FocusedMapObject;
 use states::prelude::{MapLoadingStage, UiInteraction};
+use visuals::prelude::MapCanvasBundle;
 
 pub struct TowersRangeOverlayPlugin;
 impl Plugin for TowersRangeOverlayPlugin {
@@ -73,7 +74,7 @@ impl TowersRangeOverlayConfig {
         overlay_state.set(if shown { TowersRangeOverlayState::Show } else { TowersRangeOverlayState::Hide });
     }
     fn on_insert_focused_map_object_set_highlight(
-        trigger: On<Insert, FocusedMapObject>,
+        trigger: On<Insert<FocusedMapObject>>,
         mut overlay_config: ResMut<TowersRangeOverlayConfig>,
         towers: Query<(), With<Tower>>,
     ) {
@@ -85,7 +86,7 @@ impl TowersRangeOverlayConfig {
         }
     }
     fn on_remove_focused_map_object_clear_highlight(
-        _trigger: On<Remove, FocusedMapObject>,
+        _trigger: On<Remove<FocusedMapObject>>,
         mut overlay_config: ResMut<TowersRangeOverlayConfig>,
     ) {
         overlay_config.secondary_mode = TowersRangeOverlaySecondaryMode::None;
@@ -122,7 +123,7 @@ struct TowersRangeMaterial {
 }
 impl Material2d for TowersRangeMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/overlays/towers_ranges_map.wgsl".into()
+        "shaders/overlays/towers_ranges_map.wesl".into()
     }
 
     fn alpha_mode(&self) -> AlphaMode2d {
@@ -139,14 +140,18 @@ impl TowersRangeOverlay {
         map_info: Res<MapInfo>,
         mut meshes: ResMut<Assets<Mesh>>,
         mut materials: ResMut<Assets<TowersRangeMaterial>>,
+        mut buffers: ResMut<Assets<ShaderBuffer>>,
         overlay: Option<Single<Entity, With<TowersRangeOverlay>>>,
     ) {
         if let Some(overlay_entity) = overlay {
             commands.entity(overlay_entity.into_inner()).despawn();
         }
 
+        // Bind an initialized buffer on the material's spawn frame.
+        let cells = buffers.add(ShaderBuffer::from(vec![TowerRangeCell::default(); map_info.grid_bounds.area()]));
+        let material = materials.add(TowersRangeMaterial { cells, ..default() });
         commands.spawn((
-            super::overlay_bundle(&mut meshes, &mut materials, &map_info),
+            MapCanvasBundle::new(&mut meshes, material, &map_info),
             TowersRangeOverlay,
         ));
     }
@@ -159,7 +164,6 @@ fn refresh_display_system(
     mut overlay_config: ResMut<TowersRangeOverlayConfig>,
     towers_range_overlay: Single<&MeshMaterial2d<TowersRangeMaterial>, With<TowersRangeOverlay>>,
     mut last_secondary_mode: Local<TowersRangeOverlaySecondaryMode>,
-    mut local_buffer_data: Local<Vec<TowerRangeCell>>, // To avoid re-allocations every frame
 ) {
     if overlay_config.grid_version == tower_ranges_grid.version && overlay_config.secondary_mode == *last_secondary_mode {
         return;
@@ -168,9 +172,10 @@ fn refresh_display_system(
     *last_secondary_mode = overlay_config.secondary_mode.clone();
     overlay_config.grid_version = tower_ranges_grid.version;
     let mut overlay_material = materials.get_mut(towers_range_overlay.into_inner()).unwrap();
+    let mut buffer = buffers.get_mut(&overlay_material.cells).unwrap();
 
     // Generate buffer data
-    let mut overlay_creator = OverlayBufferCreator::new(&tower_ranges_grid, &mut local_buffer_data);
+    let mut overlay_creator = OverlayBufferCreator::new(&tower_ranges_grid, &mut buffer);
     match &overlay_config.secondary_mode {
         TowersRangeOverlaySecondaryMode::None => overlay_creator.generate_buffer_data(&HighlightMode::None),
         TowersRangeOverlaySecondaryMode::Highlight { tower } => {
@@ -191,16 +196,6 @@ fn refresh_display_system(
             }
         }
     };
-
-    let buffer_handle = &overlay_material.cells;
-    if let Some(mut buffer) = buffers.get_mut(buffer_handle) {
-        buffer.set_data(&*local_buffer_data);
-    } else {
-        // Create ShaderBuffer
-        let storage_buffer = ShaderBuffer::from(local_buffer_data.as_slice());
-        let buffer_handle = buffers.add(storage_buffer);
-        overlay_material.cells = buffer_handle;
-    }
 
     // Update uniforms
     overlay_material.grid_data = tower_ranges_grid.bounds.into();
@@ -227,7 +222,7 @@ fn on_grid_placer_changed_preview_placement(
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable, ShaderType, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable, Default)]
 struct TowerRangeCell {
     /// XOR signature of towers covering this cell
     signature: u32,
@@ -244,27 +239,27 @@ enum HighlightMode {
 }
 
 /// Builds the tower range overlay buffer for the shader.
-/// Reuses a caller-provided `Vec<TowerRangeCell>` to avoid allocations and can
+/// Writes into the caller's `ShaderBuffer`, reusing its allocation, and can
 /// optionally apply a preview flood to set the `highlight` bit.
 struct OverlayBufferCreator<'a> {
     grid: &'a TowerRangesGrid,
-    local_buffer_data: Option<&'a mut Vec<TowerRangeCell>>,
+    buffer: Option<&'a mut ShaderBuffer>,
 }
 impl<'a> OverlayBufferCreator<'a> {
     /// Helper that produces the GPU buffer content for the shader.
-    /// Owns no memory; reuses a caller-provided `Vec<TowerRangeCell>` to avoid re-allocation.
-    fn new(grid: &'a TowerRangesGrid, local_buffer_data: &'a mut Vec<TowerRangeCell>) -> Self {
-        Self { grid, local_buffer_data: Some(local_buffer_data) }
+    /// Owns no memory; writes into the caller-provided `ShaderBuffer`.
+    fn new(grid: &'a TowerRangesGrid, buffer: &'a mut ShaderBuffer) -> Self {
+        Self { grid, buffer: Some(buffer) }
     }
 
     /// Rebuilds the entire buffer for the current grid and highlight mode in O(n) over cells.
     fn generate_buffer_data(&mut self, highlight_mode: &HighlightMode) {
-        let buffer_data = self.local_buffer_data.take().unwrap(); // Avoid double mutable borrows
-        buffer_data.clear();
+        let buffer = self.buffer.take().unwrap(); // Avoid double mutable borrows
+        buffer.clear();
         let buffer_size = self.grid.grid.len();
         let new_content = (0..buffer_size).map(|index| self.create_cell_for_grid_index(index, highlight_mode));
-        buffer_data.extend(new_content);
-        self.local_buffer_data = Some(buffer_data);
+        buffer.extend(new_content);
+        self.buffer = Some(buffer);
     }
 
     fn create_cell_for_grid_index(&self, index: usize, highlight_mode: &HighlightMode) -> TowerRangeCell {
@@ -297,7 +292,8 @@ impl<'a> OverlayBufferCreator<'a> {
 
         // Start with base buffer data (all signatures + optional selection)
         self.generate_buffer_data(&HighlightMode::None);
-        let buffer_data = self.local_buffer_data.take().unwrap();
+        let buffer = self.buffer.take().unwrap();
+        let buffer_data = buffer.cast_slice_mut::<TowerRangeCell>().unwrap();
         let grid_bounds = self.grid.bounds;
 
         VISITED_GRID.with_borrow_mut(|visited_grid| {
@@ -335,6 +331,6 @@ impl<'a> OverlayBufferCreator<'a> {
             }
         });
 
-        self.local_buffer_data = Some(buffer_data);
+        self.buffer = Some(buffer);
     }
 }

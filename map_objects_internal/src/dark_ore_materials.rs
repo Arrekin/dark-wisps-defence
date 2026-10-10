@@ -27,11 +27,11 @@ impl Plugin for DarkOreMaterialsPlugin {
 pub(crate) struct DarkOreFaceMaterial {}
 impl UiMaterial for DarkOreFaceMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/dark_ore/face.wgsl".into()
+        "shaders/dark_ore/face.wesl".into()
     }
 }
 
-/// Field order and types mirror `DarkOreQuad` in `assets/shaders/dark_ore/quad.wgsl`.
+/// Field order and types mirror `DarkOreQuad` in `assets/shaders/dark_ore/quad.wesl`.
 #[derive(ShaderType, Clone, Copy, Debug)]
 struct DarkOreQuadUniform {
     alpha: f32,
@@ -45,7 +45,7 @@ pub(crate) struct DarkOreQuadMaterial {
 }
 impl Material2d for DarkOreQuadMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/dark_ore/quad.wgsl".into()
+        "shaders/dark_ore/quad.wesl".into()
     }
     fn alpha_mode(&self) -> AlphaMode2d {
         AlphaMode2d::Blend

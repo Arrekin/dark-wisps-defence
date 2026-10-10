@@ -221,7 +221,7 @@ impl BuilderPreviewCamera {
     /// - Automatic lifecycle via `CameraOf` relationship
     /// - If auto_follow_entity is provided, adds CameraAutoFollowEntity component to the camera
     fn on_builder_add_spawn_preview_camera(
-        trigger: On<Add, BuilderPreviewCamera>,
+        trigger: On<Add<BuilderPreviewCamera>>,
         mut commands: Commands,
         mut images: ResMut<Assets<Image>>,
         builders: Query<&BuilderPreviewCamera>,

@@ -46,7 +46,7 @@ impl FromWorld for WispAttackEffectAtlas {
 pub(crate) struct WispAttackEffect;
 
 fn on_builder_add_spawn_wisp_attack_effect(
-    trigger: On<Add, BuilderWispAttackEffect>,
+    trigger: On<Add<BuilderWispAttackEffect>>,
     mut commands: Commands,
     atlas: Res<WispAttackEffectAtlas>,
     builders: Query<&BuilderWispAttackEffect>,

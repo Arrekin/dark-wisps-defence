@@ -1,7 +1,7 @@
 //! The style picker shown while placing walls: a row of swatches, one per style,
 //! framed when selected. Lives only for the length of a wall placement session.
 
-use bevy::prelude::*;
+use bevy::{prelude::*, ui_widgets::Button};
 
 use game_core::prelude::{CELL_SIZE, MapObject, ObjectFaceRequest};
 use grids::placement::{BeginPlacing, GridObjectPlacer, GridPlacerOverridePropertyRequest, PlacementStyle, StopPlacing};
@@ -27,7 +27,7 @@ const SWATCH_FRAME_IDLE: Color = Color::srgb(0.15, 0.15, 0.18); // dark grey
 pub(crate) struct GridPlacerUiForWall;
 impl GridPlacerUiForWall {
     fn on_add_construct_grid_placer_ui(
-        trigger: On<Add, GridPlacerUiForWall>,
+        trigger: On<Add<GridPlacerUiForWall>>,
         mut commands: Commands,
         styles: Res<WallStyles>,
         placer: Single<&PlacementStyle, With<GridObjectPlacer>>,
@@ -102,7 +102,7 @@ impl GridPlacerUiForWall {
 pub(crate) struct WallStyleButton(pub WallStyleKey);
 impl WallStyleButton {
     fn on_click_select_style(
-        trigger: On<Pointer<Click>>,
+        trigger: On<PointerClick>,
         mut commands: Commands,
         mut buttons: Query<(&WallStyleButton, &mut BorderColor)>,
     ) {

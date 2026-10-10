@@ -21,7 +21,7 @@ pub(crate) fn building_tooltip(commands: &mut Commands, anchor: Entity, map_obje
 }
 
 fn on_builder_add_spawn_building_tooltip(
-    trigger: On<Add, BuilderBuildingSideMenuTooltip>,
+    trigger: On<Add<BuilderBuildingSideMenuTooltip>>,
     mut commands: Commands,
     almanach: Res<Almanach>,
     builders: Query<&BuilderBuildingSideMenuTooltip>,

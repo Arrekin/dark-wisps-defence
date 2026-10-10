@@ -159,23 +159,27 @@ impl LogConsoleState {
                         for index in row_range {
                             let entry = filtered[index];
                             let color = entry.level.egui_color();
-                            ui.horizontal(|ui| {
-                                ui.add_sized([TIME_COLUMN_WIDTH, row_height],
-                                    egui::Label::new(egui::RichText::new(format_timestamp(entry.timestamp)).color(color)).truncate()
-                                );
-                                ui.add_sized([LEVEL_COLUMN_WIDTH, row_height],
-                                    egui::Label::new(egui::RichText::new(entry.level.to_string()).color(color)).truncate()
-                                );
-                                ui.add_sized([AUDIENCE_COLUMN_WIDTH, row_height],
-                                    egui::Label::new(egui::RichText::new(entry.audience.to_string()).color(color)).truncate()
-                                );
-                                ui.add_sized([TAGS_COLUMN_WIDTH, row_height],
-                                    egui::Label::new(egui::RichText::new(entry.tags.to_string()).color(color)).truncate()
-                                );
-                                ui.add(
-                                    egui::Label::new(egui::RichText::new(entry.message.as_ref()).color(color)).truncate()
-                                );
-                            });
+                            // `show_rows` assumes every row is exactly `row_height` tall. Allocating the
+                            // row rect up front keeps label metrics from changing the row height.
+                            let (row_rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), row_height), egui::Sense::hover());
+                            let mut row_ui = ui.new_child(
+                                egui::UiBuilder::new().max_rect(row_rect).layout(egui::Layout::left_to_right(egui::Align::Center))
+                            );
+                            row_ui.add_sized([TIME_COLUMN_WIDTH, row_height],
+                                egui::Label::new(egui::RichText::new(format_timestamp(entry.timestamp)).color(color)).truncate()
+                            );
+                            row_ui.add_sized([LEVEL_COLUMN_WIDTH, row_height],
+                                egui::Label::new(egui::RichText::new(entry.level.to_string()).color(color)).truncate()
+                            );
+                            row_ui.add_sized([AUDIENCE_COLUMN_WIDTH, row_height],
+                                egui::Label::new(egui::RichText::new(entry.audience.to_string()).color(color)).truncate()
+                            );
+                            row_ui.add_sized([TAGS_COLUMN_WIDTH, row_height],
+                                egui::Label::new(egui::RichText::new(entry.tags.to_string()).color(color)).truncate()
+                            );
+                            row_ui.add(
+                                egui::Label::new(egui::RichText::new(entry.message.as_ref()).color(color)).truncate()
+                            );
                         }
                     });
             });

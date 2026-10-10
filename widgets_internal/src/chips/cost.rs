@@ -28,7 +28,7 @@ impl Plugin for CostChipPlugin {
 /// Expands a cost request into the shared chip builder and runtime cost state, then attaches the
 /// resource-name tooltip. Border color is applied by `update_cost_chip_borders` after insertion.
 fn on_builder_add_spawn_cost_chip(
-    trigger: On<Add, BuilderCostChip>,
+    trigger: On<Add<BuilderCostChip>>,
     mut commands: Commands,
     almanach: Res<Almanach>,
     builders: Query<&BuilderCostChip>,
@@ -61,7 +61,7 @@ fn on_builder_add_spawn_cost_chip(
 
 /// Expands into [`BuilderChipStrip`] with one chip per cost.
 fn on_builder_add_spawn_full_price_cost_strip(
-    trigger: On<Add, BuilderFullPriceCostStrip>,
+    trigger: On<Add<BuilderFullPriceCostStrip>>,
     mut commands: Commands,
     builders: Query<&BuilderFullPriceCostStrip>,
 ) {

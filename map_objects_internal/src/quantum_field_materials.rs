@@ -1,6 +1,6 @@
 //! Materials for quantum-field UI faces and world-space placement previews.
 //!
-//! Both reuse the boundary and moiré glow from `dwd::quantum_field`. Frame distortion remains in
+//! Both reuse the boundary and moiré glow from `shaders::quantum_field::look`. Frame distortion remains in
 //! the map post-process shader.
 
 use bevy::{
@@ -30,7 +30,7 @@ impl Plugin for QuantumFieldMaterialsPlugin {
 pub(crate) struct QuantumFieldFaceMaterial {}
 impl UiMaterial for QuantumFieldFaceMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/quantum_field/face.wgsl".into()
+        "shaders/quantum_field/face.wesl".into()
     }
 }
 
@@ -44,7 +44,7 @@ pub(crate) struct QuantumFieldQuadMaterial {
 }
 impl Material2d for QuantumFieldQuadMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/quantum_field/quad.wgsl".into()
+        "shaders/quantum_field/quad.wesl".into()
     }
     fn alpha_mode(&self) -> AlphaMode2d {
         AlphaMode2d::Blend

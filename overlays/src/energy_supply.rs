@@ -6,7 +6,7 @@ use bevy::{
     prelude::*,
     reflect::TypePath,
     render::{
-        render_resource::{AsBindGroup, ShaderType},
+        render_resource::AsBindGroup,
         storage::ShaderBuffer,
     },
     shader::ShaderRef,
@@ -24,6 +24,7 @@ use grids::{
 };
 use hud::prelude::FocusedMapObject;
 use states::prelude::{MapLoadingStage, UiInteraction};
+use visuals::prelude::MapCanvasBundle;
 
 pub struct EnergySupplyOverlayPlugin;
 impl Plugin for EnergySupplyOverlayPlugin {
@@ -72,7 +73,7 @@ impl EnergySupplyOverlayConfig {
         overlay_state.set(if shown { EnergySupplyOverlayState::Show } else { EnergySupplyOverlayState::Hide });
     }
     fn on_insert_focused_map_object_set_highlight(
-        trigger: On<Insert, FocusedMapObject>,
+        trigger: On<Insert<FocusedMapObject>>,
         mut overlay_config: ResMut<EnergySupplyOverlayConfig>,
         buildings: Query<&BuildingType>,
     ) {
@@ -84,7 +85,7 @@ impl EnergySupplyOverlayConfig {
         }
     }
     fn on_remove_focused_map_object_clear_highlight(
-        _trigger: On<Remove, FocusedMapObject>,
+        _trigger: On<Remove<FocusedMapObject>>,
         mut overlay_config: ResMut<EnergySupplyOverlayConfig>,
     ) {
         overlay_config.secondary_mode = EnergySupplyOverlaySecondaryMode::None;
@@ -112,7 +113,7 @@ struct EnergySupplyHeatmapMaterial {
 }
 impl Material2d for EnergySupplyHeatmapMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/overlays/energy_supply_map.wgsl".into()
+        "shaders/overlays/energy_supply_map.wesl".into()
     }
 
     fn alpha_mode(&self) -> AlphaMode2d {
@@ -129,14 +130,18 @@ impl EnergySupplyOverlay {
         map_info: Res<MapInfo>,
         mut meshes: ResMut<Assets<Mesh>>,
         mut materials: ResMut<Assets<EnergySupplyHeatmapMaterial>>,
+        mut buffers: ResMut<Assets<ShaderBuffer>>,
         overlay: Option<Single<Entity, With<EnergySupplyOverlay>>>,
     ) {
         if let Some(overlay_entity) = overlay {
             commands.entity(overlay_entity.into_inner()).despawn();
         }
 
+        // Bind an initialized buffer on the material's spawn frame.
+        let energy_cells = buffers.add(ShaderBuffer::from(vec![EnergySupplyCell::none(); map_info.grid_bounds.area()]));
+        let material = materials.add(EnergySupplyHeatmapMaterial { energy_cells, ..default() });
         commands.spawn((
-            super::overlay_bundle(&mut meshes, &mut materials, &map_info),
+            MapCanvasBundle::new(&mut meshes, material, &map_info),
             EnergySupplyOverlay,
         ));
     }
@@ -149,7 +154,6 @@ fn refresh_display_system(
     mut overlay_config: ResMut<EnergySupplyOverlayConfig>,
     energy_supply_overlay: Single<&MeshMaterial2d<EnergySupplyHeatmapMaterial>, With<EnergySupplyOverlay>>,
     mut last_secondary_mode: Local<EnergySupplyOverlaySecondaryMode>,
-    mut local_buffer_data: Local<Vec<EnergySupplyCell>>, // To avoid re-allocations every frame
 ) {
     if overlay_config.grid_version == energy_supply_grid.version && overlay_config.secondary_mode == *last_secondary_mode { return; }
 
@@ -157,9 +161,10 @@ fn refresh_display_system(
     overlay_config.grid_version = energy_supply_grid.version;
 
     let mut overlay_material = materials.get_mut(energy_supply_overlay.into_inner()).unwrap();
+    let mut buffer = buffers.get_mut(&overlay_material.energy_cells).unwrap();
 
     // Generate buffer data
-    let mut overlay_creator = OverlayBufferCreator::new(&energy_supply_grid, &mut local_buffer_data);
+    let mut overlay_creator = OverlayBufferCreator::new(&energy_supply_grid, &mut buffer);
     match &overlay_config.secondary_mode {
         EnergySupplyOverlaySecondaryMode::None => {
             overlay_creator.generate_buffer_data(&HighlightMode::All)
@@ -191,15 +196,6 @@ fn refresh_display_system(
             }
         }
     };
-    let buffer_handle = &overlay_material.energy_cells;
-    if let Some(mut buffer) = buffers.get_mut(buffer_handle) {
-        buffer.set_data(&*local_buffer_data);
-    } else {
-        // Create ShaderBuffer
-        let storage_buffer = ShaderBuffer::from(local_buffer_data.as_slice());
-        let buffer_handle = buffers.add(storage_buffer);
-        overlay_material.energy_cells = buffer_handle;
-    }
 
     // Update uniforms
     overlay_material.grid_data = energy_supply_grid.bounds.into();
@@ -236,7 +232,7 @@ fn on_grid_placer_changed_preview_placement(
 
 /// Energy supply cell data for GPU buffer
 #[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable, ShaderType)]
+#[derive(Clone, Copy, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 struct EnergySupplyCell {
     /// Whether this cell has energy supply (0 = false, 1 = true)
     has_supply: u32,
@@ -291,20 +287,20 @@ enum HighlightMode {
 
 struct OverlayBufferCreator<'a> {
     energy_supply_grid: &'a EnergySupplyGrid,
-    local_buffer_data: Option<&'a mut Vec<EnergySupplyCell>>,
+    buffer: Option<&'a mut ShaderBuffer>,
 }
 impl<'a> OverlayBufferCreator<'a> {
-    fn new(energy_supply_grid: &'a EnergySupplyGrid, local_buffer_data: &'a mut Vec<EnergySupplyCell>) -> Self {
-        Self { energy_supply_grid, local_buffer_data: Some(local_buffer_data) }
+    fn new(energy_supply_grid: &'a EnergySupplyGrid, buffer: &'a mut ShaderBuffer) -> Self {
+        Self { energy_supply_grid, buffer: Some(buffer) }
     }
     /// Generate buffer data for the entire energy supply grid for GPU usage
     fn generate_buffer_data(&mut self, highlight_mode: &HighlightMode) {
-        let buffer_data = self.local_buffer_data.take().unwrap(); // To avoid double mutable borrows on the struct's fields
-        buffer_data.clear();
+        let buffer = self.buffer.take().unwrap(); // To avoid double mutable borrows on the struct's fields
+        buffer.clear();
         let buffer_size = self.energy_supply_grid.grid.len();
         let new_content = (0..buffer_size).map(|index| self.create_cell_for_grid_field(index, highlight_mode));
-        buffer_data.extend(new_content);
-        self.local_buffer_data = Some(buffer_data);
+        buffer.extend(new_content);
+        self.buffer = Some(buffer);
     }
 
     /// Builds one cell; in `Selected` mode only the selected suppliers' ranges are highlighted.
@@ -345,7 +341,8 @@ impl<'a> OverlayBufferCreator<'a> {
 
         // Start with base buffer data
         self.generate_buffer_data(&HighlightMode::All);
-        let buffer_data = self.local_buffer_data.take().unwrap();
+        let buffer = self.buffer.take().unwrap();
+        let buffer_data = buffer.cast_slice_mut::<EnergySupplyCell>().unwrap();
         let grid_bounds = self.energy_supply_grid.bounds;
 
         VISITED_GRID.with_borrow_mut(|visited_grid| {
@@ -423,6 +420,6 @@ impl<'a> OverlayBufferCreator<'a> {
             }
         });
 
-        self.local_buffer_data = Some(buffer_data);
+        self.buffer = Some(buffer);
     }
 }

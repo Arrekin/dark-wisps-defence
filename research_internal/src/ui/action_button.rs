@@ -48,7 +48,7 @@ impl ResearchActionButton {
 }
 
 fn on_add_research_action_button_construct(
-    trigger: On<Add, ResearchActionButton>,
+    trigger: On<Add<ResearchActionButton>>,
     mut commands: Commands,
     mut refresh_messages: MessageWriter<RefreshResearchActionButtonsMessage>,
 ) {
@@ -64,7 +64,7 @@ fn on_add_research_action_button_construct(
 }
 
 fn on_insert_research_state_request_refresh_action_buttons(
-    _: On<Insert, ResearchState>,
+    _: On<Insert<ResearchState>>,
     mut refresh_messages: MessageWriter<RefreshResearchActionButtonsMessage>,
 ) {
     refresh_messages.write(RefreshResearchActionButtonsMessage);
@@ -95,7 +95,7 @@ fn refresh_research_action_buttons(
 }
 
 fn on_click_research_action_button(
-    mut trigger: On<Pointer<Click>>,
+    mut trigger: On<PointerClick>,
     mut commands: Commands,
     buttons: Query<&ResearchActionButton>,
 ) {

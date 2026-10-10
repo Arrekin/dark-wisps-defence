@@ -606,7 +606,7 @@ impl LoadGameSignal {
             return;
         }
         #[warn_dev("Transition to {state:?} already queued — skipping")]
-        if let NextState::Pending(state) | NextState::PendingIfNeq(state) = *next_game_state {
+        if let NextState::Pending(state) | NextState::PendingIfDifferent(state) = *next_game_state {
             config.response.report(&mut commands, |entity| LoadGameReport { entity, result: LoadGameResult::OtherTransitionAlreadyQueued { state } });
             return;
         }
@@ -668,7 +668,7 @@ fn on_map_load_ready(
 ) {
     #[info_player("Game loaded")]
     next_game_state.set(load_config.game_start_state);
-    (*next_admin_mode).set_if_neq(load_config.admin_mode);
+    (*next_admin_mode).set_if_different(load_config.admin_mode);
 }
 
 /// On leaving `Loading`, report the map and release the load config and runner.

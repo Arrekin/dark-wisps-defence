@@ -23,6 +23,7 @@ use bevy::{
     platform::collections::HashMap,
     prelude::*,
     ui::widget::ViewportNode,
+    ui_widgets::Button,
 };
 
 use alteration::{
@@ -140,7 +141,7 @@ impl BuilderExplorationCenter {
     }
 
     pub fn on_builder_add_spawn_exploration_center(
-        trigger: On<Add, BuilderExplorationCenter>,
+        trigger: On<Add<BuilderExplorationCenter>>,
         mut commands: Commands,
         almanach: Res<Almanach>,
         builders: Query<&BuilderExplorationCenter>,
@@ -367,7 +368,7 @@ impl DroneSlotRow {
     }
 
     fn on_add_construct_drone_slot_row(
-        trigger: On<Add, DroneSlotRow>,
+        trigger: On<Add<DroneSlotRow>>,
         mut commands: Commands,
         rows: Query<&DroneSlotRow>,
     ) {
@@ -449,7 +450,7 @@ struct BuilderDroneSlot {
 }
 impl BuilderDroneSlot {
     fn on_builder_add_spawn_drone_slot(
-        trigger: On<Add, BuilderDroneSlot>,
+        trigger: On<Add<BuilderDroneSlot>>,
         mut commands: Commands,
         asset_server: Res<AssetServer>,
         builders: Query<&BuilderDroneSlot>,
@@ -541,7 +542,7 @@ impl BuilderDroneActionButton {
     }
 
     fn on_builder_add_spawn_drone_action_button(
-        trigger: On<Add, BuilderDroneActionButton>,
+        trigger: On<Add<BuilderDroneActionButton>>,
         mut commands: Commands,
         builders: Query<&BuilderDroneActionButton>,
         drones: Query<(&DroneState, &ExpeditionDrone)>,
@@ -578,8 +579,8 @@ impl BuilderDroneActionButton {
             ))
             .add_child(text_entity)
             .observe(DroneActionButton::on_click_handle_drone_action)
-            .observe(recolor_background_on::<Pointer<Over>>(Color::srgba(0.3, 0.4, 0.6, 0.95)))
-            .observe(recolor_background_on::<Pointer<Out>>(Color::srgba(0.2, 0.3, 0.5, 0.9)));
+            .observe(recolor_background_on::<PointerOver>(Color::srgba(0.3, 0.4, 0.6, 0.95)))
+            .observe(recolor_background_on::<PointerOut>(Color::srgba(0.2, 0.3, 0.5, 0.9)));
     }
 }
 
@@ -625,7 +626,7 @@ impl DroneActionButton {
     }
 
     fn on_click_handle_drone_action(
-        trigger: On<Pointer<Click>>,
+        trigger: On<PointerClick>,
         mut commands: Commands,
         buttons: Query<&DroneActionButton>,
         drones: Query<(&DroneState, &ExpeditionDrone)>,
@@ -714,7 +715,7 @@ impl BuilderSlotTooltip {
 
     /// Build the tooltip UI structure. Camera preview is handled by on_data_changed_update_tooltip_display.
     fn on_builder_add_spawn_slot_tooltip(
-        trigger: On<Add, BuilderSlotTooltip>,
+        trigger: On<Add<BuilderSlotTooltip>>,
         mut commands: Commands,
         builders: Query<&BuilderSlotTooltip>,
     ) {
@@ -752,7 +753,7 @@ impl SlotTooltip {
     /// Handles camera preview creation/removal when drone state changes.
     /// Cameras are created only when needed.
     fn on_data_changed_update_tooltip_display(
-        trigger: On<Insert, SlotTooltipData>,
+        trigger: On<Insert<SlotTooltipData>>,
         mut commands: Commands,
         mut tooltips: Query<(&mut SlotTooltip, &SlotTooltipData, Option<&OwnedCameras>)>,
         mut texts: Query<&mut Text>,
@@ -810,7 +811,7 @@ impl SlotTooltip {
 struct BuyDroneSlot;
 impl BuyDroneSlot {
     fn on_add_construct_buy_drone_slot(
-        trigger: On<Add, BuyDroneSlot>,
+        trigger: On<Add<BuyDroneSlot>>,
         mut commands: Commands,
     ) {
         commands.entity(trigger.entity).insert((
@@ -832,13 +833,13 @@ impl BuyDroneSlot {
             related![Tooltips[BuilderSlotTooltip::new_buy()]],
         ))
         .observe(Self::on_click_buy_drone)
-        .observe(recolor_background_on::<Pointer<Over>>(Color::srgba(0.15, 0.3, 0.5, 0.9)))
-        .observe(recolor_background_on::<Pointer<Out>>(Color::srgba(0.1, 0.2, 0.4, 0.8)));
+        .observe(recolor_background_on::<PointerOver>(Color::srgba(0.15, 0.3, 0.5, 0.9)))
+        .observe(recolor_background_on::<PointerOut>(Color::srgba(0.1, 0.2, 0.4, 0.8)));
     }
 
     #[log_tags(Tag::Units)]
     fn on_click_buy_drone(
-        _trigger: On<Pointer<Click>>,
+        _trigger: On<PointerClick>,
         mut commands: Commands,
         mut stock: ResMut<Stock>,
         focused_center: Single<(Entity, &ExplorationCenter, Option<&HomeBaseLinkedObjects>), With<FocusedMapObject>>,
@@ -882,7 +883,7 @@ impl TargetSelectionPanel {
     }
 
     fn on_add_construct_target_selection_panel(
-        trigger: On<Add, TargetSelectionPanel>,
+        trigger: On<Add<TargetSelectionPanel>>,
         mut commands: Commands,
         panels: Query<&TargetSelectionPanel>,
         targets: Query<(Entity, &Name, &GridCoords, &GridImprint), With<ExpeditionZone>>,
@@ -1014,7 +1015,7 @@ impl TargetSelectionPanel {
     }
 
     fn on_cancel_click_close_target_selection_panel(
-        _trigger: On<Pointer<Click>>,
+        _trigger: On<PointerClick>,
         mut commands: Commands,
         panels: Query<Entity, With<TargetSelectionPanel>>,
     ) {
@@ -1043,7 +1044,7 @@ impl TargetSelectionPanel {
     }
 
     fn on_insert_focused_map_object_close_panel(
-        _trigger: On<Insert, FocusedMapObject>,
+        _trigger: On<Insert<FocusedMapObject>>,
         mut commands: Commands,
         selection_panel: Single<Entity, With<TargetSelectionPanel>>,
     ) {
@@ -1051,7 +1052,7 @@ impl TargetSelectionPanel {
     }
 
     fn on_remove_focused_map_object_close_panel(
-        _trigger: On<Remove, FocusedMapObject>,
+        _trigger: On<Remove<FocusedMapObject>>,
         mut commands: Commands,
         selection_panel: Single<Entity, With<TargetSelectionPanel>>,
     ) {
@@ -1153,17 +1154,17 @@ impl TargetListItem {
     }
 
     fn on_add_construct_target_list_item(
-        trigger: On<Add, TargetListItem>,
+        trigger: On<Add<TargetListItem>>,
         mut commands: Commands,
     ) {
         commands.entity(trigger.entity)
             .observe(Self::on_click_select_expedition_target)
-            .observe(recolor_background_on::<Pointer<Over>>(Color::srgba(0.25, 0.3, 0.4, 0.9)))
-            .observe(recolor_background_on::<Pointer<Out>>(Color::srgba(0.15, 0.15, 0.2, 0.9)));
+            .observe(recolor_background_on::<PointerOver>(Color::srgba(0.25, 0.3, 0.4, 0.9)))
+            .observe(recolor_background_on::<PointerOut>(Color::srgba(0.15, 0.15, 0.2, 0.9)));
     }
 
     fn on_click_select_expedition_target(
-        trigger: On<Pointer<Click>>,
+        trigger: On<PointerClick>,
         mut commands: Commands,
         items: Query<&TargetListItem>,
     ) {
@@ -1182,7 +1183,7 @@ struct TargetListItemCameraPreview {
 }
 impl TargetListItemCameraPreview {
     fn on_add_construct_target_camera_preview(
-        trigger: On<Add, TargetListItemCameraPreview>,
+        trigger: On<Add<TargetListItemCameraPreview>>,
         mut commands: Commands,
         previews: Query<&TargetListItemCameraPreview>,
         targets: Query<(&GridCoords, &GridImprint)>,

@@ -2,6 +2,7 @@ use bevy::{
     color::palettes::css::{BLUE, WHITE},
     prelude::*,
     ui::FocusPolicy,
+    ui_widgets::Button,
 };
 
 use almanach::prelude::*;
@@ -36,10 +37,10 @@ impl Plugin for InfoPanelPlugin {
             .add_observer(on_building_info_panel_enabled_toggle_tower_subpanel)
             .add_observer(on_rebuild_tower_shard_sockets_ui_do_so)
             .add_observer(ShardSocketTile::on_add_construct_socket_tile_ui)
-            .add_observer(ShardSocketTile::rebuild_tower_shard_sockets_ui_on::<Insert, ShardSocketState>)
-            .add_observer(ShardSocketTile::rebuild_tower_shard_sockets_ui_on::<Remove, SocketedShard>)
-            .add_observer(ShardSocketTile::rebuild_tower_shard_sockets_ui_on::<Insert, AwaitsShardOrder>)
-            .add_observer(ShardSocketTile::rebuild_tower_shard_sockets_ui_on::<Remove, AwaitsShardOrder>)
+            .add_observer(ShardSocketTile::rebuild_tower_shard_sockets_ui_on::<Insert<ShardSocketState>>)
+            .add_observer(ShardSocketTile::rebuild_tower_shard_sockets_ui_on::<Remove<SocketedShard>>)
+            .add_observer(ShardSocketTile::rebuild_tower_shard_sockets_ui_on::<Insert<AwaitsShardOrder>>)
+            .add_observer(ShardSocketTile::rebuild_tower_shard_sockets_ui_on::<Remove<AwaitsShardOrder>>)
             .add_observer(ShardSelectionPanel::on_add_construct_shard_selection_panel)
             .add_observer(ShardPickerItem::on_add_construct_shard_picker_item)
             .add_observer(ShardSelectionPanel::on_remove_focused_map_object_close_shard_selection_panel)
@@ -113,7 +114,7 @@ fn update_building_info_panel(
 }
 
 fn on_insert_focused_map_object_show_building_info_panel(
-    trigger: On<Insert, FocusedMapObject>,
+    trigger: On<Insert<FocusedMapObject>>,
     mut commands: Commands,
     almanach: Res<Almanach>,
     building_name_text: Single<&mut Text, With<BuildingInfoPanelNameText>>,
@@ -258,7 +259,7 @@ fn on_rebuild_tower_shard_sockets_ui_do_so(
     let container_entity = shards_container.into_inner();
     commands.entity(container_entity).despawn_children();
 
-    for socket in visible_sockets.iter_many(tower_sockets.iter()) {
+    for socket in visible_sockets.iter_many(tower_sockets.iter()).matched() {
         commands.entity(container_entity).with_child(ShardSocketTile { socket });
     }
 }
@@ -312,7 +313,7 @@ struct PendingOrderStatusText {
 
 impl ShardSocketTile {
     fn on_add_construct_socket_tile_ui(
-        trigger: On<Add, ShardSocketTile>,
+        trigger: On<Add<ShardSocketTile>>,
         mut commands: Commands,
         almanach: Res<Almanach>,
         tiles: Query<&ShardSocketTile>,
@@ -358,8 +359,8 @@ impl ShardSocketTile {
                 BorderColor::all(border),
             ))
             .observe(Self::on_click_open_shard_selection_panel)
-            .observe(recolor_background_on::<Pointer<Over>>(SOCKET_TILE_HOVER_BACKGROUND))
-            .observe(recolor_background_on::<Pointer<Out>>(background))
+            .observe(recolor_background_on::<PointerOver>(SOCKET_TILE_HOVER_BACKGROUND))
+            .observe(recolor_background_on::<PointerOut>(background))
             .with_children(|parent| {
                 parent.spawn((
                     Text::new(content),
@@ -386,7 +387,7 @@ impl ShardSocketTile {
     }
 
     fn on_click_open_shard_selection_panel(
-        trigger: On<Pointer<Click>>,
+        trigger: On<PointerClick>,
         mut commands: Commands,
         tiles: Query<&ShardSocketTile>,
         existing_panel: Option<Single<Entity, With<ShardSelectionPanel>>>,
@@ -415,8 +416,8 @@ impl ShardSocketTile {
 
     /// Rebuilds the tiles when the event targets a socket of the focused tower.
     /// Closes the picker opened for that socket, since its actions no longer match the contents.
-    fn rebuild_tower_shard_sockets_ui_on<E: EntityEvent, B: Bundle>(
-        trigger: On<E, B>,
+    fn rebuild_tower_shard_sockets_ui_on<P: EventPattern<Event: EntityEvent>>(
+        trigger: On<P>,
         mut commands: Commands,
         focused_tower: Option<Single<Entity, (With<FocusedMapObject>, With<Tower>)>>,
         picker: Option<Single<(Entity, &ShardSelectionPanel)>>,
@@ -440,7 +441,7 @@ struct ShardSelectionPanel {
 }
 impl ShardSelectionPanel {
     fn on_add_construct_shard_selection_panel(
-        trigger: On<Add, ShardSelectionPanel>,
+        trigger: On<Add<ShardSelectionPanel>>,
         mut commands: Commands,
         almanach: Res<Almanach>,
         blueprints: Res<ShardBlueprints>,
@@ -544,8 +545,8 @@ impl ShardSelectionPanel {
                             BorderColor::all(FOOTER_BUTTON_BORDER),
                         ))
                         .observe(Self::on_click_cancel_order_or_unsocket)
-                        .observe(recolor_background_on::<Pointer<Over>>(FOOTER_BUTTON_HOVER_BACKGROUND))
-                        .observe(recolor_background_on::<Pointer<Out>>(FOOTER_BUTTON_BACKGROUND))
+                        .observe(recolor_background_on::<PointerOver>(FOOTER_BUTTON_HOVER_BACKGROUND))
+                        .observe(recolor_background_on::<PointerOut>(FOOTER_BUTTON_BACKGROUND))
                         .with_children(|parent| {
                             parent.spawn((
                                 Text::new(footer_action),
@@ -569,8 +570,8 @@ impl ShardSelectionPanel {
                         BorderColor::all(CLOSE_BUTTON_BORDER),
                     ))
                     .observe(Self::on_click_close_shard_selection_panel)
-                    .observe(recolor_background_on::<Pointer<Over>>(CLOSE_BUTTON_HOVER_BACKGROUND))
-                    .observe(recolor_background_on::<Pointer<Out>>(CLOSE_BUTTON_BACKGROUND))
+                    .observe(recolor_background_on::<PointerOver>(CLOSE_BUTTON_HOVER_BACKGROUND))
+                    .observe(recolor_background_on::<PointerOut>(CLOSE_BUTTON_BACKGROUND))
                     .with_children(|parent| {
                         parent.spawn((
                             Text::new("Close"),
@@ -584,7 +585,7 @@ impl ShardSelectionPanel {
 
     /// Releases the held shard or detaches the awaited order, allowing active jobs to finish into stock.
     fn on_click_cancel_order_or_unsocket(
-        _trigger: On<Pointer<Click>>,
+        _trigger: On<PointerClick>,
         mut commands: Commands,
         panel: Single<(Entity, &ShardSelectionPanel)>,
     ) {
@@ -594,7 +595,7 @@ impl ShardSelectionPanel {
     }
 
     fn on_click_close_shard_selection_panel(
-        _trigger: On<Pointer<Click>>,
+        _trigger: On<PointerClick>,
         mut commands: Commands,
         panel: Single<Entity, With<ShardSelectionPanel>>,
     ) {
@@ -602,7 +603,7 @@ impl ShardSelectionPanel {
     }
 
     fn on_remove_focused_map_object_close_shard_selection_panel(
-        _trigger: On<Remove, FocusedMapObject>,
+        _trigger: On<Remove<FocusedMapObject>>,
         mut commands: Commands,
         panel: Single<Entity, With<ShardSelectionPanel>>,
     ) {
@@ -628,7 +629,7 @@ enum ShardPickerItemKind {
 
 impl ShardPickerItem {
     fn on_add_construct_shard_picker_item(
-        trigger: On<Add, ShardPickerItem>,
+        trigger: On<Add<ShardPickerItem>>,
         mut commands: Commands,
         almanach: Res<Almanach>,
         items: Query<&ShardPickerItem>,
@@ -665,8 +666,8 @@ impl ShardPickerItem {
                 BorderColor::all(border),
             ))
             .observe(Self::on_click_socket_or_order_shard)
-            .observe(recolor_background_on::<Pointer<Over>>(hover_background))
-            .observe(recolor_background_on::<Pointer<Out>>(background))
+            .observe(recolor_background_on::<PointerOver>(hover_background))
+            .observe(recolor_background_on::<PointerOut>(background))
             .with_children(|parent| {
                 parent.spawn((
                     Text::new(label),
@@ -678,7 +679,7 @@ impl ShardPickerItem {
 
     #[log_tags(Tag::Shards)]
     fn on_click_socket_or_order_shard(
-        trigger: On<Pointer<Click>>,
+        trigger: On<PointerClick>,
         mut commands: Commands,
         mut stock: ResMut<Stock>,
         global_queue: Single<Entity, With<GlobalForgingQueue>>,
@@ -712,7 +713,7 @@ struct BuildingInfoPanelDisableButton;
 struct BuildingInfoPanelDisableButtonIcon;
 impl BuildingInfoPanelDisableButton {
     fn on_add_construct_disable_button(
-        trigger: On<Add, BuildingInfoPanelDisableButton>,
+        trigger: On<Add<BuildingInfoPanelDisableButton>>,
         mut commands: Commands,
         asset_server: Res<AssetServer>,
     ) {
@@ -741,7 +742,7 @@ impl BuildingInfoPanelDisableButton {
 
     #[log_tags(Tag::Build)]
     fn on_click_toggle_building_disabled(
-        _trigger: On<Pointer<Click>>,
+        _trigger: On<PointerClick>,
         mut commands: Commands,
         almanach: Res<Almanach>,
         focused_building: Single<(Entity, &BuildingType, Has<DisabledByPlayer>), With<FocusedMapObject>>,
@@ -768,7 +769,7 @@ impl BuildingInfoPanelDisableButton {
 struct BuildingInfoPanelDestroyButton;
 impl BuildingInfoPanelDestroyButton {
     fn on_add_construct_destroy_button(
-        trigger: On<Add, BuildingInfoPanelDestroyButton>,
+        trigger: On<Add<BuildingInfoPanelDestroyButton>>,
         mut commands: Commands,
         asset_server: Res<AssetServer>,
     ) {
@@ -793,7 +794,7 @@ impl BuildingInfoPanelDestroyButton {
     }
 
     fn on_click_request_building_destroy(
-        _trigger: On<Pointer<Click>>,
+        _trigger: On<PointerClick>,
         mut commands: Commands,
         focused_building: Single<Entity, With<FocusedMapObject>>,
     ) {

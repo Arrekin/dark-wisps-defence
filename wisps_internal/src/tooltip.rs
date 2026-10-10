@@ -21,7 +21,7 @@ pub(crate) fn wisp_tooltip(commands: &mut Commands, anchor: Entity, map_object: 
 }
 
 fn on_builder_add_spawn_wisp_tooltip(
-    trigger: On<Add, BuilderWispSideMenuTooltip>,
+    trigger: On<Add<BuilderWispSideMenuTooltip>>,
     mut commands: Commands,
     almanach: Res<Almanach>,
     builders: Query<&BuilderWispSideMenuTooltip>,

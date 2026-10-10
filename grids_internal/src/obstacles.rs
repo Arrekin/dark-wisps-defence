@@ -20,7 +20,7 @@ impl Plugin for ObstaclesGridPlugin {
 
 #[log_tags(Tag::Build)]
 fn on_insert_obstacle_grid_object_imprint_on_grid(
-    trigger: On<Insert, ObstacleGridObject>,
+    trigger: On<Insert<ObstacleGridObject>>,
     mut obstacle_grid: ResMut<ObstacleGrid>,
     buildings: Query<&BuildingType>,
     objects: Query<(&GridImprint, &GridCoords, &ObstacleGridObject)>,
@@ -46,7 +46,7 @@ fn on_insert_obstacle_grid_object_imprint_on_grid(
 }
 
 fn on_remove_obstacle_grid_object_remove_from_grid(
-    trigger: On<Remove, ObstacleGridObject>,
+    trigger: On<Remove<ObstacleGridObject>>,
     mut obstacle_grid: ResMut<ObstacleGrid>,
     objects: Query<(&GridImprint, &GridCoords, &ObstacleGridObject)>,
 ) {

@@ -1,7 +1,5 @@
 use bevy::app::{App, Plugin};
 
-use visuals::prelude::ShaderLibraryAppExt;
-
 pub(crate) mod healthbar;
 pub(crate) mod chips;
 pub(crate) mod close_button;
@@ -18,7 +16,6 @@ pub struct WidgetsPlugin;
 impl Plugin for WidgetsPlugin {
     fn build(&self, app: &mut App) {
         app
-            .register_shader_library("shaders/widgets/fade.wgsl")
             .add_plugins((
                 healthbar::HealthbarPlugin,
                 chips::ChipsPlugin,

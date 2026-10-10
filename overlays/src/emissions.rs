@@ -16,6 +16,7 @@ use grids::{
     prelude::GridVersion,
 };
 use states::prelude::MapLoadingStage;
+use visuals::prelude::MapCanvasBundle;
 
 pub struct EmissionsOverlayPlugin;
 impl Plugin for EmissionsOverlayPlugin {
@@ -91,7 +92,7 @@ struct EmissionsOverlayMaterial {
 }
 impl Material2d for EmissionsOverlayMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/overlays/emissions_map.wgsl".into()
+        "shaders/overlays/emissions_map.wesl".into()
     }
     fn alpha_mode(&self) -> AlphaMode2d {
         AlphaMode2d::Blend
@@ -99,7 +100,7 @@ impl Material2d for EmissionsOverlayMaterial {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable, ShaderType, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable, Default)]
 struct EmissionsCell {
     energy: f32,
 }
@@ -113,14 +114,18 @@ impl EmissionsOverlay {
         map_info: Res<MapInfo>,
         mut meshes: ResMut<Assets<Mesh>>,
         mut materials: ResMut<Assets<EmissionsOverlayMaterial>>,
+        mut buffers: ResMut<Assets<ShaderBuffer>>,
         overlay: Option<Single<Entity, With<EmissionsOverlay>>>,
     ) {
         if let Some(overlay_entity) = overlay {
             commands.entity(overlay_entity.into_inner()).despawn();
         }
 
+        // Bind an initialized buffer on the material's spawn frame.
+        let cells = buffers.add(ShaderBuffer::from(vec![EmissionsCell::default(); map_info.grid_bounds.area()]));
+        let material = materials.add(EmissionsOverlayMaterial { cells, ..default() });
         commands.spawn((
-            super::overlay_bundle(&mut meshes, &mut materials, &map_info),
+            MapCanvasBundle::new(&mut meshes, material, &map_info),
             EmissionsOverlay,
         ));
     }
@@ -132,7 +137,6 @@ fn refresh_display_system(
     emissions_grid: Res<EmissionsGrid>,
     mut overlay_config: ResMut<EmissionsOverlayConfig>,
     overlay: Single<&MeshMaterial2d<EmissionsOverlayMaterial>, With<EmissionsOverlay>>,
-    mut local_buffer_data: Local<Vec<EmissionsCell>>,
 ) {
     let current_version = match overlay_config.emissions_type {
         EmissionsType::Energy => emissions_grid.version.energy,
@@ -153,23 +157,15 @@ fn refresh_display_system(
     }
     if min_value == f32::MAX { min_value = 0.; }
 
-    // Build cell data
-    local_buffer_data.clear();
-    local_buffer_data.extend(emissions_grid.grid.iter().map(|emissions| {
+    // Update SSBO
+    let mut buffer = buffers.get_mut(&overlay_material.cells).unwrap();
+    buffer.clear();
+    buffer.extend(emissions_grid.grid.iter().map(|emissions| {
         let energy = match overlay_config.emissions_type {
             EmissionsType::Energy => emissions.energy,
         };
         EmissionsCell { energy }
     }));
-
-    // Update SSBO
-    let buffer_handle = &overlay_material.cells;
-    if let Some(mut buffer) = buffers.get_mut(buffer_handle) {
-        buffer.set_data(&*local_buffer_data);
-    } else {
-        let storage_buffer = ShaderBuffer::from(local_buffer_data.as_slice());
-        overlay_material.cells = buffers.add(storage_buffer);
-    }
 
     // Update uniforms
     overlay_material.uniforms = EmissionsUniformData::new(emissions_grid.bounds, min_value, max_value);

@@ -52,14 +52,14 @@ const RUNE_ALPHABET_SIZE: u32 = 6;
 /// to `ResearchActive`, so the marker arriving and leaving is exactly when the card gains and
 /// loses its subject.
 fn on_add_research_active_surge_card(
-    _: On<Add, ResearchActive>,
+    _: On<Add<ResearchActive>>,
     mut card: Single<&mut VoidPanel, With<ResearchDetailViewSource<ResearchActive>>>,
 ) {
     card.set_border_surge(true);
 }
 
 fn on_remove_research_active_still_card(
-    _: On<Remove, ResearchActive>,
+    _: On<Remove<ResearchActive>>,
     mut card: Single<&mut VoidPanel, With<ResearchDetailViewSource<ResearchActive>>>,
 ) {
     card.set_border_surge(false);

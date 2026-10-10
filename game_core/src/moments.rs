@@ -117,11 +117,11 @@ pub fn fire_moment_on<E: EntityEvent>(
     }
 }
 
-/// Observer for `On<Add, T>`: reads `MomentOf(parent)` from the moment child
+/// Observer for `On<Add<T>>`: reads `MomentOf(parent)` from the moment child
 /// and registers `fire_moment_on::<E>` on the parent.
 /// Register directly: `app.add_observer(moment_attach_self_trigger_to_parent::<T, E>)`.
 pub fn moment_attach_self_trigger_to_parent<T: Component, E: EntityEvent>(
-    trigger: On<Add, T>,
+    trigger: On<Add<T>>,
     mut commands: Commands,
     moments: Query<&MomentOf>,
 ) {

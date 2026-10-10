@@ -11,7 +11,7 @@ use bevy::{
     ui_render::ui_material::UiMaterial,
 };
 
-const SHADER_ASSET_PATH: &str = "shaders/widgets/rune.wgsl";
+const SHADER_ASSET_PATH: &str = "shaders/widgets/rune.wesl";
 
 // ============================================================================
 // MATERIAL

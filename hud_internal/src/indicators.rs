@@ -21,7 +21,7 @@ const MIN_ALPHA: f32 = 0.;
 const MAX_ALPHA: f32 = 1.;
 
 fn on_insert_indicator_type_configure(
-    trigger: On<Insert, IndicatorType>,
+    trigger: On<Insert<IndicatorType>>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     // `Has<Disabled>` lets the query match indicators, which start disabled.
@@ -43,24 +43,24 @@ fn on_insert_indicator_type_configure(
     match indicator_type {
         IndicatorType::NoPower => {
             commands.entity(parent)
-                .observe(hide_indicator_on::<Insert, IsPowered>(entity))
-                .observe(show_indicator_on::<Remove, IsPowered>(entity));
+                .observe(hide_indicator_on::<Insert<IsPowered>>(entity))
+                .observe(show_indicator_on::<Remove<IsPowered>>(entity));
             if parents_with_no_power.contains(parent) {
                 commands.entity(entity).remove::<Disabled>();
             }
         }
         IndicatorType::OreDepleted => {
             commands.entity(parent)
-                .observe(hide_indicator_on::<Insert, HasOreInScannerRange>(entity))
-                .observe(show_indicator_on::<Insert, NoOreInScannerRange>(entity));
+                .observe(hide_indicator_on::<Insert<HasOreInScannerRange>>(entity))
+                .observe(show_indicator_on::<Insert<NoOreInScannerRange>>(entity));
             if parents_with_no_ore.contains(parent) {
                 commands.entity(entity).remove::<Disabled>();
             }
         }
         IndicatorType::DisabledByPlayer => {
             commands.entity(parent)
-                .observe(show_indicator_on::<Insert, DisabledByPlayer>(entity))
-                .observe(hide_indicator_on::<Remove, DisabledByPlayer>(entity));
+                .observe(show_indicator_on::<Insert<DisabledByPlayer>>(entity))
+                .observe(hide_indicator_on::<Remove<DisabledByPlayer>>(entity));
             if parents_disabled_by_player.contains(parent) {
                 commands.entity(entity).remove::<Disabled>();
             }
@@ -71,10 +71,9 @@ fn on_insert_indicator_type_configure(
 /// Parent observer that hides `indicator` when the event fires. Despawns itself once the
 /// indicator is gone, unless the parent is being despawned. The query mentions `Disabled` so it
 /// also finds indicators that are currently hidden.
-fn hide_indicator_on<E, B>(indicator: Entity) -> impl Fn(On<E, B>, Commands, Query<Has<Disabled>, With<IndicatorType>>)
+fn hide_indicator_on<P>(indicator: Entity) -> impl Fn(On<P>, Commands, Query<Has<Disabled>, With<IndicatorType>>)
 where
-    E: for<'a> EntityEvent<Trigger<'a> = EntityComponentsTrigger<'a>>,
-    B: Bundle,
+    P: EventPattern<Event: for<'a> EntityEvent<Trigger<'a> = EntityComponentsTrigger<'a>>>,
 {
     move |trigger, mut commands, indicators| {
         if trigger.trigger().new_archetype.is_some() && !indicators.contains(indicator) {
@@ -86,10 +85,9 @@ where
 }
 
 /// Parent observer that shows `indicator` when the event fires; see [`hide_indicator_on`].
-fn show_indicator_on<E, B>(indicator: Entity) -> impl Fn(On<E, B>, Commands, Query<Has<Disabled>, With<IndicatorType>>)
+fn show_indicator_on<P>(indicator: Entity) -> impl Fn(On<P>, Commands, Query<Has<Disabled>, With<IndicatorType>>)
 where
-    E: for<'a> EntityEvent<Trigger<'a> = EntityComponentsTrigger<'a>>,
-    B: Bundle,
+    P: EventPattern<Event: for<'a> EntityEvent<Trigger<'a> = EntityComponentsTrigger<'a>>>,
 {
     move |trigger, mut commands, indicators| {
         if trigger.trigger().new_archetype.is_some() && !indicators.contains(indicator) {

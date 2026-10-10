@@ -122,7 +122,7 @@ fn on_shard_socket_operation_do_so(
 
 /// Reapplies the socket's state to its new shard.
 fn on_insert_socketed_shard_reapply_state(
-    trigger: On<Insert, SocketedShard>,
+    trigger: On<Insert<SocketedShard>>,
     mut commands: Commands,
     sockets: Query<&ShardSocketState>,
 ) {
@@ -134,7 +134,7 @@ fn on_insert_socketed_shard_reapply_state(
 /// Updates the query marker and contents: removed sockets empty, disabled sockets lose their
 /// effects, and active sockets rebuild their shard's modifier effect.
 fn on_insert_shard_socket_state_apply(
-    trigger: On<Insert, ShardSocketState>,
+    trigger: On<Insert<ShardSocketState>>,
     mut commands: Commands,
     sockets: Query<(&ShardSocketState, &ShardSocket, Option<&SocketedShard>, &ShardSocketOf)>,
 ) {
@@ -157,7 +157,7 @@ fn on_insert_shard_socket_state_apply(
 /// Releases a discarded shard to the socket's configured destination.
 /// Removes the effect explicitly when the socket survives.
 fn on_discard_socketed_shard_release(
-    trigger: On<Discard, SocketedShard>,
+    trigger: On<Discard<SocketedShard>>,
     mut commands: Commands,
     sockets: Query<(&SocketedShard, &ShardReleaseDestination)>,
 ) {

@@ -95,8 +95,8 @@ new_ret_no_self = "allow"       # Intentional builder constructors that return a
 needless_update = "allow"       # Leaving `..Default::default()` on a fully-specified struct lets you comment out fields for testing without breaking the initializer
 
 [workspace.dependencies]
-bevy = { version = "0.19.*", default-features = false, features = ["dynamic_linking", "2d"] }
-bevy_egui = "0.40.*"
+bevy = { version = "0.20.*", default-features = false, features = ["dynamic_linking", "2d"] }
+bevy_egui = "0.43.*"
 strum = { version = "0.28.*", features = ["derive"] }
 nanorand = "0.8"
 rusqlite = { version = "0.39.*", features = ["bundled", "fallible_uint"] }

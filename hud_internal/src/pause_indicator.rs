@@ -27,9 +27,9 @@ impl PauseIndicator {
                 border: UiRect::all(Val::Px(4.0)),
             }
             BackgroundColor(Color::NONE)
-            template_value(BorderColor::all(Color::srgb(1.0, 0.8, 0.0)))
-            template_value(FocusPolicy::Pass)
-            template_value(Pickable::IGNORE) // Don't block mouse clicks/events
+            BorderColor::all(Color::srgb(1.0, 0.8, 0.0))
+            FocusPolicy::Pass
+            Pickable::IGNORE // Don't block mouse clicks/events
             Visibility::Hidden
             ZIndex(-1) // Render behind other UI elements
         });

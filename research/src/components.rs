@@ -35,9 +35,9 @@ pub struct Research {
 }
 
 /// Progression axis and the single entry point for changing it. Inserting
-/// fires `On<Insert, ResearchState>` which swaps the marker component below,
+/// fires `On<Insert<ResearchState>>` which swaps the marker component below,
 /// so queries keep archetype filters. Only enabled researches carry state.
-#[derive(Component, Clone, Copy, Debug, PartialEq, Eq, Default, EnumString, AsRefStr, FromTemplate)]
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq, Default, EnumString, AsRefStr)]
 #[component(immutable)]
 pub enum ResearchState {
     #[default]

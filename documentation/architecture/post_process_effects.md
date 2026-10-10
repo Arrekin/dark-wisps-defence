@@ -83,7 +83,7 @@ fn world_to_uv(world: vec2<f32>) -> vec2<f32> {
 
 **Shader import path** — the fullscreen vertex output lives at:
 ```wgsl
-#import bevy_core_pipeline::fullscreen_vertex_shader::FullscreenVertexOutput
+import bevy_core_pipeline::fullscreen_vertex_shader::FullscreenVertexOutput;
 ```
 
 **Sampling in non-uniform control flow** — `textureSample` requires uniform control flow
@@ -112,8 +112,8 @@ that as the loop bound.
 
 | Effect | Component | Shader |
 |--------|-----------|--------|
-| Ripple displacement | `RipplePostProcess` in `weaponry_internal/src/ripple_post_process.rs` | `assets/shaders/weaponry/ripple_post_process.wgsl` |
-| Force field dome | `ForceFieldPostProcess` in `weaponry_internal/src/force_field_post_process.rs` | `assets/shaders/weaponry/force_field_post_process.wgsl` |
-| Quantum field anomaly | `QuantumFieldPostProcess` in `map_objects_internal/src/quantum_field_post_process.rs` | `assets/shaders/quantum_field/post_process.wgsl` |
+| Ripple displacement | `RipplePostProcess` in `weaponry_internal/src/ripple_post_process.rs` | `assets/shaders/weaponry/ripple_post_process.wesl` |
+| Force field dome | `ForceFieldPostProcess` in `weaponry_internal/src/force_field_post_process.rs` | `assets/shaders/weaponry/force_field_post_process.wesl` |
+| Quantum field anomaly | `QuantumFieldPostProcess` in `map_objects_internal/src/quantum_field_post_process.rs` | `assets/shaders/quantum_field/post_process.wesl` |
 
 Pass order (in the `Core2d` schedule): `Tonemapping → Ripple → ForceField → QuantumField → Upscaling`.

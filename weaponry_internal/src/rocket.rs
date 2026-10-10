@@ -100,7 +100,7 @@ fn load_rockets(ctx: &mut LoadContext) -> LoadResult {
 }
 
 fn on_builder_add_spawn_rocket(
-    trigger: On<Add, BuilderRocket>,
+    trigger: On<Add<BuilderRocket>>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     builders: Query<&BuilderRocket>,

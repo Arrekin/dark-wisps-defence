@@ -46,7 +46,7 @@ impl FromWorld for ExplosionAtlas {
 pub(crate) struct Explosion;
 
 fn on_builder_add_spawn_explosion(
-    trigger: On<Add, BuilderExplosion>,
+    trigger: On<Add<BuilderExplosion>>,
     mut commands: Commands,
     explosion_atlas: Res<ExplosionAtlas>,
     builders: Query<&BuilderExplosion>,

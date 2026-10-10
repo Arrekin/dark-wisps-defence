@@ -37,7 +37,7 @@ impl GameState {
         current_game_state: Res<State<GameState>>,
     ) {
         let requested_paused = trigger.paused;
-        if let NextState::Pending(state) | NextState::PendingIfNeq(state) = *next_game_state {
+        if let NextState::Pending(state) | NextState::PendingIfDifferent(state) = *next_game_state {
             let result = SetGamePausedResult::OtherTransitionAlreadyQueued { state };
             trigger.response.report(&mut commands, |entity| SetGamePausedReport { entity, requested_paused, result });
             return;

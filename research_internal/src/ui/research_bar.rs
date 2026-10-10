@@ -25,7 +25,7 @@ impl Plugin for ResearchBarPlugin {
 /// plus the runtime `ResearchBar` binding. The ProgressBar expansion observer
 /// handles creating the material asset.
 fn on_builder_add_spawn_research_bar(
-    trigger: On<Add, BuilderResearchBar>,
+    trigger: On<Add<BuilderResearchBar>>,
     mut commands: Commands,
     builders: Query<&BuilderResearchBar>,
 ) {

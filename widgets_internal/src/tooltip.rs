@@ -14,7 +14,7 @@ impl Plugin for TooltipPlugin {
 
 /// Applies the relationship, the layout and the surface the builder carries.
 fn on_builder_add_spawn_tooltip(
-    trigger: On<Add, BuilderTooltip>,
+    trigger: On<Add<BuilderTooltip>>,
     mut commands: Commands,
     builders: Query<&BuilderTooltip>,
 ) {
@@ -41,7 +41,7 @@ fn on_builder_add_spawn_tooltip(
 }
 
 fn on_add_tooltip_of_watch_anchor_hover(
-    trigger: On<Add, TooltipOf>,
+    trigger: On<Add<TooltipOf>>,
     mut commands: Commands,
     tooltips: Query<&TooltipOf>,
 ) {
@@ -56,7 +56,7 @@ fn on_add_tooltip_of_watch_anchor_hover(
 }
 
 fn on_tooltip_parent_hover_start_show_tooltips(
-    trigger: On<Pointer<Over>>,
+    trigger: On<PointerOver>,
     parents: Query<&Tooltips>,
     mut tooltip_nodes: Query<&mut Node, With<TooltipOf>>,
 ) {
@@ -73,7 +73,7 @@ fn on_tooltip_parent_hover_start_show_tooltips(
 }
 
 fn on_tooltip_parent_hover_end_hide_tooltips(
-    trigger: On<Pointer<Out>>,
+    trigger: On<PointerOut>,
     parents: Query<&Tooltips>,
     mut tooltip_nodes: Query<&mut Node, With<TooltipOf>>,
 ) {

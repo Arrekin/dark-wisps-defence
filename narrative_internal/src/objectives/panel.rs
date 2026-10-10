@@ -1,6 +1,7 @@
 use bevy::{
     prelude::*,
     ui::{widget::NodeImageMode, VisualBox},
+    ui_widgets::Button,
 };
 
 use game_core::prelude::DisplayName;
@@ -96,7 +97,7 @@ const VISIBLE_TOP_POSITION: f32 = 5.;
 // ============================================================================
 
 fn on_add_objectives_panel_construct(
-    trigger: On<Add, ObjectivesPanel>,
+    trigger: On<Add<ObjectivesPanel>>,
     mut commands: Commands,
 ) {
     commands.entity(trigger.entity).apply_scene(bsn! {
@@ -120,14 +121,15 @@ fn on_add_objectives_panel_construct(
             visual_box: VisualBox::BorderBox,
         }
         Children [
-            ObjectivesPanelContent,
-            ObjectivesShowHideButton,
+            ObjectivesPanelContent
+            --
+            ObjectivesShowHideButton
         ]
     });
 }
 
 fn on_add_objectives_panel_content_construct(
-    trigger: On<Add, ObjectivesPanelContent>,
+    trigger: On<Add<ObjectivesPanelContent>>,
     mut commands: Commands,
 ) {
     commands.entity(trigger.entity).apply_scene(bsn! {
@@ -145,7 +147,7 @@ fn on_add_objectives_panel_content_construct(
 
 impl ObjectivesShowHideButton {
     fn on_add_objectives_show_hide_button_construct(
-        trigger: On<Add, ObjectivesShowHideButton>,
+        trigger: On<Add<ObjectivesShowHideButton>>,
         mut commands: Commands,
     ) {
         commands.entity(trigger.entity).apply_scene(bsn! {
@@ -162,7 +164,7 @@ impl ObjectivesShowHideButton {
     }
 
     fn on_click_toggle_panel_visibility(
-        _trigger: On<Pointer<Click>>,
+        _trigger: On<PointerClick>,
         current_state: Res<State<ObjectivesPanelState>>,
         mut next_state: ResMut<NextState<ObjectivesPanelState>>,
     ) {
@@ -221,7 +223,7 @@ fn panel_transition_to_hidden(
 // ============================================================================
 
 fn on_add_objective_details_spawn_row(
-    trigger: On<Add, ObjectiveDetails>,
+    trigger: On<Add<ObjectiveDetails>>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     details: Query<&ObjectiveDetails>,
@@ -301,7 +303,7 @@ fn on_add_objective_details_spawn_row(
 pub(crate) struct RebuildObjectivesPanel;
 
 fn on_insert_objective_state_request_rebuild(
-    _trigger: On<Insert, ObjectiveState>,
+    _trigger: On<Insert<ObjectiveState>>,
     mut commands: Commands,
 ) {
     commands.trigger(RebuildObjectivesPanel);
@@ -426,7 +428,7 @@ fn update_titles(
 // ============================================================================
 
 fn on_remove_objective_details_despawn_row(
-    trigger: On<Remove, ObjectiveDetails>,
+    trigger: On<Remove<ObjectiveDetails>>,
     mut commands: Commands,
     rows: Query<(Entity, &ObjectiveRow)>,
 ) {

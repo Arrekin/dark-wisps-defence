@@ -31,7 +31,7 @@ impl Plugin for EnergySupplyPlugin {
 struct EnergySupplyRecalculatePower(bool);
 
 fn on_add_supplier_energy_register_supplier(
-    trigger: On<Add, SupplierEnergy>,
+    trigger: On<Add<SupplierEnergy>>,
     mut commands: Commands,
 ) {
     let entity = trigger.entity;
@@ -39,18 +39,17 @@ fn on_add_supplier_energy_register_supplier(
     // changes re-Place, coverage loss Removes. Which set a Place lands in
     // (active vs disabled) is resolved from live entity state at apply time.
     commands.entity(entity)
-        .observe(emit_supplier_changed::<Insert, (GridCoords, EnergySupplyRange, SupplierEnergy, DisabledByPlayer), { SupplierChange::Place }>)
-        .observe(emit_supplier_changed::<Discard, (GridCoords, EnergySupplyRange, SupplierEnergy), { SupplierChange::Remove }>)
-        .observe(emit_supplier_changed::<Remove, DisabledByPlayer, { SupplierChange::Place }>);
+        .observe(emit_supplier_changed::<Insert<(GridCoords, EnergySupplyRange, SupplierEnergy, DisabledByPlayer)>, { SupplierChange::Place }>)
+        .observe(emit_supplier_changed::<Discard<(GridCoords, EnergySupplyRange, SupplierEnergy)>, { SupplierChange::Remove }>)
+        .observe(emit_supplier_changed::<Remove<DisabledByPlayer>, { SupplierChange::Place }>);
 }
 
-fn emit_supplier_changed<E, B, const MODE: SupplierChange>(
-    trigger: On<E, B>,
+fn emit_supplier_changed<P, const MODE: SupplierChange>(
+    trigger: On<P>,
     mut supplier_changed_messages: MessageWriter<SupplierChangedMessage>,
     suppliers: Query<(&EnergySupplyRange, &GridCoords, &GridImprint), With<SupplierEnergy>>,
 ) where
-    E: EntityEvent,
-    B: Bundle,
+    P: EventPattern<Event: EntityEvent>,
 {
     let entity = trigger.event_target();
     let Ok((energy_supply_range, grid_coords, grid_imprint)) = suppliers.get(entity) else { return; };

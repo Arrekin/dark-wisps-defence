@@ -3,9 +3,9 @@
 //! The button default is to fill provided space. Spawn your own [`Node`] alongside the builder to override
 //! that.
 //!
-//! Clicking is not provided. Add your own `Pointer<Click>` on the button entity.
+//! Clicking is not provided. Add your own `PointerClick` on the button entity.
 
-use bevy::prelude::*;
+use bevy::{prelude::*, ui_widgets::Button};
 
 use crate::typography::TextRole;
 use crate::void_panel::BuilderVoidPanel;

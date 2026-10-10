@@ -33,7 +33,7 @@ const ZONE_ROW_GAP: f32 = 5.0;
 const SIDE_MENU_RIGHT_EDGE: f32 = SIDE_MENU_LEFT + SIDE_MENU_SECTION_SIZE;
 
 pub(crate) fn on_builder_add_spawn_side_menu_item_tooltip(
-    trigger: On<Add, BuilderSideMenuItemTooltip>,
+    trigger: On<Add<BuilderSideMenuItemTooltip>>,
     mut commands: Commands,
     builders: Query<&BuilderSideMenuItemTooltip>,
 ) {

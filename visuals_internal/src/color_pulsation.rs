@@ -15,7 +15,7 @@ pub(crate) fn pulsate_sprites_system(
 }
 
 pub(crate) fn on_remove_color_pulsation_reset_sprite_lightness(
-    trigger: On<Remove, ColorPulsation>,
+    trigger: On<Remove<ColorPulsation>>,
     mut sprites: Query<&mut Sprite>,
 ) {
     let entity = trigger.entity;

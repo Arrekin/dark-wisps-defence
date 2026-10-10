@@ -91,7 +91,7 @@ fn load_ripples(ctx: &mut LoadContext) -> LoadResult {
 }
 
 fn on_builder_add_spawn_ripple(
-    trigger: On<Add, BuilderRipple>,
+    trigger: On<Add<BuilderRipple>>,
     mut commands: Commands,
     builders: Query<&BuilderRipple>,
 ) {

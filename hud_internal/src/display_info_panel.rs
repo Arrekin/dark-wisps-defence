@@ -85,11 +85,11 @@ fn show_on_click_system(
         commands.entity(old_focused.into_inner()).remove::<FocusedMapObject>();
     }
     commands.entity(focused_element).insert(FocusedMapObject);
-    (*next_ui_interaction_state).set_if_neq(UiInteraction::DisplayInfoPanel);
+    (*next_ui_interaction_state).set_if_different(UiInteraction::DisplayInfoPanel);
 }
 
 fn on_despawn_focused_map_object_return_to_free_interaction(
-    _trigger: On<Despawn, FocusedMapObject>,
+    _trigger: On<Despawn<FocusedMapObject>>,
     mut ui_interaction_state: ResMut<NextState<UiInteraction>>,
 ) {
     ui_interaction_state.set(UiInteraction::Free);

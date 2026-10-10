@@ -74,7 +74,7 @@ impl BuilderRestrictionTimeAllowance {
     }
 
     fn on_builder_add_spawn_time_allowance(
-        trigger: On<Add, BuilderRestrictionTimeAllowance>,
+        trigger: On<Add<BuilderRestrictionTimeAllowance>>,
         mut commands: Commands,
         builders: Query<&BuilderRestrictionTimeAllowance>,
     ) {
@@ -129,7 +129,7 @@ fn format_remaining(remaining: f32) -> String {
 /// (maintenance polarity — "within allowance") and fire `ObjectiveGoalStateChanged`
 /// so the aggregator can evaluate the root. Runtime component + display line are
 /// already set at build time. The `Satisfied` insert does NOT re-trigger this
-/// observer (it listens to `ObjectiveActivate`, not `On<Insert, ObjectiveState>`).
+/// observer (it listens to `ObjectiveActivate`, not `On<Insert<ObjectiveState>>`).
 fn on_objective_activate_satisfy_time_allowance(
     trigger: On<ObjectiveActivate>,
     mut commands: Commands,

@@ -61,7 +61,7 @@ impl BuilderDarkOre {
     }
 
     fn on_builder_add_spawn_dark_ore(
-        trigger: On<Add, BuilderDarkOre>,
+        trigger: On<Add<BuilderDarkOre>>,
         mut commands: Commands,
         builders: Query<&BuilderDarkOre>,
     ) {
@@ -167,7 +167,7 @@ pub(crate) mod dark_ore_area_scanner {
     use super::*;
 
     pub fn on_add_dark_ore_area_scanner_init(
-        trigger: On<Add, DarkOreAreaScanner>,
+        trigger: On<Add<DarkOreAreaScanner>>,
         mut commands: Commands,
         scanners: Query<&DarkOreAreaScanner>,
     ) {
@@ -180,7 +180,7 @@ pub(crate) mod dark_ore_area_scanner {
 
     /// Local observer: rescans when the scanning entity moves or its scanner range changes.
     fn on_insert_scanner_or_coords_rescan(
-        trigger: On<Insert, (DarkOreAreaScanner, GridCoords)>,
+        trigger: On<Insert<(DarkOreAreaScanner, GridCoords)>>,
         mut commands: Commands,
         obstacle_grid: Res<ObstacleGrid>,
         mut scanners: Query<(&DarkOreAreaScanner, &GridCoords, &mut DarkOreInRange)>,
@@ -198,7 +198,7 @@ pub(crate) mod dark_ore_area_scanner {
 
     /// Keeps every scanner's `DarkOreInRange` in sync when any dark ore is removed.
     pub fn on_remove_dark_ore_sync_scanners(
-        trigger: On<Remove, DarkOre>,
+        trigger: On<Remove<DarkOre>>,
         mut commands: Commands,
         dark_ores: Query<&GridCoords, With<DarkOre>>,
         mut scanners: Query<(Entity, &DarkOreAreaScanner, &mut DarkOreInRange, &GridCoords)>,
@@ -220,7 +220,7 @@ pub(crate) mod dark_ore_area_scanner {
     }
 
     pub fn on_add_dark_ore_sync_scanners(
-        trigger: On<Add, DarkOre>,
+        trigger: On<Add<DarkOre>>,
         mut commands: Commands,
         dark_ores: Query<&GridCoords, With<DarkOre>>,
         mut scanners: Query<(Entity, &DarkOreAreaScanner, &mut DarkOreInRange, &GridCoords)>,
@@ -248,7 +248,7 @@ pub(crate) fn dark_ore_tooltip(commands: &mut Commands, anchor: Entity, _map_obj
 }
 
 fn on_builder_add_spawn_dark_ore_tooltip(
-    trigger: On<Add, BuilderDarkOreSideMenuTooltip>,
+    trigger: On<Add<BuilderDarkOreSideMenuTooltip>>,
     mut commands: Commands,
     almanach: Res<Almanach>,
     builders: Query<&BuilderDarkOreSideMenuTooltip>,

@@ -16,7 +16,7 @@ pub(crate) fn advance_request_windows(
 }
 
 /// Runs after every `RequestFulfilled` insert of the frame is applied, so reports triggered by
-/// `On<Add, RequestFulfilled>` observers are already in the channel.
+/// `On<Add<RequestFulfilled>>` observers are already in the channel.
 pub(crate) fn cleanup_fulfilled_requests(
     mut commands: Commands,
     requests: Query<(Entity, &ResponseChannel, &RequestFulfilled)>,

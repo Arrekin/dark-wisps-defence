@@ -76,7 +76,7 @@ fn load_brittle_effects(ctx: &mut LoadContext) -> LoadResult {
 }
 
 fn on_builder_add_spawn_brittle_effect(
-    trigger: On<Add, BuilderBrittleEffect>,
+    trigger: On<Add<BuilderBrittleEffect>>,
     mut commands: Commands,
     builders: Query<&BuilderBrittleEffect>,
 ) {

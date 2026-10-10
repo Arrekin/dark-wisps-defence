@@ -1,12 +1,12 @@
 //! Root layout for the left-edge construction and panel menu.
 
-use bevy::{ecs::template::TemplateContext, prelude::*};
+use bevy::prelude::*;
 use strum::IntoEnumIterator;
 
 use game_core::prelude::*;
 
 use super::{
-    section::{AdminSection, SectionOffering, on_click_open_forging_panel, on_click_open_research_panel, side_menu_section},
+    section::{AdminSection, SectionOffering, SideMenuSection, on_click_open_forging_panel, on_click_open_research_panel},
     tile::PlacementTile,
 };
 
@@ -27,19 +27,27 @@ impl SideMenu {
                 align_items: AlignItems::Center,
             }
             Children [
-                side_menu_section("ui/side_menu_towers.png", bsn_list![], template_value(SectionOffering::Towers)),
-                side_menu_section("ui/side_menu_buildings.png", bsn_list![], template_value(SectionOffering::Buildings)),
-                side_menu_section("ui/side_menu_research.png", bsn_list![], bsn!{ on(on_click_open_research_panel) }),
-                side_menu_section("ui/side_menu_forging.png", bsn_list![], bsn!{ on(on_click_open_forging_panel) }),
-                side_menu_section("ui/side_menu_consumables.png", bsn_list![], bsn!{}),
-                side_menu_section("ui/side_menu_admin_objects.png", bsn_list![
-                    template(|_: &mut TemplateContext| Ok(PlacementTile(MapObject::DarkOre))),
-                    template(|_: &mut TemplateContext| Ok(PlacementTile(MapObject::Wall))),
-                    template(|_: &mut TemplateContext| Ok(PlacementTile(MapObject::QuantumField))),
-                ], bsn!{ AdminSection }),
-                side_menu_section("ui/side_menu_admin_wisps.png", WispType::iter()
-                    .map(|wisp_type| template(move |_: &mut TemplateContext| Ok(PlacementTile(MapObject::Wisp(wisp_type)))))
-                    .collect::<Vec<_>>(), bsn!{ AdminSection }),
+                @SideMenuSection::scene("ui/side_menu_towers.png", bsn_list!{}, bsn!{ SectionOffering::Towers })
+                --
+                @SideMenuSection::scene("ui/side_menu_buildings.png", bsn_list!{}, bsn!{ SectionOffering::Buildings })
+                --
+                @SideMenuSection::scene("ui/side_menu_research.png", bsn_list!{}, bsn!{ on(on_click_open_research_panel) })
+                --
+                @SideMenuSection::scene("ui/side_menu_forging.png", bsn_list!{}, bsn!{ on(on_click_open_forging_panel) })
+                --
+                @SideMenuSection::scene("ui/side_menu_consumables.png", bsn_list!{}, bsn!{})
+                --
+                @SideMenuSection::scene("ui/side_menu_admin_objects.png", bsn_list!{
+                    ~{PlacementTile(MapObject::DarkOre)}
+                    --
+                    ~{PlacementTile(MapObject::Wall)}
+                    --
+                    ~{PlacementTile(MapObject::QuantumField)}
+                }, bsn!{ AdminSection })
+                --
+                @SideMenuSection::scene("ui/side_menu_admin_wisps.png", WispType::iter()
+                    .map(|wisp_type| bsn!{ ~{PlacementTile(MapObject::Wisp(wisp_type))} })
+                    .collect::<Vec<_>>(), bsn!{ AdminSection })
             ]
         });
     }

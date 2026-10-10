@@ -9,7 +9,6 @@ almanach = { workspace = true }
 game_core = { workspace = true }
 widgets = { workspace = true }
 resources = { workspace = true }
-visuals = { workspace = true }
 
 [lints]
 workspace = true

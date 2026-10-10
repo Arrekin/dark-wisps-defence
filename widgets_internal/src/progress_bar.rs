@@ -15,7 +15,7 @@ impl Plugin for ProgressBarPlugin {
 }
 
 fn on_builder_add_spawn_progress_bar(
-    trigger: On<Add, BuilderProgressBar>,
+    trigger: On<Add<BuilderProgressBar>>,
     mut commands: Commands,
     mut materials: ResMut<Assets<ProgressBarMaterial>>,
     builders: Query<&BuilderProgressBar>,

@@ -175,7 +175,7 @@ impl OrderTreeParam<'_, '_> {
 /// During loading, the socket loader replaces the empty socket with its saved contents.
 #[log_tags(Tag::Shards)]
 fn on_builder_add_spawn_shard_order(
-    trigger: On<Add, BuilderShardOrder>,
+    trigger: On<Add<BuilderShardOrder>>,
     mut commands: Commands,
     almanach: Res<Almanach>,
     builders: Query<&BuilderShardOrder>,
@@ -281,7 +281,7 @@ fn on_shard_order_cancel_request_do_so(
 /// Clears progress and schedules ingredient resolution when an order loses its Forge.
 /// Resolution skips completed orders and replaces consumed ingredients for interrupted ones.
 /// Does nothing during despawn.
-fn on_remove_forged_by_reset_order(trigger: On<Remove, ForgedBy>, mut commands: Commands) {
+fn on_remove_forged_by_reset_order(trigger: On<Remove<ForgedBy>>, mut commands: Commands) {
     if trigger.trigger().new_archetype.is_none() { return; }
     commands.entity(trigger.entity).remove::<ForgingProgress>().insert(OrderNeedsResolution);
 }
@@ -289,7 +289,7 @@ fn on_remove_forged_by_reset_order(trigger: On<Remove, ForgedBy>, mut commands: 
 /// Redirects an order to `Stock` and soft-cancels it when its destination is removed.
 /// Does nothing during despawn, allowing completed orders to deliver normally.
 fn on_remove_shard_order_destination_soft_cancel(
-    trigger: On<Remove, ShardOrderDestination>,
+    trigger: On<Remove<ShardOrderDestination>>,
     mut commands: Commands,
     order_tree: OrderTreeParam,
 ) {
@@ -308,7 +308,7 @@ fn on_remove_shard_order_destination_soft_cancel(
 /// Root orders despawn to release the shard to their destination; ingredient orders keep it.
 #[log_tags(Tag::Shards)]
 fn on_insert_socketed_shard_fulfill_order(
-    trigger: On<Insert, SocketedShard>,
+    trigger: On<Insert<SocketedShard>>,
     mut commands: Commands,
     sockets: Query<&ShardSocketOf>,
     order_tree: OrderTreeParam,
@@ -326,7 +326,7 @@ fn on_insert_socketed_shard_fulfill_order(
 
 /// While an order has a destination, its socket releases the shard into the destination socket.
 fn on_insert_shard_order_destination_release_to_it(
-    trigger: On<Insert, ShardOrderDestination>,
+    trigger: On<Insert<ShardOrderDestination>>,
     mut commands: Commands,
     destinations: Query<&ShardOrderDestination>,
     order_tree: OrderTreeParam,

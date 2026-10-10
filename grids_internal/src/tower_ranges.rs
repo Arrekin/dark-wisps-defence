@@ -21,7 +21,7 @@ impl Plugin for TowerRangesPlugin {
 }
 
 fn on_insert_attack_range_add_tower_range(
-    trigger: On<Insert, AttackRange>,
+    trigger: On<Insert<AttackRange>>,
     mut tower_ranges_grid: ResMut<TowerRangesGrid>,
     towers: Query<(&GridCoords, &GridImprint, &AttackRange), With<Tower>>,
 ) {
@@ -31,7 +31,7 @@ fn on_insert_attack_range_add_tower_range(
 }
 
 fn on_discard_attack_range_remove_tower_range(
-    trigger: On<Discard, AttackRange>,
+    trigger: On<Discard<AttackRange>>,
     mut tower_ranges_grid: ResMut<TowerRangesGrid>,
     towers: Query<(&GridCoords, &GridImprint, &AttackRange), With<Tower>>,
 ) {

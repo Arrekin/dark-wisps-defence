@@ -11,7 +11,7 @@ pub struct DisplayPanelMainContentRoot;
 
 /// Marker placed on the currently selected map object.
 /// Insert to select, remove to deselect.
-/// Observers on `On<Insert, FocusedMapObject>` and `On<Remove, FocusedMapObject>` drive
+/// Observers on `On<Insert<FocusedMapObject>>` and `On<Remove<FocusedMapObject>>` drive
 /// overlay highlights, info panel content, and other selection-dependent UI.
 #[derive(Component)]
 pub struct FocusedMapObject;

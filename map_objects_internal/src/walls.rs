@@ -78,7 +78,7 @@ impl BuilderWall {
 
     #[log_tags(Tag::GameLoad)]
     fn on_builder_add_spawn_wall(
-        trigger: On<Add, BuilderWall>,
+        trigger: On<Add<BuilderWall>>,
         mut commands: Commands,
         styles: Res<WallStyles>,
         builders: Query<&BuilderWall>,
@@ -186,7 +186,7 @@ pub(crate) fn wall_tooltip(commands: &mut Commands, anchor: Entity, _map_object:
 }
 
 fn on_builder_add_spawn_wall_tooltip(
-    trigger: On<Add, BuilderWallSideMenuTooltip>,
+    trigger: On<Add<BuilderWallSideMenuTooltip>>,
     mut commands: Commands,
     almanach: Res<Almanach>,
     builders: Query<&BuilderWallSideMenuTooltip>,

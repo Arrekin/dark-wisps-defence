@@ -91,7 +91,7 @@ impl BuilderTowerCannon {
     }
 
     pub fn on_builder_add_spawn_tower_cannon(
-        trigger: On<Add, BuilderTowerCannon>,
+        trigger: On<Add<BuilderTowerCannon>>,
         mut commands: Commands,
         almanach: Res<Almanach>,
         builders: Query<&BuilderTowerCannon>,

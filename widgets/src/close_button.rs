@@ -2,19 +2,20 @@
 //!
 //! Its hover surround distinguishes it from action buttons without drawing a persistent box.
 //!
-//! The strokes are drawn in `assets/shaders/widgets/close_button.wgsl`. Clicking is the consumer's
-//! business — observe `Pointer<Click>` on the entity.
+//! The strokes are drawn in `assets/shaders/widgets/close_button.wesl`. Clicking is the consumer's
+//! business — observe `PointerClick` on the entity.
 
 use bevy::{
     prelude::*,
     render::render_resource::{AsBindGroup, ShaderType},
     shader::ShaderRef,
     ui_render::ui_material::UiMaterial,
+    ui_widgets::Button,
 };
 
 use crate::common::fade::{Fade, FadeState};
 
-const SHADER_ASSET_PATH: &str = "shaders/widgets/close_button.wgsl";
+const SHADER_ASSET_PATH: &str = "shaders/widgets/close_button.wesl";
 
 /// Matches the panel's hover rate, so chrome and surfaces answer the pointer together.
 const EASE_HOVER: f32 = 10.0;
@@ -48,7 +49,7 @@ pub struct CloseButtonHover {
 }
 
 /// GPU-side uniform. Field order and types mirror `CloseButtonMaterial` in
-/// `assets/shaders/widgets/close_button.wgsl`.
+/// `assets/shaders/widgets/close_button.wesl`.
 ///
 /// Every member is 16 bytes. A narrower one shifts everything after it and panics when the
 /// buffer is prepared.

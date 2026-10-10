@@ -36,7 +36,7 @@ impl Plugin for SummoningPlugin {
 /// builder inserts `SummoningState`) and on load (the builder inserts the
 /// restored state).
 fn on_insert_summoning_state_sync_markers(
-    trigger: On<Insert, SummoningState>,
+    trigger: On<Insert<SummoningState>>,
     mut commands: Commands,
     states: Query<&SummoningState>,
 ) {
@@ -254,7 +254,7 @@ fn load_summonings(ctx: &mut LoadContext) -> LoadResult {
 }
 
 fn on_builder_add_spawn_summoning(
-    trigger: On<Add, BuilderSummoning>,
+    trigger: On<Add<BuilderSummoning>>,
     mut commands: Commands,
     builders: Query<&BuilderSummoning>,
 ) {

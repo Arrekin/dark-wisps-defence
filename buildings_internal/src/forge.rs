@@ -6,6 +6,7 @@
 use bevy::{
     platform::collections::HashMap,
     prelude::*,
+    ui_widgets::Button,
 };
 
 use alteration::{
@@ -49,8 +50,8 @@ impl Plugin for ForgePlugin {
             .add_observer(ForgeInfoPanel::on_rebuild_forge_ui_do_so)
             .add_observer(GlobalQueueToggleButton::on_add_watch_click)
             .add_observer(OpenForgingPanelButton::on_add_watch_click)
-            .add_observer(rebuild_forge_ui_on::<Insert, ForgeCurrentOrder>)
-            .add_observer(rebuild_forge_ui_on::<Remove, ForgeCurrentOrder>)
+            .add_observer(rebuild_forge_ui_on::<Insert<ForgeCurrentOrder>>)
+            .add_observer(rebuild_forge_ui_on::<Remove<ForgeCurrentOrder>>)
             .add_systems(CollectSave, collect_forges)
             .register_loader(MapLoadingStage::SpawnMapElements, "forges", load_forges)
             .register_building(BuildingType::Forge, almanach_info);
@@ -92,7 +93,7 @@ impl BuilderForge {
     pub fn with_disabled_by_player(mut self, disabled_by_player: bool) -> Self { self.disabled_by_player = disabled_by_player.then_some(DisabledByPlayer); self }
 
     pub fn on_builder_add_spawn_forge(
-        trigger: On<Add, BuilderForge>,
+        trigger: On<Add<BuilderForge>>,
         mut commands: Commands,
         almanach: Res<Almanach>,
         builders: Query<&BuilderForge>,
@@ -404,16 +405,16 @@ struct ForgeCountdownText;
 #[require(Button)]
 struct GlobalQueueToggleButton;
 impl GlobalQueueToggleButton {
-    fn on_add_watch_click(trigger: On<Add, GlobalQueueToggleButton>, mut commands: Commands) {
+    fn on_add_watch_click(trigger: On<Add<GlobalQueueToggleButton>>, mut commands: Commands) {
         commands.entity(trigger.entity)
-            .observe(recolor_background_on::<Pointer<Over>>(BUTTON_HOVER_BACKGROUND))
-            .observe(recolor_background_on::<Pointer<Out>>(BUTTON_BACKGROUND))
+            .observe(recolor_background_on::<PointerOver>(BUTTON_HOVER_BACKGROUND))
+            .observe(recolor_background_on::<PointerOut>(BUTTON_BACKGROUND))
             .observe(Self::on_click_toggle_global_queue);
     }
 
     #[log_tags(Tag::Forge)]
     fn on_click_toggle_global_queue(
-        _trigger: On<Pointer<Click>>,
+        _trigger: On<PointerClick>,
         focused_forge: Single<(&GridCoords, &mut WorksGlobalQueue), (With<Forge>, With<FocusedMapObject>)>,
     ) {
         let (coords, mut works_global) = focused_forge.into_inner();
@@ -430,15 +431,15 @@ struct GlobalQueueToggleLabel;
 #[require(Button)]
 struct OpenForgingPanelButton;
 impl OpenForgingPanelButton {
-    fn on_add_watch_click(trigger: On<Add, OpenForgingPanelButton>, mut commands: Commands) {
+    fn on_add_watch_click(trigger: On<Add<OpenForgingPanelButton>>, mut commands: Commands) {
         commands.entity(trigger.entity)
-            .observe(recolor_background_on::<Pointer<Over>>(BUTTON_HOVER_BACKGROUND))
-            .observe(recolor_background_on::<Pointer<Out>>(BUTTON_BACKGROUND))
+            .observe(recolor_background_on::<PointerOver>(BUTTON_HOVER_BACKGROUND))
+            .observe(recolor_background_on::<PointerOut>(BUTTON_BACKGROUND))
             .observe(Self::on_click_open_forging_panel);
     }
 
     fn on_click_open_forging_panel(
-        _trigger: On<Pointer<Click>>,
+        _trigger: On<PointerClick>,
         mut commands: Commands,
         mut next_ui_state: ResMut<NextState<UiInteraction>>,
         focused_forge: Single<Entity, (With<Forge>, With<FocusedMapObject>)>,
@@ -449,8 +450,8 @@ impl OpenForgingPanelButton {
 }
 
 /// Rebuilds the panel when the event targets the focused Forge.
-fn rebuild_forge_ui_on<E: EntityEvent, B: Bundle>(
-    trigger: On<E, B>,
+fn rebuild_forge_ui_on<P: EventPattern<Event: EntityEvent>>(
+    trigger: On<P>,
     mut commands: Commands,
     focused: Single<Entity, With<FocusedMapObject>>,
 ) {

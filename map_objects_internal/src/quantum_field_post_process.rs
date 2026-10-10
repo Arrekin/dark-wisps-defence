@@ -36,7 +36,7 @@ use bevy::{
 use game_core::prelude::GridImprint;
 use units::expedition_drone::{ExpeditionDrone, ScanSpot, ScanningBeam};
 use viewport::PostProcessCamera;
-use visuals::prelude::{QuantumFieldPostProcessSet, ShaderLibraryAppExt};
+use visuals::prelude::QuantumFieldPostProcessSet;
 
 use crate::quantum_field::QuantumFieldLayers;
 
@@ -44,7 +44,6 @@ pub(crate) struct QuantumFieldPostProcessPlugin;
 impl Plugin for QuantumFieldPostProcessPlugin {
     fn build(&self, app: &mut App) {
         app
-            .register_shader_library("shaders/quantum_field/look.wgsl")
             .add_plugins((
                 ExtractComponentPlugin::<QuantumFieldPostProcess>::default(),
                 UniformComponentPlugin::<QuantumFieldPostProcess>::default(),
@@ -98,7 +97,7 @@ struct GpuQuantumFieldBuffer {
 /// Main-world resource holding this frame's field entries (cloned into render world each frame).
 #[derive(Resource, Default, Clone)]
 struct QuantumFieldEntries(Vec<GpuQuantumFieldEntry>);
-impl ExtractResource for QuantumFieldEntries {
+impl ExtractResource<RenderApp> for QuantumFieldEntries {
     type Source = QuantumFieldEntries;
     fn extract_resource(source: &Self::Source) -> Self { source.clone() }
 }
@@ -119,7 +118,7 @@ struct GpuCollapsePointBuffer {
 /// Main-world resource holding this frame's active collapse points.
 #[derive(Resource, Default, Clone)]
 struct CollapsePoints(Vec<GpuCollapsePoint>);
-impl ExtractResource for CollapsePoints {
+impl ExtractResource<RenderApp> for CollapsePoints {
     type Source = CollapsePoints;
     fn extract_resource(source: &Self::Source) -> Self { source.clone() }
 }
@@ -172,6 +171,7 @@ impl GpuCollapsePointStorage {
 
 /// Per-camera uniform: projection parameters, global time, and the field / collapse-point counts.
 #[derive(Component, ExtractComponent, Clone, Copy, ShaderType, Default)]
+#[extract_app(RenderApp)]
 pub(crate) struct QuantumFieldPostProcess {
     camera_world_pos: Vec2,
     viewport_world_size: Vec2,
@@ -183,7 +183,7 @@ pub(crate) struct QuantumFieldPostProcess {
 }
 impl QuantumFieldPostProcess {
     fn on_add_camera_attach_post_process(
-        trigger: On<Add, PostProcessCamera>,
+        trigger: On<Add<PostProcessCamera>>,
         mut commands: Commands,
     ) {
         commands.entity(trigger.entity).insert(QuantumFieldPostProcess::default());
@@ -346,7 +346,7 @@ fn init_quantum_field_pipeline(
         min_filter: FilterMode::Linear,
         ..default()
     });
-    let shader = asset_server.load("shaders/quantum_field/post_process.wgsl");
+    let shader = asset_server.load("shaders/quantum_field/post_process.wesl");
 
     let make_pipeline = |format| RenderPipelineDescriptor {
         label: Some("quantum_field_post_process_pipeline".into()),
