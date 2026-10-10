@@ -12,8 +12,6 @@ fn main() {
                 // Warning: VSync is causing a lot of issues with mouse events processing
                 .set(WindowPlugin { primary_window: Some(Window { present_mode: PresentMode::AutoNoVsync, ..default() }), ..default() }),
             MeshPickingPlugin,
-            // Clicks move input focus. Dropdown menus close when focus leaves them.
-            bevy::input_focus::tab_navigation::TabNavigationPlugin,
             buildings_internal::BuildingsPlugin,
             map_objects_internal::MapObjectsPlugin,
             narrative_internal::NarrativePlugin,

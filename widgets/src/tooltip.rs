@@ -2,9 +2,9 @@
 //!
 //! Spawn a [`BuilderTooltip`] to give any UI entity a tooltip that shows on hover and hides on leave.
 //!
-//! Tooltips are free UI root nodes, not children of their anchor, so they are
-//! never clipped by the anchor's overflow ancestors. A positioning system in
-//! `widgets_internal` places each visible tooltip above its anchor.
+//! Tooltips are `FixedNode` children of their anchor, so they despawn and hide with the anchor but
+//! are never clipped by its overflow ancestors. A positioning system in `widgets_internal` places
+//! each visible tooltip above its anchor.
 //!
 //! # Usage
 //! ```
@@ -18,21 +18,20 @@ use bevy::prelude::*;
 
 use crate::void_panel::BuilderVoidPanel;
 
-/// Links a tooltip to its anchor and installs the anchor's show/hide observers.
+/// Links a tooltip to its anchor, parents it under the anchor, and installs the anchor's show/hide
+/// observers.
 ///
-/// Required components keep tooltips above ordinary UI, outside pointer hit-testing, and positioned
-/// with default gap and boundary values.
+/// Required components keep tooltips out of the anchor's layout and clipping, above ordinary UI,
+/// outside pointer hit-testing, and positioned with default gap and boundary values.
 #[derive(Component)]
 #[relationship(relationship_target = Tooltips)]
-#[require(TooltipOffsetAbove, TooltipLeftLimit, GlobalZIndex = GlobalZIndex(200), Pickable = Pickable::IGNORE)]
+#[require(FixedNode, TooltipOffsetAbove, TooltipLeftLimit, GlobalZIndex = GlobalZIndex(200), Pickable = Pickable::IGNORE)]
 pub struct TooltipOf(pub Entity);
 
-/// Relationship target tracking all tooltips anchored to an entity.
-/// `linked_spawn` despawns the tooltips with their anchor, so a tooltip needs
-/// no `ChildOf` to its anchor — and must not have one, since a child is
-/// clipped by the anchor's overflow ancestors.
+/// Relationship target tracking all tooltips anchored to an entity. The tooltips' `ChildOf`
+/// despawns them with their anchor.
 #[derive(Component, Default)]
-#[relationship_target(relationship = TooltipOf, linked_spawn)]
+#[relationship_target(relationship = TooltipOf)]
 pub struct Tooltips(Vec<Entity>);
 
 /// Gap in logical pixels between the tooltip's bottom edge and its anchor's

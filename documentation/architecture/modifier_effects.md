@@ -105,24 +105,24 @@ queue entry is ignored when popped if the entity no longer exists.
 **Spawning an effect:**
 ```
 spawn effect instance with (EffectTarget, ModifierContributions, ...)
-  → On<Insert, ModifierContributions> fires
+  → On<Insert<ModifierContributions>> fires
   → observer updates ModifierBank, re-aggregates, materializes derived components
-  → On<Insert, ExpiresAt> fires (if timed) → pushed to ExpiryQueue
+  → On<Insert<ExpiresAt>> fires (if timed) → pushed to ExpiryQueue
 ```
 
 **Effect expiring:**
 ```
 ExpiryQueue pops entry → despawn effect instance
-  → On<Remove, ModifierContributions> fires
+  → On<Remove<ModifierContributions>> fires
   → observer removes from bank, re-aggregates, materializes
 ```
 
 **Source force field despawned:**
 ```
 ForceField despawned
-  → On<Despawn, ForceField> reads EffectSourceOf to find its FieldEffect instances
+  → On<Despawn<ForceField>> reads EffectSourceOf to find its FieldEffect instances
   → domain observer despawns those effects
-  → On<Remove, ModifierContributions> removes their values from each target's ModifierBank
+  → On<Remove<ModifierContributions>> removes their values from each target's ModifierBank
   → affected stat components are recalculated
 ```
 `EffectSource` is a lookup relationship, not a despawn cascade; each source domain decides how to remove its effects.

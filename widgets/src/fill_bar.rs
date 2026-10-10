@@ -20,7 +20,7 @@ pub struct FillBar {
 
 /// Holds the entities of the nodes `FillBar` spawns.
 /// `fill` is the inner node whose size is driven by `fill_fraction`.
-#[derive(Component, Clone, Copy, Debug)]
+#[derive(Component, Clone, Copy, Debug, FromTemplate)]
 pub struct FillBarChildren {
     pub fill: Entity,
 }

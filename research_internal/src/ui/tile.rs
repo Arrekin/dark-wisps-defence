@@ -5,7 +5,7 @@ use outcomes::prelude::HasOutcomes;
 use research::{prelude::*, research_bar::BuilderResearchBar};
 use widgets::prelude::{
     BuilderChipStrip, BuilderDisplayChip, BuilderVoidPanel, ChipsFaded, TextRole, VoidPanel,
-    VoidPanelBorderSurge, VoidPanelStyle,
+    VoidPanelBorderSurge, VoidPanelStyle, text_font,
 };
 
 use super::{
@@ -83,7 +83,7 @@ pub(crate) struct ResearchTileLink(Entity);
 
 /// Marker on a tile entity. Stores the research entity and child widget entities so updates
 /// can target them without traversing the UI subtree.
-#[derive(Component)]
+#[derive(Component, FromTemplate)]
 pub(crate) struct ResearchTile {
     pub(crate) research: Entity,
     icon: Entity,
@@ -111,105 +111,76 @@ fn on_add_research_tile_of_build_tile(
     let research = tile_of.0;
 
     let progress = runtimes.get(research).map(|runtime| runtime.progress).unwrap_or(0.);
+    let research_bar = BuilderResearchBar::new(research).with_fraction(progress);
+    let grant_chips: Vec<_> = outcomes.get(research).into_iter().flat_map(|has_outcomes| has_outcomes.iter())
+        .map(|outcome| {
+            let chip = BuilderDisplayChip(outcome);
+            bsn! { ~{chip} }
+        })
+        .collect();
+    let action_button = ResearchActionButton::new(research);
 
     // Build tile structure — content is populated by ResearchDisplayDataUpdated.
-    let icon_node = commands.spawn((
-        ImageNode::default(),
-        Node {
-            width: Val::Px(32.),
-            height: Val::Px(32.),
-            ..default()
-        },
-    )).id();
-
-    let name_text = commands.spawn((
-        Text::default(),
-        Node {
-            width: Val::Percent(100.),
-            height: Val::Px(36.),
-            overflow: Overflow::clip_y(),
-            align_items: AlignItems::Center,
-            justify_content: JustifyContent::Center,
-            ..default()
-        },
-        TextRole::Body.font(NAME_FONT_SIZE),
-        TextLayout {
-            justify: Justify::Center,
-            ..default()
-        },
-    )).id();
-
-    let progress_bar = commands.spawn((
-        Node {
-            width: Val::Percent(100.),
-            height: Val::Px(8.),
-            ..default()
-        },
-    )).with_child(
-        BuilderResearchBar::new(research).with_fraction(progress),
-    ).id();
-
-    let grants = commands.spawn((
-        BuilderChipStrip,
-        Node {
-            width: Val::Percent(100.),
-            height: Val::Px(20.),
-            justify_content: JustifyContent::Center,
-            ..default()
-        },
-    )).with_children(|strip| {
-        if let Ok(has_outcomes) = outcomes.get(research) {
-            for outcome in has_outcomes.iter() {
-                strip.spawn(BuilderDisplayChip(outcome));
-            }
+    commands.entity(tile_entity).apply_scene(bsn! {
+        ResearchTile {
+            research: research,
+            icon: #Icon,
+            name_text: #NameText,
+            progress_bar: #ProgressBar,
+            grants: #Grants,
+            completed_label: #CompletedLabel,
         }
-    }).id();
-
-    // Collapsed rather than hidden while the research is unfinished: a hidden node still
-    // takes space in the row and would push the action button off centre.
-    let completed_label = commands.spawn((
-        Text::new(COMPLETED_LABEL),
-        TextRole::Data.font(COMPLETED_LABEL_FONT_SIZE),
-        TextColor::from(COMPLETED_STYLE.color),
-        TextLayout::no_wrap(),
         Node {
-            display: Display::None,
-            ..default()
-        },
-    )).id();
-
-    let action_row = commands.spawn(Node {
-        width: Val::Percent(100.),
-        height: Val::Px(20.),
-        justify_content: JustifyContent::Center,
-        ..default()
-    }).with_child(
-        ResearchActionButton::new(research),
-    ).add_child(completed_label).id();
-
-    commands.entity(tile_entity)
-        .insert((
+            width: Val::Px(168.),
+            height: Val::Auto,
+            flex_direction: FlexDirection::Column,
+            align_items: AlignItems::Center,
+            row_gap: Val::Px(4.),
+            padding: UiRect::all(Val::Px(8.)),
+        }
+        BuilderVoidPanel::default().with_border_surge(TILE_BORDER_SURGE)
+        on(on_click_research_tile_select)
+        Children [
+            #Icon
+            ImageNode
+            Node { width: Val::Px(32.), height: Val::Px(32.) }
+            --
+            #NameText
+            Text
             Node {
-                width: Val::Px(168.),
-                height: Val::Auto,
-                flex_direction: FlexDirection::Column,
+                width: Val::Percent(100.),
+                height: Val::Px(36.),
+                overflow: Overflow::clip_y(),
                 align_items: AlignItems::Center,
-                row_gap: Val::Px(4.),
-                padding: UiRect::all(Val::Px(8.)),
-                ..default()
-            },
-            BuilderVoidPanel::default().with_border_surge(TILE_BORDER_SURGE),
-            ResearchTile {
-                research,
-                icon: icon_node,
-                name_text,
-                progress_bar,
-                grants,
-                completed_label,
-            },
-        ))
-        .observe(on_click_research_tile_select)
-        .add_children(&[icon_node, name_text, progress_bar, grants, action_row]);
+                justify_content: JustifyContent::Center,
+            }
+            @text_font(TextRole::Body, NAME_FONT_SIZE)
+            TextLayout { justify: Justify::Center }
+            --
+            #ProgressBar
+            Node { width: Val::Percent(100.), height: Val::Px(8.) }
+            Children [ ~{research_bar} ]
+            --
+            #Grants
+            BuilderChipStrip
+            Node { width: Val::Percent(100.), height: Val::Px(20.), justify_content: JustifyContent::Center }
+            Children [ {grant_chips} ]
+            --
+            Node { width: Val::Percent(100.), height: Val::Px(20.), justify_content: JustifyContent::Center }
+            Children [
+                ~{action_button}
+                --
+                // Collapsed rather than hidden while the research is unfinished: a hidden node
+                // still takes space in the row and would push the action button off centre.
+                #CompletedLabel
+                Text(COMPLETED_LABEL)
+                @text_font(TextRole::Data, COMPLETED_LABEL_FONT_SIZE)
+                TextColor({COMPLETED_STYLE.color})
+                TextLayout::no_wrap()
+                Node { display: Display::None }
+            ]
+        ]
+    });
 
     // Register the data-updated observer on the research entity.
     commands.entity(research).observe(on_research_display_data_updated_fill_tile);

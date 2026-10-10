@@ -43,3 +43,9 @@ impl TextRole {
         }
     }
 }
+
+/// `bsn!` entry for a role's `TextFont` at `size`. `TextFont` builds through its own template,
+/// so `TextRole::font` cannot appear inside `bsn!`.
+pub fn text_font(role: TextRole, size: f32) -> impl Scene {
+    template(move |_| Ok(role.font(size)))
+}

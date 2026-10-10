@@ -21,7 +21,7 @@ impl Plugin for ResearchActionButtonPlugin {
 /// Action label — Start, Resume, Switch, Stop.
 const LABEL_FONT_SIZE: f32 = 12.0;
 
-#[derive(Component)]
+#[derive(Component, Clone)]
 pub(crate) struct ResearchActionButton {
     research: Entity,
     action: ResearchAction,

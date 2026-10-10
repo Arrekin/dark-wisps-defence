@@ -18,7 +18,7 @@ use states::prelude::UiInteraction;
 use widgets::{
     common::utils::set_ui_free_on,
     palette::ABYSS_BACKGROUND,
-    prelude::{BuilderCloseButton, TextRole},
+    prelude::{BuilderCloseButton, TextRole, text_font},
 };
 
 use super::{
@@ -65,19 +65,19 @@ const SELECTED_VIEW_EMPTY_TEXT: &str = "Select a research tile to inspect it.";
 // ============================================================================
 
 /// Marker on the full-screen panel root.
-#[derive(Component)]
+#[derive(Component, Default, Clone)]
 pub(crate) struct ResearchPanelRoot;
 
 /// Marker on the row holding the detail views.
-#[derive(Component)]
+#[derive(Component, Default, Clone)]
 pub(crate) struct ResearchBand;
 
 /// Marker on the grid that holds research tiles.
-#[derive(Component)]
+#[derive(Component, Default, Clone)]
 pub(crate) struct ResearchTileGrid;
 
 /// Marker on the close button.
-#[derive(Component)]
+#[derive(Component, Default, Clone)]
 struct ResearchPanelCloseButton;
 
 // ============================================================================
@@ -85,12 +85,11 @@ struct ResearchPanelCloseButton;
 // ============================================================================
 
 fn spawn_research_panel(mut commands: Commands) {
-    let header = spawn_header(&mut commands);
-    let band = spawn_band(&mut commands);
-    let grid = spawn_tile_grid(&mut commands);
+    let active_view = BuilderResearchDetailView::new(ACTIVE_VIEW_TITLE, ACTIVE_VIEW_EMPTY_TEXT);
+    let selected_view = BuilderResearchDetailView::new(SELECTED_VIEW_TITLE, SELECTED_VIEW_EMPTY_TEXT);
 
-    commands.spawn((
-        ResearchPanelRoot,
+    commands.spawn_scene(bsn! {
+        ResearchPanelRoot
         Node {
             width: Val::Percent(100.),
             height: Val::Percent(100.),
@@ -99,79 +98,58 @@ fn spawn_research_panel(mut commands: Commands) {
             padding: UiRect::all(Val::Px(PANEL_PADDING)),
             row_gap: Val::Px(PANEL_PADDING),
             display: Display::None,
-            ..default()
-        },
+        }
         // A darker background makes the cards and tiles appear raised.
-        BackgroundColor::from(ABYSS_BACKGROUND),
-        GlobalZIndex(PANEL_Z_INDEX),
-    )).add_children(&[header, band, grid]);
-}
-
-fn spawn_header(commands: &mut Commands) -> Entity {
-    let title = commands.spawn((
-        Text::new("Research"),
-        TextRole::Heading.font(HEADER_FONT_SIZE),
-        TextColor::from(HEADER_COLOR),
-    )).id();
-
-    let close_button = commands.spawn((
-        ResearchPanelCloseButton,
-        BuilderCloseButton::default(),
-        Node {
-            width: Val::Px(CLOSE_BUTTON_SIZE),
-            height: Val::Px(CLOSE_BUTTON_SIZE),
-            ..default()
-        },
-    )).observe(set_ui_free_on::<PointerClick>).id();
-
-    commands.spawn(Node {
-        width: Val::Percent(100.),
-        height: Val::Px(HEADER_HEIGHT),
-        flex_direction: FlexDirection::Row,
-        justify_content: JustifyContent::SpaceBetween,
-        align_items: AlignItems::Center,
-        ..default()
-    }).add_children(&[title, close_button]).id()
-}
-
-/// The two views differ only in their marker binding and their labels; nothing
-/// else about the band knows which is which.
-fn spawn_band(commands: &mut Commands) -> Entity {
-    let active_view = commands.spawn((
-        BuilderResearchDetailView::new(ACTIVE_VIEW_TITLE, ACTIVE_VIEW_EMPTY_TEXT),
-        ResearchDetailViewSource::<ResearchActive>::default(),
-    )).id();
-    let selected_view = commands.spawn((
-        BuilderResearchDetailView::new(SELECTED_VIEW_TITLE, SELECTED_VIEW_EMPTY_TEXT),
-        ResearchDetailViewSource::<ResearchUISelected>::default(),
-    )).id();
-
-    commands.spawn((
-        ResearchBand,
-        Node {
-            width: Val::Percent(100.),
-            height: Val::Px(BAND_HEIGHT),
-            flex_direction: FlexDirection::Row,
-            column_gap: Val::Px(BAND_COLUMN_GAP),
-            ..default()
-        },
-    )).add_children(&[active_view, selected_view]).id()
-}
-
-fn spawn_tile_grid(commands: &mut Commands) -> Entity {
-    commands.spawn((
-        ResearchTileGrid,
-        Node {
-            width: Val::Percent(100.),
-            flex_grow: 1.,
-            flex_direction: FlexDirection::Row,
-            flex_wrap: FlexWrap::Wrap,
-            align_content: AlignContent::FlexStart,
-            row_gap: Val::Px(TILE_GRID_GAP),
-            column_gap: Val::Px(TILE_GRID_GAP),
-            ..default()
-        },
-    )).id()
+        BackgroundColor(ABYSS_BACKGROUND)
+        GlobalZIndex(PANEL_Z_INDEX)
+        Children [
+            Node {
+                width: Val::Percent(100.),
+                height: Val::Px(HEADER_HEIGHT),
+                flex_direction: FlexDirection::Row,
+                justify_content: JustifyContent::SpaceBetween,
+                align_items: AlignItems::Center,
+            }
+            Children [
+                Text("Research")
+                @text_font(TextRole::Heading, HEADER_FONT_SIZE)
+                TextColor(HEADER_COLOR)
+                --
+                ResearchPanelCloseButton
+                BuilderCloseButton::default()
+                Node { width: Val::Px(CLOSE_BUTTON_SIZE), height: Val::Px(CLOSE_BUTTON_SIZE) }
+                on(set_ui_free_on::<PointerClick>)
+            ]
+            --
+            // The two views differ only in their marker binding and their labels; nothing
+            // else about the band knows which is which.
+            ResearchBand
+            Node {
+                width: Val::Percent(100.),
+                height: Val::Px(BAND_HEIGHT),
+                flex_direction: FlexDirection::Row,
+                column_gap: Val::Px(BAND_COLUMN_GAP),
+            }
+            Children [
+                ~{active_view}
+                ResearchDetailViewSource::<ResearchActive>
+                --
+                ~{selected_view}
+                ResearchDetailViewSource::<ResearchUISelected>
+            ]
+            --
+            ResearchTileGrid
+            Node {
+                width: Val::Percent(100.),
+                flex_grow: 1.,
+                flex_direction: FlexDirection::Row,
+                flex_wrap: FlexWrap::Wrap,
+                align_content: AlignContent::FlexStart,
+                row_gap: Val::Px(TILE_GRID_GAP),
+                column_gap: Val::Px(TILE_GRID_GAP),
+            }
+        ]
+    });
 }
 
 // ============================================================================

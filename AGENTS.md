@@ -78,7 +78,7 @@ Then handle transitions via observer:
 ```rust
 app.add_observer(Self::on_state_changed_handle_drone_state_change);
 
-fn on_state_changed_handle_drone_state_change(trigger: On<Insert, DroneState>, ...) { ... }
+fn on_state_changed_handle_drone_state_change(trigger: On<Insert<DroneState>>, ...) { ... }
 ```
 
 ## Relationships
@@ -159,7 +159,7 @@ UI components that belong to a specific feature live in that feature's file, not
 Generic/reusable UI lives in `widgets` / `widgets_internal`.
 
 ## Bevy Notes
-- Be wary that we are using the newest Bevy 0.19! You may have outdated info so if any code feels wierd always check the local code and/or online docs!
+- Be wary that we are using the newest Bevy 0.20! You may have outdated info so if any code feels wierd always check the local code and/or online docs!
 - `Single<>` query type — system/observer is skipped entirely when not exactly one match. Good if it should only run when a specific entity exists. For 0 or 1, use `Option<Single<>>`.
 - `EventReader`/`EventWriter` are now `MessageReader`/`MessageWriter` (buffered, frame-delayed). The `Event` trait is now used with `commands.trigger()` for immediate(at flush-point) observer-based dispatch, including recursive event propagation.
 
@@ -180,7 +180,7 @@ move |trigger: On<E>, mut commands: Commands, moments: Query<&mut Moment>| {
 
 **Lifecycle events** (`Remove`/`Discard` fire during despawn — race with Bevy's auto-cleanup): guard with `new_archetype.is_some()` to skip self-despawn during despawn chains:
 ```rust
-move |trigger: On<Remove, T>, mut commands: Commands, indicators: Query<&IndicatorType>| {
+move |trigger: On<Remove<T>>, mut commands: Commands, indicators: Query<&IndicatorType>| {
     if trigger.trigger().new_archetype.is_some() && indicators.get(entity).is_err() {
         commands.entity(trigger.observer()).try_despawn();
         return;
@@ -217,7 +217,7 @@ These are defaults; follow explicit user overrides.
 ### System parameter order
 ```rust
 fn my_bevy_system(
-    trigger: Trigger<T>,
+    trigger: On<T>,
     mut commands: Commands,
     <resources>
     <queries>

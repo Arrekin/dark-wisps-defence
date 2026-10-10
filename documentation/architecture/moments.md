@@ -12,7 +12,7 @@ For a moment owned by another entity:
 
 1. **Spawn the moment child** — `world.spawn((MomentOf(parent), SomeMomentKind))`.
 
-2. **Listen to the parent's event** — an `On<Add, Kind>` observer reads `MomentOf` and
+2. **Listen to the parent's event** — an `On<Add<Kind>>` observer reads `MomentOf` and
    registers a listener on the parent for the domain event that signals the moment.
 
 3. **Fire the moment** — the parent emits its domain event; the listener increments `fired_count`
@@ -63,7 +63,7 @@ commands.entity(watcher)
 
 For shared behavior across a domain, a global observer is also possible. It receives `MomentHappened` for every target, so it must check that `trigger.entity` belongs to the domain before acting, as the objective handler does with `objectives.contains(trigger.entity)`.
 
-Decide explicitly what losing the moment means and observe `On<Remove, MomentOfInterest>` for it.
+Decide explicitly what losing the moment means and observe `On<Remove<MomentOfInterest>>` for it.
 Objectives treat a lost moment as failure, because an objective that can never start is a scenario
 error worth surfacing.
 

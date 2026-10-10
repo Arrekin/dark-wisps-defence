@@ -7,7 +7,7 @@ impl Plugin for TooltipPlugin {
     fn build(&self, app: &mut App) {
         app
             .add_observer(on_builder_add_spawn_tooltip)
-            .add_observer(on_add_tooltip_of_watch_anchor_hover)
+            .add_observer(on_add_tooltip_of_attach_to_anchor)
             .add_systems(Update, position_tooltips);
     }
 }
@@ -40,7 +40,7 @@ fn on_builder_add_spawn_tooltip(
         ));
 }
 
-fn on_add_tooltip_of_watch_anchor_hover(
+fn on_add_tooltip_of_attach_to_anchor(
     trigger: On<Add<TooltipOf>>,
     mut commands: Commands,
     tooltips: Query<&TooltipOf>,
@@ -49,7 +49,8 @@ fn on_add_tooltip_of_watch_anchor_hover(
     let Ok(tooltip_of) = tooltips.get(tooltip_entity) else { return };
     let parent_entity = tooltip_of.0;
 
-    // The tooltip remains a free root to avoid clipping by the anchor's ancestors.
+    // `FixedNode` keeps the child tooltip out of the anchor's layout and clipping.
+    commands.entity(tooltip_entity).insert(ChildOf(parent_entity));
     commands.entity(parent_entity)
         .observe(on_tooltip_parent_hover_start_show_tooltips)
         .observe(on_tooltip_parent_hover_end_hide_tooltips);
@@ -85,7 +86,7 @@ fn on_tooltip_parent_hover_end_hide_tooltips(
     }
 }
 
-/// Positions each visible free-root tooltip above its anchor and clamps it to
+/// Positions each visible tooltip above its anchor and clamps it to
 /// [`TooltipLeftLimit`]. Converts physical `UiGlobalTransform` coordinates to logical `Node`
 /// coordinates with `ComputedNode::inverse_scale_factor`.
 fn position_tooltips(

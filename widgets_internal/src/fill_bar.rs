@@ -32,30 +32,28 @@ fn on_builder_add_spawn_fill_bar(
         FillAxis::Vertical => JustifyContent::FlexEnd,
     };
 
-    let mut children_ref = FillBarChildren { fill: Entity::PLACEHOLDER };
+    let BuilderFillBar { fill_bar, background_color, border_color, border, border_radius, fill_color } = *builder;
     commands.entity(entity)
         .remove::<BuilderFillBar>()
-        .insert((
+        .apply_scene(bsn! {
             Node {
                 width: Val::Percent(100.),
                 height: Val::Percent(100.),
-                flex_direction,
-                justify_content,
-                border: builder.border,
-                border_radius: builder.border_radius,
-                ..default()
-            },
-            builder.background_color,
-            builder.border_color,
-            builder.fill_bar,
-        ))
-        .with_children(|track| {
-            children_ref.fill = track.spawn((
-                Node::default(),
-                builder.fill_color,
-            )).id();
-        })
-        .insert(children_ref);
+                flex_direction: flex_direction,
+                justify_content: justify_content,
+                border: border,
+                border_radius: border_radius,
+            }
+            ~{background_color}
+            ~{border_color}
+            ~{fill_bar}
+            FillBarChildren { fill: #Fill }
+            Children [
+                #Fill
+                Node
+                ~{fill_color}
+            ]
+        });
 }
 
 /// Writes the fill node's size, clamped to 0..=1, axis-aware. Runs on

@@ -35,7 +35,7 @@ pub mod prelude {
     pub use super::tooltip::{
         BuilderTooltip, TooltipLeftLimit, TooltipOf, TooltipOffsetAbove, Tooltips,
     };
-    pub use super::typography::TextRole;
+    pub use super::typography::{TextRole, text_font};
     pub use super::void_panel::{
         BuilderVoidPanel, VoidPanel, VoidPanelBorderSurge, VoidPanelMaterial, VoidPanelStyle,
     };

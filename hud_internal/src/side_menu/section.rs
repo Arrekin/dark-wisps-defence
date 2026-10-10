@@ -42,7 +42,7 @@ impl SideMenuSection {
                 height: Val::Px(SIDE_MENU_SECTION_SIZE),
             }
             ImageNode {
-                image: {icon_path},
+                image: icon_path,
                 color: {WHITE.with_alpha(NOT_HOVERED_ALPHA)},
             }
             @extra
@@ -51,7 +51,7 @@ impl SideMenuSection {
                 Node {
                     flex_direction: FlexDirection::Row,
                     align_items: AlignItems::Center,
-                    left: {Val::Px(STRIP_LEFT)},
+                    left: Val::Px(STRIP_LEFT),
                     padding: UiRect::all(Val::Px(STRIP_TILE_INSET)),
                     column_gap: Val::Px(STRIP_TILE_INSET),
                 }

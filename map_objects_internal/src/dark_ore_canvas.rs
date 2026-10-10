@@ -76,9 +76,8 @@ impl DarkOreCanvas {
         mut meshes: ResMut<Assets<Mesh>>,
         mut materials: ResMut<Assets<DarkOreCanvasMaterial>>,
         mut buffers: ResMut<Assets<ShaderBuffer>>,
-        dark_ore_canvases: Query<Entity, With<DarkOreCanvas>>,
     ) {
-        dark_ore_canvases.iter().for_each(|entity| commands.entity(entity).despawn());
+        commands.despawn_all::<With<DarkOreCanvas>>();
 
         let map_bounds = map_info.grid_bounds;
         let cell_count = map_bounds.area();

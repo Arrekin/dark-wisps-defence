@@ -107,7 +107,7 @@ impl MapListContainer {
                 flex_direction: FlexDirection::Column,
                 align_items: AlignItems::Stretch,
                 row_gap: Val::Px(6.0),
-                margin: { UiRect { top: Val::Px(12.0), ..default() } },
+                margin: UiRect { top: Val::Px(12.0) },
             }
         });
     }

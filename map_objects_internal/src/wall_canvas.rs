@@ -83,9 +83,8 @@ impl WallCanvas {
         mut meshes: ResMut<Assets<Mesh>>,
         mut materials: ResMut<Assets<WallCanvasMaterial>>,
         mut buffers: ResMut<Assets<ShaderBuffer>>,
-        wall_canvases: Query<Entity, With<WallCanvas>>,
     ) {
-        wall_canvases.iter().for_each(|entity| commands.entity(entity).despawn());
+        commands.despawn_all::<With<WallCanvas>>();
 
         // Bind initialized buffers on the material's spawn frame.
         let map_bounds = map_info.grid_bounds;

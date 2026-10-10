@@ -41,7 +41,7 @@ use states::prelude::UiInteraction;
 use widgets::{
     common::utils::{recolor_background_on, set_text_if_changed, set_ui_free_on},
     palette::ABYSS_BACKGROUND,
-    prelude::{BuilderCloseButton, BuilderFillBar, BuilderFullPriceCostStrip, FillBar, TextRole},
+    prelude::{BuilderCloseButton, BuilderFillBar, BuilderFullPriceCostStrip, FillBar, TextRole, text_font},
 };
 
 use crate::orders::OrderTreeParam;
@@ -123,19 +123,19 @@ impl ForgingPanelSelection {
 #[derive(Resource)]
 struct ForgingPanelStale;
 
-#[derive(Component)]
+#[derive(Component, Default, Clone)]
 struct ForgingPanelRoot;
 
 /// Content row of the band listing shards to order.
-#[derive(Component)]
+#[derive(Component, Default, Clone)]
 struct ShardsToOrderBand;
 
 /// Content row for Forge status and job tiles.
-#[derive(Component)]
+#[derive(Component, Default, Clone)]
 struct ForgesBand;
 
 /// Content row of the band listing the queued orders.
-#[derive(Component)]
+#[derive(Component, Default, Clone)]
 struct QueuedBand;
 
 // ============================================================================
@@ -143,30 +143,8 @@ struct QueuedBand;
 // ============================================================================
 
 fn spawn_forging_panel(mut commands: Commands) {
-    let title = commands.spawn((
-        Text::new("Forging"),
-        TextRole::Heading.font(HEADER_FONT_SIZE),
-    )).id();
-    let close_button = commands.spawn((
-        BuilderCloseButton::default(),
-        Node { width: Val::Px(CLOSE_BUTTON_SIZE), height: Val::Px(CLOSE_BUTTON_SIZE), ..default() },
-    )).observe(set_ui_free_on::<PointerClick>).id();
-    let queue_dropdown = spawn_queue_dropdown(&mut commands);
-    let header = commands.spawn(Node {
-        width: Val::Percent(100.),
-        height: Val::Px(HEADER_HEIGHT),
-        flex_direction: FlexDirection::Row,
-        justify_content: JustifyContent::SpaceBetween,
-        align_items: AlignItems::Center,
-        ..default()
-    }).add_children(&[title, queue_dropdown, close_button]).id();
-
-    let shards_to_order = spawn_band(&mut commands, "Shards to order", ShardsToOrderBand);
-    let forges_band = spawn_band(&mut commands, "Forges", ForgesBand);
-    let queued = spawn_band(&mut commands, "Queued", QueuedBand);
-
-    commands.spawn((
-        ForgingPanelRoot,
+    commands.spawn_scene(bsn! {
+        ForgingPanelRoot
         Node {
             width: Val::Percent(100.),
             height: Val::Percent(100.),
@@ -175,34 +153,50 @@ fn spawn_forging_panel(mut commands: Commands) {
             padding: UiRect::all(Val::Px(PANEL_PADDING)),
             row_gap: Val::Px(PANEL_PADDING),
             display: Display::None,
-            ..default()
-        },
-        BackgroundColor::from(ABYSS_BACKGROUND),
-        GlobalZIndex(PANEL_Z_INDEX),
-    )).add_children(&[header, shards_to_order, forges_band, queued]);
+        }
+        BackgroundColor(ABYSS_BACKGROUND)
+        GlobalZIndex(PANEL_Z_INDEX)
+        Children [
+            Node {
+                width: Val::Percent(100.),
+                height: Val::Px(HEADER_HEIGHT),
+                flex_direction: FlexDirection::Row,
+                justify_content: JustifyContent::SpaceBetween,
+                align_items: AlignItems::Center,
+            }
+            Children [
+                Text("Forging")
+                @text_font(TextRole::Heading, HEADER_FONT_SIZE)
+                --
+                @queue_dropdown()
+                --
+                BuilderCloseButton::default()
+                Node { width: Val::Px(CLOSE_BUTTON_SIZE), height: Val::Px(CLOSE_BUTTON_SIZE) }
+                on(set_ui_free_on::<PointerClick>)
+            ]
+            --
+            @band("Shards to order", bsn! { ShardsToOrderBand })
+            --
+            @band("Forges", bsn! { ForgesBand })
+            --
+            @band("Queued", bsn! { QueuedBand })
+        ]
+    });
 }
 
-/// Spawns a heading and a horizontally scrollable row marked with `marker`.
-fn spawn_band(commands: &mut Commands, title: &str, marker: impl Component) -> Entity {
-    let title = commands.spawn((
-        Text::new(title),
-        TextRole::Heading.font(BAND_TITLE_FONT_SIZE),
-    )).id();
-    let content = commands.spawn((
-        marker,
-        Node {
-            flex_direction: FlexDirection::Row,
-            column_gap: Val::Px(TILE_GAP),
-            overflow: Overflow::scroll_x(),
-            ..default()
-        },
-        ScrollPosition::default(),
-    )).id();
-    commands.spawn(Node {
-        flex_direction: FlexDirection::Column,
-        row_gap: Val::Px(TILE_GAP),
-        ..default()
-    }).add_children(&[title, content]).id()
+/// A heading above a horizontally scrollable row. `marker` identifies the row.
+fn band(title: &'static str, marker: impl Scene) -> impl Scene {
+    bsn! {
+        Node { flex_direction: FlexDirection::Column, row_gap: Val::Px(TILE_GAP) }
+        Children [
+            Text(title)
+            @text_font(TextRole::Heading, BAND_TITLE_FONT_SIZE)
+            --
+            @marker
+            Node { flex_direction: FlexDirection::Row, column_gap: Val::Px(TILE_GAP), overflow: Overflow::scroll_x() }
+            ScrollPosition
+        ]
+    }
 }
 
 fn show_panel(mut commands: Commands, root: Single<&mut Node, With<ForgingPanelRoot>>) {
@@ -262,65 +256,42 @@ fn rebuild_panel(
     sorted_forges.sort_by_key(|&(_, coords)| (coords.y, coords.x));
 
     // Reuse the entry layout for the current selection and the dropdown options.
-    let shown_entry = spawn_queue_entry(&mut commands, selected_forge.and_then(|selected_forge| sorted_forges.iter().copied().find(|&(forge, _)| forge == selected_forge)));
-    commands.entity(*queue_dropdown_button).despawn_children().add_child(shown_entry);
-    commands.entity(*queue_dropdown_list).despawn_children();
-    for forge in std::iter::once(None).chain(sorted_forges.iter().copied().map(Some)) {
-        let entry = spawn_queue_entry(&mut commands, forge);
-        commands.entity(entry)
-            .insert((QueueEntry { forge: forge.map(|(forge, _)| forge) }, MenuItem, TabIndex(0)))
-            .observe(recolor_background_on::<PointerOver>(TILE_HOVER_BACKGROUND))
-            .observe(recolor_background_on::<PointerOut>(TILE_BACKGROUND))
-            .observe(on_activate_show_entry_queue);
-        commands.entity(*queue_dropdown_list).add_child(entry);
-    }
+    let shown_forge = selected_forge.and_then(|selected_forge| sorted_forges.iter().copied().find(|&(forge, _)| forge == selected_forge));
+    commands.entity(*queue_dropdown_button).despawn_children().apply_scene(bsn! { Children [ @queue_entry(shown_forge) ] });
+    let options: Vec<_> = std::iter::once(None).chain(sorted_forges.iter().copied().map(Some)).map(queue_option).collect();
+    commands.entity(*queue_dropdown_list).despawn_children().apply_scene(bsn! { Children [ {options} ] });
 
     // Shards to order: one column per unlocked shard type, one row per tier.
-    commands.entity(*shards_to_order_band).despawn_children();
-    for shard_type in blueprints.iter() {
-        let column = commands.spawn(Node {
-            flex_direction: FlexDirection::Column,
-            flex_shrink: 0.,
-            row_gap: Val::Px(TILE_GAP),
-            ..default()
-        }).id();
-        commands.entity(*shards_to_order_band).add_child(column);
-        for tier in ShardTier::iter() {
-            let shard = Shard::new(shard_type, tier);
-            if almanach.get_shard_info(shard).recipe.is_none() { continue; }
-            let button = spawn_order_shard_button(&mut commands, &almanach, shard, shown_queue);
-            commands.entity(column).add_child(button);
+    let columns: Vec<_> = blueprints.iter().map(|shard_type| {
+        let buttons: Vec<_> = ShardTier::iter()
+            .map(|tier| Shard::new(shard_type, tier))
+            .filter(|&shard| almanach.get_shard_info(shard).recipe.is_some())
+            .map(|shard| order_shard_button(&almanach, shard, shown_queue))
+            .collect();
+        bsn! {
+            Node { flex_direction: FlexDirection::Column, flex_shrink: 0., row_gap: Val::Px(TILE_GAP) }
+            Children [ {buttons} ]
         }
-    }
+    }).collect();
+    commands.entity(*shards_to_order_band).despawn_children().apply_scene(bsn! { Children [ {columns} ] });
 
     // Show all Forges in the global view, including idle and non-operational ones; otherwise show only the selected Forge.
-    commands.entity(*forges_band).despawn_children();
-    for (forge, coords) in sorted_forges.into_iter().filter(|&(forge, _)| selected_forge.is_none_or(|selected_forge| selected_forge == forge)) {
-        let tile = spawn_forge_tile(&mut commands, forge, coords);
-        commands.entity(*forges_band).add_child(tile);
-    }
+    let forge_tiles: Vec<_> = sorted_forges.into_iter()
+        .filter(|&(forge, _)| selected_forge.is_none_or(|selected_forge| selected_forge == forge))
+        .map(|(forge, coords)| forge_tile(forge, coords))
+        .collect();
+    commands.entity(*forges_band).despawn_children().apply_scene(bsn! { Children [ {forge_tiles} ] });
 
     // Queued: the shown queue's orders in placement order.
-    commands.entity(*queued_band).despawn_children();
-    for order in queues.get(shown_queue).into_iter().flat_map(|queue| queue.iter()) {
-        let Ok(&ShardOrder(shard)) = orders.get(order) else { continue; };
-        let tile = spawn_queued_order_tile(&mut commands, &almanach, order, shard);
-        commands.entity(*queued_band).add_child(tile);
-    }
+    let order_tiles: Vec<_> = queues.get(shown_queue).into_iter().flat_map(|queue| queue.iter())
+        .filter_map(|order| orders.get(order).ok().map(|&ShardOrder(shard)| queued_order_tile(&almanach, order, shard)))
+        .collect();
+    commands.entity(*queued_band).despawn_children().apply_scene(bsn! { Children [ {order_tiles} ] });
 }
 
-/// Lays out a shard icon, a text column, and trailing controls from left to right.
-fn spawn_shard_tile(commands: &mut Commands, icon: Handle<Image>, texts: &[Entity], trailing: &[Entity]) -> Entity {
-    let icon = commands.spawn((
-        Node { width: Val::Px(ICON_SIZE), height: Val::Px(ICON_SIZE), ..default() },
-        ImageNode::new(icon),
-    )).id();
-    let text_column = commands.spawn(Node {
-        flex_direction: FlexDirection::Column,
-        row_gap: Val::Px(2.),
-        ..default()
-    }).add_children(texts).id();
-    let tile = commands.spawn((
+/// A shard tile's frame. Its children run left to right: icon, text column, trailing controls.
+fn shard_tile_frame() -> impl Scene {
+    bsn! {
         Node {
             flex_direction: FlexDirection::Row,
             flex_shrink: 0.,
@@ -328,21 +299,32 @@ fn spawn_shard_tile(commands: &mut Commands, icon: Handle<Image>, texts: &[Entit
             column_gap: Val::Px(TILE_GAP),
             padding: UiRect::all(Val::Px(6.)),
             border_radius: BorderRadius::all(Val::Px(4.)),
-            ..default()
-        },
-        BackgroundColor::from(TILE_BACKGROUND),
-    )).add_children(&[icon, text_column]).id();
-    commands.entity(tile).add_children(trailing);
-    tile
+        }
+        BackgroundColor(TILE_BACKGROUND)
+    }
 }
 
-fn spawn_text(commands: &mut Commands, text: impl Into<String>, color: Color) -> Entity {
-    commands.spawn((
-        Text::new(text),
-        TextFont::from_font_size(TEXT_FONT_SIZE),
-        TextColor::from(color),
-        TextLayout::no_wrap(),
-    )).id()
+fn shard_icon(icon: Handle<Image>) -> impl Scene {
+    bsn! {
+        Node { width: Val::Px(ICON_SIZE), height: Val::Px(ICON_SIZE) }
+        ImageNode { image: icon }
+    }
+}
+
+fn text_column() -> impl Scene {
+    bsn! {
+        Node { flex_direction: FlexDirection::Column, row_gap: Val::Px(2.) }
+    }
+}
+
+fn text(text: impl Into<String>, color: Color) -> impl Scene {
+    let text: String = text.into();
+    bsn! {
+        Text(text)
+        TextFont { font_size: FontSize::Px(TEXT_FONT_SIZE) }
+        TextColor(color)
+        TextLayout::no_wrap()
+    }
 }
 
 // ============================================================================
@@ -350,71 +332,97 @@ fn spawn_text(commands: &mut Commands, text: impl Into<String>, color: Color) ->
 // ============================================================================
 
 /// Dropdown button displaying the selected queue.
-#[derive(Component)]
+#[derive(Component, Default, Clone)]
 struct QueueDropdownButton;
 
 /// Queue options displayed over the panel while the dropdown is open.
-#[derive(Component)]
+#[derive(Component, Default, Clone)]
 struct QueueDropdownList;
 
 /// Selects a Forge queue, or the global queue for `None`.
-#[derive(Component)]
+#[derive(Component, Clone)]
 struct QueueEntry {
     forge: Option<Entity>,
 }
 
 /// The status text in a Forge's entry.
-#[derive(Component)]
+#[derive(Component, Clone)]
 struct ForgeStatusText {
     forge: Entity,
 }
 
 /// Toggles global orders for a Forge. The widget button stops event propagation so clicking it
 /// does not select the containing queue entry.
-#[derive(Component)]
+#[derive(Component, Clone)]
 #[require(Button)]
 struct GlobalQueueToggle {
     forge: Entity,
 }
 
-fn spawn_queue_dropdown(commands: &mut Commands) -> Entity {
-    let button = commands.spawn((
-        QueueDropdownButton,
-        MenuButton,
-        Node { border_radius: BorderRadius::all(Val::Px(4.)), ..default() },
-    )).id();
-    let list = commands.spawn((
-        QueueDropdownList,
-        MenuPopup::default(),
-        Node {
-            position_type: PositionType::Absolute,
-            flex_direction: FlexDirection::Column,
-            row_gap: Val::Px(QUEUE_LIST_GAP),
-            padding: UiRect::all(Val::Px(QUEUE_LIST_GAP)),
-            border_radius: BorderRadius::all(Val::Px(4.)),
-            ..default()
-        },
-        BackgroundColor::from(QUEUE_LIST_BACKGROUND),
-        Visibility::Hidden,
-        GlobalZIndex(PANEL_Z_INDEX + 1),
-        Popover {
-            positions: vec![
-                PopoverPlacement { side: PopoverSide::Bottom, align: PopoverAlign::Start, gap: QUEUE_LIST_GAP },
-                PopoverPlacement { side: PopoverSide::Top, align: PopoverAlign::Start, gap: QUEUE_LIST_GAP },
-            ],
-            window_margin: PANEL_PADDING,
-        },
-    )).id();
-    commands.spawn(Node::default())
-        .add_children(&[button, list])
-        .observe(on_menu_event_open_or_close_queue_list)
-        .id()
+fn queue_dropdown() -> impl Scene {
+    bsn! {
+        Node
+        on(on_menu_event_open_or_close_queue_list)
+        Children [
+            QueueDropdownButton
+            MenuButton
+            Node { border_radius: BorderRadius::all(Val::Px(4.)) }
+            --
+            QueueDropdownList
+            MenuPopup
+            Node {
+                position_type: PositionType::Absolute,
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(QUEUE_LIST_GAP),
+                padding: UiRect::all(Val::Px(QUEUE_LIST_GAP)),
+                border_radius: BorderRadius::all(Val::Px(4.)),
+            }
+            BackgroundColor(QUEUE_LIST_BACKGROUND)
+            Visibility::Hidden
+            GlobalZIndex({PANEL_Z_INDEX + 1})
+            // `Popover` is not `Clone`, so a template builds it.
+            template(|_| Ok(Popover {
+                positions: vec![
+                    PopoverPlacement { side: PopoverSide::Bottom, align: PopoverAlign::Start, gap: QUEUE_LIST_GAP },
+                    PopoverPlacement { side: PopoverSide::Top, align: PopoverAlign::Start, gap: QUEUE_LIST_GAP },
+                ],
+                window_margin: PANEL_PADDING,
+            }))
+        ]
+    }
 }
 
-/// Builds one queue's entry: "Global queue", or a Forge with its preview placeholder, coordinates,
-/// status and global-queue toggle.
-fn spawn_queue_entry(commands: &mut Commands, forge: Option<(Entity, GridCoords)>) -> Entity {
-    let entry = commands.spawn((
+/// One queue's entry: "Global queue", or a Forge with its preview placeholder, coordinates, status
+/// and global-queue toggle.
+fn queue_entry(forge: Option<(Entity, GridCoords)>) -> impl Scene {
+    let global_label = forge.is_none().then(|| bsn_list! { @text("Global queue", Color::WHITE) });
+    let forge_details = forge.map(|(forge, coords)| {
+        let coords_label = format!("Forge {coords}");
+        bsn_list! {
+            Node { width: Val::Px(PREVIEW_SIZE), height: Val::Px(PREVIEW_SIZE), border: UiRect::all(Val::Px(1.)) }
+            BackgroundColor(PREVIEW_BACKGROUND)
+            BorderColor::all(PREVIEW_BORDER)
+            --
+            Node { flex_direction: FlexDirection::Column, flex_grow: 1., row_gap: Val::Px(2.) }
+            Children [
+                @text(coords_label, Color::WHITE)
+                --
+                @text("", STATUS_COLOR)
+                ~{ForgeStatusText { forge }}
+            ]
+            --
+            ~{GlobalQueueToggle { forge }}
+            Text("")
+            TextFont { font_size: FontSize::Px(TEXT_FONT_SIZE) }
+            TextLayout::no_wrap()
+            Node { padding: UiRect::axes(Val::Px(8.), Val::Px(4.)), border_radius: BorderRadius::all(Val::Px(3.)) }
+            BackgroundColor(TOGGLE_BACKGROUND)
+            on(recolor_background_on::<PointerOver>(TOGGLE_HOVER_BACKGROUND))
+            on(recolor_background_on::<PointerOut>(TOGGLE_BACKGROUND))
+            on(on_click_toggle_global_queue)
+        }
+    });
+    bsn! {
         Node {
             min_width: Val::Px(QUEUE_ENTRY_MIN_WIDTH),
             flex_direction: FlexDirection::Row,
@@ -422,53 +430,24 @@ fn spawn_queue_entry(commands: &mut Commands, forge: Option<(Entity, GridCoords)
             column_gap: Val::Px(TILE_GAP),
             padding: UiRect::all(Val::Px(QUEUE_LIST_GAP)),
             border_radius: BorderRadius::all(Val::Px(4.)),
-            ..default()
-        },
-        BackgroundColor::from(TILE_BACKGROUND),
-    )).id();
-    let Some((forge, coords)) = forge else {
-        let label = spawn_text(commands, "Global queue", Color::WHITE);
-        commands.entity(entry).add_child(label);
-        return entry;
-    };
+        }
+        BackgroundColor(TILE_BACKGROUND)
+        Children [ {global_label} -- {forge_details} ]
+    }
+}
 
-    let preview = commands.spawn((
-        Node {
-            width: Val::Px(PREVIEW_SIZE),
-            height: Val::Px(PREVIEW_SIZE),
-            border: UiRect::all(Val::Px(1.)),
-            ..default()
-        },
-        BackgroundColor::from(PREVIEW_BACKGROUND),
-        BorderColor::all(PREVIEW_BORDER),
-    )).id();
-    let coords_text = spawn_text(commands, format!("Forge {coords}"), Color::WHITE);
-    let status = spawn_text(commands, "", STATUS_COLOR);
-    commands.entity(status).insert(ForgeStatusText { forge });
-    let texts = commands.spawn(Node {
-        flex_direction: FlexDirection::Column,
-        flex_grow: 1.,
-        row_gap: Val::Px(2.),
-        ..default()
-    }).add_children(&[coords_text, status]).id();
-    let toggle = commands.spawn((
-        GlobalQueueToggle { forge },
-        Text::new(""),
-        TextFont::from_font_size(TEXT_FONT_SIZE),
-        TextLayout::no_wrap(),
-        Node {
-            padding: UiRect::axes(Val::Px(8.), Val::Px(4.)),
-            border_radius: BorderRadius::all(Val::Px(3.)),
-            ..default()
-        },
-        BackgroundColor::from(TOGGLE_BACKGROUND),
-    ))
-        .observe(recolor_background_on::<PointerOver>(TOGGLE_HOVER_BACKGROUND))
-        .observe(recolor_background_on::<PointerOut>(TOGGLE_BACKGROUND))
-        .observe(on_click_toggle_global_queue)
-        .id();
-    commands.entity(entry).add_children(&[preview, texts, toggle]);
-    entry
+/// A selectable dropdown option for a queue entry.
+fn queue_option(forge: Option<(Entity, GridCoords)>) -> impl Scene {
+    let entry = QueueEntry { forge: forge.map(|(forge, _)| forge) };
+    bsn! {
+        @queue_entry(forge)
+        ~{entry}
+        MenuItem
+        TabIndex(0)
+        on(recolor_background_on::<PointerOver>(TILE_HOVER_BACKGROUND))
+        on(recolor_background_on::<PointerOut>(TILE_BACKGROUND))
+        on(on_activate_show_entry_queue)
+    }
 }
 
 /// Shows or hides the list. The menu widget sends these events from the button and the list.
@@ -540,25 +519,35 @@ fn update_queue_entries(
 // ============================================================================
 
 /// Places an order for its shard into `queue` on click.
-#[derive(Component)]
+#[derive(Component, Clone)]
 #[require(Button)]
 struct OrderShardButton {
     shard: Shard,
     queue: Entity,
 }
 
-fn spawn_order_shard_button(commands: &mut Commands, almanach: &Almanach, shard: Shard, queue: Entity) -> Entity {
+fn order_shard_button(almanach: &Almanach, shard: Shard, queue: Entity) -> impl Scene {
     let info = almanach.get_resource_info(shard);
-    let cost = almanach.get_shard_info(shard).recipe.as_ref().map(|recipe| recipe.cost().collect()).unwrap_or_default();
-    let name = spawn_text(commands, info.name.clone(), Color::WHITE);
-    let cost_strip = commands.spawn(BuilderFullPriceCostStrip(cost)).id();
-    let button = spawn_shard_tile(commands, info.icon.clone(), &[name, cost_strip], &[]);
-    commands.entity(button)
-        .insert(OrderShardButton { shard, queue })
-        .observe(recolor_background_on::<PointerOver>(TILE_HOVER_BACKGROUND))
-        .observe(recolor_background_on::<PointerOut>(TILE_BACKGROUND))
-        .observe(on_click_place_shard_order);
-    button
+    let (icon, name) = (info.icon.clone(), info.name.clone());
+    let cost_strip = BuilderFullPriceCostStrip(almanach.get_shard_info(shard).recipe.as_ref().map(|recipe| recipe.cost().collect()).unwrap_or_default());
+    let button = OrderShardButton { shard, queue };
+    bsn! {
+        @shard_tile_frame()
+        ~{button}
+        on(recolor_background_on::<PointerOver>(TILE_HOVER_BACKGROUND))
+        on(recolor_background_on::<PointerOut>(TILE_BACKGROUND))
+        on(on_click_place_shard_order)
+        Children [
+            @shard_icon(icon)
+            --
+            @text_column()
+            Children [
+                @text(name, Color::WHITE)
+                --
+                ~{cost_strip}
+            ]
+        ]
+    }
 }
 
 #[log_tags(Tag::Shards)]
@@ -577,7 +566,7 @@ fn on_click_place_shard_order(
 // ============================================================================
 
 /// Displays a Forge's coordinates, status, and job progress. Clicking toggles selection.
-#[derive(Component)]
+#[derive(Component, FromTemplate)]
 #[require(Button)]
 struct ForgeTile {
     forge: Entity,
@@ -585,19 +574,10 @@ struct ForgeTile {
     fill: Entity,
 }
 
-fn spawn_forge_tile(commands: &mut Commands, forge: Entity, coords: GridCoords) -> Entity {
-    let coords_text = spawn_text(commands, format!("Forge {coords}"), Color::WHITE);
-    let status = spawn_text(commands, "", STATUS_COLOR);
-    let fill = commands.spawn(
-        BuilderFillBar::default()
-            .with_background_color(FILL_BAR_BACKGROUND)
-            .with_border(FILL_BAR_BORDER, UiRect::all(Val::Px(1.)))
-            .with_border_radius(BorderRadius::all(Val::Px(2.)))
-            .with_fill_color(FILL_COLOR),
-    ).id();
-    let bar = commands.spawn(Node { width: Val::Px(FILL_BAR_WIDTH), height: Val::Px(FILL_BAR_HEIGHT), ..default() }).add_child(fill).id();
-    commands.spawn((
-        ForgeTile { forge, status, fill },
+fn forge_tile(forge: Entity, coords: GridCoords) -> impl Scene {
+    let coords_label = format!("Forge {coords}");
+    bsn! {
+        ForgeTile { forge: forge, status: #Status, fill: #Fill }
         Node {
             flex_direction: FlexDirection::Column,
             flex_shrink: 0.,
@@ -605,16 +585,29 @@ fn spawn_forge_tile(commands: &mut Commands, forge: Entity, coords: GridCoords) 
             padding: UiRect::all(Val::Px(6.)),
             border: UiRect::all(Val::Px(SOURCE_BORDER_WIDTH)),
             border_radius: BorderRadius::all(Val::Px(4.)),
-            ..default()
-        },
-        BackgroundColor::from(TILE_BACKGROUND),
-        BorderColor::all(Color::NONE),
-    ))
-        .add_children(&[coords_text, status, bar])
-        .observe(recolor_background_on::<PointerOver>(TILE_HOVER_BACKGROUND))
-        .observe(recolor_background_on::<PointerOut>(TILE_BACKGROUND))
-        .observe(on_click_toggle_forge_selection)
-        .id()
+        }
+        BackgroundColor(TILE_BACKGROUND)
+        BorderColor::all(Color::NONE)
+        on(recolor_background_on::<PointerOver>(TILE_HOVER_BACKGROUND))
+        on(recolor_background_on::<PointerOut>(TILE_BACKGROUND))
+        on(on_click_toggle_forge_selection)
+        Children [
+            @text(coords_label, Color::WHITE)
+            --
+            #Status
+            @text("", STATUS_COLOR)
+            --
+            Node { width: Val::Px(FILL_BAR_WIDTH), height: Val::Px(FILL_BAR_HEIGHT) }
+            Children [
+                #Fill
+                BuilderFillBar::default()
+                    .with_background_color(FILL_BAR_BACKGROUND)
+                    .with_border(FILL_BAR_BORDER, UiRect::all(Val::Px(1.)))
+                    .with_border_radius(BorderRadius::all(Val::Px(2.)))
+                    .with_fill_color(FILL_COLOR)
+            ]
+        ]
+    }
 }
 
 fn on_click_toggle_forge_selection(
@@ -675,30 +668,36 @@ fn update_forge_tiles(
 // ============================================================================
 
 /// A root order's tile. Red while waiting for ingredients or pickup resources.
-#[derive(Component)]
+#[derive(Component, FromTemplate)]
 struct QueuedOrderTile {
     order: Entity,
     status: Entity,
 }
 
-fn spawn_queued_order_tile(commands: &mut Commands, almanach: &Almanach, order: Entity, shard: Shard) -> Entity {
+fn queued_order_tile(almanach: &Almanach, order: Entity, shard: Shard) -> impl Scene {
     let info = almanach.get_resource_info(shard);
-    let cost = almanach.get_shard_info(shard).recipe.as_ref().map(|recipe| recipe.cost().collect()).unwrap_or_default();
-    let name = spawn_text(commands, info.name.clone(), Color::WHITE);
-    let status = spawn_text(commands, "", STATUS_COLOR);
-    let cost_strip = commands.spawn(BuilderFullPriceCostStrip(cost)).id();
-
-    let cancel_button = spawn_cancel_control(commands, "Cancel", CancelControl::Cancel(order));
-    let cancel_controls = commands.spawn(Node {
-        flex_direction: FlexDirection::Row,
-        align_items: AlignItems::Center,
-        column_gap: Val::Px(TILE_GAP),
-        ..default()
-    }).add_child(cancel_button).id();
-
-    let tile = spawn_shard_tile(commands, info.icon.clone(), &[name, status, cost_strip], &[cancel_controls]);
-    commands.entity(tile).insert(QueuedOrderTile { order, status });
-    tile
+    let (icon, name) = (info.icon.clone(), info.name.clone());
+    let cost_strip = BuilderFullPriceCostStrip(almanach.get_shard_info(shard).recipe.as_ref().map(|recipe| recipe.cost().collect()).unwrap_or_default());
+    bsn! {
+        @shard_tile_frame()
+        QueuedOrderTile { order: order, status: #Status }
+        Children [
+            @shard_icon(icon)
+            --
+            @text_column()
+            Children [
+                @text(name, Color::WHITE)
+                --
+                #Status
+                @text("", STATUS_COLOR)
+                --
+                ~{cost_strip}
+            ]
+            --
+            Node { flex_direction: FlexDirection::Row, align_items: AlignItems::Center, column_gap: Val::Px(TILE_GAP) }
+            Children [ @cancel_control("Cancel", CancelControl::Cancel(order)) ]
+        ]
+    }
 }
 
 /// A waiting order is affordable when `Stock` holds its pickup cost and its ingredient orders are
@@ -739,22 +738,16 @@ enum CancelControl {
     Keep(Entity),
 }
 
-fn spawn_cancel_control(commands: &mut Commands, label: &str, control: CancelControl) -> Entity {
-    let label = spawn_text(commands, label, Color::WHITE);
-    commands.spawn((
-        control,
-        Node {
-            padding: UiRect::axes(Val::Px(8.), Val::Px(4.)),
-            border_radius: BorderRadius::all(Val::Px(3.)),
-            ..default()
-        },
-        BackgroundColor::from(CANCEL_BACKGROUND),
-    ))
-        .add_child(label)
-        .observe(recolor_background_on::<PointerOver>(CANCEL_HOVER_BACKGROUND))
-        .observe(recolor_background_on::<PointerOut>(CANCEL_BACKGROUND))
-        .observe(on_click_cancel_control)
-        .id()
+fn cancel_control(label: &'static str, control: CancelControl) -> impl Scene {
+    bsn! {
+        ~{control}
+        Node { padding: UiRect::axes(Val::Px(8.), Val::Px(4.)), border_radius: BorderRadius::all(Val::Px(3.)) }
+        BackgroundColor(CANCEL_BACKGROUND)
+        on(recolor_background_on::<PointerOver>(CANCEL_HOVER_BACKGROUND))
+        on(recolor_background_on::<PointerOut>(CANCEL_BACKGROUND))
+        on(on_click_cancel_control)
+        Children [ @text(label, Color::WHITE) ]
+    }
 }
 
 fn on_click_cancel_control(
@@ -766,27 +759,37 @@ fn on_click_cancel_control(
     let Ok((&control, &ChildOf(controls))) = buttons.get(trigger.entity) else { return; };
     match control {
         CancelControl::Cancel(order) if order_tree.in_progress.contains(order) => {
-            let question = [
-                spawn_text(&mut commands, "Cancelling loses progress and spent resources.", STATUS_COLOR),
-                spawn_cancel_control(&mut commands, "Discard job", CancelControl::Confirm(order, ShardOrderCancelMode::Hard)),
-                spawn_cancel_control(&mut commands, "Keep order", CancelControl::Keep(order)),
-            ];
-            commands.entity(controls).despawn_children().add_children(&question);
+            commands.entity(controls).despawn_children().apply_scene(bsn! {
+                Children [
+                    @text("Cancelling loses progress and spent resources.", STATUS_COLOR)
+                    --
+                    @cancel_control("Discard job", CancelControl::Confirm(order, ShardOrderCancelMode::Hard))
+                    --
+                    @cancel_control("Keep order", CancelControl::Keep(order))
+                ]
+            });
         }
         CancelControl::Cancel(order) if order_tree.has_jobs_in_progress_below(order) => {
-            let question = [
-                spawn_text(&mut commands, "Ingredients are being forged. Finish them for stock or discard without refunds?", STATUS_COLOR),
-                spawn_cancel_control(&mut commands, "Finish jobs", CancelControl::Confirm(order, ShardOrderCancelMode::Soft)),
-                spawn_cancel_control(&mut commands, "Discard jobs", CancelControl::Confirm(order, ShardOrderCancelMode::Hard)),
-                spawn_cancel_control(&mut commands, "Keep order", CancelControl::Keep(order)),
-            ];
-            commands.entity(controls).despawn_children().add_children(&question);
+            commands.entity(controls).despawn_children().apply_scene(bsn! {
+                Children [
+                    @text("Ingredients are being forged. Finish them for stock or discard without refunds?", STATUS_COLOR)
+                    --
+                    @cancel_control("Finish jobs", CancelControl::Confirm(order, ShardOrderCancelMode::Soft))
+                    --
+                    @cancel_control("Discard jobs", CancelControl::Confirm(order, ShardOrderCancelMode::Hard))
+                    --
+                    @cancel_control("Keep order", CancelControl::Keep(order))
+                ]
+            });
         }
         CancelControl::Cancel(order) => commands.trigger(ShardOrderCancelRequest { order, mode: ShardOrderCancelMode::Hard }),
         CancelControl::Confirm(order, mode) => commands.trigger(ShardOrderCancelRequest { order, mode }),
         CancelControl::Keep(order) => {
-            let cancel_button = spawn_cancel_control(&mut commands, "Cancel", CancelControl::Cancel(order));
-            commands.entity(controls).despawn_children().add_child(cancel_button);
+            commands.entity(controls).despawn_children().apply_scene(bsn! {
+                Children [
+                    @cancel_control("Cancel", CancelControl::Cancel(order))
+                ]
+            });
         }
     }
 }

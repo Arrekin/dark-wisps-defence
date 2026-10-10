@@ -13,7 +13,7 @@ impl Plugin for HealthbarPlugin {
 
 /// Holds the entities of the nodes `Healthbar` spawns, recorded at spawn
 /// time so they can be reached by direct lookup.
-#[derive(Component)]
+#[derive(Component, FromTemplate)]
 struct HealthbarChildren {
     fill_bar: Entity,
     value_text: Entity,
@@ -27,48 +27,38 @@ fn on_builder_add_spawn_healthbar(
     let entity = trigger.entity;
     let Ok(builder) = builders.get(entity) else { return };
 
-    let mut children_ref = HealthbarChildren {
-        fill_bar: Entity::PLACEHOLDER,
-        value_text: Entity::PLACEHOLDER,
-    };
+    let BuilderHealthbar { healthbar, builder_fill_bar, font_size } = builder.clone();
+    // Seed the fill colour from `healthbar.color` so there is a single colour owner.
+    let fill_bar = builder_fill_bar.with_fill_color(healthbar.color);
     commands.entity(entity)
         .remove::<BuilderHealthbar>()
-        .insert((
-            Node {
-                width: Val::Percent(100.),
-                height: Val::Percent(100.),
-                ..default()
-            },
-            builder.healthbar,
-        ))
-        .with_children(|parent| {
-            // FillBar child — the track + fill. Seed the fill colour from
-            // `healthbar.color` so there is a single colour owner.
-            children_ref.fill_bar = parent.spawn(
-                builder.builder_fill_bar.with_fill_color(builder.healthbar.color),
-            ).id();
-            // Centred text overlay — absolute positioning is needed because
-            // no combination of flex_direction, justify_content and
-            // align_items centres the text reliably.
-            parent.spawn((
+        .apply_scene(bsn! {
+            Node { width: Val::Percent(100.), height: Val::Percent(100.) }
+            ~{healthbar}
+            HealthbarChildren { fill_bar: #FillBar, value_text: #ValueText }
+            Children [
+                #FillBar
+                ~{fill_bar}
+                --
+                // Centred text overlay — absolute positioning is needed because
+                // no combination of flex_direction, justify_content and
+                // align_items centres the text reliably.
                 Node {
                     position_type: PositionType::Absolute,
                     width: Val::Percent(100.),
                     height: Val::Percent(100.),
                     justify_content: JustifyContent::Center,
                     align_items: AlignItems::Center,
-                    ..default()
-                },
-            )).with_children(|overlay| {
-                children_ref.value_text = overlay.spawn((
-                    Text::default(),
-                    TextFont::from_font_size(builder.font_size),
-                    TextColor::BLACK,
-                    TextLayout::no_wrap(),
-                )).id();
-            });
-        })
-        .insert(children_ref);
+                }
+                Children [
+                    #ValueText
+                    Text
+                    TextFont { font_size: FontSize::Px(font_size) }
+                    TextColor(Color::BLACK)
+                    TextLayout::no_wrap()
+                ]
+            ]
+        });
 }
 
 fn sync_healthbar_display(

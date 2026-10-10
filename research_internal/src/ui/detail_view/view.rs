@@ -37,7 +37,7 @@ use widgets::{
     common::utils::set_text_if_changed,
     prelude::{
         BuilderChipStrip, BuilderCostChip, BuilderDisplayChip, BuilderVoidPanel, CostChip,
-        CostChipVisualUnitAvailable, TextRole,
+        CostChipVisualUnitAvailable, TextRole, text_font,
     },
 };
 
@@ -139,7 +139,7 @@ pub(crate) struct BuilderResearchDetailView {
 
 /// Runtime component for a built view. `content` is the child the subject tree
 /// hangs from, kept so a rebuild can clear it without disturbing the title.
-#[derive(Component, Clone, Copy)]
+#[derive(Component, Clone, Copy, FromTemplate)]
 pub(super) struct ResearchDetailView {
     pub(super) content: Entity,
     empty_text: &'static str,
@@ -162,7 +162,7 @@ struct BuilderResearchDetailViewContent {
 /// The subject a content tree was built for and the labels worth rewriting in
 /// place. Present only on a populated tree, so a view showing nothing has no
 /// status nodes to be wrong about.
-#[derive(Component, Clone, Copy)]
+#[derive(Component, Clone, Copy, FromTemplate)]
 pub(super) struct ResearchDetailViewContent {
     pub(super) research: Entity,
     percent_text: Entity,
@@ -176,7 +176,7 @@ pub(super) struct ResearchDetailViewContent {
 /// recomputed each frame from how far the research has progressed.
 ///
 /// `research` is the entity the chip reflects.
-#[derive(Component)]
+#[derive(Component, Clone)]
 struct ResearchCostChip {
     research: Entity,
     cost: ResourceAmount,
@@ -198,6 +198,12 @@ impl BuilderResearchDetailView {
 
 impl<Marker: Component> Default for ResearchDetailViewSource<Marker> {
     fn default() -> Self {
+        Self(PhantomData)
+    }
+}
+
+impl<Marker: Component> Clone for ResearchDetailViewSource<Marker> {
+    fn clone(&self) -> Self {
         Self(PhantomData)
     }
 }
@@ -275,30 +281,12 @@ fn on_builder_add_spawn_research_detail_view(
     let view_entity = trigger.entity;
     let Ok(builder) = builders.get(view_entity) else { return };
     let BuilderResearchDetailView { title, empty_text } = *builder;
-
-    let title_node = commands.spawn((
-        Text::new(title),
-        TextRole::Heading.font(VIEW_TITLE_FONT_SIZE),
-        TextColor::from(MUTED_TEXT_COLOR),
-        TextLayout::no_wrap(),
-    )).id();
-
-    let content = commands.spawn((
-        Node {
-            flex_grow: 1.,
-            min_height: Val::Px(0.),
-            overflow: Overflow::clip_y(),
-            flex_direction: FlexDirection::Column,
-            row_gap: Val::Px(VIEW_ROW_GAP),
-            ..default()
-        },
-        BuilderResearchDetailViewContent { research: None, empty_text },
-    )).id();
+    let content_builder = BuilderResearchDetailViewContent { research: None, empty_text };
 
     commands.entity(view_entity)
         .remove::<BuilderResearchDetailView>()
-        .insert((
-            ResearchDetailView { content, empty_text },
+        .apply_scene(bsn! {
+            ResearchDetailView { content: #Content, empty_text: empty_text }
             Node {
                 height: Val::Percent(100.),
                 flex_grow: 1.,
@@ -307,11 +295,25 @@ fn on_builder_add_spawn_research_detail_view(
                 flex_direction: FlexDirection::Column,
                 padding: UiRect::all(Val::Px(VIEW_PADDING)),
                 row_gap: Val::Px(VIEW_ROW_GAP),
-                ..default()
-            },
-            BuilderVoidPanel::default().with_corner_cut(VIEW_CORNER_CUT),
-        ))
-        .add_children(&[title_node, content]);
+            }
+            BuilderVoidPanel::default().with_corner_cut(VIEW_CORNER_CUT)
+            Children [
+                Text(title)
+                @text_font(TextRole::Heading, VIEW_TITLE_FONT_SIZE)
+                TextColor(MUTED_TEXT_COLOR)
+                TextLayout::no_wrap()
+                --
+                #Content
+                Node {
+                    flex_grow: 1.,
+                    min_height: Val::Px(0.),
+                    overflow: Overflow::clip_y(),
+                    flex_direction: FlexDirection::Column,
+                    row_gap: Val::Px(VIEW_ROW_GAP),
+                }
+                ~{content_builder}
+            ]
+        });
 }
 
 // ============================================================================
@@ -332,226 +334,166 @@ fn on_builder_insert_rebuild_research_detail_view_content(
     let Ok(builder) = builders.get(content_entity) else { return };
     let BuilderResearchDetailViewContent { research, empty_text } = *builder;
 
-    commands.entity(content_entity)
+    let mut content = commands.entity(content_entity);
+    content
         .remove::<(BuilderResearchDetailViewContent, ResearchDetailViewContent)>()
         .despawn_children();
 
     let Some((research, name, description, icon, research_data, has_outcomes)) =
         research.and_then(|research| researches.get(research).ok())
     else {
-        let empty_state = spawn_empty_state(&mut commands, empty_text);
-        commands.entity(content_entity).add_child(empty_state);
+        content.apply_scene(bsn! { Children [ @empty_state(empty_text) ] });
         return;
     };
 
-    let identity_row = spawn_identity_row(&mut commands, &name.0, icon.0.clone());
-    let description_row = spawn_description_row(&mut commands, &description.0);
-    let (progress_row, progress_bar) = spawn_progress_row(&mut commands, research);
-    let (status_row, percent_text, remaining_time_text) = spawn_status_row(&mut commands);
-    let stall_row = spawn_stall_row(&mut commands);
-    let spacer = spawn_bottom_spacer(&mut commands);
-    let bottom_row = spawn_bottom_row(&mut commands, research, &research_data.cost, has_outcomes);
+    let (name, description, icon) = (name.0.clone(), description.0.clone(), icon.0.clone());
+    let research_bar = BuilderResearchBar::new(research);
+    let bottom_row = bottom_row(research, &research_data.cost, has_outcomes);
 
-    commands.entity(content_entity)
-        .insert(ResearchDetailViewContent { research, percent_text, remaining_time_text, progress_bar })
-        .add_children(&[
-            identity_row,
-            description_row,
-            progress_row,
-            status_row,
-            stall_row,
-            spacer,
-            bottom_row,
-        ]);
+    content.apply_scene(bsn! {
+        ResearchDetailViewContent {
+            research: research,
+            percent_text: #Percent,
+            remaining_time_text: #RemainingTime,
+            progress_bar: #ProgressBar,
+        }
+        Children [
+            @identity_row(name, icon)
+            --
+            @description_row(description)
+            --
+            Node { height: Val::Px(PROGRESS_ROW_HEIGHT), align_items: AlignItems::Center }
+            Children [
+                #ProgressBar
+                Node { width: Val::Percent(100.), height: Val::Px(PROGRESS_BAR_HEIGHT) }
+                Children [ ~{research_bar} ]
+            ]
+            --
+            Node { height: Val::Px(STATUS_ROW_HEIGHT), flex_direction: FlexDirection::Row, justify_content: JustifyContent::SpaceBetween }
+            Children [
+                #Percent
+                Text("--")
+                @text_font(TextRole::Data, STATUS_FONT_SIZE)
+                --
+                #RemainingTime
+                Text("--")
+                @text_font(TextRole::Data, STATUS_FONT_SIZE)
+            ]
+            --
+            @stall_row()
+            --
+            @bottom_spacer()
+            --
+            @bottom_row
+        ]
+    });
 }
 
-fn spawn_identity_row(commands: &mut Commands, name: &str, icon: Handle<Image>) -> Entity {
-    commands.spawn((
+fn identity_row(name: String, icon: Handle<Image>) -> impl Scene {
+    bsn! {
         Node {
             height: Val::Px(IDENTITY_ROW_HEIGHT),
             flex_direction: FlexDirection::Row,
             align_items: AlignItems::Center,
             column_gap: Val::Px(IDENTITY_ROW_COLUMN_GAP),
-            ..default()
-        },
-        children![
-            (
-                ImageNode::new(icon),
-                Node {
-                    width: Val::Px(ICON_SIZE),
-                    height: Val::Px(ICON_SIZE),
-                    ..default()
-                },
-            ),
-            (
-                Text::new(name),
-                TextRole::Body.font(NAME_FONT_SIZE),
-                TextColor::from(Color::WHITE),
-                TextLayout::no_wrap(),
-            ),
-        ],
-    )).id()
+        }
+        Children [
+            ImageNode { image: icon }
+            Node { width: Val::Px(ICON_SIZE), height: Val::Px(ICON_SIZE) }
+            --
+            Text(name)
+            @text_font(TextRole::Body, NAME_FONT_SIZE)
+            TextColor(Color::WHITE)
+            TextLayout::no_wrap()
+        ]
+    }
 }
 
-fn spawn_description_row(commands: &mut Commands, description: &str) -> Entity {
-    commands.spawn((
-        Node {
-            height: Val::Px(DESCRIPTION_HEIGHT),
-            overflow: Overflow::clip_y(),
-            ..default()
-        },
-        children![(
-            Text::new(description),
-            TextRole::Body.font(DESCRIPTION_FONT_SIZE),
-            TextColor::from(DESCRIPTION_COLOR),
-        )],
-    )).id()
-}
-
-/// Returns the row and the bar's container node — the latter is what
-/// `ResearchDetailViewContent::progress_bar` records.
-fn spawn_progress_row(commands: &mut Commands, research: Entity) -> (Entity, Entity) {
-    let mut bar_container = Entity::PLACEHOLDER;
-    let row = commands.spawn(Node {
-        height: Val::Px(PROGRESS_ROW_HEIGHT),
-        align_items: AlignItems::Center,
-        ..default()
-    }).with_children(|row| {
-        bar_container = row.spawn(Node {
-            width: Val::Percent(100.),
-            height: Val::Px(PROGRESS_BAR_HEIGHT),
-            ..default()
-        }).with_child(BuilderResearchBar::new(research)).id();
-    }).id();
-
-    (row, bar_container)
-}
-
-/// Returns the row and the two labels `update_research_detail_view_status`
-/// writes: progress percent on the left, remaining time on the right.
-fn spawn_status_row(commands: &mut Commands) -> (Entity, Entity, Entity) {
-    let percent_text = commands.spawn((
-        Text::new("--"),
-        TextRole::Data.font(STATUS_FONT_SIZE),
-    )).id();
-    let remaining_time_text = commands.spawn((
-        Text::new("--"),
-        TextRole::Data.font(STATUS_FONT_SIZE),
-    )).id();
-
-    let row = commands.spawn(Node {
-        height: Val::Px(STATUS_ROW_HEIGHT),
-        flex_direction: FlexDirection::Row,
-        justify_content: JustifyContent::SpaceBetween,
-        ..default()
-    }).add_children(&[percent_text, remaining_time_text]).id();
-
-    (row, percent_text, remaining_time_text)
+fn description_row(description: String) -> impl Scene {
+    bsn! {
+        Node { height: Val::Px(DESCRIPTION_HEIGHT), overflow: Overflow::clip_y() }
+        Children [
+            Text(description)
+            @text_font(TextRole::Body, DESCRIPTION_FONT_SIZE)
+            TextColor(DESCRIPTION_COLOR)
+        ]
+    }
 }
 
 /// Reserved height so the band does not shift when the real indicator lands.
 /// The static text describes what belongs here; blocker detection is a separate
 /// feature.
-fn spawn_stall_row(commands: &mut Commands) -> Entity {
-    commands.spawn((
-        Text::new("Stalled: --"),
-        Node {
-            height: Val::Px(STALL_ROW_HEIGHT),
-            ..default()
-        },
-        TextRole::Data.font(STATUS_FONT_SIZE),
-        TextColor::from(MUTED_TEXT_COLOR),
-    )).id()
+fn stall_row() -> impl Scene {
+    bsn! {
+        Text("Stalled: --")
+        Node { height: Val::Px(STALL_ROW_HEIGHT) }
+        @text_font(TextRole::Data, STATUS_FONT_SIZE)
+        TextColor(MUTED_TEXT_COLOR)
+    }
 }
 
 /// Absorbs the leftover vertical space so the bottom row sits on the floor of
 /// the view regardless of how tall the content above it turned out.
-fn spawn_bottom_spacer(commands: &mut Commands) -> Entity {
-    commands.spawn(Node {
-        flex_grow: 1.,
-        min_height: Val::Px(0.),
-        ..default()
-    }).id()
+fn bottom_spacer() -> impl Scene {
+    bsn! {
+        Node { flex_grow: 1., min_height: Val::Px(0.) }
+    }
 }
 
-fn spawn_bottom_row(
-    commands: &mut Commands,
-    research: Entity,
-    costs: &[ResourceAmount],
-    grants: Option<&HasOutcomes>,
-) -> Entity {
-    let remaining_chips = commands.spawn(BuilderChipStrip).with_children(|strip| {
-        for cost in costs.iter().copied() {
-            strip.spawn((
-                BuilderCostChip(cost),
-                CostChipVisualUnitAvailable,
-                ResearchCostChip { research, cost },
-            ));
-        }
-    }).id();
-    let grant_chips = commands.spawn(BuilderChipStrip).with_children(|strip| {
-        let Some(grants) = grants else { return };
-        for grant in grants.iter() {
-            strip.spawn(BuilderDisplayChip(grant));
-        }
-    }).id();
+fn bottom_row(research: Entity, costs: &[ResourceAmount], grants: Option<&HasOutcomes>) -> impl Scene {
+    let remaining_chips: Vec<_> = costs.iter().copied().map(|cost| {
+        let (chip, research_cost_chip) = (BuilderCostChip(cost), ResearchCostChip { research, cost });
+        bsn! { ~{chip} CostChipVisualUnitAvailable ~{research_cost_chip} }
+    }).collect();
+    let grant_chips: Vec<_> = grants.into_iter().flat_map(|grants| grants.iter())
+        .map(|grant| {
+            let chip = BuilderDisplayChip(grant);
+            bsn! { ~{chip} }
+        })
+        .collect();
+    let action_button = ResearchActionButton::new(research);
 
-    let remaining_strip = spawn_labelled_strip(commands, "Remaining", remaining_chips);
-    let grants_strip = spawn_labelled_strip(commands, "Grants", grant_chips);
-
-    let strips = commands.spawn(Node {
-        flex_grow: 1.,
-        flex_basis: Val::Px(0.),
-        flex_direction: FlexDirection::Row,
-        column_gap: Val::Px(BOTTOM_ROW_COLUMN_GAP),
-        ..default()
-    }).add_children(&[remaining_strip, grants_strip]).id();
-
-    let action_button = commands.spawn(Node {
-        width: Val::Px(ACTION_BUTTON_WIDTH),
-        height: Val::Px(ACTION_BUTTON_HEIGHT),
-        ..default()
-    }).with_child(ResearchActionButton::new(research)).id();
-
-    commands.spawn(Node {
-        flex_direction: FlexDirection::Row,
-        align_items: AlignItems::FlexEnd,
-        column_gap: Val::Px(BOTTOM_ROW_COLUMN_GAP),
-        ..default()
-    }).add_children(&[strips, action_button]).id()
+    bsn! {
+        Node { flex_direction: FlexDirection::Row, align_items: AlignItems::FlexEnd, column_gap: Val::Px(BOTTOM_ROW_COLUMN_GAP) }
+        Children [
+            Node { flex_grow: 1., flex_basis: Val::Px(0.), flex_direction: FlexDirection::Row, column_gap: Val::Px(BOTTOM_ROW_COLUMN_GAP) }
+            Children [
+                @labelled_strip("Remaining", remaining_chips)
+                --
+                @labelled_strip("Grants", grant_chips)
+            ]
+            --
+            Node { width: Val::Px(ACTION_BUTTON_WIDTH), height: Val::Px(ACTION_BUTTON_HEIGHT) }
+            Children [ ~{action_button} ]
+        ]
+    }
 }
 
 /// A caption over a chip strip. The two strips differ only in their label and
 /// their chips, so the column itself is built once.
-fn spawn_labelled_strip(commands: &mut Commands, label: &str, strip: Entity) -> Entity {
-    let caption = commands.spawn((
-        Text::new(label),
-        TextRole::Heading.font(STRIP_LABEL_FONT_SIZE),
-    )).id();
-
-    commands.spawn(Node {
-        flex_grow: 1.,
-        flex_basis: Val::Px(0.),
-        flex_direction: FlexDirection::Column,
-        ..default()
-    }).add_children(&[caption, strip]).id()
+fn labelled_strip(label: &'static str, chips: impl SceneList) -> impl Scene {
+    bsn! {
+        Node { flex_grow: 1., flex_basis: Val::Px(0.), flex_direction: FlexDirection::Column }
+        Children [
+            Text(label)
+            @text_font(TextRole::Heading, STRIP_LABEL_FONT_SIZE)
+            --
+            BuilderChipStrip
+            Children [ {chips} ]
+        ]
+    }
 }
 
-fn spawn_empty_state(commands: &mut Commands, text: &str) -> Entity {
-    commands.spawn((
-        Node {
-            flex_grow: 1.,
-            justify_content: JustifyContent::Center,
-            align_items: AlignItems::Center,
-            ..default()
-        },
-        children![(
-            Text::new(text),
-            TextRole::Body.font(EMPTY_TEXT_FONT_SIZE),
-            TextColor::from(MUTED_TEXT_COLOR),
-            TextLayout::no_wrap(),
-        )],
-    )).id()
+fn empty_state(text: &'static str) -> impl Scene {
+    bsn! {
+        Node { flex_grow: 1., justify_content: JustifyContent::Center, align_items: AlignItems::Center }
+        Children [
+            Text(text)
+            @text_font(TextRole::Body, EMPTY_TEXT_FONT_SIZE)
+            TextColor(MUTED_TEXT_COLOR)
+            TextLayout::no_wrap()
+        ]
+    }
 }
 
 // ============================================================================

@@ -507,8 +507,6 @@ struct QuantumFieldLayerText;
 #[derive(Component)]
 struct QuantumFieldLayerCostsContainer;
 #[derive(Component)]
-struct QuantumFieldLayerCostPanel;
-#[derive(Component)]
 struct QuantumFieldActionButtonText;
 
 #[derive(Component, Default, PartialEq)]
@@ -620,7 +618,6 @@ fn on_focused_map_object_insert_update_quantum_field_panel(
     quantum_fields: Query<&QuantumFieldLayers>,
     quantum_field_panel: Single<&mut Node, With<QuantumFieldPanel>>,
     costs_container: Single<Entity, With<QuantumFieldLayerCostsContainer>>,
-    costs_panels: Query<Entity, With<QuantumFieldLayerCostPanel>>,
 ) {
     let focused_entity = trigger.entity;
     let Ok(quantum_field) = quantum_fields.get(focused_entity) else {
@@ -629,27 +626,24 @@ fn on_focused_map_object_insert_update_quantum_field_panel(
     };
     quantum_field_panel.into_inner().display = Display::Flex;
 
-    // Remove the old panels
-    costs_panels.iter().for_each(|entity| commands.entity(entity).despawn());
-
-    // Create the new panels
-    commands.entity(costs_container.into_inner()).with_children(|parent| {
-        for cost in quantum_field.get_current_layer_costs() {
-            // The chip owns its own `Node`, so the spacing lives on a wrapper
-            // rather than alongside the builder where it would be overwritten.
-            parent.spawn((
-                Node {
-                    margin: UiRect::vertical(Val::Px(4.)),
-                    ..default()
-                },
-                QuantumFieldLayerCostPanel,
-                children![(
-                    BuilderCostChip(*cost),
-                    CostChipVisualFullPrice,
-                )],
-            ));
-        }
-    });
+    commands.entity(costs_container.into_inner())
+        .despawn_children()
+        .with_children(|parent| {
+            for cost in quantum_field.get_current_layer_costs() {
+                // The chip owns its own `Node`, so the spacing lives on a wrapper
+                // rather than alongside the builder where it would be overwritten.
+                parent.spawn((
+                    Node {
+                        margin: UiRect::vertical(Val::Px(4.)),
+                        ..default()
+                    },
+                    children![(
+                        BuilderCostChip(*cost),
+                        CostChipVisualFullPrice,
+                    )],
+                ));
+            }
+        });
 }
 
 fn update_quantum_field_action_button_system(

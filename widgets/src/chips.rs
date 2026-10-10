@@ -120,7 +120,7 @@ pub struct CostChipVisualFullPrice;
 /// Visual specialization: affordable when the stock covers the next whole unit,
 /// which is what a pay-as-you-go tick actually needs. An amount of 0 counts as
 /// affordable — nothing is owed, so nothing blocks.
-#[derive(Component, Clone, Copy, Debug)]
+#[derive(Component, Clone, Copy, Debug, Default)]
 pub struct CostChipVisualUnitAvailable;
 
 // ============================================================================
