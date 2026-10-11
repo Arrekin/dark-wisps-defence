@@ -5,7 +5,7 @@ mod admin_mode;
 mod ui_interaction;
 mod map_loading_stage;
 
-pub use game_state::{GameState, SetGamePaused, SetGamePausedReport, SetGamePausedResult, map_is_live};
+pub use game_state::{GameState, SetGamePaused, SetGamePausedReport, SetGamePausedResult, InGame};
 pub use admin_mode::AdminMode;
 pub use ui_interaction::UiInteraction;
 pub use map_loading_stage::MapLoadingStage;
@@ -15,6 +15,7 @@ impl Plugin for StatesPlugin {
     fn build(&self, app: &mut App) {
         app
             .init_state::<GameState>()
+            .add_computed_state::<InGame>()
             .init_state::<UiInteraction>()
             .init_state::<MapLoadingStage>()
             .init_state::<AdminMode>()
@@ -28,5 +29,5 @@ impl Plugin for StatesPlugin {
 }
 
 pub mod prelude {
-    pub use crate::{GameState, UiInteraction, MapLoadingStage};
+    pub use crate::{GameState, InGame, UiInteraction, MapLoadingStage};
 }

@@ -1,5 +1,6 @@
 pub mod common;
 pub mod healthbar;
+pub mod hover_background;
 pub mod palette;
 pub mod progress_bar;
 pub mod rune;
@@ -24,6 +25,7 @@ pub mod prelude {
     };
     pub use super::fill_bar::{BuilderFillBar, FillAxis, FillBar, FillBarChildren};
     pub use super::healthbar::{BuilderHealthbar, Healthbar};
+    pub use super::hover_background::HoverBackground;
     pub use super::progress_bar::{
         BuilderProgressBar, ProgressBar, ProgressBarDetail, ProgressBarGeometry, ProgressBarMaterial,
         ProgressBarShading,

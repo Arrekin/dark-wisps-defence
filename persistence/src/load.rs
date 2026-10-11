@@ -21,7 +21,7 @@ use std::{
 };
 
 use bevy::{
-    ecs::{system::command, world::CommandQueue},
+    ecs::{entity_disabling::Disabled, system::command, world::CommandQueue},
     input::common_conditions::input_just_released,
     platform::collections::HashMap,
     prelude::*,
@@ -66,6 +66,8 @@ impl Plugin for MapLoadPlugin {
                 OnEnter(MapLoadingStage::SpawnEffectInstances),
                 spawn_stage_loaders,
             )
+            // `State<InGame>` is already removed here, so reactions guarded by `in_state(InGame)` skip the teardown.
+            .add_systems(OnExit(InGame),|mut commands: Commands| commands.despawn_all::<(With<MapBound>, Allow<Disabled>)>())
             .add_systems(OnEnter(MapLoadingStage::Ready), on_map_load_ready)
             .add_systems(OnExit(GameState::Loading), finish_map_load)
             .add_systems(Update, (
@@ -596,7 +598,6 @@ impl LoadGameSignal {
         mut next_map_loading_stage: ResMut<NextState<MapLoadingStage>>,
         mut next_ui_state: ResMut<NextState<UiInteraction>>,
         current_game_state: Res<State<GameState>>,
-        map_bound_entities: Query<Entity, With<MapBound>>,
     ) {
         let config = trigger.event().0.clone();
 
@@ -634,8 +635,6 @@ impl LoadGameSignal {
         next_game_state.set(GameState::Loading);
         next_map_loading_stage.set(MapLoadingStage::Init);
         next_ui_state.set(UiInteraction::Free);
-
-        map_bound_entities.iter().for_each(|entity| commands.entity(entity).despawn());
     }
 }
 

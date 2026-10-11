@@ -39,9 +39,9 @@ use shards::{
 };
 use states::prelude::UiInteraction;
 use widgets::{
-    common::utils::{recolor_background_on, set_text_if_changed, set_ui_free_on},
+    common::utils::{set_text_if_changed, set_ui_free_on},
     palette::ABYSS_BACKGROUND,
-    prelude::{BuilderCloseButton, BuilderFillBar, BuilderFullPriceCostStrip, FillBar, TextRole, text_font},
+    prelude::{BuilderCloseButton, BuilderFillBar, BuilderFullPriceCostStrip, FillBar, HoverBackground, TextRole, text_font},
 };
 
 use crate::orders::OrderTreeParam;
@@ -416,9 +416,7 @@ fn queue_entry(forge: Option<(Entity, GridCoords)>) -> impl Scene {
             TextFont { font_size: FontSize::Px(TEXT_FONT_SIZE) }
             TextLayout::no_wrap()
             Node { padding: UiRect::axes(Val::Px(8.), Val::Px(4.)), border_radius: BorderRadius::all(Val::Px(3.)) }
-            BackgroundColor(TOGGLE_BACKGROUND)
-            on(recolor_background_on::<PointerOver>(TOGGLE_HOVER_BACKGROUND))
-            on(recolor_background_on::<PointerOut>(TOGGLE_BACKGROUND))
+            ~{HoverBackground::new(TOGGLE_BACKGROUND, TOGGLE_HOVER_BACKGROUND)}
             on(on_click_toggle_global_queue)
         }
     });
@@ -444,8 +442,7 @@ fn queue_option(forge: Option<(Entity, GridCoords)>) -> impl Scene {
         ~{entry}
         MenuItem
         TabIndex(0)
-        on(recolor_background_on::<PointerOver>(TILE_HOVER_BACKGROUND))
-        on(recolor_background_on::<PointerOut>(TILE_BACKGROUND))
+        ~{HoverBackground::new(TILE_BACKGROUND, TILE_HOVER_BACKGROUND)}
         on(on_activate_show_entry_queue)
     }
 }
@@ -534,8 +531,7 @@ fn order_shard_button(almanach: &Almanach, shard: Shard, queue: Entity) -> impl 
     bsn! {
         @shard_tile_frame()
         ~{button}
-        on(recolor_background_on::<PointerOver>(TILE_HOVER_BACKGROUND))
-        on(recolor_background_on::<PointerOut>(TILE_BACKGROUND))
+        ~{HoverBackground::new(TILE_BACKGROUND, TILE_HOVER_BACKGROUND)}
         on(on_click_place_shard_order)
         Children [
             @shard_icon(icon)
@@ -586,10 +582,8 @@ fn forge_tile(forge: Entity, coords: GridCoords) -> impl Scene {
             border: UiRect::all(Val::Px(SOURCE_BORDER_WIDTH)),
             border_radius: BorderRadius::all(Val::Px(4.)),
         }
-        BackgroundColor(TILE_BACKGROUND)
+        ~{HoverBackground::new(TILE_BACKGROUND, TILE_HOVER_BACKGROUND)}
         BorderColor::all(Color::NONE)
-        on(recolor_background_on::<PointerOver>(TILE_HOVER_BACKGROUND))
-        on(recolor_background_on::<PointerOut>(TILE_BACKGROUND))
         on(on_click_toggle_forge_selection)
         Children [
             @text(coords_label, Color::WHITE)
@@ -742,9 +736,7 @@ fn cancel_control(label: &'static str, control: CancelControl) -> impl Scene {
     bsn! {
         ~{control}
         Node { padding: UiRect::axes(Val::Px(8.), Val::Px(4.)), border_radius: BorderRadius::all(Val::Px(3.)) }
-        BackgroundColor(CANCEL_BACKGROUND)
-        on(recolor_background_on::<PointerOver>(CANCEL_HOVER_BACKGROUND))
-        on(recolor_background_on::<PointerOut>(CANCEL_BACKGROUND))
+        ~{HoverBackground::new(CANCEL_BACKGROUND, CANCEL_HOVER_BACKGROUND)}
         on(on_click_cancel_control)
         Children [ @text(label, Color::WHITE) ]
     }

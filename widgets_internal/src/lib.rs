@@ -1,6 +1,7 @@
 use bevy::app::{App, Plugin};
 
 pub(crate) mod healthbar;
+pub(crate) mod hover_background;
 pub(crate) mod chips;
 pub(crate) mod close_button;
 pub(crate) mod fill_bar;
@@ -18,6 +19,7 @@ impl Plugin for WidgetsPlugin {
         app
             .add_plugins((
                 healthbar::HealthbarPlugin,
+                hover_background::HoverBackgroundPlugin,
                 chips::ChipsPlugin,
                 close_button::CloseButtonPlugin,
                 fill_bar::FillBarPlugin,

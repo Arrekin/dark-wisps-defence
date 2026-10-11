@@ -13,7 +13,7 @@ use hud::prelude::BuilderSideMenuItemTooltip;
 use logging::prelude::*;
 use map_objects::prelude::*;
 use persistence::prelude::*;
-use states::prelude::MapLoadingStage;
+use states::prelude::{InGame, MapLoadingStage};
 
 pub(crate) struct DarkOrePlugin;
 impl Plugin for DarkOrePlugin {
@@ -22,7 +22,7 @@ impl Plugin for DarkOrePlugin {
             .add_systems(Update, despawn_depleted_dark_ores)
             .add_observer(BuilderDarkOre::on_builder_add_spawn_dark_ore)
             .add_observer(dark_ore_area_scanner::on_add_dark_ore_area_scanner_init)
-            .add_observer(dark_ore_area_scanner::on_remove_dark_ore_sync_scanners)
+            .add_observer(dark_ore_area_scanner::on_remove_dark_ore_sync_scanners.run_if(in_state(InGame)))
             .add_observer(dark_ore_area_scanner::on_add_dark_ore_sync_scanners)
             .add_observer(on_dark_ore_place_request_do_so)
             .add_observer(on_dark_ore_remove_request_do_so)

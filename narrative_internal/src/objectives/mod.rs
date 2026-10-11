@@ -9,7 +9,7 @@ use bevy::prelude::*;
 
 use narrative::prelude::ObjectiveGoalRegistry;
 use persistence::prelude::{AppGameLoadSaveExtension, CollectSave};
-use states::prelude::MapLoadingStage;
+use states::prelude::{InGame, MapLoadingStage};
 
 pub(crate) struct ObjectivesPlugin;
 impl Plugin for ObjectivesPlugin {
@@ -22,7 +22,7 @@ impl Plugin for ObjectivesPlugin {
             .add_observer(core::on_goal_state_changed_aggregate)
             // Moment-watching reactor + lost-watcher rule
             .add_observer(core::on_moment_happened_activate)
-            .add_observer(core::on_remove_moment_of_interest_fail_inactive)
+            .add_observer(core::on_remove_moment_of_interest_fail_inactive.run_if(in_state(InGame)))
             .add_systems(CollectSave, core::collect_objectives)
             .register_loader(MapLoadingStage::SpawnMapElements, "objectives", core::load_objectives)
             .add_plugins((

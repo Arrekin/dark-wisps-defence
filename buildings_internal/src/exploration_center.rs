@@ -52,10 +52,7 @@ use units::{
     prelude::*,
 };
 use viewport::{BuilderPreviewCamera, OwnedCameras};
-use widgets::{
-    common::utils::recolor_background_on,
-    prelude::{BuilderFillBar, FillAxis, FillBar, Tooltips},
-};
+use widgets::prelude::{BuilderFillBar, FillAxis, FillBar, HoverBackground, Tooltips};
 
 use crate::{
     common::*,
@@ -243,6 +240,11 @@ fn load_exploration_centers(ctx: &mut LoadContext) -> LoadResult {
 
 const SLOT_SIZE: f32 = 64.0;
 const SLOT_GAP: f32 = 8.0;
+
+// Drone action button
+const ACTION_BUTTON_ACTIVE_BACKGROUND: Color = Color::srgba(0.2, 0.3, 0.5, 0.9);
+const ACTION_BUTTON_INACTIVE_BACKGROUND: Color = Color::srgba(0.2, 0.2, 0.2, 0.5);
+const ACTION_BUTTON_HOVER_BACKGROUND: Color = Color::srgba(0.3, 0.4, 0.6, 0.95);
 
 /// Trigger to rebuild the drone slots UI
 #[derive(Event)]
@@ -571,16 +573,13 @@ impl BuilderDroneActionButton {
                     border_radius: BorderRadius::all(Val::Px(3.)),
                     ..default()
                 },
-                BackgroundColor::from(if is_active {
-                    Color::srgba(0.2, 0.3, 0.5, 0.9)
-                } else {
-                    Color::srgba(0.2, 0.2, 0.2, 0.5)
-                }),
+                HoverBackground::new(
+                    if is_active { ACTION_BUTTON_ACTIVE_BACKGROUND } else { ACTION_BUTTON_INACTIVE_BACKGROUND },
+                    ACTION_BUTTON_HOVER_BACKGROUND,
+                ),
             ))
             .add_child(text_entity)
-            .observe(DroneActionButton::on_click_handle_drone_action)
-            .observe(recolor_background_on::<PointerOver>(Color::srgba(0.3, 0.4, 0.6, 0.95)))
-            .observe(recolor_background_on::<PointerOut>(Color::srgba(0.2, 0.3, 0.5, 0.9)));
+            .observe(DroneActionButton::on_click_handle_drone_action);
     }
 }
 
@@ -597,13 +596,18 @@ impl DroneActionButton {
     }
 
     fn update(
-        buttons: Query<&DroneActionButton>,
+        mut buttons: Query<(&DroneActionButton, &mut HoverBackground)>,
         drones: Query<(&DroneState, &ExpeditionDrone)>,
         mut texts: Query<(&mut Text, &mut TextColor)>,
     ) {
-        for button in buttons.iter() {
+        for (button, mut hover_background) in buttons.iter_mut() {
             let Ok((drone_state, drone)) = drones.get(button.drone_entity) else { continue };
             let (text, is_active) = Self::button_state(*drone_state, drone.mission_target.is_some());
+
+            let background = if is_active { ACTION_BUTTON_ACTIVE_BACKGROUND } else { ACTION_BUTTON_INACTIVE_BACKGROUND };
+            if hover_background.normal() != background {
+                hover_background.set_normal(background);
+            }
 
             let Ok((mut button_text, mut color)) = texts.get_mut(button.text_entity) else { continue };
             button_text.0 = text.to_string();
@@ -823,7 +827,7 @@ impl BuyDroneSlot {
                 border_radius: BorderRadius::all(Val::Px(4.)),
                 ..default()
             },
-            BackgroundColor::from(Color::srgba(0.1, 0.2, 0.4, 0.8)),
+            HoverBackground::new(Color::srgba(0.1, 0.2, 0.4, 0.8), Color::srgba(0.15, 0.3, 0.5, 0.9)),
             BorderColor::from(Color::srgba(0.2, 0.4, 0.8, 1.)),
             children![(
                 Text::new("+"),
@@ -832,9 +836,7 @@ impl BuyDroneSlot {
             )],
             related![Tooltips[BuilderSlotTooltip::new_buy()]],
         ))
-        .observe(Self::on_click_buy_drone)
-        .observe(recolor_background_on::<PointerOver>(Color::srgba(0.15, 0.3, 0.5, 0.9)))
-        .observe(recolor_background_on::<PointerOut>(Color::srgba(0.1, 0.2, 0.4, 0.8)));
+        .observe(Self::on_click_buy_drone);
     }
 
     #[log_tags(Tag::Units)]
@@ -1097,7 +1099,7 @@ impl TargetListItem {
                 border_radius: BorderRadius::all(Val::Px(3.)),
                 ..default()
             },
-            BackgroundColor::from(Color::srgba(0.15, 0.15, 0.2, 0.9)),
+            HoverBackground::new(Color::srgba(0.15, 0.15, 0.2, 0.9), Color::srgba(0.25, 0.3, 0.4, 0.9)),
             children![
                 // Left side: Name, coordinates, and fuel cost
                 (
@@ -1158,9 +1160,7 @@ impl TargetListItem {
         mut commands: Commands,
     ) {
         commands.entity(trigger.entity)
-            .observe(Self::on_click_select_expedition_target)
-            .observe(recolor_background_on::<PointerOver>(Color::srgba(0.25, 0.3, 0.4, 0.9)))
-            .observe(recolor_background_on::<PointerOut>(Color::srgba(0.15, 0.15, 0.2, 0.9)));
+            .observe(Self::on_click_select_expedition_target);
     }
 
     fn on_click_select_expedition_target(

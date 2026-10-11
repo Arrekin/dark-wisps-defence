@@ -24,8 +24,8 @@ use resources::prelude::*;
 use shards::orders::{ForgeCurrentOrder, ForgingPanelSelectRequest, ForgingProgress, InForgingQueue, IngredientOf, ShardOrder, WorksGlobalQueue};
 use states::prelude::*;
 use widgets::{
-    prelude::{BuilderFillBar, FillBar},
-    common::utils::{recolor_background_on, set_text_if_changed},
+    prelude::{BuilderFillBar, FillBar, HoverBackground},
+    common::utils::set_text_if_changed,
 };
 
 use crate::{
@@ -244,7 +244,7 @@ impl ForgeInfoPanel {
                         border_radius: BorderRadius::all(Val::Px(3.)),
                         ..default()
                     },
-                    BackgroundColor::from(BUTTON_BACKGROUND),
+                    HoverBackground::new(BUTTON_BACKGROUND, BUTTON_HOVER_BACKGROUND),
                     children![(
                         Text::new(""),
                         TextFont::from_font_size(TEXT_FONT_SIZE),
@@ -259,7 +259,7 @@ impl ForgeInfoPanel {
                         border_radius: BorderRadius::all(Val::Px(3.)),
                         ..default()
                     },
-                    BackgroundColor::from(BUTTON_BACKGROUND),
+                    HoverBackground::new(BUTTON_BACKGROUND, BUTTON_HOVER_BACKGROUND),
                     children![(
                         Text::new("Open Forging"),
                         TextFont::from_font_size(TEXT_FONT_SIZE),
@@ -407,8 +407,6 @@ struct GlobalQueueToggleButton;
 impl GlobalQueueToggleButton {
     fn on_add_watch_click(trigger: On<Add<GlobalQueueToggleButton>>, mut commands: Commands) {
         commands.entity(trigger.entity)
-            .observe(recolor_background_on::<PointerOver>(BUTTON_HOVER_BACKGROUND))
-            .observe(recolor_background_on::<PointerOut>(BUTTON_BACKGROUND))
             .observe(Self::on_click_toggle_global_queue);
     }
 
@@ -433,8 +431,6 @@ struct OpenForgingPanelButton;
 impl OpenForgingPanelButton {
     fn on_add_watch_click(trigger: On<Add<OpenForgingPanelButton>>, mut commands: Commands) {
         commands.entity(trigger.entity)
-            .observe(recolor_background_on::<PointerOver>(BUTTON_HOVER_BACKGROUND))
-            .observe(recolor_background_on::<PointerOut>(BUTTON_BACKGROUND))
             .observe(Self::on_click_open_forging_panel);
     }
 

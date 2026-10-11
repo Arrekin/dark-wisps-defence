@@ -18,8 +18,8 @@ use shards::{
 };
 use states::prelude::*;
 use widgets::{
-    common::utils::{recolor_background_on, set_text_if_changed},
-    prelude::{BuilderHealthbar, Healthbar},
+    common::utils::set_text_if_changed,
+    prelude::{BuilderHealthbar, Healthbar, HoverBackground},
 };
 
 use crate::common::*;
@@ -355,12 +355,10 @@ impl ShardSocketTile {
                     border: UiRect::all(Val::Px(1.)),
                     ..default()
                 },
-                BackgroundColor(background),
+                HoverBackground::new(background, SOCKET_TILE_HOVER_BACKGROUND),
                 BorderColor::all(border),
             ))
             .observe(Self::on_click_open_shard_selection_panel)
-            .observe(recolor_background_on::<PointerOver>(SOCKET_TILE_HOVER_BACKGROUND))
-            .observe(recolor_background_on::<PointerOut>(background))
             .with_children(|parent| {
                 parent.spawn((
                     Text::new(content),
@@ -541,12 +539,10 @@ impl ShardSelectionPanel {
                                 border: UiRect::all(Val::Px(1.)),
                                 ..default()
                             },
-                            BackgroundColor(FOOTER_BUTTON_BACKGROUND),
+                            HoverBackground::new(FOOTER_BUTTON_BACKGROUND, FOOTER_BUTTON_HOVER_BACKGROUND),
                             BorderColor::all(FOOTER_BUTTON_BORDER),
                         ))
                         .observe(Self::on_click_cancel_order_or_unsocket)
-                        .observe(recolor_background_on::<PointerOver>(FOOTER_BUTTON_HOVER_BACKGROUND))
-                        .observe(recolor_background_on::<PointerOut>(FOOTER_BUTTON_BACKGROUND))
                         .with_children(|parent| {
                             parent.spawn((
                                 Text::new(footer_action),
@@ -566,12 +562,10 @@ impl ShardSelectionPanel {
                             border: UiRect::all(Val::Px(1.)),
                             ..default()
                         },
-                        BackgroundColor(CLOSE_BUTTON_BACKGROUND),
+                        HoverBackground::new(CLOSE_BUTTON_BACKGROUND, CLOSE_BUTTON_HOVER_BACKGROUND),
                         BorderColor::all(CLOSE_BUTTON_BORDER),
                     ))
                     .observe(Self::on_click_close_shard_selection_panel)
-                    .observe(recolor_background_on::<PointerOver>(CLOSE_BUTTON_HOVER_BACKGROUND))
-                    .observe(recolor_background_on::<PointerOut>(CLOSE_BUTTON_BACKGROUND))
                     .with_children(|parent| {
                         parent.spawn((
                             Text::new("Close"),
@@ -662,12 +656,10 @@ impl ShardPickerItem {
                     border: UiRect::all(Val::Px(1.)),
                     ..default()
                 },
-                BackgroundColor(background),
+                HoverBackground::new(background, hover_background),
                 BorderColor::all(border),
             ))
             .observe(Self::on_click_socket_or_order_shard)
-            .observe(recolor_background_on::<PointerOver>(hover_background))
-            .observe(recolor_background_on::<PointerOut>(background))
             .with_children(|parent| {
                 parent.spawn((
                     Text::new(label),

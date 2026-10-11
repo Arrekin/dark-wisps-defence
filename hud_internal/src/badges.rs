@@ -3,7 +3,7 @@ use strum::IntoEnumIterator;
 
 use resources::prelude::*;
 use states::prelude::GameState;
-use widgets::common::utils::recolor_background_on;
+use widgets::prelude::HoverBackground;
 
 pub(crate) struct BadgesPlugin;
 impl Plugin for BadgesPlugin {
@@ -124,9 +124,8 @@ fn initialize_badges_system(
                             ..default()
                         },
                         EssenceBadge,
+                        HoverBackground::new(Color::NONE, Color::srgba(0., 0.3, 0.9, 0.3)),
                     ))
-                    .observe(recolor_background_on::<PointerOver>(Color::srgba(0., 0.3, 0.9, 0.3)))
-                    .observe(recolor_background_on::<PointerOut>(Color::NONE))
                     .with_children(|parent| {
                         // Essence circle
                         let (background_color, border_color) = essence_type_to_badge_colors(essence_type);

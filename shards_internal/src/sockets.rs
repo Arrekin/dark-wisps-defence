@@ -24,14 +24,14 @@ use shards::{
     prelude::{ActiveSocket, DisabledSocket, RemovedSocket, ShardSocket, ShardSocketOperation, ShardSocketState, ShardSocketUpsert, ShardSockets, SocketedShard},
     sockets::{ShardReleaseDestination, ShardSocketOf},
 };
-use states::{map_is_live, prelude::MapLoadingStage};
+use states::prelude::{InGame, MapLoadingStage};
 
 pub(crate) struct ShardSocketsPlugin;
 impl Plugin for ShardSocketsPlugin {
     fn build(&self, app: &mut App) {
         app
             .add_observer(on_shard_socket_upsert_do_so)
-            .add_observer(on_shard_socket_operation_do_so.run_if(map_is_live))
+            .add_observer(on_shard_socket_operation_do_so.run_if(in_state(InGame)))
             .add_observer(on_insert_socketed_shard_reapply_state)
             .add_observer(on_insert_shard_socket_state_apply)
             .add_observer(on_discard_socketed_shard_release)

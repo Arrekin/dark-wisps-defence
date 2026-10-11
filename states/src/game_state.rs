@@ -13,9 +13,18 @@ pub enum GameState {
     Loading,
 }
 
-/// Run condition: true only in `Running` or `Paused`.
-pub fn map_is_live(game_state: Option<Res<State<GameState>>>) -> bool {
-    game_state.is_some_and(|game_state| matches!(game_state.get(), GameState::Running | GameState::Paused))
+/// A map is in play: `GameState` is `Running` or `Paused`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct InGame;
+impl ComputedStates for InGame {
+    type SourceStates = GameState;
+    // Switching between `Running` and `Paused` recomputes `InGame` to itself.
+    // Allowing that would run `OnExit(InGame)` and `OnEnter(InGame)` on every pause toggle.
+    const ALLOW_SAME_STATE_TRANSITIONS: bool = false;
+
+    fn compute(game_state: GameState) -> Option<Self> {
+        matches!(game_state, GameState::Running | GameState::Paused).then_some(InGame)
+    }
 }
 
 impl GameState {

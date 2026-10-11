@@ -35,7 +35,7 @@ impl Plugin for TowerFieldPlugin {
         app
             .add_observer(BuilderTowerField::on_builder_add_spawn_tower_field)
             .add_observer(on_tower_field_place_request_do_so)
-            .add_observer(on_tower_field_despawn_shrink_orphaned_force_field)
+            .add_observer(on_tower_field_despawn_shrink_orphaned_force_field.run_if(in_state(InGame)))
             .add_systems(CollectSave, collect_tower_fields)
             .register_loader(MapLoadingStage::SpawnMapElements, "tower_fields", load_tower_fields)
             .register_building(BuildingType::Tower(TowerType::Field), almanach_info);
@@ -130,7 +130,7 @@ impl BuilderTowerField {
             .observe(Self::on_insert_attack_range_resize_force_field)
             .observe(on_technical_state_changed_recompute_operational)
             .observe(Self::on_add_is_operational_grow_force_field)
-            .observe(Self::on_remove_is_operational_shrink_force_field);
+            .observe(Self::on_remove_is_operational_shrink_force_field.run_if(in_state(InGame)));
         for (content_id, socket) in &building_info.sockets {
             commands.trigger(ShardSocketUpsert::new(entity, content_id.clone(), socket.clone()));
         }
@@ -220,7 +220,7 @@ impl BuilderTowerField {
             commands.spawn(BuilderForceField::new(radius, tower_entity, transform.translation))
                 .observe(Self::on_field_entered_apply_effect)
                 .observe(Self::on_field_exited_remove_effect)
-                .observe(Self::on_field_despawn_remove_all_effects);
+                .observe(Self::on_field_despawn_remove_all_effects.run_if(in_state(InGame)));
         }
     }
 

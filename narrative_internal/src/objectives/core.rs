@@ -151,8 +151,7 @@ pub(crate) fn on_moment_happened_activate(
 }
 
 /// Lost-watcher rule: when `MomentOfInterest` is removed from an objective
-/// (the watched moment despawned, or the objective itself is despawning during
-/// map change), if the objective is still `Inactive`, set it to `Failed` and
+/// (the watched moment despawned, or the objective itself is despawning), if the objective is still `Inactive`, set it to `Failed` and
 /// fire `ObjectiveFailedEvent`. Uses `try_insert` — the observer also fires
 /// while the objective itself is being despawned (components still readable),
 /// and the queued insert must no-op on a gone entity.

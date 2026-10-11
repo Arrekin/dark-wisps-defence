@@ -49,23 +49,23 @@ use shards::{
     prelude::*,
     sockets::{ShardReleaseDestination, ShardSocketOf},
 };
-use states::{map_is_live, prelude::{GameState, MapLoadingStage}};
+use states::prelude::{GameState, InGame, MapLoadingStage};
 
 pub(crate) struct ShardOrdersPlugin;
 impl Plugin for ShardOrdersPlugin {
     fn build(&self, app: &mut App) {
         app
             .add_systems(Update, (
-                resolve_orders.run_if(map_is_live.and_then(any_with_component::<OrderNeedsResolution>)),
+                resolve_orders.run_if(in_state(InGame).and_then(any_with_component::<OrderNeedsResolution>)),
                 (assign_orders_to_free_forges, advance_orders_in_progress).run_if(in_state(GameState::Running)),
             ).chain())
             .add_systems(OnEnter(MapLoadingStage::SpawnMapElements), seed_global_forging_queue.run_if(creating_new_map))
             .add_observer(on_shard_order_cancel_request_do_so)
             .add_observer(on_builder_add_spawn_shard_order)
-            .add_observer(on_remove_forged_by_reset_order.run_if(map_is_live))
-            .add_observer(on_remove_shard_order_destination_soft_cancel.run_if(map_is_live))
+            .add_observer(on_remove_forged_by_reset_order.run_if(in_state(InGame)))
+            .add_observer(on_remove_shard_order_destination_soft_cancel.run_if(in_state(InGame)))
             .add_observer(on_insert_shard_order_destination_release_to_it)
-            .add_observer(on_shard_stock_acquired_reserve_late_shards.run_if(map_is_live))
+            .add_observer(on_shard_stock_acquired_reserve_late_shards.run_if(in_state(InGame)))
             .add_observer(on_insert_socketed_shard_fulfill_order)
             .add_systems(CollectSave, (collect_global_forging_queue, collect_shard_orders, collect_forge_queues))
             .register_loader(MapLoadingStage::SpawnMapElements, "global_forging_queue", load_global_forging_queue)
