@@ -19,12 +19,7 @@ impl BuildingType {
             Self::MiningComplex,
             Self::ExplorationCenter,
             Self::Forge,
-            Self::Tower(TowerType::Blaster),
-            Self::Tower(TowerType::Cannon),
-            Self::Tower(TowerType::RocketLauncher),
-            Self::Tower(TowerType::Emitter),
-            Self::Tower(TowerType::Field),
-        ].into_iter()
+        ].into_iter().chain(TowerType::iter().map(Self::Tower))
     }
 
     pub fn is_energy_supplier(&self) -> bool {
@@ -36,13 +31,14 @@ impl BuildingType {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, EnumIter)]
 pub enum TowerType {
     Blaster,
     Cannon,
     RocketLauncher,
     Emitter,
     Field,
+    Flamethrower,
 }
 
 #[derive(Component, Copy, Clone, Debug, PartialEq, Eq, Hash, EnumString, EnumIter, AsRefStr)]

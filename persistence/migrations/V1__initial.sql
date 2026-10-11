@@ -164,6 +164,11 @@ CREATE TABLE IF NOT EXISTS tower_blasters (
     FOREIGN KEY(id) REFERENCES entities(id)
 );
 
+CREATE TABLE IF NOT EXISTS tower_flamethrowers (
+    id INTEGER PRIMARY KEY,
+    FOREIGN KEY(id) REFERENCES entities(id)
+);
+
 CREATE TABLE IF NOT EXISTS tower_rocket_launchers (
     id INTEGER PRIMARY KEY,
     FOREIGN KEY(id) REFERENCES entities(id)

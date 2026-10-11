@@ -67,6 +67,9 @@ pub struct TowerEmitter;
 #[require(Tower, Building, BuildingType = BuildingType::Tower(TowerType::Field))]
 pub struct TowerField;
 
+#[derive(Component)]
+#[require(Tower, Building, BuildingType = BuildingType::Tower(TowerType::Flamethrower), AttackRange, AttackSpeed, AttackDamage, TowerShootingTimer, TowerWispTarget)]
+pub struct TowerFlamethrower;
 
 #[derive(Component, Default)]
 #[require(AttackSpeed)]
@@ -78,6 +81,8 @@ pub enum TowerWispTarget {
     SearchForNewTarget,
     Wisp(Entity),
     NoValidTargets(GridVersion),
+    /// The tower wants no target for now. Targeting skips it until the tower sets `SearchForNewTarget`.
+    Suspended,
 }
 
 pub mod prelude {
@@ -94,6 +99,7 @@ pub mod prelude {
         TowerCannon,
         TowerEmitter,
         TowerField,
+        TowerFlamethrower,
         TowerRocketLauncher,
         TowerShootingTimer,
         TowerWispTarget,

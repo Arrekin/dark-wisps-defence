@@ -67,6 +67,7 @@ fn targeting_system(
                 }
             }
             TowerWispTarget::SearchForNewTarget => {}
+            TowerWispTarget::Suspended => continue,
         }
         if let Some((_, target_wisp)) = target_find_closest_wisp(
             &obstacle_grid,
