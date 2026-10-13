@@ -189,6 +189,20 @@ CREATE TABLE IF NOT EXISTS tower_fields (
     FOREIGN KEY(id) REFERENCES entities(id)
 );
 
+-- How far each shooting tower is into its reload, in seconds.
+CREATE TABLE IF NOT EXISTS tower_shooting_timers (
+    entity_id INTEGER PRIMARY KEY,
+    elapsed REAL NOT NULL,
+    FOREIGN KEY(entity_id) REFERENCES entities(id)
+);
+
+-- Turret angle of towers with a rotating top, in radians.
+CREATE TABLE IF NOT EXISTS tower_top_rotations (
+    entity_id INTEGER PRIMARY KEY,
+    angle REAL NOT NULL,
+    FOREIGN KEY(entity_id) REFERENCES entities(id)
+);
+
 -- ========================
 -- Shards
 -- ========================

@@ -6,6 +6,7 @@ use grids::placement::{
     validator_all_empty, GridObjectPlacer, GridsCollectionParam, PlacementValidity,
 };
 use logging::prelude::*;
+use persistence::{prelude::*, rusqlite};
 use resources::prelude::Stock;
 use states::AdminMode;
 
@@ -161,3 +162,35 @@ pub(crate) struct TowerTopRotation {
 
 #[derive(EntityEvent)]
 pub(crate) struct BuildingDestroyRequest(pub Entity);
+
+pub(crate) trait SaveTowerExtension {
+    /// Writes how far into its reload the tower is to the shared `tower_shooting_timers` table.
+    fn save_shooting_elapsed(&self, entity_id: u32, elapsed: f32) -> rusqlite::Result<usize>;
+    /// Writes the turret angle to the shared `tower_top_rotations` table.
+    fn save_top_angle(&self, entity_id: u32, angle: f32) -> rusqlite::Result<usize>;
+}
+impl SaveTowerExtension for SaveContext<'_> {
+    fn save_shooting_elapsed(&self, entity_id: u32, elapsed: f32) -> rusqlite::Result<usize> {
+        self.tx.prepare_cached("INSERT OR REPLACE INTO tower_shooting_timers (entity_id, elapsed) VALUES (?1, ?2)")?.execute(rusqlite::params![entity_id, elapsed])
+    }
+    fn save_top_angle(&self, entity_id: u32, angle: f32) -> rusqlite::Result<usize> {
+        self.tx.prepare_cached("INSERT OR REPLACE INTO tower_top_rotations (entity_id, angle) VALUES (?1, ?2)")?.execute(rusqlite::params![entity_id, angle])
+    }
+}
+
+pub(crate) trait LoadTowerExtension {
+    fn shooting_elapsed(&self, old_id: u32) -> LoadResult<f32>;
+    fn top_angle(&self, old_id: u32) -> LoadResult<f32>;
+}
+impl LoadTowerExtension for LoadContext<'_> {
+    fn shooting_elapsed(&self, old_id: u32) -> LoadResult<f32> {
+        self.conn.prepare_cached("SELECT elapsed FROM tower_shooting_timers WHERE entity_id = ?1")
+            .and_then(|mut statement| statement.query_row([old_id], |row| row.get(0)))
+            .map_err(LoadError::table_read("tower_shooting_timers"))
+    }
+    fn top_angle(&self, old_id: u32) -> LoadResult<f32> {
+        self.conn.prepare_cached("SELECT angle FROM tower_top_rotations WHERE entity_id = ?1")
+            .and_then(|mut statement| statement.query_row([old_id], |row| row.get(0)))
+            .map_err(LoadError::table_read("tower_top_rotations"))
+    }
+}

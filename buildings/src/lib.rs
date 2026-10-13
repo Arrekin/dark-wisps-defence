@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use bevy::prelude::*;
 
 use alteration::modifiers::prelude::{AttackDamage, AttackRange, AttackSpeed, MaxIntegrityPoints, ModifierBank};
@@ -75,9 +77,17 @@ pub struct TowerFlamethrower;
 #[require(Tower, Building, BuildingType = BuildingType::Tower(TowerType::BlazeMortar), AttackRange, AttackSpeed, AttackDamage, TowerShootingTimer, TowerWispTarget)]
 pub struct TowerBlazeMortar;
 
-#[derive(Component, Default)]
+#[derive(Component, Clone, Default)]
 #[require(AttackSpeed)]
 pub struct TowerShootingTimer(pub Timer);
+impl TowerShootingTimer {
+    /// A timer `elapsed` seconds into its reload.
+    pub fn from_elapsed(elapsed: f32) -> Self {
+        let mut timer = Timer::default();
+        timer.set_elapsed(Duration::from_secs_f32(elapsed));
+        Self(timer)
+    }
+}
 
 #[derive(Component, Default)]
 pub enum TowerWispTarget {

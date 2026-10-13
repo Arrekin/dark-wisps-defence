@@ -51,6 +51,8 @@ pub(crate) struct BuilderTowerCannon {
     pub integrity_points: Option<IntegrityPoints>,
     /// Set when the player disabled this building. `None` on fresh spawn.
     pub disabled_by_player: Option<DisabledByPlayer>,
+    /// Saved reload progress. `None` on fresh spawn.
+    pub shooting_timer: Option<TowerShootingTimer>,
 }
 
 impl BuilderTowerCannon {
@@ -83,7 +85,7 @@ impl BuilderTowerCannon {
     }
 
     pub fn new(grid_position: GridCoords) -> Self {
-        Self { grid_position, integrity_points: None, disabled_by_player: None }
+        Self { grid_position, integrity_points: None, disabled_by_player: None, shooting_timer: None }
     }
     pub fn with_integrity_points(mut self, integrity_points: f32) -> Self {
         self.integrity_points = Some(IntegrityPoints::new(integrity_points));
@@ -91,6 +93,10 @@ impl BuilderTowerCannon {
     }
     pub fn with_disabled_by_player(mut self, disabled_by_player: bool) -> Self {
         self.disabled_by_player = disabled_by_player.then_some(DisabledByPlayer);
+        self
+    }
+    pub fn with_shooting_elapsed(mut self, elapsed: f32) -> Self {
+        self.shooting_timer = Some(TowerShootingTimer::from_elapsed(elapsed));
         self
     }
 
@@ -110,6 +116,7 @@ impl BuilderTowerCannon {
             .remove::<BuilderTowerCannon>()
             .insert_some(builder.integrity_points)
             .insert_some(builder.disabled_by_player)
+            .insert_some(builder.shooting_timer.clone())
             .insert((
                 TowerCannon,
                 CANNON_LOB,
@@ -153,28 +160,30 @@ fn on_tower_cannon_place_request_do_so(
 
 #[log_tags(Tag::GameSave)]
 fn collect_tower_cannons(
-    towers: Query<(Entity, &GridCoords, &IntegrityPoints, Has<DisabledByPlayer>), With<TowerCannon>>,
+    towers: Query<(Entity, &GridCoords, &IntegrityPoints, Has<DisabledByPlayer>, &TowerShootingTimer), With<TowerCannon>>,
     mut save: SaveWriter,
 ) {
     if towers.is_empty() { return; }
 
     #[debug_dev("Saving {} tower cannons", rows.len())]
-    let rows: Vec<(u32, GridCoords, f32, bool)> = towers
+    let rows: Vec<(u32, GridCoords, f32, bool, f32)> = towers
         .iter()
-        .map(|(entity, coords, integrity_points, disabled_by_player)| {
+        .map(|(entity, coords, integrity_points, disabled_by_player, shooting_timer)| {
             (
                 entity.index_u32(),
                 *coords,
                 integrity_points.get_current(),
                 disabled_by_player,
+                shooting_timer.0.elapsed_secs(),
             )
         })
         .collect();
     save.submit(move |ctx| {
-        for (id, coords, integrity_points, disabled_by_player) in rows {
+        for (id, coords, integrity_points, disabled_by_player, shooting_elapsed) in rows {
             ctx.save_marker("tower_cannons", id)?;
             ctx.save_grid_coords(id, coords)?;
             ctx.save_integrity_points(id, integrity_points)?;
+            ctx.save_shooting_elapsed(id, shooting_elapsed)?;
             if disabled_by_player {
                 ctx.save_disabled_by_player(id)?;
             }
@@ -188,9 +197,11 @@ fn load_tower_cannons(ctx: &mut LoadContext) -> LoadResult {
         let grid_position = ctx.grid_coords(old_id)?;
         let integrity_points = ctx.integrity_points(old_id)?;
         let disabled_by_player = ctx.disabled_by_player(old_id)?;
+        let shooting_elapsed = ctx.shooting_elapsed(old_id)?;
         let builder = BuilderTowerCannon::new(grid_position)
             .with_integrity_points(integrity_points)
-            .with_disabled_by_player(disabled_by_player);
+            .with_disabled_by_player(disabled_by_player)
+            .with_shooting_elapsed(shooting_elapsed);
         ctx.insert(entity, builder);
         Ok(())
     })

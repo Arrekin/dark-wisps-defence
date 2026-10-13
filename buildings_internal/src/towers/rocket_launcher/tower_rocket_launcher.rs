@@ -45,6 +45,10 @@ pub(crate) struct BuilderTowerRocketLauncher {
     pub integrity_points: Option<IntegrityPoints>,
     /// Set when the player disabled this building. `None` on fresh spawn.
     pub disabled_by_player: Option<DisabledByPlayer>,
+    /// Saved reload progress. `None` on fresh spawn.
+    pub shooting_timer: Option<TowerShootingTimer>,
+    /// Turret angle in radians. 0 on fresh spawn.
+    pub top_angle: f32,
 }
 
 impl BuilderTowerRocketLauncher {
@@ -76,13 +80,21 @@ impl BuilderTowerRocketLauncher {
         }
     }
 
-    pub fn new(grid_position: GridCoords) -> Self { Self { grid_position, integrity_points: None, disabled_by_player: None } }
+    pub fn new(grid_position: GridCoords) -> Self { Self { grid_position, integrity_points: None, disabled_by_player: None, shooting_timer: None, top_angle: 0. } }
     pub fn with_integrity_points(mut self, integrity_points: f32) -> Self {
         self.integrity_points = Some(IntegrityPoints::new(integrity_points));
         self
     }
     pub fn with_disabled_by_player(mut self, disabled_by_player: bool) -> Self {
         self.disabled_by_player = disabled_by_player.then_some(DisabledByPlayer);
+        self
+    }
+    pub fn with_shooting_elapsed(mut self, elapsed: f32) -> Self {
+        self.shooting_timer = Some(TowerShootingTimer::from_elapsed(elapsed));
+        self
+    }
+    pub fn with_top_angle(mut self, angle: f32) -> Self {
+        self.top_angle = angle;
         self
     }
 
@@ -102,6 +114,7 @@ impl BuilderTowerRocketLauncher {
             .remove::<BuilderTowerRocketLauncher>()
             .insert_some(builder.integrity_points)
             .insert_some(builder.disabled_by_player)
+            .insert_some(builder.shooting_timer.clone())
             .insert((
                 TowerRocketLauncher,
                 Sprite {
@@ -111,7 +124,7 @@ impl BuilderTowerRocketLauncher {
                 },
                 builder.grid_position,
                 grid_imprint,
-                TowerTopRotation { speed: 1.0, current_angle: 0. },
+                TowerTopRotation { speed: 1.0, current_angle: builder.top_angle },
                 NeedsPower,
                 related![Indicators[
                     IndicatorType::NoPower,
@@ -155,28 +168,32 @@ fn on_tower_rocket_launcher_place_request_do_so(
 
 #[log_tags(Tag::GameSave)]
 fn collect_tower_rocket_launchers(
-    towers: Query<(Entity, &GridCoords, &IntegrityPoints, Has<DisabledByPlayer>), With<TowerRocketLauncher>>,
+    towers: Query<(Entity, &GridCoords, &IntegrityPoints, Has<DisabledByPlayer>, &TowerShootingTimer, &TowerTopRotation), With<TowerRocketLauncher>>,
     mut save: SaveWriter,
 ) {
     if towers.is_empty() { return; }
 
     #[debug_dev("Saving {} tower rocket launchers", rows.len())]
-    let rows: Vec<(u32, GridCoords, f32, bool)> = towers
+    let rows: Vec<(u32, GridCoords, f32, bool, f32, f32)> = towers
         .iter()
-        .map(|(entity, coords, integrity_points, disabled_by_player)| {
+        .map(|(entity, coords, integrity_points, disabled_by_player, shooting_timer, top_rotation)| {
             (
                 entity.index_u32(),
                 *coords,
                 integrity_points.get_current(),
                 disabled_by_player,
+                shooting_timer.0.elapsed_secs(),
+                top_rotation.current_angle,
             )
         })
         .collect();
     save.submit(move |ctx| {
-        for (id, coords, integrity_points, disabled_by_player) in rows {
+        for (id, coords, integrity_points, disabled_by_player, shooting_elapsed, top_angle) in rows {
             ctx.save_marker("tower_rocket_launchers", id)?;
             ctx.save_grid_coords(id, coords)?;
             ctx.save_integrity_points(id, integrity_points)?;
+            ctx.save_shooting_elapsed(id, shooting_elapsed)?;
+            ctx.save_top_angle(id, top_angle)?;
             if disabled_by_player {
                 ctx.save_disabled_by_player(id)?;
             }
@@ -190,9 +207,13 @@ fn load_tower_rocket_launchers(ctx: &mut LoadContext) -> LoadResult {
         let grid_position = ctx.grid_coords(old_id)?;
         let integrity_points = ctx.integrity_points(old_id)?;
         let disabled_by_player = ctx.disabled_by_player(old_id)?;
+        let shooting_elapsed = ctx.shooting_elapsed(old_id)?;
+        let top_angle = ctx.top_angle(old_id)?;
         let builder = BuilderTowerRocketLauncher::new(grid_position)
             .with_integrity_points(integrity_points)
-            .with_disabled_by_player(disabled_by_player);
+            .with_disabled_by_player(disabled_by_player)
+            .with_shooting_elapsed(shooting_elapsed)
+            .with_top_angle(top_angle);
         ctx.insert(entity, builder);
         Ok(())
     })
