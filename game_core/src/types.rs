@@ -39,6 +39,7 @@ pub enum TowerType {
     Emitter,
     Field,
     Flamethrower,
+    BlazeMortar,
 }
 
 #[derive(Component, Copy, Clone, Debug, PartialEq, Eq, Hash, EnumString, EnumIter, AsRefStr)]

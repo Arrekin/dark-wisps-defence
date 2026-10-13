@@ -71,6 +71,10 @@ pub struct TowerField;
 #[require(Tower, Building, BuildingType = BuildingType::Tower(TowerType::Flamethrower), AttackRange, AttackSpeed, AttackDamage, TowerShootingTimer, TowerWispTarget)]
 pub struct TowerFlamethrower;
 
+#[derive(Component)]
+#[require(Tower, Building, BuildingType = BuildingType::Tower(TowerType::BlazeMortar), AttackRange, AttackSpeed, AttackDamage, TowerShootingTimer, TowerWispTarget)]
+pub struct TowerBlazeMortar;
+
 #[derive(Component, Default)]
 #[require(AttackSpeed)]
 pub struct TowerShootingTimer(pub Timer);
@@ -96,6 +100,7 @@ pub mod prelude {
         MiningComplex,
         Tower,
         TowerBlaster,
+        TowerBlazeMortar,
         TowerCannon,
         TowerEmitter,
         TowerField,

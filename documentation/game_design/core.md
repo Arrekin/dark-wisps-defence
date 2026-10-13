@@ -109,7 +109,7 @@ Slow, massive lobbing projectile that deals massive AoE damage.
 **Base hooks**: An impact crater, `Tier 1` tiny hooks splashing around the centre, `Tier 2` fills the crater. Expires after N seconds. 
 **Evolutions**:
 - **Electric → Sky Hammer** - Summons a thunderbolt within range, telegraphed by a small circle that shrinks until the strike lands. The bolt is drawn to **Charged** objects inside the circle. Hooks same as base. Adds a Projectile Count stat shard socket.
-- **Fire → Blaze Mortar** - Lobs fireballs that hit hard over a bigger area: a 2x2 main blast surrounded by a 4x4 secondary blast. Hooks TBD.
+- **Fire → Blaze Mortar** - Lobs fireballs that hit hard over a bigger area at the cost of a slower reload: a 3x3 main blast surrounded by a one-cell ring (5x5 in total) that takes 40% of the damage. Hooks TBD.
 - **Water → Deluge** - Lobs a huge ball of water splashing a 3x3 area. Creates no crater. The center takes water damage; the outer ring gets essence infusion with brief displacement and slow, as in other water effects. If the center lands in a cell with walls on both opposing sides (either axis; only walls count), the water fits the gap like a blob and forms a temporary **Water Wall**. Mostly a tool for effects: the Water Wall is a potent spot for creating **Mist**. Hooks TBD.
 - **Light → Starshell** - Throws a flare into the air on a not-too-fast lob, applying a bit of light essence around it. In the air it bursts, casting a targeted cone of light from the air down to the ground in its general flight direction; every wisp inside the cone's footprint gets **Daze**. Hooks TBD.
 

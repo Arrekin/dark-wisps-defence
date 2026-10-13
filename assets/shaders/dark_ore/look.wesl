@@ -789,10 +789,10 @@ fn dark_ore_shading(d: f32, fill: f32, texel: f32, world: vec2<f32>) -> vec4<f32
     let abundance = mix(ABUNDANCE_SPENT, 1.0, visible_fill) * interior;
     let scale = mix(SCALE_FLOOR, 1.0, interior);
 
-    let view = look_at(world, world - MAP_SUN_GROUND_DIRECTION * CONTACT_OFFSET, abundance, scale);
+    let view = look_at(world, world + MAP_SUN_GROUND_DIRECTION * CONTACT_OFFSET, abundance, scale);
     let here = view.look;
 
-    // The short probe opposite the sun; read by both the ground and the crystal branch.
+    // Contact strength from the sunward probe, shared by ground and crystal shading.
     let offset = contact_strength(view.contact, OFFSET_REACH_FACTOR);
 
     if !here.sample.hit {

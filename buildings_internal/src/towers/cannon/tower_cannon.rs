@@ -10,17 +10,14 @@ use alteration::{
 use almanach::{BuildingInfo, ObjectPresentation, prelude::*};
 use buildings::prelude::*;
 use game_core::prelude::*;
-use grids::{
-    placement::{annotate_non_empty, PlacementModes, PlaceRequest},
-    prelude::*,
-};
+use grids::placement::{annotate_non_empty, PlacementModes, PlaceRequest};
 use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
 use logging::prelude::*;
 use persistence::prelude::*;
 use resources::prelude::*;
 use shards::prelude::*;
 use states::prelude::*;
-use weaponry::prelude::*;
+use weaponry::{lob::{LobPreview, LobProfile}, prelude::*};
 use wisps::prelude::*;
 
 use crate::{common::*, tooltip::building_tooltip};
@@ -38,6 +35,13 @@ impl Plugin for TowerCannonPlugin {
             .register_building(BuildingType::Tower(TowerType::Cannon), almanach_info);
     }
 }
+
+/// The arc of every shot this tower fires.
+const CANNON_LOB: LobProfile = LobProfile {
+    launch_angle: 65_f32.to_radians(),
+    gravity: 1700.,
+    max_apex: 7. * CELL_SIZE,
+};
 
 #[derive(Component, SSS)]
 pub(crate) struct BuilderTowerCannon {
@@ -108,6 +112,8 @@ impl BuilderTowerCannon {
             .insert_some(builder.disabled_by_player)
             .insert((
                 TowerCannon,
+                CANNON_LOB,
+                LobPreview,
                 Sprite {
                     image: building_info.sprite.clone(),
                     custom_size: Some(grid_imprint.world_size()),
@@ -192,23 +198,21 @@ fn load_tower_cannons(ctx: &mut LoadContext) -> LoadResult {
 
 fn shooting_system(
     mut commands: Commands,
-    mut tower_cannons: Query<(&Transform, &mut TowerShootingTimer, &mut TowerWispTarget, &AttackDamage), (With<TowerCannon>, With<IsOperational>)>,
-    wisps: Query<(&GridPath, &GridCoords), With<Wisp>>,
+    mut tower_cannons: Query<(Entity, &Transform, &LobProfile, &mut TowerShootingTimer, &mut TowerWispTarget, &AttackDamage), (With<TowerCannon>, With<IsOperational>)>,
+    wisps: Query<WispHeading, With<Wisp>>,
 ) {
-    for (transform, mut timer, mut target, attack_damage) in tower_cannons.iter_mut() {
+    for (tower, transform, lob_profile, mut timer, mut target, attack_damage) in tower_cannons.iter_mut() {
         let TowerWispTarget::Wisp(target_wisp) = *target else { continue; };
         if !timer.0.is_finished() { continue; }
 
-        let Ok((wisp_grid_path, wisp_coords)) = wisps.get(target_wisp) else {
+        let Ok(wisp_heading) = wisps.get(target_wisp) else {
             // Target wisp does not exist anymore
             *target = TowerWispTarget::SearchForNewTarget;
             continue;
         };
 
-        // Aim at the next cell on the wisp's path, or at its current cell when it has no path.
-        let target_world_position = wisp_grid_path.next_in_path().unwrap_or(*wisp_coords).to_world_position_centered(WISP_GRID_IMPRINT);
-
-        commands.spawn(BuilderCannonball::new(transform.translation.xy(), target_world_position, *attack_damage));
+        let lob = lob_profile.lob(transform.translation.xy(), wisp_heading.next_cell_center());
+        commands.spawn(BuilderCannonball::new(lob, *attack_damage).with_shooter(tower));
         timer.0.reset();
     }
 }

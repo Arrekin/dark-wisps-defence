@@ -14,6 +14,7 @@ impl Plugin for TowersPlugin {
                 blaster::tower_blaster::TowerBlasterPlugin,
                 blaster::tower_flamethrower::TowerFlamethrowerPlugin,
                 cannon::tower_cannon::TowerCannonPlugin,
+                cannon::tower_blaze_mortar::TowerBlazeMortarPlugin,
                 rocket_launcher::tower_rocket_launcher::TowerRocketLauncherPlugin,
                 emitter::tower_emitter::TowerEmitterPlugin,
                 field::tower_field::TowerFieldPlugin,

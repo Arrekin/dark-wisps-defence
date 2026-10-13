@@ -1,8 +1,8 @@
-use bevy::prelude::*;
+use bevy::{ecs::query::QueryData, prelude::*};
 
 use alteration::effects::prelude::EffectVisualState;
 use alteration::modifiers::prelude::{AttackRange, IncomingDamageMultiplier, MaxIntegrityPoints, ModifierBank, MovementSpeed};
-use game_core::{motion::Locomotion, prelude::{FieldAffectable, GridImprint, MapBound, WispType, ZDepth}};
+use game_core::{motion::Locomotion, prelude::{FieldAffectable, GridCoords, GridImprint, MapBound, WispType, ZDepth}};
 use grids::prelude::{GridPath, GridVersion};
 
 pub mod summoning;
@@ -43,6 +43,19 @@ pub enum WispChargeAttack {
 
 pub const WISP_GRID_IMPRINT: GridImprint = GridImprint::Rectangle { width: 1, height: 1 };
 
+/// Wisp path and current cell, used to predict its next position.
+#[derive(QueryData)]
+pub struct WispHeading {
+    grid_path: &'static GridPath,
+    grid_coords: &'static GridCoords,
+}
+impl WispHeadingItem<'_, '_> {
+    /// World-space center of the next path cell, or the current cell if no next step exists.
+    pub fn next_cell_center(&self) -> Vec2 {
+        self.grid_path.next_in_path().unwrap_or(*self.grid_coords).to_world_position_centered(WISP_GRID_IMPRINT)
+    }
+}
+
 /// Spawns a side-menu tooltip for `wisp_type`, anchored to `anchor`.
 #[derive(Component, Clone, Copy, Debug)]
 pub struct BuilderWispSideMenuTooltip {
@@ -58,6 +71,7 @@ pub struct WispDied(pub Entity);
 pub mod prelude {
     pub use super::{
         WISP_GRID_IMPRINT,
+        WispHeading,
         BuilderWispSideMenuTooltip,
         Wisp,
         WispChargeAttack,

@@ -1,5 +1,7 @@
 pub(crate) mod laser_dart;
 pub(crate) mod cannonball;
+pub(crate) mod fireball;
+pub(crate) mod lob;
 pub(crate) mod rocket;
 pub(crate) mod ripple;
 pub(crate) mod ripple_post_process;
@@ -14,7 +16,9 @@ impl Plugin for WeaponryPlugin {
         app
             .add_plugins((
                 laser_dart::LaserDartPlugin,
+                lob::LobPlugin,
                 cannonball::CannonballPlugin,
+                fireball::FireballPlugin,
                 rocket::RocketPlugin,
                 ripple::RipplePlugin,
                 ripple_post_process::RipplePostProcessPlugin,

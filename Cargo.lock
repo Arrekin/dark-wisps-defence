@@ -6892,8 +6892,10 @@ version = "0.2.0"
 dependencies = [
  "alteration",
  "bevy",
+ "buildings",
  "game_core",
  "grids",
+ "hud",
  "logging",
  "persistence",
  "session",

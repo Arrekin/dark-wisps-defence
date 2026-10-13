@@ -1,5 +1,6 @@
 
 // Shared map sun. Materials choose their own response colours and strengths.
+// The sun directions must match `visuals/src/map_light.rs`.
 // Unit ground-plane direction toward the sun, used for shadows and planar edge effects.
 const MAP_SUN_GROUND_DIRECTION: vec2<f32> = vec2<f32>(-0.4472, 0.8944);
 

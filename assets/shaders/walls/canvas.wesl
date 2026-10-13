@@ -122,7 +122,7 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
 
     // Sample the wall field toward the sun to produce an offset contact shadow.
     let shadow_offset = MAP_SUN_GROUND_DIRECTION * style.surface.shadow_length * 0.7;
-    let shadow_distance = distance_at(world - shadow_offset);
+    let shadow_distance = distance_at(world + shadow_offset);
     let shadow = pow(saturate(1.0 + shadow_distance / max(style.surface.shadow_length, 0.0001)), 1.5)
         * SHADOW_STRENGTH * (1.0 - coverage);
 

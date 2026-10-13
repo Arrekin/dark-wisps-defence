@@ -159,6 +159,11 @@ CREATE TABLE IF NOT EXISTS tower_cannons (
     FOREIGN KEY(id) REFERENCES entities(id)
 );
 
+CREATE TABLE IF NOT EXISTS tower_blaze_mortars (
+    id INTEGER PRIMARY KEY,
+    FOREIGN KEY(id) REFERENCES entities(id)
+);
+
 CREATE TABLE IF NOT EXISTS tower_blasters (
     id INTEGER PRIMARY KEY,
     FOREIGN KEY(id) REFERENCES entities(id)
@@ -252,12 +257,27 @@ CREATE TABLE IF NOT EXISTS forge_queue (
 -- Projectiles
 -- ========================
 
-CREATE TABLE IF NOT EXISTS cannonballs (
-    id INTEGER PRIMARY KEY,
+CREATE TABLE IF NOT EXISTS lobs (
+    entity_id INTEGER PRIMARY KEY,
+    origin_x REAL NOT NULL,
+    origin_y REAL NOT NULL,
     target_x REAL NOT NULL,
     target_y REAL NOT NULL,
+    duration REAL NOT NULL,
+    apex REAL NOT NULL,
+    elapsed REAL NOT NULL,
+    FOREIGN KEY(entity_id) REFERENCES entities(id)
+);
+
+CREATE TABLE IF NOT EXISTS cannonballs (
+    id INTEGER PRIMARY KEY,
     damage REAL NOT NULL,
-    initial_distance REAL NOT NULL,
+    FOREIGN KEY(id) REFERENCES entities(id)
+);
+
+CREATE TABLE IF NOT EXISTS fireballs (
+    id INTEGER PRIMARY KEY,
+    damage REAL NOT NULL,
     FOREIGN KEY(id) REFERENCES entities(id)
 );
 

@@ -2,6 +2,7 @@ pub mod canvas;
 pub mod color_pulsation;
 pub mod post_process;
 pub mod explosion;
+pub mod map_light;
 pub mod wisp_attack;
 pub mod effect_material;
 
