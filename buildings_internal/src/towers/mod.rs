@@ -13,6 +13,7 @@ impl Plugin for TowersPlugin {
             .add_plugins((
                 blaster::tower_blaster::TowerBlasterPlugin,
                 blaster::tower_flamethrower::TowerFlamethrowerPlugin,
+                blaster::tower_flamethrower_flame::TowerFlamethrowerFlamePlugin,
                 cannon::tower_cannon::TowerCannonPlugin,
                 cannon::tower_blaze_mortar::TowerBlazeMortarPlugin,
                 rocket_launcher::tower_rocket_launcher::TowerRocketLauncherPlugin,

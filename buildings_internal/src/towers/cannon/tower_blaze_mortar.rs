@@ -33,7 +33,7 @@ impl Plugin for TowerBlazeMortarPlugin {
     fn build(&self, app: &mut App) {
         let almanach_info = BuilderTowerBlazeMortar::almanach_info(app.world().resource::<AssetServer>());
         app
-            .add_systems(Update, shooting_system.run_if(in_state(GameState::Running)))
+            .add_systems(Update, shooting_system.after(TowerAimingSystems).run_if(in_state(GameState::Running)))
             .add_observer(BuilderTowerBlazeMortar::on_builder_add_spawn_tower_blaze_mortar)
             .add_observer(on_tower_blaze_mortar_place_request_do_so)
             .add_systems(CollectSave, collect_tower_blaze_mortars)

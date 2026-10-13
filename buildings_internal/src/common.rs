@@ -143,6 +143,10 @@ pub(crate) fn on_technical_state_changed_recompute_operational(
     }
 }
 
+/// All activities related to aiming and targeting.
+#[derive(SystemSet, Clone, Copy, Eq, PartialEq, Hash, Debug)]
+pub(crate) struct TowerAimingSystems;
+
 /// Marks a tower's rotating top sprite; holds the tower it belongs to.
 #[derive(Component)]
 #[require(ZDepth::TOWER_TOP)]

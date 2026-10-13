@@ -30,7 +30,7 @@ impl Plugin for TowerRocketLauncherPlugin {
         app
             .add_observer(BuilderTowerRocketLauncher::on_builder_add_spawn_tower_rocket_launcher)
             .add_observer(on_tower_rocket_launcher_place_request_do_so)
-            .add_systems(Update, shooting_system.run_if(in_state(GameState::Running)))
+            .add_systems(Update, shooting_system.after(TowerAimingSystems).run_if(in_state(GameState::Running)))
             .add_systems(CollectSave, collect_tower_rocket_launchers)
             .register_loader(MapLoadingStage::SpawnMapElements, "tower_rocket_launchers", load_tower_rocket_launchers)
             .register_building(BuildingType::Tower(TowerType::RocketLauncher), almanach_info);

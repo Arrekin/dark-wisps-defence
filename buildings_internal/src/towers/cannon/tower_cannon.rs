@@ -27,7 +27,7 @@ impl Plugin for TowerCannonPlugin {
     fn build(&self, app: &mut App) {
         let almanach_info = BuilderTowerCannon::almanach_info(app.world().resource::<AssetServer>());
         app
-            .add_systems(Update, shooting_system.run_if(in_state(GameState::Running)))
+            .add_systems(Update, shooting_system.after(TowerAimingSystems).run_if(in_state(GameState::Running)))
             .add_observer(BuilderTowerCannon::on_builder_add_spawn_tower_cannon)
             .add_observer(on_tower_cannon_place_request_do_so)
             .add_systems(CollectSave, collect_tower_cannons)

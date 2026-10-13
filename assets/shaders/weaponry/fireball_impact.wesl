@@ -149,7 +149,7 @@ fn blast_layer(q: vec2<f32>, age: f32, time: f32, ground: f32) -> vec4<f32> {
     // Main blast expands, breaks into patches, and fades to smoke.
     let life = age / CORE_LIFE;
     let core_radius = main_half * CORE_FILL * (1.0 - exp(-age * CORE_GROW));
-    let noise_point = q * NOISE_SCALE / max(main_half, 0.5) - dir * age * BILLOW_SPEED + vec2<f32>(impact.seed * 7.0);
+    let noise_point = q * NOISE_SCALE / max(main_half, 0.5) - dir * age * BILLOW_SPEED + vec2<f32>(impact.seed);
     let swirl = vec2<f32>(
         gradient_fbm_2d(noise_point * 0.6 + vec2<f32>(5.0 + time * 0.7, 1.0), 2),
         gradient_fbm_2d(noise_point * 0.6 + vec2<f32>(-3.0, 9.0 - time * 0.9), 2),

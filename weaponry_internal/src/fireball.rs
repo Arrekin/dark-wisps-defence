@@ -18,7 +18,7 @@ use bevy::{
     prelude::*,
     reflect::TypePath,
     render::render_resource::{
-        AsBindGroup, BlendComponent, BlendFactor, BlendOperation, BlendState, RenderPipelineDescriptor, ShaderType,
+        AsBindGroup, BlendState, RenderPipelineDescriptor, ShaderType,
         SpecializedMeshPipelineError,
     },
     shader::ShaderRef,
@@ -31,6 +31,7 @@ use grids::{obstacles::ObstacleGrid, wisps::WispsGrid};
 use logging::prelude::*;
 use persistence::{prelude::*, rusqlite};
 use states::prelude::{GameState, MapLoadingStage};
+use visuals::shader::{ADDITIVE_BLENDING, seed_from_entity, set_blend};
 use weaponry::{lob::Lob, prelude::*};
 use wisps::prelude::Wisp;
 
@@ -207,9 +208,7 @@ impl Material2d for FireballImpactMaterial {
         _layout: &MeshVertexBufferLayoutRef,
         _key: Material2dKey<Self>,
     ) -> Result<(), SpecializedMeshPipelineError> {
-        for target in descriptor.fragment.iter_mut().flat_map(|fragment| fragment.targets.iter_mut()).flatten() {
-            target.blend = Some(BlendState::PREMULTIPLIED_ALPHA_BLENDING);
-        }
+        set_blend(descriptor, BlendState::PREMULTIPLIED_ALPHA_BLENDING);
         Ok(())
     }
 }
@@ -240,13 +239,7 @@ impl Material2d for FireballGlowMaterial {
         _layout: &MeshVertexBufferLayoutRef,
         _key: Material2dKey<Self>,
     ) -> Result<(), SpecializedMeshPipelineError> {
-        let additive = BlendState {
-            color: BlendComponent { src_factor: BlendFactor::One, dst_factor: BlendFactor::One, operation: BlendOperation::Add },
-            alpha: BlendComponent { src_factor: BlendFactor::Zero, dst_factor: BlendFactor::One, operation: BlendOperation::Add },
-        };
-        for target in descriptor.fragment.iter_mut().flat_map(|fragment| fragment.targets.iter_mut()).flatten() {
-            target.blend = Some(additive);
-        }
+        set_blend(descriptor, ADDITIVE_BLENDING);
         Ok(())
     }
 }
@@ -300,7 +293,7 @@ fn on_builder_add_spawn_fireball(
     let lob = builder.lob;
     let body_material = FireballMaterial {
         fireball: FireballUniform {
-            seed: (entity.index_u32() % 1024) as f32 * 7.31,
+            seed: seed_from_entity(entity),
             tail: 1.,
             half_length: BODY_HALF_LENGTH,
             half_width: BODY_HALF_WIDTH,
@@ -422,7 +415,7 @@ fn on_builder_add_spawn_fireball_impact(
     let material = |layer: ImpactLayer, duration: f32| FireballImpactMaterial {
         impact: FireballImpactUniform {
             age: 0.,
-            seed: (entity.index_u32() % 256) as f32 * 1.37,
+            seed: seed_from_entity(entity),
             layer: layer as u32,
             duration,
             reach: IMPACT_REACH as u32,

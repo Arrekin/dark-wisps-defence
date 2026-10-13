@@ -29,7 +29,7 @@ impl Plugin for TowerEmitterPlugin {
         app
             .add_observer(BuilderTowerEmitter::on_builder_add_spawn_tower_emitter)
             .add_observer(on_tower_emitter_place_request_do_so)
-            .add_systems(Update, shooting_system.run_if(in_state(GameState::Running)))
+            .add_systems(Update, shooting_system.after(TowerAimingSystems).run_if(in_state(GameState::Running)))
             .add_systems(CollectSave, collect_tower_emitters)
             .register_loader(MapLoadingStage::SpawnMapElements, "tower_emitters", load_tower_emitters)
             .register_building(BuildingType::Tower(TowerType::Emitter), almanach_info);

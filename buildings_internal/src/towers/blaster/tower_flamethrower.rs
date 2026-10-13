@@ -13,18 +13,25 @@
 //! dissipates. The top holds still and turns only once the fire is gone, so a burning stream never
 //! swings across the map.
 //!
+//! ## Fuel
+//!
+//! Fuel travels out from the nozzle at `FUEL_SPEED`. On ignition its head shoots out to the end of
+//! the range. On cutoff its tail leaves the nozzle and follows the head, and the stream is gone once
+//! the tail has burnt out past the range.
+//!
 //! ## Impact
 //!
 //! The hit comes from the top's actual facing, not the target's direction: the nearest wisp along
 //! the stream's axis, inside the cone and within range. A wisp in front of the target takes the hit.
+//! Only fuel hits, so a wisp is hit once the head has reached it and until the tail has passed it.
+//!
+//! `tower_flamethrower_flame` draws all of it.
+
+use std::ops::RangeInclusive;
 
 use bevy::{
     platform::collections::HashMap,
     prelude::*,
-    reflect::TypePath,
-    render::render_resource::{AsBindGroup, ShaderType},
-    shader::ShaderRef,
-    sprite_render::{AlphaMode2d, Material2d, Material2dPlugin, MeshMaterial2d},
 };
 
 use alteration::{
@@ -53,13 +60,11 @@ impl Plugin for TowerFlamethrowerPlugin {
     fn build(&self, app: &mut App) {
         let almanach_info = BuilderTowerFlamethrower::almanach_info(app.world().resource::<AssetServer>());
         app
-            .add_plugins(Material2dPlugin::<FlameMaterial>::default())
             .add_systems(Update, (
                 update_flame_states,
                 update_flame_impacts,
                 damage_flame_impacts,
-                update_flames,
-            ).chain().run_if(in_state(GameState::Running)))
+            ).chain().after(TowerAimingSystems).run_if(in_state(GameState::Running)))
             .add_observer(BuilderTowerFlamethrower::on_builder_add_spawn_tower_flamethrower)
             .add_observer(on_tower_flamethrower_place_request_do_so)
             .add_systems(CollectSave, collect_tower_flamethrowers)
@@ -69,38 +74,21 @@ impl Plugin for TowerFlamethrowerPlugin {
 }
 
 // Flame stream geometry
-const CONE_HALF_ANGLE: f32 = 7_f32.to_radians();
+const CONE_HALF_ANGLE: f32 = 3.5_f32.to_radians();
 /// Distance from the tower center to the nozzle, relative to the tower's world width.
 const NOZZLE_OFFSET: f32 = 0.4;
-const NOZZLE_HALF_WIDTH: f32 = 1.5;
-/// Mesh width relative to the cone's widest point, leaving room for the billow's puffs.
-const FLAME_MESH_MARGIN: f32 = 2.5;
+const NOZZLE_HALF_WIDTH: f32 = 2.;
 const WISP_HIT_RADIUS: f32 = 8.;
 
 // Firing gate
 const IGNITE_ANGLE: f32 = 8_f32.to_radians();
 const CUTOFF_ANGLE: f32 = 25_f32.to_radians();
-/// How long targeting stays suspended after a cutoff: until the flame has fully faded.
-const VENT_DURATION: f32 = 1. / EXTINGUISH_RATE;
 
-// Flame visuals
-const IGNITION_RATE: f32 = 6.;
-const EXTINGUISH_RATE: f32 = 5.;
-/// How fast the stream's front travels out from the nozzle, in world units per second.
-const FRONT_EXTEND_SPEED: f32 = 1200.;
-/// How fast the front pulls back when something closer gets in the way.
-const FRONT_RETRACT_SPEED: f32 = 6000.;
-/// How far the splash reaches along the stream around the impact point, at full force, right at the nozzle.
-const SPLASH_RADIUS: f32 = 32.;
-/// How much width the splash adds on each side of the stream at full force, right at the nozzle.
-const SPLASH_HALF_WIDTH: f32 = 24.;
-const SPLASH_FADE_RATE: f32 = 8.;
-/// Share of the stream within which a hit stops the stream and splashes in full.
-const REACTIVE_FULL: f32 = 0.5;
-/// Share of the stream beyond which a hit lands in the fumes, which pass it without reacting.
-const REACTIVE_END: f32 = 0.75;
-/// How deep into the hit wisp the stream's front reaches, relative to its radius: 0 = near side, 1 = center.
-const FRONT_DEPTH: f32 = 0.5;
+// Fuel
+/// Speed at which fuel travels out from the nozzle, in world units per second.
+const FUEL_SPEED: f32 = 1200.;
+/// Distance past the end of the range the tail travels before its last fire has burnt out.
+const BURNOUT_DISTANCE: f32 = 40.;
 
 #[derive(Component, SSS)]
 pub(crate) struct BuilderTowerFlamethrower {
@@ -156,8 +144,6 @@ impl BuilderTowerFlamethrower {
         trigger: On<Add<BuilderTowerFlamethrower>>,
         mut commands: Commands,
         almanach: Res<Almanach>,
-        mut meshes: ResMut<Assets<Mesh>>,
-        mut flame_materials: ResMut<Assets<FlameMaterial>>,
         builders: Query<&BuilderTowerFlamethrower>,
     ) {
         let entity = trigger.entity;
@@ -203,13 +189,6 @@ impl BuilderTowerFlamethrower {
                 ..default()
             },
             MarkerTowerRotationalTop(entity),
-            children![(
-                Flame { tower: entity, intensity: 0., front: 0., splash: 0. },
-                Mesh2d(meshes.add(Rectangle::new(1., 1.))),
-                MeshMaterial2d(flame_materials.add(FlameMaterial::default())),
-                ZDepth::GROUND_EFFECT,
-                Visibility::Hidden,
-            )],
         )).id();
         commands.entity(entity).add_child(tower_top);
         for (content_id, socket) in &building_info.sockets {
@@ -275,54 +254,111 @@ fn load_tower_flamethrowers(ctx: &mut LoadContext) -> LoadResult {
 }
 
 #[derive(Component, Default)]
-enum FlameState {
+pub(super) enum FlameState {
     /// No stream; the top turns freely toward its target.
     #[default]
     Idle,
-    Firing,
-    /// The stream was cut off; targeting is suspended while the fire in flight dissipates.
-    Venting { remaining: f32 },
+    /// `head` is the distance the first fuel has travelled from the nozzle.
+    Firing { head: f32 },
+    /// The stream was cut off. Its last fuel, `tail` from the nozzle, follows the head, and
+    /// targeting is suspended until it has burnt out.
+    Venting { head: f32, tail: f32 },
 }
 impl FlameState {
-    fn is_firing(&self) -> bool {
-        matches!(self, Self::Firing)
-    }
-}
-
-/// What the stream hits this frame; `None` while not firing or when nothing is in the way.
-#[derive(Component, Default)]
-struct FlameImpact(Option<FlameHit>);
-
-struct FlameHit {
-    /// The tile whose wisps all take the damage.
-    coords: GridCoords,
-    /// Distance from the nozzle to the hit wisp along the stream.
-    distance: f32,
-}
-
-/// Stream geometry along the top's facing.
-struct FlameAxis {
-    nozzle: Vec2,
-    direction: Vec2,
-    /// Distance from the nozzle to the end of the range.
-    length: f32,
-}
-impl FlameAxis {
-    fn new(tower_position: Vec2, angle: f32, grid_imprint: &GridImprint, attack_range: &AttackRange) -> Self {
-        // The stream reaches `attack_range` cells beyond the tower's footprint.
-        let tower_width = grid_imprint.world_size().x;
-        let nozzle_offset = tower_width * NOZZLE_OFFSET;
-        let reach = attack_range.get() * CELL_SIZE + tower_width * 0.5;
-        let direction = Vec2::from_angle(angle);
-        Self {
-            nozzle: tower_position + direction * nozzle_offset,
-            direction,
-            length: (reach - nozzle_offset).max(CELL_SIZE),
+    /// Distances from the nozzle that hold fuel, tail to head; `None` without a stream.
+    pub fn fuel(&self) -> Option<RangeInclusive<f32>> {
+        match *self {
+            Self::Idle => None,
+            Self::Firing { head } => Some(0.0..=head),
+            Self::Venting { head, tail } => Some(tail..=head),
         }
     }
 
-    fn half_width_at(&self, distance: f32) -> f32 {
-        NOZZLE_HALF_WIDTH + distance * CONE_HALF_ANGLE.tan()
+    /// Moves the fuel `travel` further out along a stream of `length`. Returns `true` when a cut-off
+    /// stream has just burnt out; it is then `Idle`.
+    fn advance(&mut self, travel: f32, length: f32) -> bool {
+        match self {
+            Self::Idle => false,
+            Self::Firing { head } => {
+                *head = (*head + travel).min(length);
+                false
+            }
+            Self::Venting { head, tail } => {
+                *head = (*head + travel).min(length);
+                *tail += travel;
+                let burnt_out = *tail >= length + BURNOUT_DISTANCE;
+                if burnt_out { *self = Self::Idle; }
+                burnt_out
+            }
+        }
+    }
+
+    fn ignite(&mut self) {
+        *self = Self::Firing { head: 0. };
+    }
+
+    fn cut_off(&mut self) {
+        if let Self::Firing { head } = *self {
+            *self = Self::Venting { head, tail: 0. };
+        }
+    }
+}
+
+/// What the stream's fuel hits this frame; `None` without fuel or when nothing is in the way.
+#[derive(Component, Default)]
+pub(super) struct FlameImpact(Option<FlameHit>);
+impl FlameImpact {
+    pub fn hit(&self) -> Option<&FlameHit> {
+        self.0.as_ref()
+    }
+
+    fn set(&mut self, hit: Option<FlameHit>) {
+        self.0 = hit;
+    }
+}
+
+pub(super) struct FlameHit {
+    /// The tile whose wisps all take the damage.
+    pub coords: GridCoords,
+    /// Distance from the nozzle to the hit wisp along the stream.
+    pub distance: f32,
+}
+
+/// Stream geometry along the top's facing.
+pub(super) struct FlameAxis {
+    pub nozzle: Vec2,
+    pub direction: Vec2,
+    /// Distance from the nozzle to the end of the range.
+    pub length: f32,
+}
+impl FlameAxis {
+    pub fn new(tower_position: Vec2, angle: f32, grid_imprint: &GridImprint, attack_range: &AttackRange) -> Self {
+        let direction = Vec2::from_angle(angle);
+        Self {
+            nozzle: tower_position + direction * Self::nozzle_offset(grid_imprint),
+            direction,
+            length: Self::length_for(grid_imprint, attack_range),
+        }
+    }
+
+    /// Distance from the nozzle to the end of the range. The stream reaches `attack_range` cells
+    /// beyond the tower's footprint.
+    pub fn length_for(grid_imprint: &GridImprint, attack_range: &AttackRange) -> f32 {
+        let reach = attack_range.get() * CELL_SIZE + grid_imprint.world_size().x * 0.5;
+        (reach - Self::nozzle_offset(grid_imprint)).max(CELL_SIZE)
+    }
+
+    fn nozzle_offset(grid_imprint: &GridImprint) -> f32 {
+        grid_imprint.world_size().x * NOZZLE_OFFSET
+    }
+
+    pub fn half_width_at(&self, distance: f32) -> f32 {
+        NOZZLE_HALF_WIDTH + distance * self.spread()
+    }
+
+    /// Half-width the stream gains per unit of distance from the nozzle.
+    pub fn spread(&self) -> f32 {
+        CONE_HALF_ANGLE.tan()
     }
 
     /// Distance along the stream at which it hits a wisp at `position`, if the wisp is inside the cone.
@@ -332,6 +368,26 @@ impl FlameAxis {
         let lateral = offset.perp_dot(self.direction).abs();
         ((0.0..=self.length).contains(&distance) && lateral <= self.half_width_at(distance) + WISP_HIT_RADIUS)
             .then_some(distance)
+    }
+
+    /// The nearest wisp inside the cone that the fuel covers, found by walking the cells under the
+    /// stream column by column.
+    fn nearest_hit(&self, fuel: RangeInclusive<f32>, wisps_grid: &WispsGrid, wisps: &Query<&Transform, With<Wisp>>) -> Option<FlameHit> {
+        let mut nearest: Option<FlameHit> = None;
+        for (column_distance, origin, imprint) in self.columns() {
+            if nearest.as_ref().is_some_and(|hit| column_distance > hit.distance) { break; }
+            for coords in imprint.iter_in_bounds(origin, wisps_grid.bounds) {
+                for &wisp in &wisps_grid[coords] {
+                    let Ok(wisp_transform) = wisps.get(wisp) else { continue; };
+                    let Some(hit_distance) = self.hit_distance(wisp_transform.translation.xy()) else { continue; };
+                    if !fuel.contains(&hit_distance) { continue; }
+                    if nearest.as_ref().is_none_or(|hit| hit_distance < hit.distance) {
+                        nearest = Some(FlameHit { coords, distance: hit_distance });
+                    }
+                }
+            }
+        }
+        nearest
     }
 
     /// The cell columns under the stream, nozzle first, each with the shortest stream distance a wisp
@@ -378,10 +434,15 @@ enum Aim {
 
 fn update_flame_states(
     time: Res<Time>,
-    mut towers: Query<(&Transform, &TowerTopRotation, &mut TowerWispTarget, &mut FlameState, Has<IsOperational>), With<TowerFlamethrower>>,
+    mut towers: Query<(&Transform, &TowerTopRotation, &GridImprint, &AttackRange, &mut TowerWispTarget, &mut FlameState, Has<IsOperational>), With<TowerFlamethrower>>,
     wisps: Query<&Transform, With<Wisp>>,
 ) {
-    for (transform, top_rotation, mut target, mut state, operational) in towers.iter_mut() {
+    let travel = FUEL_SPEED * time.delta_secs();
+    for (transform, top_rotation, grid_imprint, attack_range, mut target, mut state, operational) in towers.iter_mut() {
+        if state.advance(travel, FlameAxis::length_for(grid_imprint, attack_range)) {
+            *target = TowerWispTarget::SearchForNewTarget;
+        }
+
         let aim = match *target {
             _ if !operational => Aim::NoTarget,
             TowerWispTarget::Wisp(target_wisp) => match wisps.get(target_wisp) {
@@ -394,56 +455,32 @@ fn update_flame_states(
             TowerWispTarget::SearchForNewTarget => Aim::Pending,
             TowerWispTarget::NoValidTargets(_) | TowerWispTarget::Suspended => Aim::NoTarget,
         };
-        match (&mut *state, aim) {
-            (FlameState::Idle, Aim::Target(angle_off)) if angle_off <= IGNITE_ANGLE => {
-                *state = FlameState::Firing;
-            }
-            (FlameState::Firing, Aim::NoTarget) => {
-                *state = FlameState::Venting { remaining: VENT_DURATION };
+        match (&*state, aim) {
+            (FlameState::Idle, Aim::Target(angle_off)) if angle_off <= IGNITE_ANGLE => state.ignite(),
+            (FlameState::Firing { .. }, Aim::NoTarget) => {
+                state.cut_off();
                 *target = TowerWispTarget::Suspended;
             }
-            (FlameState::Firing, Aim::Target(angle_off)) if angle_off > CUTOFF_ANGLE => {
-                *state = FlameState::Venting { remaining: VENT_DURATION };
+            (FlameState::Firing { .. }, Aim::Target(angle_off)) if angle_off > CUTOFF_ANGLE => {
+                state.cut_off();
                 *target = TowerWispTarget::Suspended;
-            }
-            (FlameState::Venting { remaining }, _) => {
-                *remaining -= time.delta_secs();
-                if *remaining <= 0. {
-                    *state = FlameState::Idle;
-                    *target = TowerWispTarget::SearchForNewTarget;
-                }
             }
             _ => {}
         }
     }
 }
 
-/// Walks the cells under the stream column by column and picks the tile of the nearest wisp inside the cone.
-fn update_flame_impacts(
+pub(super) fn update_flame_impacts(
     wisps_grid: Res<WispsGrid>,
     mut towers: Query<(&Transform, &TowerTopRotation, &GridImprint, &AttackRange, &FlameState, &mut FlameImpact), With<TowerFlamethrower>>,
     wisps: Query<&Transform, With<Wisp>>,
 ) {
     for (transform, top_rotation, grid_imprint, attack_range, state, mut impact) in towers.iter_mut() {
-        if !state.is_firing() {
-            impact.0 = None;
-            continue;
-        }
-        let axis = FlameAxis::new(transform.translation.xy(), top_rotation.current_angle, grid_imprint, attack_range);
-        let mut nearest: Option<FlameHit> = None;
-        for (column_distance, origin, imprint) in axis.columns() {
-            if nearest.as_ref().is_some_and(|hit| column_distance > hit.distance) { break; }
-            for coords in imprint.iter_in_bounds(origin, wisps_grid.bounds) {
-                for &wisp in &wisps_grid[coords] {
-                    let Ok(wisp_transform) = wisps.get(wisp) else { continue; };
-                    let Some(hit_distance) = axis.hit_distance(wisp_transform.translation.xy()) else { continue; };
-                    if nearest.as_ref().is_none_or(|hit| hit_distance < hit.distance) {
-                        nearest = Some(FlameHit { coords, distance: hit_distance });
-                    }
-                }
-            }
-        }
-        impact.0 = nearest;
+        let hit = state.fuel().and_then(|fuel| {
+            FlameAxis::new(transform.translation.xy(), top_rotation.current_angle, grid_imprint, attack_range)
+                .nearest_hit(fuel, &wisps_grid, &wisps)
+        });
+        impact.set(hit);
     }
 }
 
@@ -454,119 +491,11 @@ fn damage_flame_impacts(
     mut towers: Query<(&FlameImpact, &AttackDamage, &mut TowerShootingTimer), (With<TowerFlamethrower>, With<IsOperational>)>,
 ) {
     for (impact, attack_damage, mut timer) in towers.iter_mut() {
-        let Some(hit) = &impact.0 else { continue; };
+        let Some(hit) = impact.hit() else { continue; };
         if !timer.0.is_finished() { continue; }
         for &wisp in &wisps_grid[hit.coords] {
             damage_messages.write(DamageMessage { target: wisp, amount: attack_damage.get() });
         }
         timer.0.reset();
-    }
-}
-
-/// The fire stream drawn from the nozzle of a Flamethrower's rotating top.
-#[derive(Component)]
-struct Flame {
-    tower: Entity,
-    /// 0 = extinguished, 1 = full stream.
-    intensity: f32,
-    /// Distance from the nozzle where the stream ends, smoothed toward the impact or the full range.
-    front: f32,
-    /// 0 = no hit, 1 = full splash at the front, smoothed.
-    splash: f32,
-}
-
-/// Field order and types mirror `Flame` in `assets/shaders/towers/flame.wesl`.
-#[derive(ShaderType, Clone, Copy, Debug, Default, PartialEq)]
-struct FlameUniform {
-    intensity: f32,
-    seed: f32,
-    start_half_width: f32,
-    end_half_width: f32,
-    aspect: f32,
-    front: f32,
-    splash_radius: f32,
-    splash: f32,
-    splash_half_width: f32,
-}
-
-#[derive(Asset, AsBindGroup, TypePath, Clone, Copy, Debug, Default)]
-pub(crate) struct FlameMaterial {
-    #[uniform(0)]
-    flame: FlameUniform,
-}
-impl Material2d for FlameMaterial {
-    fn fragment_shader() -> ShaderRef {
-        "shaders/towers/flame.wesl".into()
-    }
-    fn alpha_mode(&self) -> AlphaMode2d {
-        AlphaMode2d::Blend
-    }
-}
-
-/// Fades each flame in while its tower fires and out otherwise, and stretches it from the nozzle to
-/// the end of the tower's range. The stream ends at its front, which shoots out on ignition and
-/// follows the impact. A cut-off stream keeps its front and splash while it fades.
-fn update_flames(
-    time: Res<Time>,
-    mut flame_materials: ResMut<Assets<FlameMaterial>>,
-    mut flames: Query<(&mut Flame, &mut Transform, &mut Visibility, &MeshMaterial2d<FlameMaterial>)>,
-    towers: Query<(&AttackRange, &GridImprint, &FlameState, &FlameImpact), With<TowerFlamethrower>>,
-) {
-    for (mut flame, mut transform, mut visibility, material) in flames.iter_mut() {
-        let Ok((attack_range, grid_imprint, state, impact)) = towers.get(flame.tower) else { continue; };
-
-        // Local to the top, which carries the tower's position and facing.
-        let axis = FlameAxis::new(Vec2::ZERO, 0., grid_imprint, attack_range);
-        let length = axis.length;
-
-        if state.is_firing() {
-            if flame.intensity == 0. {
-                flame.front = 0.;
-            }
-            // The stream stops partway into the hit wisp. A hit's reaction fades out toward the
-            // fumes, where the stream no longer has the force to splash around a wisp and keeps its
-            // full length.
-            let (target_front, target_splash) = match &impact.0 {
-                Some(hit) => {
-                    let reactivity = (hit.distance / length).remap(REACTIVE_FULL, REACTIVE_END, 1., 0.).clamp(0., 1.);
-                    let stop = (hit.distance - WISP_HIT_RADIUS * (1. - FRONT_DEPTH)).max(0.);
-                    (length.lerp(stop, reactivity), reactivity)
-                }
-                None => (length, 0.),
-            };
-            flame.front = if target_front < flame.front {
-                (flame.front - FRONT_RETRACT_SPEED * time.delta_secs()).max(target_front)
-            } else {
-                (flame.front + FRONT_EXTEND_SPEED * time.delta_secs()).min(target_front)
-            };
-            let splash_step = SPLASH_FADE_RATE * time.delta_secs();
-            flame.splash += (target_splash - flame.splash).clamp(-splash_step, splash_step);
-            flame.intensity = (flame.intensity + IGNITION_RATE * time.delta_secs()).min(1.);
-        } else {
-            flame.intensity = (flame.intensity - EXTINGUISH_RATE * time.delta_secs()).max(0.);
-        }
-        visibility.set_if_neq(if flame.intensity > 0. { Visibility::Inherited } else { Visibility::Hidden });
-        if flame.intensity == 0. { continue; }
-
-        let end_half_width = axis.half_width_at(length);
-        let width = 2. * end_half_width * FLAME_MESH_MARGIN;
-        transform.translation.x = axis.nozzle.x + length * 0.5;
-        transform.scale = Vec3::new(length, width, 1.);
-
-        let uniform = FlameUniform {
-            intensity: flame.intensity,
-            seed: (flame.tower.index_u32() % 1024) as f32 * 7.31,
-            start_half_width: NOZZLE_HALF_WIDTH / width,
-            end_half_width: end_half_width / width,
-            aspect: length / width,
-            front: (flame.front / length).min(1.),
-            splash_radius: SPLASH_RADIUS / length,
-            splash: flame.splash,
-            splash_half_width: SPLASH_HALF_WIDTH / width,
-        };
-        let Some(mut current) = flame_materials.get_mut(&material.0) else { continue; };
-        if current.flame != uniform {
-            current.flame = uniform;
-        }
     }
 }

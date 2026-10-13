@@ -29,7 +29,7 @@ impl Plugin for TowerBlasterPlugin {
         app
             .add_observer(BuilderTowerBlaster::on_builder_add_spawn_tower_blaster)
             .add_observer(on_tower_blaster_place_request_do_so)
-            .add_systems(Update, shooting_system.run_if(in_state(GameState::Running)))
+            .add_systems(Update, shooting_system.after(TowerAimingSystems).run_if(in_state(GameState::Running)))
             .add_systems(CollectSave, collect_tower_blasters)
             .register_loader(MapLoadingStage::SpawnMapElements, "tower_blasters", load_tower_blasters)
             .register_building(BuildingType::Tower(TowerType::Blaster), almanach_info);

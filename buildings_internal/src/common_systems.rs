@@ -28,9 +28,9 @@ impl Plugin for CommonSystemsPlugin {
             ).run_if(in_state(GameState::Running)))
             .add_systems(Update, (
                 targeting_system,
-                rotate_tower_top_system,
                 rotational_aiming_system,
-            ).run_if(in_state(GameState::Running)))
+                rotate_tower_top_system,
+            ).chain().in_set(TowerAimingSystems).run_if(in_state(GameState::Running)))
             .add_observer(on_building_destroy_request_do_so)
             .add_observer(on_insert_attack_speed_sync_shooting_timer)
             .add_observer(on_object_face_request_draw_building);
