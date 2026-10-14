@@ -1,6 +1,10 @@
 pub(crate) mod laser_dart;
 pub(crate) mod cannonball;
 pub(crate) mod fireball;
+pub(crate) mod flame_stream;
+pub(crate) mod flame_stream_fire;
+pub(crate) mod inferno_dome;
+pub(crate) mod inferno_dome_post_process;
 pub(crate) mod lob;
 pub(crate) mod rocket;
 pub(crate) mod ripple;
@@ -19,6 +23,10 @@ impl Plugin for WeaponryPlugin {
                 lob::LobPlugin,
                 cannonball::CannonballPlugin,
                 fireball::FireballPlugin,
+                flame_stream::FlameStreamPlugin,
+                flame_stream_fire::FlameStreamFirePlugin,
+                inferno_dome::InfernoDomePlugin,
+                inferno_dome_post_process::InfernoDomePostProcessPlugin,
                 rocket::RocketPlugin,
                 ripple::RipplePlugin,
                 ripple_post_process::RipplePostProcessPlugin,

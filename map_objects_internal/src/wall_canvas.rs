@@ -15,7 +15,7 @@ use bevy::{
 use game_core::prelude::{Bounds, GridCoords, MapInfo, ZDepth};
 use map_objects::{prelude::Wall, wall_style::{WallCanvasDebug, WallStyle, WallStyleKey, WallStyles}};
 use states::prelude::MapLoadingStage;
-use visuals::prelude::MapCanvasBundle;
+use visuals::{prelude::MapCanvasBundle, unit_quad::UnitQuad};
 
 pub(crate) struct WallCanvasPlugin;
 impl Plugin for WallCanvasPlugin {
@@ -80,7 +80,7 @@ impl WallCanvas {
         map_info: Res<MapInfo>,
         styles: Res<WallStyles>,
         debug: Res<WallCanvasDebug>,
-        mut meshes: ResMut<Assets<Mesh>>,
+        unit_quad: Res<UnitQuad>,
         mut materials: ResMut<Assets<WallCanvasMaterial>>,
         mut buffers: ResMut<Assets<ShaderBuffer>>,
     ) {
@@ -99,7 +99,7 @@ impl WallCanvas {
             settings: WallCanvasSettings::new(map_bounds, debug.shader_index()),
         });
         commands.spawn((
-            MapCanvasBundle::new(&mut meshes, material, &map_info),
+            MapCanvasBundle::new(&unit_quad, material, &map_info),
             WallCanvas,
         ));
     }

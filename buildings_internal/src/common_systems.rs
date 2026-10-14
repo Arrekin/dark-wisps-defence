@@ -2,8 +2,8 @@ use std::time::Duration;
 
 use bevy::prelude::*;
 
-use alteration::modifiers::prelude::*;
 use almanach::prelude::*;
+use alteration::modifiers::prelude::*;
 use buildings::prelude::*;
 use game_core::{math::angle_difference, prelude::*};
 use grids::{
@@ -33,6 +33,7 @@ impl Plugin for CommonSystemsPlugin {
             ).chain().in_set(TowerAimingSystems).run_if(in_state(GameState::Running)))
             .add_observer(on_building_destroy_request_do_so)
             .add_observer(on_insert_attack_speed_sync_shooting_timer)
+            .add_observer(on_remove_is_operational_reset_shooting_timer)
             .add_observer(on_object_face_request_draw_building);
     }
 }
@@ -45,6 +46,15 @@ fn on_insert_attack_speed_sync_shooting_timer(
     let Ok((mut timer, attack_speed)) = timers.get_mut(entity) else { return; };
     if attack_speed.get() == 0. { return; }
     timer.0.set_duration(Duration::from_secs_f32(1. / attack_speed.get()));
+}
+
+/// A tower that stops being operational loses its reload progress.
+fn on_remove_is_operational_reset_shooting_timer(
+    trigger: On<Remove<IsOperational>>,
+    mut timers: Query<&mut TowerShootingTimer>,
+) {
+    let Ok(mut timer) = timers.get_mut(trigger.entity) else { return; };
+    timer.0.reset();
 }
 
 fn targeting_system(

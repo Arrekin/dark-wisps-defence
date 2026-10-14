@@ -7,11 +7,13 @@ pub(crate) mod wisp_attack;
 use bevy::prelude::*;
 
 use states::prelude::GameState;
+use visuals::unit_quad::UnitQuad;
 
 pub struct VisualsPlugin;
 impl Plugin for VisualsPlugin {
     fn build(&self, app: &mut App) {
         app
+            .init_resource::<UnitQuad>()
             .add_systems(Update, color_pulsation::pulsate_sprites_system)
             .add_observer(color_pulsation::on_remove_color_pulsation_reset_sprite_lightness)
             .add_plugins(post_process::PostProcessOrderingPlugin)

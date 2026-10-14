@@ -82,6 +82,7 @@ use units::{
     },
     prelude::*,
 };
+use visuals::unit_quad::UnitQuad;
 
 pub(crate) struct ExpeditionDronePlugin;
 impl Plugin for ExpeditionDronePlugin {
@@ -625,6 +626,7 @@ fn on_builder_add_spawn_expedition_drone(
     trigger: On<Add<BuilderExpeditionDrone>>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
+    unit_quad: Res<UnitQuad>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut beam_materials: ResMut<Assets<ScanningBeamMaterial>>,
     mut spot_materials: ResMut<Assets<ScanSpotMaterial>>,
@@ -644,7 +646,6 @@ fn on_builder_add_spawn_expedition_drone(
     };
 
     // Create scanning visual materials
-    let beam_mesh = meshes.add(Rectangle::new(1.0, 1.0));
     let beam_material = beam_materials.add(ScanningBeamMaterial::default());
     let spot_mesh = meshes.add(Circle::new(1.0));
     let spot_material = spot_materials.add(ScanSpotMaterial::default());
@@ -665,7 +666,7 @@ fn on_builder_add_spawn_expedition_drone(
 
     // Spawn beam
     commands.spawn((
-        Mesh2d(beam_mesh),
+        unit_quad.mesh(),
         MeshMaterial2d(beam_material),
         ScanningBeam {
             drone: entity,

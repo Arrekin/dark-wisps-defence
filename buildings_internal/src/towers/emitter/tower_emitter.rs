@@ -3,11 +3,11 @@ use bevy::{
     prelude::*,
 };
 
+use almanach::{BuildingInfo, ObjectPresentation, prelude::*};
 use alteration::{
     effects::prelude::*,
     modifiers::prelude::*,
 };
-use almanach::{BuildingInfo, ObjectPresentation, prelude::*};
 use buildings::prelude::*;
 use game_core::prelude::*;
 use grids::placement::{annotate_non_empty, PlacementModes, PlaceRequest};

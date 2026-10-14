@@ -16,7 +16,7 @@ use almanach::Almanach;
 use game_core::prelude::{Bounds, GridCoords, MapInfo, ZDepth};
 use map_objects::prelude::DarkOre;
 use states::prelude::MapLoadingStage;
-use visuals::prelude::MapCanvasBundle;
+use visuals::{prelude::MapCanvasBundle, unit_quad::UnitQuad};
 
 pub(crate) struct DarkOreCanvasPlugin;
 impl Plugin for DarkOreCanvasPlugin {
@@ -73,7 +73,7 @@ impl DarkOreCanvas {
     fn create(
         mut commands: Commands,
         map_info: Res<MapInfo>,
-        mut meshes: ResMut<Assets<Mesh>>,
+        unit_quad: Res<UnitQuad>,
         mut materials: ResMut<Assets<DarkOreCanvasMaterial>>,
         mut buffers: ResMut<Assets<ShaderBuffer>>,
     ) {
@@ -88,7 +88,7 @@ impl DarkOreCanvas {
             settings: DarkOreCanvasSettings::new(map_bounds),
         });
         commands.spawn((
-            MapCanvasBundle::new(&mut meshes, material, &map_info),
+            MapCanvasBundle::new(&unit_quad, material, &map_info),
             DarkOreCanvas,
         ));
     }

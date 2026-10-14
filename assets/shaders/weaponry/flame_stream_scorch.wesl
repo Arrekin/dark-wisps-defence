@@ -1,27 +1,24 @@
 import bevy_sprite_render::mesh2d::vertex_output::VertexOutput;
 import package::shaders::common::fire_ramp::fire_ramp;
 import package::shaders::common::value_noise::value_fbm_3d;
-import package::shaders::towers::flamethrower::common::TILE_HALF;
+import package::shaders::weaponry::flame_stream_common::TILE_HALF;
 
-// Char a Flamethrower leaves on a tile it stopped burning: a ragged dark mark with a few cooling
-// cinders, fading away.
-//
-// Distances are in world units, measured from the tile's center. Output is premultiplied, so the
-// mark darkens the ground while the cinders glow. Nothing is sampled from a texture.
+// `FlameScorch` ground decal shader (world units relative to tile center).
+// Premultiplied output: char darkens the ground via `alpha` while cinders add light (`rgb`).
 
-// Field order and types mirror `FlameScorchUniform` in buildings_internal/src/towers/blaster/tower_flamethrower_flame.rs.
+// Field order and types mirror `FlameScorchUniform` in weaponry_internal/src/flame_stream_fire.rs.
 struct FlameScorch {
-    life: f32,       // 0 when the burning stopped, 1 once the mark is gone
-    strength: f32,   // 0..1, grows with how long the tile burned
+    life: f32,       // normalized age (0..1)
+    strength: f32,   // normalized char intensity (0..1) from burn duration
     seed: f32,
-    half_size: f32,  // mesh half-size
+    half_size: f32,  // quad half-size in world units
 };
 
 @group(2) @binding(0)
 var<uniform> scorch: FlameScorch;
 
 const DARKNESS: f32 = 0.5;
-const CINDER_DECAY: f32 = 6.0; // how fast the cinders cool, relative to the mark's life
+const CINDER_DECAY: f32 = 6.0; // exponential decay rate over `life`
 
 @fragment
 fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {

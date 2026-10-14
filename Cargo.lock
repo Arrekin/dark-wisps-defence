@@ -6512,6 +6512,7 @@ dependencies = [
  "persistence",
  "states",
  "units",
+ "visuals",
 ]
 
 [[package]]

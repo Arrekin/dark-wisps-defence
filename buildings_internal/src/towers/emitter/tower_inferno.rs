@@ -1,0 +1,225 @@
+//! # Inferno Tower
+//!
+//! Fire evolution of the Emitter. Charges over its reload (`TowerShootingTimer`), holds at full
+//! charge, and spawns an `InfernoDome` covering its range once a target wisp is inside.
+
+use bevy::{
+    platform::collections::HashMap,
+    prelude::*,
+};
+
+use almanach::{BuildingInfo, ObjectPresentation, prelude::*};
+use alteration::{
+    effects::prelude::*,
+    modifiers::prelude::*,
+};
+use buildings::prelude::*;
+use game_core::prelude::*;
+use grids::placement::{annotate_non_empty, PlacementModes, PlaceRequest};
+use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
+use logging::prelude::*;
+use persistence::prelude::*;
+use resources::prelude::*;
+use shards::prelude::*;
+use states::prelude::*;
+use weaponry::prelude::*;
+use wisps::prelude::*;
+
+use crate::{common::*, tooltip::building_tooltip};
+
+use super::tower_inferno_fire::{InfernoCore, InfernoEmberRing};
+
+pub(crate) struct TowerInfernoPlugin;
+impl Plugin for TowerInfernoPlugin {
+    fn build(&self, app: &mut App) {
+        let almanach_info = BuilderTowerInferno::almanach_info(app.world().resource::<AssetServer>());
+        app
+            .add_systems(Update, shooting_system.after(TowerAimingSystems).run_if(in_state(GameState::Running)))
+            .add_observer(BuilderTowerInferno::on_builder_add_spawn_tower_inferno)
+            .add_observer(on_tower_inferno_place_request_do_so)
+            .add_systems(CollectSave, collect_tower_infernos)
+            .register_loader(MapLoadingStage::SpawnMapElements, "tower_infernos", load_tower_infernos)
+            .register_building(BuildingType::Tower(TowerType::Inferno), almanach_info);
+    }
+}
+
+#[derive(Component, SSS)]
+pub(crate) struct BuilderTowerInferno {
+    pub grid_position: GridCoords,
+    /// Custom integrity points, or `None` to use the fresh-spawn baseline.
+    pub integrity_points: Option<IntegrityPoints>,
+    /// Set when the player disabled this building. `None` on fresh spawn.
+    pub disabled_by_player: Option<DisabledByPlayer>,
+    /// Saved reload progress. `None` on fresh spawn.
+    pub shooting_timer: Option<TowerShootingTimer>,
+}
+
+impl BuilderTowerInferno {
+    pub fn almanach_info(asset_server: &AssetServer) -> BuildingInfo {
+        BuildingInfo {
+            name: "Inferno".to_string(),
+            description: "Hoards heat and releases it all at once over everything close by.".to_string(),
+            sprite: asset_server.load("buildings/tower_emitter.png"),
+            top_sprite: None,
+            grid_imprint: GridImprint::Rectangle { width: 2, height: 2 },
+            cost: vec![ResourceAmount::new(ResourceType::DarkOre, 450)],
+            baseline: HashMap::from([
+                (ModifierType::MaxIntegrityPoints, 100.),
+                (ModifierType::AttackRange, 4.),
+                (ModifierType::AttackSpeed, 0.2),
+            ]),
+            sockets: vec![
+                ("attack_speed".into(), ShardSocket::new(ShardType::Speed, "Attack speed", ModifierType::AttackSpeed, [0.05, 0.1, 0.15])),
+                ("attack_range".into(), ShardSocket::new(ShardType::Reach, "Attack range", ModifierType::AttackRange, [1., 2., 3.])),
+            ],
+            validate: building_validator,
+            annotate: annotate_non_empty,
+            placement: PlacementModes::default(),
+            presentation: ObjectPresentation {
+                tooltip: Some(building_tooltip),
+            },
+        }
+    }
+
+    pub fn new(grid_position: GridCoords) -> Self {
+        Self { grid_position, integrity_points: None, disabled_by_player: None, shooting_timer: None }
+    }
+    pub fn with_integrity_points(mut self, integrity_points: f32) -> Self {
+        self.integrity_points = Some(IntegrityPoints::new(integrity_points));
+        self
+    }
+    pub fn with_disabled_by_player(mut self, disabled_by_player: bool) -> Self {
+        self.disabled_by_player = disabled_by_player.then_some(DisabledByPlayer);
+        self
+    }
+    pub fn with_shooting_elapsed(mut self, elapsed: f32) -> Self {
+        self.shooting_timer = Some(TowerShootingTimer::from_elapsed(elapsed));
+        self
+    }
+
+    pub fn on_builder_add_spawn_tower_inferno(
+        trigger: On<Add<BuilderTowerInferno>>,
+        mut commands: Commands,
+        almanach: Res<Almanach>,
+        builders: Query<&BuilderTowerInferno>,
+    ) {
+        let entity = trigger.entity;
+        let Ok(builder) = builders.get(entity) else { return; };
+
+        let building_info = almanach.get_building_info(BuildingType::Tower(TowerType::Inferno));
+        let grid_imprint = building_info.grid_imprint;
+
+        commands.entity(entity)
+            .remove::<BuilderTowerInferno>()
+            .insert_some(builder.integrity_points)
+            .insert_some(builder.disabled_by_player)
+            .insert_some(builder.shooting_timer.clone())
+            .insert((
+                TowerInferno,
+                Sprite {
+                    image: building_info.sprite.clone(),
+                    custom_size: Some(grid_imprint.world_size()),
+                    ..default()
+                },
+                builder.grid_position,
+                grid_imprint,
+                NeedsPower,
+                related![Indicators[
+                    IndicatorType::NoPower,
+                    IndicatorType::DisabledByPlayer,
+                ]],
+                related![EffectInstances[
+                    (ModifierContributions(building_info.baseline.clone()), BaselineEffect),
+                ]],
+                children![
+                    IndicatorDisplay::default(),
+                    InfernoCore,
+                    InfernoEmberRing,
+                ],
+            ))
+            .observe(on_technical_state_changed_recompute_operational);
+        for (content_id, socket) in &building_info.sockets {
+            commands.trigger(ShardSocketUpsert::new(entity, content_id.clone(), socket.clone()));
+        }
+        commands.trigger(TechnicalStateChanged { entity, kind: TechnicalChange::JustSpawned });
+    }
+}
+
+fn on_tower_inferno_place_request_do_so(
+    trigger: On<PlaceRequest>,
+    mut commands: Commands,
+    mut placement: BuildingPlacementManager,
+) {
+    let PlaceRequest(MapObject::Building(BuildingType::Tower(TowerType::Inferno))) = *trigger else { return };
+    let Some(coords) = placement.claim(BuildingType::Tower(TowerType::Inferno)) else { return };
+    commands.spawn(BuilderTowerInferno::new(coords));
+}
+
+#[log_tags(Tag::GameSave)]
+fn collect_tower_infernos(
+    towers: Query<(Entity, &GridCoords, &IntegrityPoints, Has<DisabledByPlayer>, &TowerShootingTimer), With<TowerInferno>>,
+    mut save: SaveWriter,
+) {
+    if towers.is_empty() { return; }
+
+    #[debug_dev("Saving {} infernos", rows.len())]
+    let rows: Vec<(u32, GridCoords, f32, bool, f32)> = towers
+        .iter()
+        .map(|(entity, coords, integrity_points, disabled_by_player, shooting_timer)| {
+            (
+                entity.index_u32(),
+                *coords,
+                integrity_points.get_current(),
+                disabled_by_player,
+                shooting_timer.0.elapsed_secs(),
+            )
+        })
+        .collect();
+    save.submit(move |ctx| {
+        for (id, coords, integrity_points, disabled_by_player, shooting_elapsed) in rows {
+            ctx.save_marker("tower_infernos", id)?;
+            ctx.save_grid_coords(id, coords)?;
+            ctx.save_integrity_points(id, integrity_points)?;
+            ctx.save_shooting_elapsed(id, shooting_elapsed)?;
+            if disabled_by_player {
+                ctx.save_disabled_by_player(id)?;
+            }
+        }
+        Ok(())
+    });
+}
+
+fn load_tower_infernos(ctx: &mut LoadContext) -> LoadResult {
+    ctx.for_each_entity("SELECT id FROM tower_infernos", |ctx, old_id, entity, _| {
+        let grid_position = ctx.grid_coords(old_id)?;
+        let integrity_points = ctx.integrity_points(old_id)?;
+        let disabled_by_player = ctx.disabled_by_player(old_id)?;
+        let shooting_elapsed = ctx.shooting_elapsed(old_id)?;
+        let builder = BuilderTowerInferno::new(grid_position)
+            .with_integrity_points(integrity_points)
+            .with_disabled_by_player(disabled_by_player)
+            .with_shooting_elapsed(shooting_elapsed);
+        ctx.insert(entity, builder);
+        Ok(())
+    })
+}
+
+fn shooting_system(
+    mut commands: Commands,
+    mut tower_infernos: Query<(&Transform, &AttackRange, &mut TowerShootingTimer, &mut TowerWispTarget), (With<TowerInferno>, With<IsOperational>)>,
+    wisps: Query<(), With<Wisp>>,
+) {
+    for (transform, attack_range, mut timer, mut target) in tower_infernos.iter_mut() {
+        let TowerWispTarget::Wisp(target_wisp) = *target else { continue; };
+        if !timer.0.is_finished() { continue; }
+
+        if !wisps.contains(target_wisp) {
+            // Reacquire a target if the wisp is gone.
+            *target = TowerWispTarget::SearchForNewTarget;
+            continue;
+        }
+
+        commands.spawn((InfernoDome::new(attack_range.get() * CELL_SIZE), Transform::from_translation(transform.translation.with_z(0.))));
+        timer.0.reset();
+    }
+}

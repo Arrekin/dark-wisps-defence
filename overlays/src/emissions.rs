@@ -16,7 +16,7 @@ use grids::{
     prelude::GridVersion,
 };
 use states::prelude::MapLoadingStage;
-use visuals::prelude::MapCanvasBundle;
+use visuals::{prelude::MapCanvasBundle, unit_quad::UnitQuad};
 
 pub struct EmissionsOverlayPlugin;
 impl Plugin for EmissionsOverlayPlugin {
@@ -112,7 +112,7 @@ impl EmissionsOverlay {
     fn create(
         mut commands: Commands,
         map_info: Res<MapInfo>,
-        mut meshes: ResMut<Assets<Mesh>>,
+        unit_quad: Res<UnitQuad>,
         mut materials: ResMut<Assets<EmissionsOverlayMaterial>>,
         mut buffers: ResMut<Assets<ShaderBuffer>>,
         overlay: Option<Single<Entity, With<EmissionsOverlay>>>,
@@ -125,7 +125,7 @@ impl EmissionsOverlay {
         let cells = buffers.add(ShaderBuffer::from(vec![EmissionsCell::default(); map_info.grid_bounds.area()]));
         let material = materials.add(EmissionsOverlayMaterial { cells, ..default() });
         commands.spawn((
-            MapCanvasBundle::new(&mut meshes, material, &map_info),
+            MapCanvasBundle::new(&unit_quad, material, &map_info),
             EmissionsOverlay,
         ));
     }

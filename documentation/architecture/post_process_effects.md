@@ -113,7 +113,9 @@ that as the loop bound.
 | Effect | Component | Shader |
 |--------|-----------|--------|
 | Ripple displacement | `RipplePostProcess` in `weaponry_internal/src/ripple_post_process.rs` | `assets/shaders/weaponry/ripple_post_process.wesl` |
+| Inferno heat haze | `InfernoHazePostProcess` in `buildings_internal/src/towers/emitter/tower_inferno_haze.rs` | `assets/shaders/towers/inferno/haze_post_process.wesl` |
+| Inferno dome distortion | `InfernoDomePostProcess` in `weaponry_internal/src/inferno_dome_post_process.rs` | `assets/shaders/weaponry/inferno_dome_post_process.wesl` |
 | Force field dome | `ForceFieldPostProcess` in `weaponry_internal/src/force_field_post_process.rs` | `assets/shaders/weaponry/force_field_post_process.wesl` |
 | Quantum field anomaly | `QuantumFieldPostProcess` in `map_objects_internal/src/quantum_field_post_process.rs` | `assets/shaders/quantum_field/post_process.wesl` |
 
-Pass order (in the `Core2d` schedule): `Tonemapping → Ripple → ForceField → QuantumField → Upscaling`.
+Pass order (in the `Core2d` schedule): `Tonemapping → Ripple → InfernoHaze → InfernoDome → ForceField → QuantumField → Upscaling`.
