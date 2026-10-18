@@ -1,4 +1,5 @@
 import bevy_sprite_render::mesh2d::vertex_output::VertexOutput;
+import package::shaders::common::map_info::{grid_bounds, grid_contains, grid_index};
 
 // Energy Supply Overlay Shader
 //
@@ -19,6 +20,7 @@ import bevy_sprite_render::mesh2d::vertex_output::VertexOutput;
 // Dash pattern (disabled edges only): two gaps per cell edge at 1/3 and 2/3 along it.
 // Endpoints stay ON so corners join cleanly across cells.
 
+// Field order and types mirror `EnergySupplyCell` in overlays/src/energy_supply.rs.
 struct EnergySupplyCell {
     has_supply: u32,
     has_power: u32,
@@ -27,22 +29,17 @@ struct EnergySupplyCell {
     disabled_highlight_level: u32, // 0 = none, 1 = dimmed, 2 = highlighted
 }
 
-struct UniformGridData {
-    grid_width: u32,
-    grid_height: u32,
-}
-
 @group(2) @binding(0) var<storage, read> energy_cells: array<EnergySupplyCell>;
-@group(2) @binding(1) var<uniform> uniforms: UniformGridData;
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-const blockSize: f32 = 32.; // Size of each block in pixels
-const supplyOutlineThickness: f32 = 2.; // Supply outline size in pixels
-const disabledOutlineThickness: f32 = 4.; // Disabled (red dashed) outline size in pixels — thicker so it survives zooming out
-const supplyOutlineRatio: f32 = supplyOutlineThickness / blockSize;
-const disabledOutlineRatio: f32 = disabledOutlineThickness / blockSize;
+const BLOCK_SIZE: f32 = 32.; // Size of each block in pixels
+const SUPPLY_OUTLINE_THICKNESS: f32 = 2.; // Supply outline size in pixels
+// Keep disabled coverage visible when zoomed out with a thicker red dashed outline.
+const DISABLED_OUTLINE_THICKNESS: f32 = 4.; // Pixels
+const SUPPLY_OUTLINE_RATIO: f32 = SUPPLY_OUTLINE_THICKNESS / BLOCK_SIZE;
+const DISABLED_OUTLINE_RATIO: f32 = DISABLED_OUTLINE_THICKNESS / BLOCK_SIZE;
 
 // Half-width of each dash gap, in [0..1] of the cell edge (disabled edges only)
 const GAP_HALF: f32 = 0.09;
@@ -68,12 +65,11 @@ const EDGE_DISABLED: u32 = 2u;
 fn get_cell_data(uv: vec2<f32>) -> EnergySupplyCell {
     // Clamp UV coordinates to valid range to prevent bleeding at edges
     let clamped_uv = clamp(uv, vec2<f32>(0.0), vec2<f32>(0.9999));
-    let grid_pos = vec2<u32>(clamped_uv * vec2<f32>(f32(uniforms.grid_width), f32(uniforms.grid_height)));
-    let index = grid_pos.y * uniforms.grid_width + grid_pos.x;
+    let coords = vec2<i32>(clamped_uv * vec2<f32>(grid_bounds()));
+    let index = grid_index(coords);
 
-    // Additional safety check: ensure grid coordinates are within bounds
-    if (grid_pos.x >= uniforms.grid_width || grid_pos.y >= uniforms.grid_height || index >= arrayLength(&energy_cells)) {
-        return EnergySupplyCell(0u, 0u, 0u, 0u, 0u); // Return empty cell if out of bounds
+    if (!grid_contains(coords) || index >= arrayLength(&energy_cells)) {
+        return EnergySupplyCell(0u, 0u, 0u, 0u, 0u);
     }
 
     return energy_cells[index];
@@ -175,21 +171,21 @@ fn edge_color(edge: EdgeCandidate, cell: EnergySupplyCell) -> vec4<f32> {
 @fragment
 fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
     let uv = mesh.uv;
-    let grid_size = vec2<f32>(f32(uniforms.grid_width), f32(uniforms.grid_height));
-    let blockPosition = fract(uv * grid_size);
-    let stepSize = 1.0 / grid_size;
+    let grid_size = vec2<f32>(grid_bounds());
+    let block_position = fract(uv * grid_size);
+    let step_size = 1.0 / grid_size;
 
     let cell = get_cell_data(uv);
     let fill = fill_color(cell);
 
     // Bands are computed at the wider (disabled) thickness; the narrower supply bands
     // gate supply edges inside edge_candidate.
-    let in_right = blockPosition.x >= (1.0 - disabledOutlineRatio);
-    let in_top = blockPosition.y >= (1.0 - disabledOutlineRatio);
-    let in_vertical_band = (blockPosition.x <= disabledOutlineRatio) || in_right;   // near a vertical cell edge
-    let in_horizontal_band = (blockPosition.y <= disabledOutlineRatio) || in_top;   // near a horizontal cell edge
-    let in_supply_vertical_band = (blockPosition.x <= supplyOutlineRatio) || (blockPosition.x >= (1.0 - supplyOutlineRatio));
-    let in_supply_horizontal_band = (blockPosition.y <= supplyOutlineRatio) || (blockPosition.y >= (1.0 - supplyOutlineRatio));
+    let in_right = block_position.x >= (1.0 - DISABLED_OUTLINE_RATIO);
+    let in_top = block_position.y >= (1.0 - DISABLED_OUTLINE_RATIO);
+    let in_vertical_band = (block_position.x <= DISABLED_OUTLINE_RATIO) || in_right;   // near a vertical cell edge
+    let in_horizontal_band = (block_position.y <= DISABLED_OUTLINE_RATIO) || in_top;   // near a horizontal cell edge
+    let in_supply_vertical_band = (block_position.x <= SUPPLY_OUTLINE_RATIO) || (block_position.x >= (1.0 - SUPPLY_OUTLINE_RATIO));
+    let in_supply_horizontal_band = (block_position.y <= SUPPLY_OUTLINE_RATIO) || (block_position.y >= (1.0 - SUPPLY_OUTLINE_RATIO));
 
     if (!(in_vertical_band || in_horizontal_band)) {
         return fill;
@@ -199,19 +195,19 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
 
     if (in_vertical_band) {
         // Vertical edge: sample left/right neighbor; dash runs along y.
-        let neighbor_uv = uv + vec2<f32>(select(-stepSize.x, stepSize.x, in_right), 0.0);
-        best = better_edge(best, edge_candidate(cell, get_cell_data(neighbor_uv), in_supply_vertical_band, dashed_mask(blockPosition.y)));
+        let neighbor_uv = uv + vec2<f32>(select(-step_size.x, step_size.x, in_right), 0.0);
+        best = better_edge(best, edge_candidate(cell, get_cell_data(neighbor_uv), in_supply_vertical_band, dashed_mask(block_position.y)));
     }
     if (in_horizontal_band) {
         // Horizontal edge: sample bottom/top neighbor; dash runs along x.
-        let neighbor_uv = uv + vec2<f32>(0.0, select(-stepSize.y, stepSize.y, in_top));
-        best = better_edge(best, edge_candidate(cell, get_cell_data(neighbor_uv), in_supply_horizontal_band, dashed_mask(blockPosition.x)));
+        let neighbor_uv = uv + vec2<f32>(0.0, select(-step_size.y, step_size.y, in_top));
+        best = better_edge(best, edge_candidate(cell, get_cell_data(neighbor_uv), in_supply_horizontal_band, dashed_mask(block_position.x)));
     }
     if (in_vertical_band && in_horizontal_band) {
         // Corner: also check the diagonal neighbor to fill inner/outer corner pixels
         // the axis checks miss. Corners are always dash-ON for clean joins.
-        let neighbor_uv = uv + vec2<f32>(select(-stepSize.x, stepSize.x, in_right),
-                                         select(-stepSize.y, stepSize.y, in_top));
+        let neighbor_uv = uv + vec2<f32>(select(-step_size.x, step_size.x, in_right),
+                                         select(-step_size.y, step_size.y, in_top));
         best = better_edge(best, edge_candidate(cell, get_cell_data(neighbor_uv), in_supply_vertical_band && in_supply_horizontal_band, true));
     }
 

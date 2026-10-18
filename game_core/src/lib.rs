@@ -1,14 +1,15 @@
-pub mod traits;
 pub mod components;
 pub mod display;
-pub mod z_depth;
 pub mod events;
-pub mod math;
 pub mod grid;
-pub mod types;
-pub mod motion;
+pub mod math;
 pub mod moments;
+pub mod motion;
 pub mod response_request;
+pub mod shared_gpu;
+pub mod traits;
+pub mod types;
+pub mod z_depth;
 
 pub mod prelude {
     // Foundation vocabulary shared across domain crates. Narrow utilities stay out — e.g.
@@ -28,5 +29,5 @@ pub mod prelude {
     pub use crate::response_request::ResponseRequest;
     pub use crate::traits::{OptionalCommands, Property, SSS};
     pub use crate::types::{BuildingType, MapObject, Shard, ShardTier, ShardType, TowerType, WispType};
-    pub use crate::z_depth::*;          // ZDepth + associated layer constants
+    pub use crate::z_depth::ZDepth;
 }

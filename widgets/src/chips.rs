@@ -9,7 +9,7 @@
 //! Specializations are ordinary components and may be combined.
 //!
 //! # Usage
-//! ```
+//! ```ignore
 //! // A cost, coloured green while the whole price is affordable.
 //! parent.spawn((BuilderCostChip(cost), CostChipVisualFullPrice));
 //!

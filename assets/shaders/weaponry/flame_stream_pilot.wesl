@@ -7,20 +7,16 @@ import package::shaders::common::value_noise::value_noise_3d;
 // Local coordinates (`p`) are in world units with the flame root at `(0, 0)` (1 unit inside the
 // quad's left edge), extending along `+x`.
 
-// Field order and types mirror `PilotFlameUniform` in weaponry_internal/src/flame_stream_fire.rs.
-struct PilotFlame {
+// Field order and types mirror `PilotFlame` in weaponry_internal/src/flame_stream_fire.rs.
+struct Instance {
     seed: f32,  // per-stream phase offset
     size: f32,  // quad side length in world units
 };
 
-@group(2) @binding(0)
-var<uniform> pilot: PilotFlame;
-
 const ROOT_COLOR: vec3<f32> = vec3<f32>(0.2, 0.45, 1.0);
 const GLOW_COLOR: vec3<f32> = vec3<f32>(1.0, 0.5, 0.2);
 
-@fragment
-fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
+fn look(mesh: VertexOutput, pilot: Instance) -> vec4<f32> {
     let p = vec2<f32>(mesh.uv.x, 0.5 - mesh.uv.y) * pilot.size - vec2<f32>(1.0, 0.0);
     let time = globals.time + pilot.seed;
 

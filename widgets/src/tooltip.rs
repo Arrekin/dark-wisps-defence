@@ -7,7 +7,7 @@
 //! each visible tooltip above its anchor.
 //!
 //! # Usage
-//! ```
+//! ```ignore
 //! commands.spawn((
 //!     BuilderTooltip::new(anchor),
 //!     children![(Text::new("Title"), TextFont::from_font_size(12.))],

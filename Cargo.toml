@@ -9,7 +9,7 @@ logging = { workspace = true }
 states = { workspace = true }
 game_core_internal = { workspace = true }
 persistence = { workspace = true }
-session = { workspace = true }
+session_internal = { workspace = true }
 grids_internal = { workspace = true }
 viewport = { workspace = true }
 alteration_internal = { workspace = true }
@@ -63,6 +63,7 @@ members = [
   "outcomes",
   "persistence",
   "session",
+  "session_internal",
   "viewport",
   "alteration",
   "alteration_internal",
@@ -99,8 +100,8 @@ bevy = { version = "0.20.*", default-features = false, features = ["dynamic_link
 bevy_egui = "0.43.*"
 strum = { version = "0.28.*", features = ["derive"] }
 nanorand = "0.8"
-rusqlite = { version = "0.39.*", features = ["bundled", "fallible_uint"] }
-refinery = { version = "0.9.*", features = ["rusqlite"] }
+rusqlite = { version = "0.40", features = ["bundled", "fallible_uint"] }
+refinery = { version = "0.10", features = ["rusqlite"] }
 crossbeam-channel = "0.5.*"
 axum = { version = "0.8.*", default-features = false, features = ["tokio", "http1", "json"] }
 tokio = { version = "1.*", features = ["rt", "net"] }
@@ -140,6 +141,7 @@ research_internal = { path = "research_internal" }
 outcomes = { path = "outcomes" }
 persistence = { path = "persistence" }
 session = { path = "session" }
+session_internal = { path = "session_internal" }
 viewport = { path = "viewport" }
 alteration = { path = "alteration" }
 alteration_internal = { path = "alteration_internal" }

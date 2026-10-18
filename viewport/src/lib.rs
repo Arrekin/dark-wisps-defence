@@ -7,10 +7,10 @@
 
 use bevy::{
     asset::RenderAssetUsages,
-    camera::{Hdr, RenderTarget},
+    camera::RenderTarget,
     input::mouse::MouseWheel,
-    picking::hover::PickingInteraction,
-    post_process::bloom::Bloom,
+    picking::{PickingSystems, hover::PickingInteraction},
+    post_process::bloom::{Bloom, BloomCompositeMode, BloomPrefilter},
     prelude::*,
     render::render_resource::{TextureDimension, TextureFormat, TextureUsages},
     ui::ComputedNode,
@@ -19,6 +19,7 @@ use bevy::{
 use bevy_egui::PrimaryEguiContext;
 
 use game_core::prelude::{CELL_SIZE, GridCoords, OptionalCommands};
+use visuals::render_schedule::BandedCamera;
 
 const ZOOM_MIN: f32 = 1.;
 const ZOOM_MAX: f32 = 4.;
@@ -29,9 +30,9 @@ pub struct ViewportPlugin;
 impl Plugin for ViewportPlugin {
     fn build(&self, app: &mut App) {
         app
-            .insert_resource(MouseInfo::default())
-            .add_systems(Startup, camera_startup)
-            .add_systems(PreUpdate, update_mouse_info_system.after(bevy::picking::PickingSystems::Hover))
+            .init_resource::<MouseInfo>()
+            .add_systems(Startup, spawn_main_camera)
+            .add_systems(PreUpdate, update_mouse_info_system.after(PickingSystems::Hover))
             .add_systems(Update, (
                 camera_zoom,
                 camera_movement,
@@ -44,21 +45,18 @@ impl Plugin for ViewportPlugin {
 #[derive(Component)]
 pub struct MainCamera;
 
-/// Post-process effects attach themselves to cameras carrying this marker.
-#[derive(Component)]
-pub struct PostProcessCamera;
-
-fn camera_startup(mut commands: Commands) {
+fn spawn_main_camera(mut commands: Commands) {
     commands.spawn((
-        Camera2d,
+        BandedCamera,
         Transform::from_xyz(500., 500., 0.),
-        // HDR framebuffer for bloom and the screen-space post-process passes.
-        // Bloom also requires it, but it is set explicitly so the camera's HDR mode
-        // is visible at the spawn site rather than implied.
-        Hdr,
-        Bloom { high_pass_frequency: 0.5, ..default() },
+        // Only colour above 1.0 blooms, added on top of the untouched image.
+        Bloom {
+            prefilter: BloomPrefilter { threshold: 1.0, threshold_softness: 0.0 },
+            composite_mode: BloomCompositeMode::Additive,
+            intensity: 0.1,
+            ..Bloom::OLD_SCHOOL
+        },
         MainCamera,
-        PostProcessCamera,
         // Pin egui's primary context to the main window camera. Requires
         // `EguiGlobalSettings::auto_create_primary_context = false` (set in EditorPlugin).
         // `PrimaryEguiContext` requires `EguiContext` and, via its on_insert hook, wires up
@@ -96,28 +94,18 @@ fn camera_movement(
     camera: Single<&mut Transform, With<MainCamera>>,
 ) {
     let mut translation = Vec3::ZERO;
-
-    // 'i' moves the camera up
     if keyboard_input.pressed(KeyCode::KeyI) {
         translation.y += 1.0;
     }
-
-    // 'k' moves the camera down
     if keyboard_input.pressed(KeyCode::KeyK) {
         translation.y -= 1.0;
     }
-
-    // 'j' moves the camera to the left
     if keyboard_input.pressed(KeyCode::KeyJ) {
         translation.x -= 1.0;
     }
-
-    // 'l' moves the camera to the right
     if keyboard_input.pressed(KeyCode::KeyL) {
         translation.x += 1.0;
     }
-
-    // Apply the camera movement
     let mut transform = camera.into_inner();
     transform.translation += SLIDE_SPEED * time.delta_secs() * translation;
 }
@@ -148,11 +136,7 @@ fn camera_movement(
 #[relationship(relationship_target = OwnedCameras)]
 pub struct CameraOf(pub Entity);
 
-/// Relationship target: automatically tracks all cameras owned by this entity.
-///
-/// This component is automatically added when a `CameraOf(this_entity)` is spawned.
-/// The `linked_spawn` attribute ensures that when this entity is despawned,
-/// all related cameras are automatically despawned too.
+/// Cameras owned by this entity, despawned with it.
 #[derive(Component, Default)]
 #[relationship_target(relationship = CameraOf, linked_spawn)]
 pub struct OwnedCameras(Vec<Entity>);
@@ -161,11 +145,6 @@ pub struct OwnedCameras(Vec<Entity>);
 ///
 /// Preview cameras render to an off-screen image that can be displayed in UI
 /// via `ViewportNode`, for picture-in-picture views of the map.
-///
-/// # Lifecycle
-///
-/// The camera is automatically despawned when its owner entity is despawned,
-/// thanks to the `CameraOf` / `OwnedCameras` relationship.
 ///
 /// # Example
 ///
@@ -188,38 +167,19 @@ pub struct BuilderPreviewCamera {
     pub position: Vec2,
     /// Orthographic scale (zoom level). Higher values = more zoomed out.
     pub scale: f32,
-    /// If Entity is provided, adds CameraAutoFollowEntity component to the camera.
+    /// Entity the camera follows, if any.
     pub auto_follow_entity: Option<CameraAutoFollowEntity>,
 }
 impl BuilderPreviewCamera {
-    /// Creates a new preview camera builder.
-    ///
-    /// # Arguments
-    ///
-    /// * `owner` - Entity that owns this camera (camera despawns when owner does)
-    /// * `position` - World position the camera should look at
-    /// * `scale` - Orthographic scale (zoom level, higher = zoomed out)
     pub fn new(owner: Entity, position: Vec2, scale: f32) -> Self {
         Self { owner, position, scale, auto_follow_entity: None }
     }
 
-    /// Adds an entity to follow with the camera.
-    ///
-    /// # Arguments
-    ///
-    /// * `entity` - Entity to follow with the camera
     pub fn with_auto_follow_entity(mut self, entity: Entity) -> Self {
         self.auto_follow_entity = Some(CameraAutoFollowEntity(entity));
         self
     }
 
-    /// Observer that builds the camera when `BuilderPreviewCamera` is added.
-    ///
-    /// Creates a render target image and configures the camera with:
-    /// - Off-screen rendering to an image texture
-    /// - Orthographic projection at the specified scale
-    /// - Automatic lifecycle via `CameraOf` relationship
-    /// - If auto_follow_entity is provided, adds CameraAutoFollowEntity component to the camera
     fn on_builder_add_spawn_preview_camera(
         trigger: On<Add<BuilderPreviewCamera>>,
         mut commands: Commands,
@@ -239,21 +199,16 @@ impl BuilderPreviewCamera {
             TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST | TextureUsages::RENDER_ATTACHMENT;
         let image_handle = images.add(image);
 
-        // Spawn camera with linked ownership
         commands.entity(trigger.entity)
             .remove::<BuilderPreviewCamera>()
             .insert((
-                Camera2d,
+                BandedCamera,
                 Camera {
                     order: -1, // Render before main camera
                     ..default()
                 },
-                PostProcessCamera,
                 RenderTarget::Image(image_handle.into()),
-                Hdr,
                 Projection::Orthographic(OrthographicProjection {
-                    near: -1000.,
-                    far: 1000.,
                     scale: builder.scale,
                     ..OrthographicProjection::default_2d()
                 }),
@@ -305,7 +260,6 @@ fn update_mouse_info_system(
     if let Some(screen_position) = window.into_inner().cursor_position() {
         let world_position = camera.viewport_to_world_2d(camera_transform, screen_position).unwrap();
         let grid_coords = GridCoords::from_world_vec2(world_position);
-        // Update mouse info
         mouse_info.screen_position = screen_position;
         mouse_info.world_position = world_position;
         mouse_info.grid_coords = grid_coords;

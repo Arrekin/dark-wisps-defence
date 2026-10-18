@@ -39,22 +39,22 @@ impl Plugin for GridObjectPlacerPlugin {
 // MATERIAL
 // ============================================================================
 
+/// Field order and types mirror `GridPlacerData` in `assets/shaders/grids/grid_placer.wesl`.
 #[derive(ShaderType, Clone, Debug, Default)]
 struct GridPlacerUniform {
     cell_data: UVec4,
-    cell_columns: u32,
-    cell_rows: u32,
+    bounds: UVec2,
     /// One of the `VALIDITY_*` constants in `assets/shaders/grids/grid_placer.wesl`.
     validity: u32,
 }
 impl GridPlacerUniform {
     /// Updates the grid dimensions and clears all packed cell states.
     fn reset_to_imprint(&mut self, imprint: GridImprint) {
-        (self.cell_columns, self.cell_rows) = Bounds::from(imprint).as_u32();
+        self.bounds = Bounds::from(imprint).into();
         self.cell_data = UVec4::ZERO;
     }
     fn bounds_match(&self, bounds: Bounds) -> bool {
-        (self.cell_columns, self.cell_rows) == bounds.as_u32()
+        self.bounds == UVec2::from(bounds)
     }
 }
 
@@ -67,6 +67,7 @@ impl Material2d for GridPlacerMaterial {
     fn fragment_shader() -> ShaderRef {
         "shaders/grids/grid_placer.wesl".into()
     }
+
     fn alpha_mode(&self) -> AlphaMode2d {
         AlphaMode2d::Blend
     }
@@ -151,7 +152,7 @@ fn on_placement_ghost_stale_respawn_ghost(
     let Some(map_object) = grid_object_placer.map_object() else { return };
     placer_commands.with_children(|placer| {
         placer
-            .spawn((ZDepth::GRID_PLACER_GHOST, *grid_imprint, *placement_style))
+            .spawn((ZDepth::GridPlacerGhost, *grid_imprint, *placement_style))
             .trigger(|ghost| ObjectFaceRequest::ghost(ghost, map_object));
     });
 }

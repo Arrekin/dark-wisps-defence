@@ -1,34 +1,27 @@
-import bevy_core_pipeline::fullscreen_vertex_shader::FullscreenVertexOutput;
+// Force field refraction and light. `displace` distorts the scene beneath the dome;
+// `overlay` adds its light afterward. Overlapping domes assign each pixel to the nearest dome
+// by distance divided by radius, with seams where two domes have similar distances.
+
+import bevy_sprite_render::mesh2d::{vertex_output::VertexOutput, view_bindings::globals};
+import package::shaders::common::displacement::world_offset_to_uv;
 import package::shaders::common::value_noise::{value_fbm_2d, value_noise_2d, value_noise_curl_2d};
-import package::shaders::common::screen::{ScreenView, screen_uv_to_world, screen_world_to_uv};
 
-@group(0) @binding(0) var screen_texture: texture_2d<f32>;
-@group(0) @binding(1) var screen_sampler: sampler;
-@group(0) @binding(2) var<uniform> camera: CameraData;
-@group(0) @binding(3) var<storage, read> fields: array<ForceFieldEntry>;
-@group(0) @binding(4) var<storage, read> ripples: array<FieldRipple>;
+// Mirrors `MAX_FIELD_IMPACTS` in weaponry_internal/src/force_field_dome.rs.
+const MAX_FIELD_IMPACTS: u32 = 8u;
 
-struct CameraData {
-    world_pos: vec2<f32>,
-    viewport_size: vec2<f32>,
-    global_time: f32,
-    field_count: u32,
-}
-
-struct ForceFieldEntry {
+// Field order and types mirror `ForceFieldDome` in weaponry_internal/src/force_field_dome.rs.
+struct Instance {
     center: vec2<f32>,
     radius: f32,
     progress: f32,
     visual_noise_offset: f32,
-}
-
-struct FieldRipple {
-    hit_pos:      vec2<f32>,
-    field_center: vec2<f32>,
-    // spawn_time < 0 marks a padding entry (empty buffer sentinel).
-    spawn_time:   f32,
-    _pad:         f32,
-}
+    impact_count: u32,
+    // Wisp entries into the dome: `xy` is the hit position, `z` the age in seconds.
+    impacts: array<vec4<f32>, MAX_FIELD_IMPACTS>,
+};
+// Domes gathered for this frame, used to find each pixel's nearest dome.
+// `READS_ALL_INSTANCES` makes the generated entry shader import this declaration.
+@group(2) @binding(0) var<storage, read> instances: array<Instance>;
 
 // Tunables
 const BASE_OPACITY:        f32 = 0.07;
@@ -43,7 +36,7 @@ const LAYER_SPEED_MULT:    f32 = 1.5;
 // Noise-space separation between the outermost and innermost depth slice at the rim.
 const DEPTH_SCALE:            f32 = 1.6;
 // Each outer layer samples noise at this much higher frequency than the one below it.
-// Higher = crispier outer shell, softer inner glow. Mirrors LAYER_SPEED_MULT logic.
+// Higher values sharpen the outer shell relative to the inner glow.
 const LAYER_NOISE_SCALE_MULT: f32 = 5.4;
 
 // Impact ripples
@@ -55,7 +48,6 @@ const DOME_WARP:          f32 = 1.57;
 // Fraction of eff_r at which the wave originates (< 1 = inside the rim).
 // 1.0 = right at the edge; lower values push the start point up the dome.
 const RIPPLE_INSET:       f32 = 0.91;
-const RIPPLE_LIFETIME:    f32 = 3.0;   // seconds until a slot is ignored (matches CPU-side)
 const RIPPLE_DECAY:       f32 = 0.7;   // exponential time-based envelope falloff
 const RIPPLE_PULSE_WIDTH: f32 = 0.15;  // Gaussian width in phase² (world units²); larger = narrower ring
 const RIPPLE_STRENGTH:    f32 = 6.0;   // peak refraction displacement magnitude
@@ -83,17 +75,20 @@ fn ridged_fbm(p: vec2<f32>) -> f32 {
     return n0 * 0.6 + n1 * 0.4;
 }
 
-// ── Fragment ─────────────────────────────────────────────────────────────────
+// ── Dome ─────────────────────────────────────────────────────────────────────
 
-@fragment
-fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
-    let count = camera.field_count;
-    if count == 0u {
-        return textureSampleLevel(screen_texture, screen_sampler, in.uv, 0.0);
-    }
+struct DomePixel {
+    // Sampling offset in world units; zero where the pixel is not this dome's.
+    refraction: vec2<f32>,
+    // Light added on top of the scene.
+    light: vec3<f32>,
+};
 
-    let view = ScreenView(camera.world_pos, camera.viewport_size);
-    let world_pos = screen_uv_to_world(in.uv, view);
+fn dome_pixel(world_pos: vec2<f32>, instance: u32) -> DomePixel {
+    var out: DomePixel;
+    out.refraction = vec2<f32>(0.0);
+    out.light = vec3<f32>(0.0);
+    let time = globals.time;
 
     // ── Voronoi: find the three nearest fields by weighted distance ────────
     var best_wd      = 1.0e9;
@@ -102,9 +97,9 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     var best_idx     = 0u;
     var best_raw_d   = 0.0;
 
-    for (var i = 0u; i < count; i++) {
-        let raw_d      = distance(world_pos, fields[i].center);
-        let eff_r      = fields[i].radius * fields[i].progress;
+    for (var i = 0u; i < arrayLength(&instances); i++) {
+        let raw_d      = distance(world_pos, instances[i].center);
+        let eff_r      = instances[i].radius * instances[i].progress;
         if eff_r < 0.001 { continue; }
         let wd = raw_d / eff_r;
         if wd < best_wd {
@@ -121,12 +116,12 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
         }
     }
 
-    // Outside all active fields entirely → pass through unchanged
-    if best_wd > 1.0 {
-        return textureSampleLevel(screen_texture, screen_sampler, in.uv, 0.0);
+    // Outside every dome, or inside another dome's cell.
+    if best_wd > 1.0 || best_idx != instance {
+        return out;
     }
 
-    let field       = fields[best_idx];
+    let field       = instances[best_idx];
     let eff_r       = field.radius * field.progress;
     // Normalised 0 (centre) → 1 (edge) within the winning field
     let norm_dist   = best_raw_d / eff_r;
@@ -146,7 +141,7 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let radial_dir = select(vec2<f32>(1.0, 0.0), to_pixel / len_tp, len_tp > 0.1);
 
     let base_uv = to_pixel * NOISE_SCALE;
-    let t  = (camera.global_time + field.visual_noise_offset) * NOISE_SCROLL_SPEED;
+    let t  = (time + field.visual_noise_offset) * NOISE_SCROLL_SPEED;
     let t1 = t * LAYER_SPEED_MULT;
     let t2 = t * LAYER_SPEED_MULT * LAYER_SPEED_MULT;
 
@@ -169,7 +164,7 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     // A sinusoidal oscillation keeps the outer layer visually alive without linear
     // drift (zero mean → no accumulation, no wave formation).
     // Inner layers still flow and drift at full strength.
-    let osc_t     = camera.global_time * 0.13 + field.visual_noise_offset;
+    let osc_t     = time * 0.13 + field.visual_noise_offset;
     let osc0      = vec2<f32>(sin(osc_t) * 0.35, cos(osc_t * 0.73) * 0.35);
     let noise_uv  = to_pixel * (NOISE_SCALE * m2)                     + flow0 * (1.2 / m2) + osc0;
     let noise_uv1 = to_pixel * (NOISE_SCALE * LAYER_NOISE_SCALE_MULT) + flow1 * (1.2 / LAYER_NOISE_SCALE_MULT) + vec2<f32>(3.7, 8.1);
@@ -224,7 +219,7 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
         // Slow large-scale brightness undulation along the film — energy
         // concentrations drifting like soap-bubble iridescence. Uses world_pos
         // at a much lower frequency than the dome noise so it stays smooth.
-        let seam_coord = world_pos * (NOISE_SCALE * 0.5) + camera.global_time * 0.015;
+        let seam_coord = world_pos * (NOISE_SCALE * 0.5) + time * 0.015;
         let seam_glow  = value_fbm_2d(seam_coord);
         seam *= 0.45 + seam_glow * 0.55;
     }
@@ -232,21 +227,18 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let fight_boost = 1.0 + (1.0 - field.progress) * 0.6;
 
     // ── Impact ripples: membrane displacement wave from wisp entry point ─────
-    // The wavefront expands radially from hit_pos; the Gaussian envelope in phase
+    // The wavefront expands radially from the hit position; the Gaussian envelope in phase
     // space produces a single traveling pulse rather than persistent ringing.
     var ripple_disp = vec2<f32>(0.0);
     var ripple_glow = 0.0;
-    for (var ri = 0u; ri < arrayLength(&ripples); ri++) {
-        let r = ripples[ri];
-        if r.spawn_time < 0.0 { continue; }
-        let age = camera.global_time - r.spawn_time;
-        if age < 0.0 || age > RIPPLE_LIFETIME { continue; }
-        // Skip slots belonging to a different dome (exact float match is fine — fields don't move).
-        if distance(r.field_center, field.center) > 1.0 { continue; }
+    for (var ri = 0u; ri < field.impact_count; ri++) {
+        let impact  = field.impacts[ri];
+        let hit_pos = impact.xy;
+        let age     = impact.z;
 
         // Place the wave origin at RIPPLE_INSET * eff_r from the center — slightly inside
         // the rim so the impact reads as hitting the dome above ground level, not at the base.
-        let hit_to_center = normalize(field.center - r.hit_pos);
+        let hit_to_center = normalize(field.center - hit_pos);
         let inset_r       = eff_r * RIPPLE_INSET;
         let rim_hit       = field.center - hit_to_center * inset_r;
 
@@ -262,7 +254,7 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
         // ForceFieldEntered fires on Voronoi cell entry, which can be outside the visual dome.
         // Subtract the time the wavefront would have spent travelling from hit_pos to the rim
         // so that expand_age=0 corresponds to the moment the wisp visually crosses the border.
-        let hit_dist    = length(r.hit_pos - field.center);
+        let hit_dist    = length(hit_pos - field.center);
         let pre_rim_t   = max(0.0, hit_dist - inset_r) / RIPPLE_SPEED;
         let expand_age  = max(0.0, age - pre_rim_t);
         let phase       = dome_dist - expand_age * RIPPLE_SPEED;
@@ -280,11 +272,8 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
 
     // ── Subtle radial refraction inside the dome ─────────────────────────────
     // ripple_disp is added on top and masked by field.progress so it respects growing fields.
-    let refraction   = radial_dir * dome * REFRACTION_STRENGTH * (1.0 + fluctuation * 0.5)
-                     + ripple_disp * RIPPLE_STRENGTH * field.progress;
-    let displaced_uv = screen_world_to_uv(world_pos - refraction, view);
-
-    let base_color   = textureSampleLevel(screen_texture, screen_sampler, displaced_uv, 0.0);
+    out.refraction = radial_dir * dome * REFRACTION_STRENGTH * (1.0 + fluctuation * 0.5)
+                   + ripple_disp * RIPPLE_STRENGTH * field.progress;
 
     // ── Centre generation point ───────────────────────────────────────────────
     // Tight radial falloff gives a glowing source at the field origin.
@@ -317,8 +306,21 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     // Centre glow added on top — bright near-white so it reads as a hot source.
     let spark_color  = vec3<f32>(0.75, 0.93, 1.0);
     let ripple_color = vec3<f32>(0.5, 0.9, 1.0);
-    let result = base_color.rgb + tint * final_alpha + ground_color * ground_alpha
-               + spark_color * (spark * SPARK_OPACITY)
-               + ripple_color * ripple_glow * RIPPLE_GLOW * field.progress;
-    return vec4<f32>(result, 1.0);
+    out.light = tint * final_alpha + ground_color * ground_alpha
+              + spark_color * (spark * SPARK_OPACITY)
+              + ripple_color * ripple_glow * RIPPLE_GLOW * field.progress;
+    return out;
+}
+
+// ── Parts ────────────────────────────────────────────────────────────────────
+
+fn displace(in: VertexOutput, field: Instance) -> vec4<f32> {
+    let pixel = dome_pixel(in.world_position.xy, in.instance_index);
+    // The scene is sampled against the refraction direction.
+    return vec4<f32>(world_offset_to_uv(-pixel.refraction), 0.0, 0.0);
+}
+
+fn overlay(in: VertexOutput, field: Instance) -> vec4<f32> {
+    let pixel = dome_pixel(in.world_position.xy, in.instance_index);
+    return vec4<f32>(pixel.light, 0.0);
 }

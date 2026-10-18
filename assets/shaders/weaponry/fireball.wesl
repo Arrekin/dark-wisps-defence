@@ -10,16 +10,13 @@ import package::shaders::common::hash::{hash_coords, hash_mix, hash_unit};
 // and stretched behind it. Density controls fire and smoke coverage; ridged noise adds bright
 // streaks. A separate noise field distorts the core's edge.
 
-// Field order and types mirror `FireballUniform` in weaponry_internal/src/fireball.rs.
-struct Fireball {
+// Field order and types mirror `FireballBody` in weaponry_internal/src/fireball.rs.
+struct Instance {
     seed: f32,        // per-fireball phase offset
     tail: f32,        // tail length multiplier, following the fireball's speed
     half_length: f32, // mesh half-size along the flight, in core radii
     half_width: f32,  // mesh half-size across the flight, in core radii
 };
-
-@group(2) @binding(0)
-var<uniform> fireball: Fireball;
 
 // ── Envelope ─────────────────────────────────────────────────────────────────
 const HALO: f32 = 1.7;           // flame envelope radius around the core
@@ -50,8 +47,7 @@ const EMBER_HEAT: f32 = 0.8;
 const EMBER_ALPHA: f32 = 0.9;
 const EMBER_SALT: u32 = 0x5bd1e995u;
 
-@fragment
-fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
+fn look(mesh: VertexOutput, fireball: Instance) -> vec4<f32> {
     let along = (mesh.uv.x - 0.5) * 2.0 * fireball.half_length;
     let across = (0.5 - mesh.uv.y) * 2.0 * fireball.half_width;
     let time = globals.time + fireball.seed;

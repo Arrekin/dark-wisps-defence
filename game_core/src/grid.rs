@@ -21,8 +21,6 @@ pub struct Bounds {
 impl Bounds {
     pub const fn new(width: i32, height: i32) -> Self { Self { width, height } }
     pub const fn area(self) -> usize { (self.width * self.height) as usize }
-    /// Width and height as unsigned, for shader uniforms that store grid dimensions.
-    pub const fn as_u32(self) -> (u32, u32) { (self.width as u32, self.height as u32) }
 
     pub fn contains(self, coords: GridCoords) -> bool {
         coords.x >= 0 && coords.x < self.width && coords.y >= 0 && coords.y < self.height
@@ -58,6 +56,11 @@ impl Bounds {
 
 impl From<(i32, i32)> for Bounds {
     fn from((width, height): (i32, i32)) -> Self { Self { width, height } }
+}
+impl From<Bounds> for UVec2 {
+    fn from(bounds: Bounds) -> Self {
+        UVec2::new(bounds.width as u32, bounds.height as u32)
+    }
 }
 
 /// Converts a grid cell count to world-space size.
@@ -132,6 +135,11 @@ impl From<(i32, i32)> for GridCoords {
 impl From<GridCoords> for (i32, i32) {
     fn from(coords: GridCoords) -> Self {
         (coords.x, coords.y)
+    }
+}
+impl From<GridCoords> for IVec2 {
+    fn from(coords: GridCoords) -> Self {
+        IVec2::new(coords.x, coords.y)
     }
 }
 impl std::fmt::Display for GridCoords {

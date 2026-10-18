@@ -1,25 +1,26 @@
 //! # Inferno Dome
 //!
-//! Standalone fire dome entity spawned when a `TowerInferno` discharges. Self-despawns once all
-//! visual layers complete:
+//! Temporary fire dome spawned when a `TowerInferno` discharges.
+//! Its child visuals share a start time but have separate durations:
+//!
 //! - `InfernoDomeFire` — hemisphere shell, interior billows, rim spill light, and falling embers.
 //! - `InfernoDomeGround` — release flash and ground scorch decal.
-//! - Screen-space distortion is handled by `inferno_dome_post_process`.
+//! - `InfernoDomeDisplacement` — lens bulge and heat shimmer applied before the air band.
+//!   It distorts the ground and surface bands while leaving the dome's fire undistorted.
 //!
-//! Transient visual entity; not persisted.
+//! Each part derives its age from the game clock without per-frame instance updates.
+//! The dome despawns when its longest effect, the distortion, expires. These visuals are not saved.
 
-use bevy::{
-    mesh::MeshVertexBufferLayoutRef,
-    prelude::*,
-    reflect::TypePath,
-    render::render_resource::{AsBindGroup, BlendState, RenderPipelineDescriptor, ShaderType, SpecializedMeshPipelineError},
-    shader::ShaderRef,
-    sprite_render::{AlphaMode2d, Material2d, Material2dKey, Material2dPipeline, Material2dPlugin, MeshMaterial2d},
-};
+use bevy::{prelude::*, reflect::TypePath, render::render_resource::{BlendState, ShaderType}};
 
 use game_core::prelude::ZDepth;
+use session::GameClock;
 use states::prelude::GameState;
-use visuals::{shader::{seed_from_entity, set_blend}, unit_quad::UnitQuad};
+use visuals::{
+    lane::{LaneParts, LanePlugin, LaneVisual},
+    shader::seed_from_entity,
+    transient_visual::{TransientVisual, despawn_played_out},
+};
 use weaponry::prelude::*;
 
 pub(crate) struct InfernoDomePlugin;
@@ -27,14 +28,16 @@ impl Plugin for InfernoDomePlugin {
     fn build(&self, app: &mut App) {
         app
             .add_plugins((
-                Material2dPlugin::<InfernoDomeFireMaterial>::default(),
-                Material2dPlugin::<InfernoDomeGroundMaterial>::default(),
+                LanePlugin::<InfernoDomeFire>::default(),
+                LanePlugin::<InfernoDomeGround>::default(),
+                LanePlugin::<InfernoDomeDisplacement>::default(),
             ))
             .add_systems(Update, (
-                advance_inferno_domes,
-                (update_inferno_dome_fires, update_inferno_dome_grounds).after(advance_inferno_domes),
+                despawn_played_out::<InfernoDomeFire>,
+                despawn_played_out::<InfernoDomeGround>,
+                despawn_played_out_inferno_domes,
             ).run_if(in_state(GameState::Running)))
-            .add_observer(on_add_inferno_dome_spawn_fire);
+            .add_observer(on_add_inferno_dome_spawn_parts);
     }
 }
 
@@ -53,82 +56,90 @@ const GROUND_DURATION: f32 = 2.5;
 const GROUND_MESH_MARGIN: f32 = 24.;
 
 // Shimmer
-/// Active duration (seconds) of the screen-space distortion pass. Matches `SHIMMER_DURATION` in
-/// `assets/shaders/weaponry/inferno_dome_post_process.wesl`.
+/// Active duration (seconds) of the dome distortion. Matches `SHIMMER_DURATION` in
+/// `assets/shaders/weaponry/inferno_dome_displacement.wesl`.
 const SHIMMER_DURATION: f32 = 3.5;
+/// Margin beyond `radius` that the shimmer fades across.
+const SHIMMER_MARGIN: f32 = 8.;
 
-/// Field order and types mirror `InfernoDome` in `assets/shaders/weaponry/inferno_dome.wesl` and
-/// `InfernoDomeGround` in `assets/shaders/weaponry/inferno_dome_ground.wesl`.
-#[derive(ShaderType, Clone, Copy, Debug, Default, PartialEq)]
-struct InfernoDomeUniform {
-    age: f32,
+/// Dome fire drawn in the air band, after its distortion. Spawned as a child of `InfernoDome`.
+/// Field order and types mirror `Instance` in
+/// `assets/shaders/weaponry/inferno_dome.wesl`.
+#[derive(Component, ShaderType, TypePath, Clone)]
+#[require(ZDepth::AirEffect)]
+struct InfernoDomeFire {
+    /// Wrapped game time of the discharge.
+    start_time: f32,
     radius: f32,
     seed: f32,
+    /// Quad half-size in world units.
     half_size: f32,
 }
+impl LaneVisual for InfernoDomeFire {
+    const LABEL: &'static str = "inferno_dome_fire";
+    const LOOK: &'static str = "shaders::weaponry::inferno_dome";
 
-/// Dome fire quad. Child of `InfernoDome`.
-#[derive(Component)]
-struct InfernoDomeFire;
-
-/// Premultiplied alpha: opaque/semi-opaque flame shell with additive spill light and embers.
-#[derive(Asset, AsBindGroup, TypePath, Clone, Copy, Debug, Default)]
-struct InfernoDomeFireMaterial {
-    #[uniform(0)]
-    fire: InfernoDomeUniform,
-}
-impl Material2d for InfernoDomeFireMaterial {
-    fn fragment_shader() -> ShaderRef {
-        "shaders/weaponry/inferno_dome.wesl".into()
-    }
-    fn alpha_mode(&self) -> AlphaMode2d {
-        AlphaMode2d::Blend
-    }
-    fn specialize(
-        _pipeline: &Material2dPipeline,
-        descriptor: &mut RenderPipelineDescriptor,
-        _layout: &MeshVertexBufferLayoutRef,
-        _key: Material2dKey<Self>,
-    ) -> Result<(), SpecializedMeshPipelineError> {
-        set_blend(descriptor, BlendState::PREMULTIPLIED_ALPHA_BLENDING);
-        Ok(())
+    /// Premultiplied alpha: opaque/semi-opaque flame shell with additive spill light and embers.
+    fn blend() -> BlendState {
+        BlendState::PREMULTIPLIED_ALPHA_BLENDING
     }
 }
-
-/// Ground flash and scorch quad. Child of `InfernoDome`.
-#[derive(Component)]
-struct InfernoDomeGround;
-
-/// Premultiplied alpha: darkens ground via scorch alpha while release flash adds light.
-#[derive(Asset, AsBindGroup, TypePath, Clone, Copy, Debug, Default)]
-struct InfernoDomeGroundMaterial {
-    #[uniform(0)]
-    ground: InfernoDomeUniform,
-}
-impl Material2d for InfernoDomeGroundMaterial {
-    fn fragment_shader() -> ShaderRef {
-        "shaders/weaponry/inferno_dome_ground.wesl".into()
-    }
-    fn alpha_mode(&self) -> AlphaMode2d {
-        AlphaMode2d::Blend
-    }
-    fn specialize(
-        _pipeline: &Material2dPipeline,
-        descriptor: &mut RenderPipelineDescriptor,
-        _layout: &MeshVertexBufferLayoutRef,
-        _key: Material2dKey<Self>,
-    ) -> Result<(), SpecializedMeshPipelineError> {
-        set_blend(descriptor, BlendState::PREMULTIPLIED_ALPHA_BLENDING);
-        Ok(())
-    }
+impl TransientVisual for InfernoDomeFire {
+    fn start_time(&self) -> f32 { self.start_time }
+    fn duration(&self) -> f32 { FIRE_DURATION }
 }
 
-fn on_add_inferno_dome_spawn_fire(
+/// Ground flash and scorch quad. Child of `InfernoDome`. Field order and types mirror `Instance` in
+/// `assets/shaders/weaponry/inferno_dome_ground.wesl`.
+#[derive(Component, ShaderType, TypePath, Clone)]
+#[require(ZDepth::GroundDecal)]
+struct InfernoDomeGround {
+    /// Wrapped game time of the discharge.
+    start_time: f32,
+    radius: f32,
+    seed: f32,
+    /// Quad half-size in world units.
+    half_size: f32,
+}
+impl LaneVisual for InfernoDomeGround {
+    const LABEL: &'static str = "inferno_dome_ground";
+    const LOOK: &'static str = "shaders::weaponry::inferno_dome_ground";
+
+    /// Premultiplied alpha: darkens ground via scorch alpha while release flash adds light.
+    fn blend() -> BlendState {
+        BlendState::PREMULTIPLIED_ALPHA_BLENDING
+    }
+}
+impl TransientVisual for InfernoDomeGround {
+    fn start_time(&self) -> f32 { self.start_time }
+    fn duration(&self) -> f32 { GROUND_DURATION }
+}
+
+/// Lens bulge and heat shimmer applied before the air band. Spawned as a child of `InfernoDome`.
+/// Field order and types mirror `Instance` in
+/// `assets/shaders/weaponry/inferno_dome_displacement.wesl`.
+#[derive(Component, ShaderType, TypePath, Clone)]
+#[require(ZDepth::AirEffect)]
+struct InfernoDomeDisplacement {
+    /// Wrapped game time of the discharge.
+    start_time: f32,
+    radius: f32,
+    /// Quad half-size in world units.
+    half_size: f32,
+}
+impl LaneVisual for InfernoDomeDisplacement {
+    const LABEL: &'static str = "inferno_dome_displacement";
+    const LOOK: &'static str = "shaders::weaponry::inferno_dome_displacement";
+    const PARTS: LaneParts = LaneParts::DISPLACE;
+
+    fn cut_quad_size(&self) -> Vec2 {
+        Vec2::splat(2. * self.half_size)
+    }
+}
+
+fn on_add_inferno_dome_spawn_parts(
     trigger: On<Add<InfernoDome>>,
     mut commands: Commands,
-    unit_quad: Res<UnitQuad>,
-    mut fire_materials: ResMut<Assets<InfernoDomeFireMaterial>>,
-    mut ground_materials: ResMut<Assets<InfernoDomeGroundMaterial>>,
     domes: Query<&InfernoDome>,
 ) {
     let entity = trigger.entity;
@@ -136,71 +147,28 @@ fn on_add_inferno_dome_spawn_fire(
     let seed = seed_from_entity(entity);
     let fire_half_size = dome.radius + FIRE_MESH_MARGIN;
     let ground_half_size = dome.radius + GROUND_MESH_MARGIN;
-    let fire = InfernoDomeFireMaterial {
-        fire: InfernoDomeUniform { age: 0., radius: dome.radius, seed, half_size: fire_half_size },
-    };
-    let ground = InfernoDomeGroundMaterial {
-        ground: InfernoDomeUniform { age: 0., radius: dome.radius, seed, half_size: ground_half_size },
-    };
     commands.entity(entity).insert(children![
         (
-            InfernoDomeFire,
-            unit_quad.mesh(),
-            MeshMaterial2d(fire_materials.add(fire)),
+            InfernoDomeFire { start_time: dome.start_time, radius: dome.radius, seed, half_size: fire_half_size },
             Transform::from_scale(Vec3::new(2. * fire_half_size, 2. * fire_half_size, 1.)),
-            ZDepth::GROUND_EFFECT,
         ),
         (
-            InfernoDomeGround,
-            unit_quad.mesh(),
-            MeshMaterial2d(ground_materials.add(ground)),
+            InfernoDomeGround { start_time: dome.start_time, radius: dome.radius, seed, half_size: ground_half_size },
             Transform::from_scale(Vec3::new(2. * ground_half_size, 2. * ground_half_size, 1.)),
-            ZDepth::GROUND_DECAL,
         ),
+        InfernoDomeDisplacement { start_time: dome.start_time, radius: dome.radius, half_size: dome.radius + SHIMMER_MARGIN },
     ]);
 }
 
-fn advance_inferno_domes(
+/// Despawns each dome once its longest part has played out.
+fn despawn_played_out_inferno_domes(
     mut commands: Commands,
-    time: Res<Time>,
-    mut domes: Query<(Entity, &mut InfernoDome)>,
+    clock: Res<GameClock>,
+    domes: Query<(Entity, &InfernoDome)>,
 ) {
-    for (entity, mut dome) in domes.iter_mut() {
-        dome.age += time.delta_secs();
-        if dome.age >= FIRE_DURATION.max(GROUND_DURATION).max(SHIMMER_DURATION) {
+    for (entity, dome) in domes.iter() {
+        if clock.wrapped_since(dome.start_time) >= FIRE_DURATION.max(GROUND_DURATION).max(SHIMMER_DURATION) {
             commands.entity(entity).despawn();
         }
-    }
-}
-
-fn update_inferno_dome_fires(
-    mut fire_materials: ResMut<Assets<InfernoDomeFireMaterial>>,
-    mut fires: Query<(&ChildOf, &mut Visibility, &MeshMaterial2d<InfernoDomeFireMaterial>), With<InfernoDomeFire>>,
-    domes: Query<&InfernoDome>,
-) {
-    for (child_of, mut visibility, material) in fires.iter_mut() {
-        let Ok(dome) = domes.get(child_of.parent()) else { continue; };
-        let showing = dome.age < FIRE_DURATION;
-        visibility.set_if_neq(if showing { Visibility::Inherited } else { Visibility::Hidden });
-        if !showing { continue; }
-
-        let Some(mut current) = fire_materials.get_mut(&material.0) else { continue; };
-        current.fire.age = dome.age;
-    }
-}
-
-fn update_inferno_dome_grounds(
-    mut ground_materials: ResMut<Assets<InfernoDomeGroundMaterial>>,
-    mut grounds: Query<(&ChildOf, &mut Visibility, &MeshMaterial2d<InfernoDomeGroundMaterial>), With<InfernoDomeGround>>,
-    domes: Query<&InfernoDome>,
-) {
-    for (child_of, mut visibility, material) in grounds.iter_mut() {
-        let Ok(dome) = domes.get(child_of.parent()) else { continue; };
-        let showing = dome.age < GROUND_DURATION;
-        visibility.set_if_neq(if showing { Visibility::Inherited } else { Visibility::Hidden });
-        if !showing { continue; }
-
-        let Some(mut current) = ground_materials.get_mut(&material.0) else { continue; };
-        current.ground.age = dome.age;
     }
 }

@@ -1,7 +1,8 @@
-
 import package::shaders::common::core::TAU;
+import package::shaders::common::effect_visuals::BRITTLE_BIT;
 import package::shaders::common::fire_ramp::fire_ramp;
 import package::shaders::common::voronoi_border::voronoi_border_2d;
+import package::shaders::wisps::motion_look::WispMotionLook;
 
 // Pure-procedural fire wisp: a molten orb on fire.
 //
@@ -16,16 +17,7 @@ import package::shaders::common::voronoi_border::voronoi_border_2d;
 // into its wake — a light suggestion of a fireball trail. Nothing is sampled from
 // a texture.
 
-struct WispFireLook {
-    seed: f32,      // per-instance phase offset, decorrelates a cluster of wisps
-    vigor: f32,     // measured speed / sweet-spot, 0 at rest (locomotion input)
-    heading_x: f32, // unit travel direction (quad-local), x (locomotion input)
-    heading_y: f32, // unit travel direction (quad-local), y (locomotion input)
-};
-
-const BRITTLE: u32 = 1u;
-
-// Mesh padding factor. Mirrors `WispFireMaterial::QUAD_SCALE` in wisps_internal/src/materials.rs:
+// Mesh padding factor. Mirrors `WispFireVisual::QUAD_SCALE` in wisps_internal/src/looks.rs:
 // the mesh is built this many times the grid footprint and we scale UV by it, so the
 // flame licks have room to reach beyond the cell while the orb keeps its on-screen size.
 const QUAD_SCALE: f32 = 2.5;
@@ -182,7 +174,7 @@ fn brittle(color: vec4<f32>, c: vec2<f32>, seed: f32) -> vec4<f32> {
     return vec4<f32>(rgb, max(color.a, crack)); // opaque so the cage always reads
 }
 
-fn wisp_fire(uv: vec2<f32>, time: f32, look: WispFireLook, effects_mask: u32) -> vec4<f32> {
+fn wisp_fire(uv: vec2<f32>, time: f32, look: WispMotionLook, effects_mask: u32) -> vec4<f32> {
     let p = (uv - vec2<f32>(0.5)) * QUAD_SCALE; // y points down
     let r = length(p);
     let t = time;
@@ -196,7 +188,7 @@ fn wisp_fire(uv: vec2<f32>, time: f32, look: WispFireLook, effects_mask: u32) ->
 
     // ── Flame licks all around it ─────────────────────────────────────────────
     // Locomotion wind: points opposite to travel, scaled by (bounded) speed; 0 at rest.
-    let wind = -vec2<f32>(look.heading_x, look.heading_y) * min(look.vigor, 1.5);
+    let wind = -look.heading * min(look.vigor, 1.5);
     let flame = fire_corona(p, t, look.seed, wind);
 
     // ── Compose: additive HDR so the flames stay translucent over the orb ─────
@@ -209,7 +201,7 @@ fn wisp_fire(uv: vec2<f32>, time: f32, look: WispFireLook, effects_mask: u32) ->
     let alpha = clamp(energy * edge, 0.0, 1.0);
 
     var color = vec4<f32>(rgb, alpha);
-    if ((effects_mask & BRITTLE) != 0u) {
+    if ((effects_mask & BRITTLE_BIT) != 0u) {
         color = brittle(color, p, look.seed);
     }
     return color;

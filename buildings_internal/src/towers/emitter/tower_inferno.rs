@@ -20,6 +20,7 @@ use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
 use logging::prelude::*;
 use persistence::prelude::*;
 use resources::prelude::*;
+use session::GameClock;
 use shards::prelude::*;
 use states::prelude::*;
 use weaponry::prelude::*;
@@ -27,7 +28,7 @@ use wisps::prelude::*;
 
 use crate::{common::*, tooltip::building_tooltip};
 
-use super::tower_inferno_fire::{InfernoCore, InfernoEmberRing};
+use super::tower_inferno_fire::{InfernoCore, InfernoEmberRing, InfernoHaze};
 
 pub(crate) struct TowerInfernoPlugin;
 impl Plugin for TowerInfernoPlugin {
@@ -133,8 +134,9 @@ impl BuilderTowerInferno {
                 ]],
                 children![
                     IndicatorDisplay::default(),
-                    InfernoCore,
-                    InfernoEmberRing,
+                    (InfernoCore::default(), Transform::from_scale(grid_imprint.world_size().extend(1.))),
+                    InfernoEmberRing::default(),
+                    InfernoHaze::default(),
                 ],
             ))
             .observe(on_technical_state_changed_recompute_operational);
@@ -206,6 +208,7 @@ fn load_tower_infernos(ctx: &mut LoadContext) -> LoadResult {
 
 fn shooting_system(
     mut commands: Commands,
+    clock: Res<GameClock>,
     mut tower_infernos: Query<(&Transform, &AttackRange, &mut TowerShootingTimer, &mut TowerWispTarget), (With<TowerInferno>, With<IsOperational>)>,
     wisps: Query<(), With<Wisp>>,
 ) {
@@ -219,7 +222,7 @@ fn shooting_system(
             continue;
         }
 
-        commands.spawn((InfernoDome::new(attack_range.get() * CELL_SIZE), Transform::from_translation(transform.translation.with_z(0.))));
+        commands.spawn((InfernoDome::new(attack_range.get() * CELL_SIZE, clock.wrapped()), Transform::from_translation(transform.translation.with_z(0.))));
         timer.0.reset();
     }
 }

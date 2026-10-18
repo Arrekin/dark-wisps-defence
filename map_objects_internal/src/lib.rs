@@ -1,13 +1,13 @@
-pub(crate) mod walls;
 pub(crate) mod dark_ore;
 pub(crate) mod dark_ore_canvas;
 pub(crate) mod dark_ore_materials;
 pub(crate) mod quantum_field;
+pub(crate) mod quantum_field_anomaly;
 pub(crate) mod quantum_field_materials;
-pub(crate) mod quantum_field_post_process;
 pub(crate) mod wall_canvas;
 pub(crate) mod wall_editor_ui;
 pub(crate) mod wall_materials;
+pub(crate) mod walls;
 
 use bevy::prelude::*;
 
@@ -21,7 +21,7 @@ impl Plugin for MapObjectsPlugin {
                 dark_ore_materials::DarkOreMaterialsPlugin,
                 quantum_field::QuantumFieldPlugin,
                 quantum_field_materials::QuantumFieldMaterialsPlugin,
-                quantum_field_post_process::QuantumFieldPostProcessPlugin,
+                quantum_field_anomaly::QuantumFieldAnomalyPlugin,
                 wall_canvas::WallCanvasPlugin,
                 wall_editor_ui::WallEditorUiPlugin,
                 wall_materials::WallMaterialsPlugin,

@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
 use alteration::modifiers::prelude::AttackDamage;
-use game_core::prelude::{ALL_DIRECTIONS, CELL_SIZE, DamageMessage, GridCoords, OptionalCommands, Property, ZDepth};
+use game_core::prelude::{ALL_DIRECTIONS, CELL_SIZE, DamageMessage, GridCoords, OptionalCommands, Property};
 use grids::wisps::WispsGrid;
 use logging::prelude::*;
 use persistence::{prelude::*, rusqlite};
@@ -87,7 +87,6 @@ fn on_builder_add_spawn_cannonball(
                         custom_size: Some(Vec2::splat(size)),
                         ..default()
                     },
-                    ZDepth::PROJECTILE,
                 ),
                 disc_image.make_shadow(size),
             ],

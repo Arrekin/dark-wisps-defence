@@ -83,7 +83,7 @@ pub struct MomentHappened {
 /// manually. The derive infers `KIND` from the type name:
 /// `MomentObjectiveSatisfied` → `"objective_satisfied"`.
 ///
-/// ```
+/// ```ignore
 /// #[derive(Component, Default, MomentKind)]
 /// pub struct MomentGameStart; // KIND = "game_start"
 /// ```

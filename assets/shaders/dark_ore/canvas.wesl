@@ -1,8 +1,10 @@
 import bevy_sprite_render::mesh2d::vertex_output::VertexOutput;
-import package::shaders::common::core::{CELL_SIZE, grid_contains, grid_index};
+import package::shaders::common::core::CELL_SIZE;
+import package::shaders::common::map_info::grid_bounds;
+import package::shaders::dark_ore::fill::dark_ore_fill_at;
 import package::shaders::dark_ore::look::{dark_ore_shading, ore_inset, rounded_corner};
 
-// Draws all dark ore in one pass over a quad covering the map grid. Each storage-buffer value is
+// Draws all dark ore in one pass over a quad covering the map grid. Each dark ore fill value is
 // both an occupancy mask (`fill > 0`) and a normalized ore amount.
 //
 // Occupied fragments derive distance to open ground from the eight neighboring cells. Shared edges
@@ -12,29 +14,12 @@ import package::shaders::dark_ore::look::{dark_ore_shading, ore_inset, rounded_c
 // Fill is interpolated between occupied cell centers and renormalized by occupancy, preventing both
 // visible cell seams and dilution from empty neighbors.
 
-// Field order and types mirror `DarkOreCanvasSettings` in dark_ore_canvas.rs.
-struct DarkOreCanvasSettings {
-    grid_width: u32,
-    grid_height: u32,
-}
-
-// One f32 per cell, row major — the normalised fill level, 0.0 meaning no ore.
-@group(2) @binding(0) var<storage, read> cells: array<f32>;
-@group(2) @binding(1) var<uniform> settings: DarkOreCanvasSettings;
-
 // Maximum distance in cell coordinates (0.5 is half a cell width). Deeper interior is flat.
 const DISTANCE_CAP: f32 = 0.5;
 
-fn cell_fill(coords: vec2<i32>) -> f32 {
-    // Out of bounds reads as open ground, so map borders get an edge like any other.
-    if !grid_contains(coords, settings.grid_width, settings.grid_height) {
-        return 0.0;
-    }
-    return cells[grid_index(coords, settings.grid_width)];
-}
-
+// Out of bounds reads as open ground, so map borders get an edge like any other.
 fn is_dark_ore(coords: vec2<i32>) -> bool {
-    return cell_fill(coords) > 0.0;
+    return dark_ore_fill_at(coords) > 0.0;
 }
 
 // Distance to open ground in cell units. `coords` is occupied and `p` is the position inside it,
@@ -90,10 +75,10 @@ fn fill_at(f: vec2<f32>) -> f32 {
     let weight_01 = (1.0 - t.x) * t.y;
     let weight_11 = t.x * t.y;
 
-    let fill_00 = cell_fill(corner);
-    let fill_10 = cell_fill(corner + vec2<i32>(1, 0));
-    let fill_01 = cell_fill(corner + vec2<i32>(0, 1));
-    let fill_11 = cell_fill(corner + vec2<i32>(1, 1));
+    let fill_00 = dark_ore_fill_at(corner);
+    let fill_10 = dark_ore_fill_at(corner + vec2<i32>(1, 0));
+    let fill_01 = dark_ore_fill_at(corner + vec2<i32>(0, 1));
+    let fill_11 = dark_ore_fill_at(corner + vec2<i32>(1, 1));
 
     var total = 0.0;
     var weight = 0.0;
@@ -108,8 +93,7 @@ fn fill_at(f: vec2<f32>) -> f32 {
 
 @fragment
 fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
-    let grid_size = vec2<f32>(f32(settings.grid_width), f32(settings.grid_height));
-    let f = mesh.uv * grid_size;
+    let f = mesh.uv * vec2<f32>(grid_bounds());
     let world = f * CELL_SIZE;
 
     // World-coordinate span of one screen pixel; evaluated before divergent control flow.

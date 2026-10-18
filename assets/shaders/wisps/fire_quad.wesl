@@ -1,29 +1,20 @@
 import bevy_sprite_render::mesh2d::vertex_output::VertexOutput;
 import bevy_sprite_render::mesh2d::view_bindings::globals;
-import package::shaders::wisps::fire_look::{WispFireLook, wisp_fire};
+import package::shaders::common::effect_visuals::EffectVisuals;
+import package::shaders::wisps::fire_look::wisp_fire;
+import package::shaders::wisps::motion_look::WispMotionLook;
 
-// Map-material bindings for the shared fire-wisp shader.
+// Lane adapter for the fire wisp: the paint lane binds one `Instance` per wisp.
 
-@group(2) @binding(4)
-var<uniform> uniforms: WispFireLook;
-
-const WISP_EFFECT_SLOTS: u32 = 8u;
-struct WispEffects {
-    mask: u32,
-    params: array<vec4<f32>, WISP_EFFECT_SLOTS>,
+// Field order and types mirror `WispFireVisual` in wisps_internal/src/looks.rs.
+struct Instance {
+    look: WispMotionLook,
+    effects: EffectVisuals,
+    alpha: f32, // below 1.0 for a placement ghost
 };
-@group(2) @binding(5)
-var<uniform> effects: WispEffects;
 
-struct WispQuad {
-    alpha: f32,
-};
-@group(2) @binding(6)
-var<uniform> quad: WispQuad;
-
-@fragment
-fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
-    var color = wisp_fire(mesh.uv, globals.time, uniforms, effects.mask);
-    color.a *= quad.alpha;
+fn look(mesh: VertexOutput, instance: Instance) -> vec4<f32> {
+    var color = wisp_fire(mesh.uv, globals.time, instance.look, instance.effects.mask);
+    color.a *= instance.alpha;
     return color;
 }

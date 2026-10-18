@@ -15,8 +15,8 @@ import package::shaders::weaponry::flame_stream_common::BREAKUP;
 // - `rod`: dense unburnt core near the nozzle (`0..ROD`).
 // - `ember`: additive hash-grid sparks (`alpha = 0`).
 
-// Field order and types mirror `FlameUniform` in weaponry_internal/src/flame_stream_fire.rs.
-struct Flame {
+// Field order and types mirror `Flame` in weaponry_internal/src/flame_stream_fire.rs.
+struct Instance {
     seed: f32,              // per-stream phase offset
     length: f32,            // quad length along the stream
     half_width: f32,        // quad half-width across the stream
@@ -28,9 +28,6 @@ struct Flame {
     hit: f32,               // 1.0 when hitting a wisp, else 0.0
     venting: f32,           // 1.0 when venting, else 0.0
 };
-
-@group(2) @binding(0)
-var<uniform> flame: Flame;
 
 // ── Jet ──────────────────────────────────────────────────────────────────────
 const DRIFT: f32 = 650.0;         // noise advection speed along `s` (world units/s)
@@ -58,8 +55,7 @@ const EMBER_SALT: u32 = 0x2f6b4c1du;
 const ROD_COLOR: vec3<f32> = vec3<f32>(0.30, 0.09, 0.02);
 const SOOT_COLOR: vec3<f32> = vec3<f32>(0.035, 0.028, 0.026);
 
-@fragment
-fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
+fn look(mesh: VertexOutput, flame: Instance) -> vec4<f32> {
     let s = mesh.uv.x * flame.length;
     let u = (0.5 - mesh.uv.y) * 2.0 * flame.half_width;
     let time = globals.time;

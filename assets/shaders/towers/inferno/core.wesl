@@ -9,12 +9,12 @@ import package::shaders::common::value_noise::value_noise_3d;
 // Masks the central square core and dark sprite seams from `sprite_texture`.
 // Premultiplied output: core occludes the sprite (`alpha = cover`), seams add light (`alpha = 0`).
 
-// Field order and types mirror `InfernoCoreUniform` in buildings_internal/src/towers/emitter/tower_inferno_fire.rs.
-struct InfernoCore {
+// Field order and types mirror `InfernoCore` in buildings_internal/src/towers/emitter/tower_inferno_fire.rs.
+struct Instance {
     charge: f32,  // normalized reload progress (0..1)
 };
 
-@group(2) @binding(0) var<uniform> core: InfernoCore;
+// Tower sprite supplied by the shared `InfernoCoreMaterial`.
 @group(2) @binding(1) var sprite_texture: texture_2d<f32>;
 @group(2) @binding(2) var sprite_sampler: sampler;
 
@@ -32,8 +32,7 @@ fn heat_color(heat: f32) -> vec3<f32> {
     return fire_ramp(clamp(heat, 0.0, FIRE_HEAT_CAP));
 }
 
-@fragment
-fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
+fn look(mesh: VertexOutput, core: Instance) -> vec4<f32> {
     let time = globals.time;
 
     let throb = 1.0 + THROB * sin(time * THROBS_PER_SECOND * TAU) * smoothstep(0.7, 1.0, core.charge);

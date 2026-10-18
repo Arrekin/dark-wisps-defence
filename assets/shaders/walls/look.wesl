@@ -1,5 +1,6 @@
 import package::shaders::common::core::CELL_SIZE;
 import package::shaders::common::gradient_noise::gradient_fbm_2d;
+import package::shaders::common::map_light::MAP_SUN_GROUND_DIRECTION;
 
 // Binding-free wall style layout and shading functions. Callers own their material bindings, so the
 // same code can serve both the map canvas and UI swatches.
@@ -20,7 +21,7 @@ struct WallStyleSurface {
     _padding: vec2<f32>,
 }
 
-// Field order and types must match `WallStyle` in map_objects/src/wall_style.rs.
+// Field order and types mirror `WallStyle` in map_objects/src/wall_style.rs.
 struct WallStyle {
     body_low: vec4<f32>,
     body_high: vec4<f32>,
@@ -47,6 +48,7 @@ fn single_cell_distance(world: vec2<f32>) -> f32 {
     let from_centre = abs(world - vec2<f32>(CELL_SIZE * 0.5));
     return CELL_SIZE * 0.5 - max(from_centre.x, from_centre.y);
 }
+
 // Body variation is exposed separately for the canvas noise diagnostic.
 fn plate_noise(world: vec2<f32>, style: WallStyle) -> f32 {
     return gradient_fbm_2d(world / max(style.surface.plate_noise_scale, 0.0001), 4);
@@ -81,4 +83,18 @@ fn wall_shading(d: f32, lit: f32, plate: f32, texel: f32, style: WallStyle) -> v
 
     let contour = saturate(1.0 - abs(d - contour_width * 0.5) / contour_width);
     return mix(colour, style.contour_color.rgb, contour);
+}
+
+// One isolated wall cell: colour, and coverage as alpha. `world` is in world pixels within the cell,
+// with y running up, and `texel` is world pixels per screen pixel. An analytic box distance replaces
+// the map canvas's neighbour-derived field, and there is no contact shadow.
+fn single_cell_wall(world: vec2<f32>, texel: f32, style: WallStyle) -> vec4<f32> {
+    let raw_distance = single_cell_distance(world);
+    let d = eroded_distance(raw_distance, world, style);
+
+    let probe = max(LIGHT_PROBE, texel);
+    let lit = -(single_cell_distance(world + MAP_SUN_GROUND_DIRECTION * probe) - raw_distance) / probe;
+
+    let colour = wall_shading(d, lit, plate_noise(world, style), texel, style);
+    return vec4<f32>(colour, smoothstep(-texel, texel, d));
 }

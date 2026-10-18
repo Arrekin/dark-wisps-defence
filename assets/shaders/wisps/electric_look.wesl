@@ -1,8 +1,9 @@
-
 import package::shaders::common::core::{PI, TAU};
+import package::shaders::common::effect_visuals::BRITTLE_BIT;
 import package::shaders::common::hash::{hash_coords, hash_unit};
 import package::shaders::common::value_noise::{value_hash_2d, value_noise_2d};
 import package::shaders::common::voronoi_border::voronoi_border_2d;
+import package::shaders::wisps::motion_look::WispMotionLook;
 
 // Pure-procedural electric wisp: a contained plasma globe.
 //
@@ -10,15 +11,6 @@ import package::shaders::common::voronoi_border::voronoi_border_2d;
 // striking in flickering bursts — fire, fade, restrike at fresh angles — while
 // sparks twinkle off the rim. Faster travel makes it crackle harder and sheds
 // its sparks into the wake. Nothing is sampled from a texture.
-
-struct WispElectricLook {
-    seed: f32,      // per-instance phase offset, decorrelates a cluster of wisps
-    vigor: f32,     // measured speed / sweet-spot; scales the crackle (0 at rest)
-    heading_x: f32, // unit travel direction (quad-local), x
-    heading_y: f32, // unit travel direction (quad-local), y
-};
-
-const BRITTLE: u32 = 1u;
 
 // ── Striking & arcs ──────────────────────────────────────────────────────────
 const STRIKE_RATE: f32 = 8.0; // strikes per second per arc
@@ -72,7 +64,7 @@ fn brittle(color: vec4<f32>, p: vec2<f32>, seed: f32) -> vec4<f32> {
     return vec4<f32>(rgb, max(color.a, crack)); // opaque so the cage always reads
 }
 
-fn wisp_electric(uv: vec2<f32>, time: f32, look: WispElectricLook, effects_mask: u32) -> vec4<f32> {
+fn wisp_electric(uv: vec2<f32>, time: f32, look: WispMotionLook, effects_mask: u32) -> vec4<f32> {
     let hot = vec3<f32>(1.00, 0.95, 1.00);  // white-hot cores
     let volt = vec3<f32>(0.55, 0.25, 1.00); // violet high-voltage glow
 
@@ -102,7 +94,7 @@ fn wisp_electric(uv: vec2<f32>, time: f32, look: WispElectricLook, effects_mask:
 
     // Sparks: sparse twinkling points in the outer body; while travelling, extra
     // sparks light up behind the heading, shedding into the wake.
-    let heading = vec2<f32>(look.heading_x, look.heading_y);
+    let heading = look.heading;
     let dir = p / max(length(p), 1e-4);
     let back = max(0.0, -dot(dir, heading)); // 1 directly behind travel, 0 ahead
     let sp = p * 9.0;
@@ -120,7 +112,7 @@ fn wisp_electric(uv: vec2<f32>, time: f32, look: WispElectricLook, effects_mask:
     let alpha = clamp(max(energy, corona) * edge, 0.0, 1.0);
 
     var color = vec4<f32>(rgb, alpha);
-    if ((effects_mask & BRITTLE) != 0u) {
+    if ((effects_mask & BRITTLE_BIT) != 0u) {
         color = brittle(color, p, look.seed);
     }
     return color;

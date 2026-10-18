@@ -12,17 +12,14 @@ import package::shaders::weaponry::flame_stream_common::TILE_HALF;
 // - `tile_fire`: low flames and border rim across the `[-TILE_HALF, TILE_HALF]` cell.
 // - `spark`: additive procedural particles deflecting backward/sideways from `hit_point`.
 
-// Field order and types mirror `ImpactFireUniform` in weaponry_internal/src/flame_stream_fire.rs.
-struct ImpactFire {
+// Field order and types mirror `ImpactFireVisual` in weaponry_internal/src/flame_stream_fire.rs.
+struct Instance {
     intensity: f32,         // normalized burn intensity (0..1)
     seed: f32,              // per-stream phase offset
     half_size: f32,         // quad half-size in world units
     hit_point: vec2<f32>,   // hit position relative to tile center
     direction: vec2<f32>,   // unit stream direction
 };
-
-@group(2) @binding(0)
-var<uniform> impact: ImpactFire;
 
 const SPLASH: f32 = 18.0;          // lateral splash half-width
 
@@ -31,8 +28,7 @@ const SPARK_COUNT: u32 = 16u;
 const SPARK_RADIUS: f32 = 1.4;
 const SPARK_DRAG: f32 = 4.0;       // exponential velocity decay rate (1/s)
 
-@fragment
-fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
+fn look(mesh: VertexOutput, impact: Instance) -> vec4<f32> {
     let p = (vec2<f32>(mesh.uv.x, 1.0 - mesh.uv.y) - vec2<f32>(0.5)) * 2.0 * impact.half_size;
     let time = globals.time + impact.seed;
     let direction = impact.direction;

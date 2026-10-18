@@ -1,35 +1,36 @@
 import bevy_sprite_render::mesh2d::vertex_output::VertexOutput;
 import bevy_sprite_render::mesh2d::view_bindings::globals;
 import package::shaders::common::core::TAU;
+import package::shaders::common::game_time::game_time_since;
 import package::shaders::common::fire_ramp::fire_ramp;
 import package::shaders::common::gradient_noise::{gradient_fbm_2d, gradient_noise_2d};
 import package::shaders::common::hash::{HASH_GOLDEN, hash_mix, hash_unit};
+import package::shaders::grids::obstacles::is_raised_at;
 
 // Fireball impact with two layers sharing a square mesh centered on the landing cell:
 // - Blast: flash, expanding fire and smoke, an outward-moving fire ring, splatter, and sparks.
 //   Drawn above wisps.
 // - Scorch: a fading burn mark with cooling cinders. Drawn below wisps.
 //
-// The raised-cell mask excludes ground effects (scorch, cinders, splatter, and ring) from walls,
-// buildings, and dark ore. Airborne effects and light are not masked.
+// Raised cells (`shaders::grids::obstacles`) keep ground effects (scorch, cinders, splatter and
+// ring) off walls, buildings and dark ore. Airborne effects and light are not masked.
 // Distances are in cells from the landing cell's center. Premultiplied output combines additive
 // light with alpha-blended fire and smoke.
 
-// Field order and types mirror `FireballImpactUniform` in weaponry_internal/src/fireball.rs.
-struct FireballImpact {
-    age: f32,             // seconds since impact
+// Field order and types mirror `FireballImpact` in weaponry_internal/src/fireball.rs.
+struct Instance {
+    start_time: f32,      // wrapped game time of the impact
     seed: f32,
     layer: u32,           // 0 = blast, 1 = scorch
     duration: f32,        // seconds the layer lives
-    reach: u32,           // mesh and mask extent in cells beyond the landing cell
+    reach: u32,           // mesh extent in cells beyond the landing cell
     main_half_size: f32,  // main blast half-size, in cells
     ring_half_size: f32,  // outer ring half-size, in cells
-    raised_low: u32,      // raised cells around the landing cell, one bit each, row by row
-    raised_high: u32,
+    landing_cell: vec2<i32>,
 };
 
-@group(2) @binding(0)
-var<uniform> impact: FireballImpact;
+// The instance being drawn, set by `look` for the helpers below.
+var<private> impact: Instance;
 
 const LAYER_SCORCH: u32 = 1u;
 
@@ -80,16 +81,9 @@ fn premultiplied_over(below: vec4<f32>, color: vec3<f32>, alpha: f32) -> vec4<f3
     return vec4<f32>(color * alpha + below.rgb * (1.0 - alpha), alpha + below.a * (1.0 - alpha));
 }
 
+// `cell` is relative to the landing cell.
 fn is_raised_cell(cell: vec2<i32>) -> f32 {
-    let reach = i32(impact.reach);
-    let local = cell + vec2<i32>(reach);
-    let size = 2 * reach + 1;
-    if any(local < vec2<i32>(0)) || any(local >= vec2<i32>(size)) { return 1.0; }
-    let index = u32(local.y * size + local.x);
-    if index < 32u {
-        return f32((impact.raised_low >> index) & 1u);
-    }
-    return f32((impact.raised_high >> (index - 32u)) & 1u);
+    return f32(is_raised_at(impact.landing_cell + cell));
 }
 
 // Raised-cell coverage: 1 on obstacles, 0 on open ground, with softened edges and rounded corners.
@@ -190,8 +184,9 @@ fn blast_layer(q: vec2<f32>, age: f32, time: f32, ground: f32) -> vec4<f32> {
     return out;
 }
 
-@fragment
-fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
+fn look(mesh: VertexOutput, instance: Instance) -> vec4<f32> {
+    impact = instance;
+    let age = game_time_since(impact.start_time);
     let mesh_half_size = f32(impact.reach) + 0.5;
     let q = vec2<f32>(mesh.uv.x - 0.5, 0.5 - mesh.uv.y) * 2.0 * mesh_half_size;
     let ground = 1.0 - raised(q);
@@ -200,9 +195,9 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
 
     var out: vec4<f32>;
     if impact.layer == LAYER_SCORCH {
-        out = scorch_layer(q, impact.age, ground);
+        out = scorch_layer(q, age, ground);
     } else {
-        out = blast_layer(q, impact.age, globals.time + impact.seed, ground);
+        out = blast_layer(q, age, globals.time + impact.seed, ground);
     }
     return out * edge;
 }

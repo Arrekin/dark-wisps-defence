@@ -150,7 +150,7 @@ pub(crate) struct TowerAimingSystems;
 
 /// Marks a tower's rotating top sprite; holds the tower it belongs to.
 #[derive(Component)]
-#[require(ZDepth::TOWER_TOP)]
+#[require(ZDepth::TowerTop)]
 pub(crate) struct MarkerTowerRotationalTop(pub Entity);
 
 #[derive(Component)]

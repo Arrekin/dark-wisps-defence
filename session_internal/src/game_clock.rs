@@ -1,35 +1,33 @@
 use bevy::prelude::*;
-use serde::Serialize;
 
-use game_core::prelude::SSS;
+use game_core::shared_gpu::{SharedGpuBinding, SharedGpuWriter};
 use logging::prelude::*;
 use persistence::prelude::*;
-use states::{GameState, MapLoadingStage};
+use session::GameClock;
+use states::prelude::{GameState, MapLoadingStage};
 
-pub struct GameClockPlugin;
+pub(crate) struct GameClockPlugin;
 impl Plugin for GameClockPlugin {
     fn build(&self, app: &mut App) {
         app
             .init_resource::<GameClock>()
             .add_systems(OnEnter(MapLoadingStage::Init), |mut commands: Commands| { commands.insert_resource(GameClock::default()); })
-            .add_systems(PreUpdate, GameClock::advance.run_if(in_state(GameState::Running)))
+            .add_systems(PreUpdate, advance_game_clock.run_if(in_state(GameState::Running)))
+            .add_systems(PostUpdate, upload_gpu_game_time.run_if(resource_changed::<GameClock>))
             .add_systems(CollectSave, collect_game_clock)
             .register_loader(MapLoadingStage::LoadResources, "game_clock", load_game_clock);
     }
 }
 
-/// Monotonic game-time counter in seconds. Advances only while `GameState::Running`.
-///
-/// Timed effects store absolute expiry timestamps relative to this clock.
-/// Save and restore `elapsed` to preserve effect timing across sessions.
-#[derive(Resource, Default, SSS, Clone, Serialize)]
-pub struct GameClock {
-    pub elapsed: f64,
+fn advance_game_clock(time: Res<Time>, mut clock: ResMut<GameClock>) {
+    clock.elapsed += time.delta_secs_f64();
 }
-impl GameClock {
-    fn advance(time: Res<Time>, mut clock: ResMut<GameClock>) {
-        clock.elapsed += time.delta_secs_f64();
-    }
+
+fn upload_gpu_game_time(
+    mut shared_gpu: SharedGpuWriter,
+    clock: Res<GameClock>,
+) {
+    shared_gpu.write(SharedGpuBinding::GameTime, [clock.wrapped()]);
 }
 
 fn collect_game_clock(clock: Res<GameClock>, mut save: SaveWriter) {

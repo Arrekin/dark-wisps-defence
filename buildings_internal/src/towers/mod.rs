@@ -19,7 +19,6 @@ impl Plugin for TowersPlugin {
                 emitter::tower_emitter::TowerEmitterPlugin,
                 emitter::tower_inferno::TowerInfernoPlugin,
                 emitter::tower_inferno_fire::TowerInfernoFirePlugin,
-                emitter::tower_inferno_haze::TowerInfernoHazePlugin,
                 field::tower_field::TowerFieldPlugin,
             ));
     }

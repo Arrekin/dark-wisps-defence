@@ -16,8 +16,7 @@ fn fragment(in: UiVertexOutput) -> @location(0) vec4<f32> {
     look.wobble = 0.06;
     look.flow_speed = 1.0;
     look.tint = 0.0;
-    look.heading_x = 0.0;
-    look.heading_y = 0.0;
+    look.heading = vec2<f32>(0.0);
     look.vigor = 0.0;
     look.stroke_anchor_phase = 0.0;
     look.surf_anchor_phase = 0.0;

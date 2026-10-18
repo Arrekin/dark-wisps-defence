@@ -6,7 +6,7 @@ use game_core::prelude::{SSS, ZDepth};
 use super::{components::Projectile, lob::Lob};
 
 #[derive(Component)]
-#[require(AttackDamage, Projectile, ZDepth::PROJECTILE)]
+#[require(AttackDamage, Projectile, ZDepth::Projectile)]
 pub struct Cannonball;
 
 #[derive(Component, SSS)]

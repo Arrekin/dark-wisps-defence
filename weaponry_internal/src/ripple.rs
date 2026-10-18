@@ -1,13 +1,11 @@
 //! Ripple wave effect spawned by the emitter tower.
 //!
-//! Each active ripple is a pure-data entity (`Ripple` + `Transform` + `MovementSpeed`)
-//! with no mesh or material. Rendering is handled by [`super::ripple_post_process`],
-//! which uploads all ripples into a shared GPU storage buffer and runs a fullscreen
-//! displacement pass after tonemapping.
+//! Each ripple carries its propagation state and a [`RippleDisplacement`] lane visual.
+//! Before the air band draws, the visual distorts and brightens the scene from lower bands.
 //!
 //! Game logic: radial propagation, wisp hit detection, save/load.
 
-use bevy::prelude::*;
+use bevy::{prelude::*, reflect::TypePath, render::render_resource::ShaderType};
 
 use alteration::{
     effects::{
@@ -22,29 +20,32 @@ use logging::prelude::*;
 use persistence::{prelude::*, rusqlite};
 use session::GameClock;
 use states::prelude::{GameState, MapLoadingStage};
+use visuals::lane::{LaneParts, LanePlugin, LaneVisual};
 use weaponry::prelude::*;
 use wisps::prelude::Wisp;
+
+pub(crate) struct RipplePlugin;
+impl Plugin for RipplePlugin {
+    fn build(&self, app: &mut App) {
+        app
+            .add_plugins(LanePlugin::<RippleDisplacement>::default())
+            // Chained as otherwise ripples may try to apply effects as they are removed, causing relations issues.
+            .add_systems(Update, (
+                ripple_propagate_system,
+                ripple_hit_system,
+            ).chain().run_if(in_state(GameState::Running)))
+            .add_systems(Update, update_ripple_displacements)
+            .add_observer(on_builder_add_spawn_ripple)
+            .add_systems(CollectSave, collect_ripples)
+            .register_loader(MapLoadingStage::SpawnMapElements, "ripples", load_ripples);
+    }
+}
 
 // Brittle debuff parameters applied by this ripple source
 const BRITTLE_DURATION_SECONDS: f64 = 10.0;
 const BRITTLE_DAMAGE_MULTIPLIER: f32 = 1.5;
 
 const RIPPLE_SPEED: f32 = 50.0;
-
-pub(crate) struct RipplePlugin;
-impl Plugin for RipplePlugin {
-    fn build(&self, app: &mut App) {
-        app
-            // Chained as otherwise ripples may try to apply effects as they are removed, causing relations issues.
-            .add_systems(Update, (
-                ripple_propagate_system,
-                ripple_hit_system,
-            ).chain().run_if(in_state(GameState::Running)))
-            .add_observer(on_builder_add_spawn_ripple)
-            .add_systems(CollectSave, collect_ripples)
-            .register_loader(MapLoadingStage::SpawnMapElements, "ripples", load_ripples);
-    }
-}
 
 #[log_tags(Tag::GameSave)]
 fn collect_ripples(
@@ -102,8 +103,9 @@ fn on_builder_add_spawn_ripple(
         .remove::<BuilderRipple>()
         .insert((
             Transform::from_translation(builder.world_position.extend(0.)),
-            Ripple { max_radius: builder.radius, current_radius: builder.current_radius },
+            Ripple { max_radius: builder.max_radius, current_radius: builder.current_radius },
             MovementSpeed::new(RIPPLE_SPEED),
+            RippleDisplacement::default(),
         ));
 }
 
@@ -169,4 +171,28 @@ fn already_hit_this_target(
                 .is_ok_and(|effect_target| effect_target.0 == target_entity)
         })
     })
+}
+
+/// Distortion data stored on the ripple entity. Field order and types mirror `Instance` in
+/// `assets/shaders/weaponry/ripple_displacement.wesl`.
+#[derive(Component, ShaderType, TypePath, Clone, Default)]
+pub(crate) struct RippleDisplacement {
+    /// Current radius as a fraction of the full diameter.
+    normalized_radius: f32,
+    max_radius: f32,
+}
+impl LaneVisual for RippleDisplacement {
+    const LABEL: &'static str = "ripple_displacement";
+    const LOOK: &'static str = "shaders::weaponry::ripple_displacement";
+    const PARTS: LaneParts = LaneParts::DISPLACE;
+
+    fn cut_quad_size(&self) -> Vec2 {
+        Vec2::splat(2. * self.max_radius)
+    }
+}
+
+fn update_ripple_displacements(mut ripples: Query<(&Ripple, &mut RippleDisplacement)>) {
+    for (ripple, mut displacement) in ripples.iter_mut() {
+        *displacement = RippleDisplacement { normalized_radius: ripple.normalized_radius(), max_radius: ripple.max_radius };
+    }
 }

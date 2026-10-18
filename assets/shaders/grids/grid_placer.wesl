@@ -1,17 +1,17 @@
 import bevy_sprite_render::mesh2d::vertex_output::VertexOutput;
-import package::shaders::common::core::{CELL_SIZE, grid_contains, grid_index};
+import package::shaders::common::core::{CELL_SIZE, bounds_contains, bounds_index};
 
-// Draws placement validity around the footprint and highlights relevant cells. The object preview
+// Draws placement validity around the imprint and highlights relevant cells. The object preview
 // is rendered separately by a child entity below this quad.
 
-// Cell states packed 2 bits per cell in cell_data. Mirror `build_cell_data` in
+// Cell states packed 2 bits per cell in cell_data. Mirrors `build_cell_data` in
 // grids_internal/src/placement.rs.
 const CELL_OUTSIDE:  u32 = 0u;
 const CELL_PLAIN:    u32 = 1u;
 const CELL_NEGATIVE: u32 = 2u;
 const CELL_POSITIVE: u32 = 3u;
 
-// Mirror the `validity` mapping in `revalidate_placement`.
+// Mirrors `PlacementValidity::shader_index` in grids/src/placement.rs.
 const VALIDITY_VALID:           u32 = 0u;
 const VALIDITY_VALID_UNPOWERED: u32 = 1u;
 const VALIDITY_INVALID:         u32 = 2u;
@@ -23,7 +23,7 @@ const UNPOWERED_COLOR: vec3<f32> = vec3<f32>(1.000, 0.558, 0.047);  // #FFC53D
 const INVALID_COLOR:   vec3<f32> = vec3<f32>(1.000, 0.033, 0.033);  // #FF3333
 
 // Invalid and positive cell marks use HDR values so bloom keeps them visible over the ghost.
-// Valid footprint outlines stay within the display range.
+// Valid imprint outlines stay within the display range.
 const INVALID_EXPOSURE: f32 = 1.8;
 const POSITIVE_EXPOSURE: f32 = 2.6;
 
@@ -40,20 +40,20 @@ const HATCH_DIM: f32 = 0.5;
 
 const INV_SQRT_2: f32 = 0.70710678;
 
+// Field order and types mirror `GridPlacerUniform` in grids_internal/src/placement.rs.
 struct GridPlacerData {
     cell_data: vec4<u32>,  // 2 bits/cell, up to 64 cells (8×8 bounding box)
-    cell_columns: u32,
-    cell_rows: u32,
+    bounds: vec2<u32>,
     validity: u32,
 }
 
 @group(2) @binding(0) var<uniform> data: GridPlacerData;
 
 fn cell_state(cell: vec2<i32>) -> u32 {
-    if !grid_contains(cell, data.cell_columns, data.cell_rows) {
+    if !bounds_contains(cell, data.bounds) {
         return CELL_OUTSIDE;
     }
-    let cell_index = grid_index(cell, data.cell_columns);
+    let cell_index = bounds_index(cell, data.bounds);
     let bit_offset = (cell_index % 16u) * 2u;
     var word: u32;
     switch cell_index / 16u {
@@ -87,9 +87,9 @@ fn corner_distance(cell: vec2<i32>, direction: vec2<i32>, offsets: vec2<f32>) ->
     return CELL_SIZE;
 }
 
-// Distance in world pixels to the nearest edge of the covered footprint, which follows the
-// imprint's real shape rather than its bounding box. Meaningful only inside a covered cell.
-fn footprint_edge_distance(world: vec2<f32>, cell: vec2<i32>) -> f32 {
+// Distance in world pixels to the imprint boundary, following its covered cells.
+// Only valid inside a covered cell.
+fn imprint_edge_distance(world: vec2<f32>, cell: vec2<i32>) -> f32 {
     let to_low = world - vec2<f32>(cell) * CELL_SIZE;
     let to_high = vec2<f32>(CELL_SIZE) - to_low;
 
@@ -107,7 +107,7 @@ fn footprint_edge_distance(world: vec2<f32>, cell: vec2<i32>) -> f32 {
 }
 
 // Parallel 45° stripes measured along their own normal, so they run unbroken across the whole
-// footprint instead of restarting at each cell border.
+// imprint instead of restarting at each cell border.
 fn hatch_coverage(world: vec2<f32>, half_width: f32, texel: f32) -> f32 {
     let along_normal = (world.x + world.y) * INV_SQRT_2;
     let phase = fract(along_normal / HATCH_SPACING);
@@ -125,7 +125,7 @@ fn cell_frame_coverage(world: vec2<f32>, cell: vec2<i32>, texel: f32) -> f32 {
 
 @fragment
 fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
-    let grid_size = vec2<f32>(f32(data.cell_columns), f32(data.cell_rows));
+    let grid_size = vec2<f32>(data.bounds);
     // Mesh UV has y running down and the cell grid has it running up.
     let world = vec2<f32>(mesh.uv.x, 1.0 - mesh.uv.y) * grid_size * CELL_SIZE;
     let cell = clamp(vec2<i32>(floor(world / CELL_SIZE)), vec2<i32>(0), vec2<i32>(grid_size) - 1);
@@ -151,10 +151,10 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
         mark_color = outline_color * POSITIVE_EXPOSURE;
     }
 
-    let edge_distance = footprint_edge_distance(world, cell);
+    let edge_distance = imprint_edge_distance(world, cell);
     let outline_coverage = 1.0 - smoothstep(OUTLINE_WIDTH - texel, OUTLINE_WIDTH + texel, edge_distance);
 
-    // Cell frames are inset far enough not to overlap the footprint outline.
+    // Cell frames are inset far enough not to overlap the imprint outline.
     let color = select(mark_color, outline_color, outline_coverage > mark_coverage);
     return vec4<f32>(color, max(mark_coverage, outline_coverage));
 }

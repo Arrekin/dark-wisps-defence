@@ -1,10 +1,13 @@
 import bevy_sprite_render::mesh2d::vertex_output::VertexOutput;
-import package::shaders::common::core::{CELL_SIZE, grid_contains, grid_index};
+import package::shaders::common::core::CELL_SIZE;
+import package::shaders::common::map_info::grid_bounds;
 import package::shaders::common::map_light::MAP_SUN_GROUND_DIRECTION;
-import package::shaders::walls::look::{WallStyle, LIGHT_PROBE, eroded_distance, plate_noise, wall_shading};
+import package::shaders::walls::look::{LIGHT_PROBE, eroded_distance, plate_noise, wall_shading};
+import package::shaders::walls::styles::{wall_style, wall_style_index_at};
 
-// Draws all walls in one pass over a quad covering the map grid. Each cell stores zero for open
-// ground or a one-based index into the style buffer.
+// Draws all walls in one pass over a quad covering the map grid. Each cell's style comes from
+// `shaders::walls::styles`. Cells off the map read as open ground, so map borders get an edge like
+// any other.
 //
 // The eight neighboring cells define a signed distance to the nearest region boundary. Occupied
 // fragments use their own style; open fragments use the nearest neighboring wall style so contact
@@ -13,36 +16,22 @@ import package::shaders::walls::look::{WallStyle, LIGHT_PROBE, eroded_distance, 
 // The distance field has no stored normal, so lighting estimates edge facing with a finite
 // difference along the shared map-sun direction. Surface layers are defined in `shaders::walls::look`.
 
-// Field order and types mirror `WallCanvasSettings` in wall_canvas.rs.
+// Field order and types mirror `WallCanvasSettings` in map_objects_internal/src/wall_canvas.rs.
 struct WallCanvasSettings {
-    grid_width: u32,
-    grid_height: u32,
     debug_mode: u32, // `WallCanvasDebug` discriminant.
 }
 
-// One style index per cell, row major, 0 for open ground.
-@group(2) @binding(0) var<storage, read> cells: array<u32>;
-// The map's style table. Cell value 1 is styles[0].
-@group(2) @binding(1) var<storage, read> styles: array<WallStyle>;
-@group(2) @binding(2) var<uniform> settings: WallCanvasSettings;
+@group(2) @binding(0) var<uniform> settings: WallCanvasSettings;
 
 // Maximum distance in cell coordinates (0.5 is half a cell width). Deeper interior is flat.
 const DISTANCE_CAP: f32 = 0.5;
 const SHADOW_STRENGTH: f32 = 0.85;
 
-// Diagnostic output modes; values mirror the `WallCanvasDebug` discriminants in wall_style.rs.
+// Diagnostic output modes; values mirror the `WallCanvasDebug` discriminants in map_objects/src/wall_style.rs.
 const DEBUG_OFF: u32 = 0u;
 const DEBUG_DISTANCE: u32 = 1u;
 const DEBUG_FACING: u32 = 2u;
 const DEBUG_NOISE: u32 = 3u;
-
-fn cell_style(coords: vec2<i32>) -> u32 {
-    // Out of bounds reads as open ground, so map borders get an edge like any other.
-    if !grid_contains(coords, settings.grid_width, settings.grid_height) {
-        return 0u;
-    }
-    return cells[grid_index(coords, settings.grid_width)];
-}
 
 struct WallSurface {
     // Cell units, positive inside a wall.
@@ -59,7 +48,7 @@ fn closer(a: WallSurface, b: WallSurface) -> WallSurface {
 // Returns signed boundary distance in cell coordinates and the nearest neighboring wall style.
 // `p` is relative to the cell center in [-0.5, 0.5] on each axis.
 fn wall_surface(coords: vec2<i32>, p: vec2<f32>) -> WallSurface {
-    let region = cell_style(coords);
+    let region = wall_style_index_at(coords);
     let toward_positive = vec2<f32>(0.5) - p;
     let toward_negative = vec2<f32>(0.5) + p;
 
@@ -70,7 +59,7 @@ fn wall_surface(coords: vec2<i32>, p: vec2<f32>) -> WallSurface {
 
     for (var i = 0; i < 4; i++) {
         let offset = cardinals[i];
-        let neighbour = cell_style(coords + offset);
+        let neighbour = wall_style_index_at(coords + offset);
         if neighbour == region { continue; }
         let edges = select(toward_negative, toward_positive, offset > vec2<i32>(0));
         let edge = select(edges.y, edges.x, offset.x != 0);
@@ -79,7 +68,7 @@ fn wall_surface(coords: vec2<i32>, p: vec2<f32>) -> WallSurface {
 
     for (var i = 0; i < 4; i++) {
         let offset = diagonals[i];
-        let neighbour = cell_style(coords + offset);
+        let neighbour = wall_style_index_at(coords + offset);
         if neighbour == region { continue; }
         let edge = select(toward_negative, toward_positive, offset > vec2<i32>(0));
         best = closer(best, WallSurface(max(length(edge), 1e-5), neighbour));
@@ -97,8 +86,7 @@ fn distance_at(world: vec2<f32>) -> f32 {
 
 @fragment
 fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
-    let grid_size = vec2<f32>(f32(settings.grid_width), f32(settings.grid_height));
-    let f = mesh.uv * grid_size;
+    let f = mesh.uv * vec2<f32>(grid_bounds());
     let base = floor(f);
     let coords = vec2<i32>(base);
     let world = f * CELL_SIZE;
@@ -106,14 +94,14 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
     // World-coordinate span of one screen pixel; evaluated before divergent control flow.
     let texel = max(max(fwidth(world.x), fwidth(world.y)), 0.0001);
 
-    let region = cell_style(coords);
+    let region = wall_style_index_at(coords);
     let surface = wall_surface(coords, f - base - vec2<f32>(0.5));
 
     // Inside a wall the pixel belongs to its own style; on open ground it belongs to
     // whichever wall is nearest, which may be one of several bordering that cell.
     let style_index = select(surface.style, region, region != 0u);
     if style_index == 0u { return vec4<f32>(0.0); }
-    let style = styles[style_index - 1u];
+    let style = wall_style(style_index);
 
     let raw_distance = surface.distance * CELL_SIZE;
     let d = eroded_distance(raw_distance, world, style);

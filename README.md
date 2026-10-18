@@ -69,7 +69,7 @@ Older previews:
 - [Modifiers & Effects](documentation/architecture/modifier_effects.md)
 - [Moments](documentation/architecture/moments.md)
 - [Persistence(Save & Load)](documentation/architecture/persistence.md)
-- [Post-Process Effects](documentation/architecture/post_process_effects.md)
+- [Rendering](documentation/architecture/rendering.md)
 - [Research](documentation/architecture/research.md)
 
 ## Direction

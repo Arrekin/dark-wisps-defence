@@ -1,26 +1,26 @@
 //! # Flame Stream Fire
 //!
-//! Visual entities for `FlameStream`:
+//! Visual entities for `FlameStream`, each a lane visual on a layer of its own:
+//!
 //! - `Flame` — stream jet from `nozzle` to the hit point (or `head`), with a `FlameGlow` child for
 //!   additive ground light.
-//! - `ImpactFire` — splash, clinging flames, cell fire, and sparks on the hit tile.
-//! - `FlameScorch` — standalone ground decal spawned when a tile stops burning; self-despawns.
+//! - `ImpactFireVisual` — splash, clinging flames, cell fire, and sparks on the hit tile, driven by
+//!   the burn state in `ImpactFire`.
+//! - `FlameScorch` — transient ground decal spawned when a tile stops burning.
 //! - `PilotFlame` — small nozzle flame visible while the stream is armed.
 //!
-//! `Flame`, `ImpactFire`, and `PilotFlame` are spawned as children of `FlameStream`.
+//! `Flame`, the impact fire, and `PilotFlame` are spawned as children of `FlameStream`.
 
-use bevy::{
-    mesh::MeshVertexBufferLayoutRef,
-    prelude::*,
-    reflect::TypePath,
-    render::render_resource::{AsBindGroup, BlendState, RenderPipelineDescriptor, ShaderType, SpecializedMeshPipelineError},
-    shader::ShaderRef,
-    sprite_render::{AlphaMode2d, Material2d, Material2dKey, Material2dPipeline, Material2dPlugin, MeshMaterial2d},
-};
+use bevy::{prelude::*, reflect::TypePath, render::render_resource::{BlendState, ShaderType}};
 
 use game_core::prelude::{GridCoords, GridImprint, MapBound, ZDepth};
+use session::GameClock;
 use states::prelude::GameState;
-use visuals::{shader::{ADDITIVE_BLENDING, seed_from_entity, set_blend}, unit_quad::UnitQuad};
+use visuals::{
+    lane::{LanePlugin, LaneVisual},
+    shader::{ADDITIVE_BLENDING, seed_from_entity},
+    transient_visual::{TransientVisual, despawn_played_out},
+};
 use weaponry::{flame_stream::FlameStreamSystems, prelude::*};
 
 pub(crate) struct FlameStreamFirePlugin;
@@ -28,24 +28,20 @@ impl Plugin for FlameStreamFirePlugin {
     fn build(&self, app: &mut App) {
         app
             .add_plugins((
-                Material2dPlugin::<FlameMaterial>::default(),
-                Material2dPlugin::<FlameGlowMaterial>::default(),
-                Material2dPlugin::<ImpactFireMaterial>::default(),
-                Material2dPlugin::<FlameScorchMaterial>::default(),
-                Material2dPlugin::<PilotFlameMaterial>::default(),
+                LanePlugin::<Flame>::default(),
+                LanePlugin::<FlameGlow>::default(),
+                LanePlugin::<ImpactFireVisual>::default(),
+                LanePlugin::<FlameScorch>::default(),
+                LanePlugin::<PilotFlame>::default(),
             ))
             .add_systems(Update, (
                 (update_flames, update_pilot_flames).after(FlameStreamSystems),
                 (
                     update_impact_fires.after(FlameStreamSystems),
-                    advance_flame_scorches,
+                    despawn_played_out::<FlameScorch>,
                 ).run_if(in_state(GameState::Running)),
             ))
-            .add_observer(on_add_flame_stream_spawn_fire)
-            .add_observer(on_add_flame_set_up)
-            .add_observer(on_add_flame_glow_set_up)
-            .add_observer(on_add_impact_fire_set_up)
-            .add_observer(on_add_pilot_flame_set_up);
+            .add_observer(on_add_flame_stream_spawn_fire);
     }
 }
 
@@ -82,13 +78,11 @@ const PILOT_MESH_SIZE: f32 = 14.;
 /// Axial offset of the pilot flame root ahead of `nozzle`.
 const PILOT_OFFSET: f32 = 1.5;
 
-/// Stream jet quad. Child of `FlameStream`.
-#[derive(Component)]
-struct Flame;
-
-/// Field order and types mirror `Flame` in `assets/shaders/weaponry/flame_stream.wesl`.
-#[derive(ShaderType, Clone, Copy, Debug, Default, PartialEq)]
-struct FlameUniform {
+/// Stream jet quad. Child of `FlameStream`. Field order and types mirror `Instance` in
+/// `assets/shaders/weaponry/flame_stream.wesl`.
+#[derive(Component, ShaderType, TypePath, Clone, Default, PartialEq)]
+#[require(ZDepth::FlameJet)]
+struct Flame {
     seed: f32,
     length: f32,
     half_width: f32,
@@ -100,38 +94,21 @@ struct FlameUniform {
     hit: f32,
     venting: f32,
 }
+impl LaneVisual for Flame {
+    const LABEL: &'static str = "flame_jet";
+    const LOOK: &'static str = "shaders::weaponry::flame_stream";
 
-/// Premultiplied alpha: additive flame emission with alpha-blended soot.
-#[derive(Asset, AsBindGroup, TypePath, Clone, Copy, Debug, Default)]
-struct FlameMaterial {
-    #[uniform(0)]
-    flame: FlameUniform,
-}
-impl Material2d for FlameMaterial {
-    fn fragment_shader() -> ShaderRef {
-        "shaders/weaponry/flame_stream.wesl".into()
-    }
-    fn alpha_mode(&self) -> AlphaMode2d {
-        AlphaMode2d::Blend
-    }
-    fn specialize(
-        _pipeline: &Material2dPipeline,
-        descriptor: &mut RenderPipelineDescriptor,
-        _layout: &MeshVertexBufferLayoutRef,
-        _key: Material2dKey<Self>,
-    ) -> Result<(), SpecializedMeshPipelineError> {
-        set_blend(descriptor, BlendState::PREMULTIPLIED_ALPHA_BLENDING);
-        Ok(())
+    /// Premultiplied alpha: additive flame emission with alpha-blended soot.
+    fn blend() -> BlendState {
+        BlendState::PREMULTIPLIED_ALPHA_BLENDING
     }
 }
 
-/// Additive ground light along the stream and around the hit. Child of `Flame`.
-#[derive(Component)]
-struct FlameGlow;
-
-/// Field order and types mirror `FlameGlow` in `assets/shaders/weaponry/flame_stream_glow.wesl`.
-#[derive(ShaderType, Clone, Copy, Debug, Default, PartialEq)]
-struct FlameGlowUniform {
+/// Additive ground light along the stream and around the hit. Child of `Flame`. Field order and
+/// types mirror `Instance` in `assets/shaders/weaponry/flame_stream_glow.wesl`.
+#[derive(Component, ShaderType, TypePath, Clone, Default, PartialEq)]
+#[require(ZDepth::FlameGlow)]
+struct FlameGlow {
     intensity: f32,
     near: f32,
     far: f32,
@@ -140,31 +117,16 @@ struct FlameGlowUniform {
     end: f32,
     hit: f32,
 }
+impl LaneVisual for FlameGlow {
+    const LABEL: &'static str = "flame_glow";
+    const LOOK: &'static str = "shaders::weaponry::flame_stream_glow";
 
-#[derive(Asset, AsBindGroup, TypePath, Clone, Copy, Debug, Default)]
-struct FlameGlowMaterial {
-    #[uniform(0)]
-    glow: FlameGlowUniform,
-}
-impl Material2d for FlameGlowMaterial {
-    fn fragment_shader() -> ShaderRef {
-        "shaders/weaponry/flame_stream_glow.wesl".into()
-    }
-    fn alpha_mode(&self) -> AlphaMode2d {
-        AlphaMode2d::Blend
-    }
-    fn specialize(
-        _pipeline: &Material2dPipeline,
-        descriptor: &mut RenderPipelineDescriptor,
-        _layout: &MeshVertexBufferLayoutRef,
-        _key: Material2dKey<Self>,
-    ) -> Result<(), SpecializedMeshPipelineError> {
-        set_blend(descriptor, ADDITIVE_BLENDING);
-        Ok(())
+    fn blend() -> BlendState {
+        ADDITIVE_BLENDING
     }
 }
 
-/// Fire effect on the currently hit tile. Child of `FlameStream`.
+/// Burn state of the hit tile, stored with `ImpactFireVisual` on a child of `FlameStream`.
 #[derive(Component, Default)]
 struct ImpactFire {
     /// Normalized intensity in `0.0..=1.0`.
@@ -210,121 +172,79 @@ struct BurntTile {
     strength: f32,
 }
 
-/// Field order and types mirror `ImpactFire` in `assets/shaders/weaponry/flame_stream_impact.wesl`.
-#[derive(ShaderType, Clone, Copy, Debug, Default, PartialEq)]
-struct ImpactFireUniform {
+/// Fire on the currently hit tile. Field order and types mirror `Instance` in
+/// `assets/shaders/weaponry/flame_stream_impact.wesl`.
+#[derive(Component, ShaderType, TypePath, Clone, Default, PartialEq)]
+#[require(ZDepth::FlameImpact)]
+struct ImpactFireVisual {
     intensity: f32,
     seed: f32,
     half_size: f32,
     hit_point: Vec2,
     direction: Vec2,
 }
+impl LaneVisual for ImpactFireVisual {
+    const LABEL: &'static str = "flame_impact";
+    const LOOK: &'static str = "shaders::weaponry::flame_stream_impact";
 
-#[derive(Asset, AsBindGroup, TypePath, Clone, Copy, Debug, Default)]
-struct ImpactFireMaterial {
-    #[uniform(0)]
-    impact: ImpactFireUniform,
-}
-impl Material2d for ImpactFireMaterial {
-    fn fragment_shader() -> ShaderRef {
-        "shaders/weaponry/flame_stream_impact.wesl".into()
+    fn quad_size() -> Vec2 {
+        Vec2::splat(2. * IMPACT_MESH_HALF_SIZE)
     }
-    fn alpha_mode(&self) -> AlphaMode2d {
-        AlphaMode2d::Blend
-    }
-    fn specialize(
-        _pipeline: &Material2dPipeline,
-        descriptor: &mut RenderPipelineDescriptor,
-        _layout: &MeshVertexBufferLayoutRef,
-        _key: Material2dKey<Self>,
-    ) -> Result<(), SpecializedMeshPipelineError> {
-        set_blend(descriptor, BlendState::PREMULTIPLIED_ALPHA_BLENDING);
-        Ok(())
+
+    fn blend() -> BlendState {
+        BlendState::PREMULTIPLIED_ALPHA_BLENDING
     }
 }
 
-/// Fading ground char decal spawned when a tile stops burning.
-#[derive(Component)]
-#[require(MapBound)]
+/// Temporary scorch decal spawned when a tile stops burning.
+/// Field order and types mirror `Instance` in `assets/shaders/weaponry/flame_stream_scorch.wesl`.
+#[derive(Component, ShaderType, TypePath, Clone)]
+#[require(MapBound, ZDepth::FlameScorch)]
 struct FlameScorch {
-    age: f32,
-}
-impl FlameScorch {
-    fn new() -> Self {
-        Self { age: 0. }
-    }
-
-    /// Advances age by `delta` seconds and returns normalized progress (`0.0..1.0`), or `None` when expired.
-    fn advance(&mut self, delta: f32) -> Option<f32> {
-        self.age += delta;
-        (self.age < SCORCH_DURATION).then(|| self.age / SCORCH_DURATION)
-    }
-}
-
-/// Field order and types mirror `FlameScorch` in `assets/shaders/weaponry/flame_stream_scorch.wesl`.
-#[derive(ShaderType, Clone, Copy, Debug, Default, PartialEq)]
-struct FlameScorchUniform {
-    life: f32,
+    /// Wrapped game time the tile stopped burning.
+    start_time: f32,
+    duration: f32,
+    /// Normalized char intensity in `0.0..=1.0`, from the burn duration.
     strength: f32,
     seed: f32,
     half_size: f32,
 }
+impl LaneVisual for FlameScorch {
+    const LABEL: &'static str = "flame_scorch";
+    const LOOK: &'static str = "shaders::weaponry::flame_stream_scorch";
 
-/// Premultiplied alpha: darkens ground via alpha while cinders add light.
-#[derive(Asset, AsBindGroup, TypePath, Clone, Copy, Debug, Default)]
-struct FlameScorchMaterial {
-    #[uniform(0)]
-    scorch: FlameScorchUniform,
-}
-impl Material2d for FlameScorchMaterial {
-    fn fragment_shader() -> ShaderRef {
-        "shaders/weaponry/flame_stream_scorch.wesl".into()
+    fn quad_size() -> Vec2 {
+        Vec2::splat(2. * SCORCH_MESH_HALF_SIZE)
     }
-    fn alpha_mode(&self) -> AlphaMode2d {
-        AlphaMode2d::Blend
-    }
-    fn specialize(
-        _pipeline: &Material2dPipeline,
-        descriptor: &mut RenderPipelineDescriptor,
-        _layout: &MeshVertexBufferLayoutRef,
-        _key: Material2dKey<Self>,
-    ) -> Result<(), SpecializedMeshPipelineError> {
-        set_blend(descriptor, BlendState::PREMULTIPLIED_ALPHA_BLENDING);
-        Ok(())
+
+    /// Premultiplied alpha: darkens ground via alpha while cinders add light.
+    fn blend() -> BlendState {
+        BlendState::PREMULTIPLIED_ALPHA_BLENDING
     }
 }
+impl TransientVisual for FlameScorch {
+    fn start_time(&self) -> f32 { self.start_time }
+    fn duration(&self) -> f32 { self.duration }
+}
 
-/// Nozzle pilot flame shown while the stream is armed. Child of `FlameStream`.
-#[derive(Component)]
-struct PilotFlame;
-
-/// Field order and types mirror `PilotFlame` in `assets/shaders/weaponry/flame_stream_pilot.wesl`.
-#[derive(ShaderType, Clone, Copy, Debug, Default, PartialEq)]
-struct PilotFlameUniform {
+/// Nozzle pilot flame shown while the stream is armed. Child of `FlameStream`. Field order and
+/// types mirror `Instance` in `assets/shaders/weaponry/flame_stream_pilot.wesl`.
+#[derive(Component, ShaderType, TypePath, Clone)]
+#[require(ZDepth::FlamePilot)]
+struct PilotFlame {
     seed: f32,
     size: f32,
 }
+impl LaneVisual for PilotFlame {
+    const LABEL: &'static str = "flame_pilot";
+    const LOOK: &'static str = "shaders::weaponry::flame_stream_pilot";
 
-#[derive(Asset, AsBindGroup, TypePath, Clone, Copy, Debug, Default)]
-struct PilotFlameMaterial {
-    #[uniform(0)]
-    pilot: PilotFlameUniform,
-}
-impl Material2d for PilotFlameMaterial {
-    fn fragment_shader() -> ShaderRef {
-        "shaders/weaponry/flame_stream_pilot.wesl".into()
+    fn quad_size() -> Vec2 {
+        Vec2::splat(PILOT_MESH_SIZE)
     }
-    fn alpha_mode(&self) -> AlphaMode2d {
-        AlphaMode2d::Blend
-    }
-    fn specialize(
-        _pipeline: &Material2dPipeline,
-        descriptor: &mut RenderPipelineDescriptor,
-        _layout: &MeshVertexBufferLayoutRef,
-        _key: Material2dKey<Self>,
-    ) -> Result<(), SpecializedMeshPipelineError> {
-        set_blend(descriptor, ADDITIVE_BLENDING);
-        Ok(())
+
+    fn blend() -> BlendState {
+        ADDITIVE_BLENDING
     }
 }
 
@@ -332,90 +252,31 @@ fn on_add_flame_stream_spawn_fire(
     trigger: On<Add<FlameStream>>,
     mut commands: Commands,
 ) {
+    let seed = seed_from_entity(trigger.entity);
     commands.entity(trigger.entity).insert(children![
-        Flame,
-        ImpactFire::default(),
-        PilotFlame,
+        (
+            Flame { seed, ..default() },
+            Visibility::Hidden,
+            children![FlameGlow::default()],
+        ),
+        (
+            ImpactFire::default(),
+            ImpactFireVisual { seed, half_size: IMPACT_MESH_HALF_SIZE, ..default() },
+            Visibility::Hidden,
+        ),
+        (
+            PilotFlame { seed, size: PILOT_MESH_SIZE },
+            Visibility::Hidden,
+        ),
     ]);
 }
 
-fn on_add_flame_set_up(
-    trigger: On<Add<Flame>>,
-    mut commands: Commands,
-    unit_quad: Res<UnitQuad>,
-    mut flame_materials: ResMut<Assets<FlameMaterial>>,
-    flames: Query<&ChildOf>,
-) {
-    let Ok(child_of) = flames.get(trigger.entity) else { return; };
-    let material = FlameMaterial { flame: FlameUniform { seed: seed_from_entity(child_of.parent()), ..default() } };
-    commands.entity(trigger.entity).insert((
-        unit_quad.mesh(),
-        MeshMaterial2d(flame_materials.add(material)),
-        ZDepth::GROUND_EFFECT,
-        Visibility::Hidden,
-        children![FlameGlow],
-    ));
-}
-
-fn on_add_flame_glow_set_up(
-    trigger: On<Add<FlameGlow>>,
-    mut commands: Commands,
-    unit_quad: Res<UnitQuad>,
-    mut glow_materials: ResMut<Assets<FlameGlowMaterial>>,
-) {
-    commands.entity(trigger.entity).insert((
-        unit_quad.mesh(),
-        MeshMaterial2d(glow_materials.add(FlameGlowMaterial::default())),
-        ZDepth::GROUND_DECAL,
-    ));
-}
-
-fn on_add_impact_fire_set_up(
-    trigger: On<Add<ImpactFire>>,
-    mut commands: Commands,
-    unit_quad: Res<UnitQuad>,
-    mut impact_fire_materials: ResMut<Assets<ImpactFireMaterial>>,
-    impact_fires: Query<&ChildOf>,
-) {
-    let Ok(child_of) = impact_fires.get(trigger.entity) else { return; };
-    let material = ImpactFireMaterial {
-        impact: ImpactFireUniform { seed: seed_from_entity(child_of.parent()), half_size: IMPACT_MESH_HALF_SIZE, ..default() },
-    };
-    commands.entity(trigger.entity).insert((
-        unit_quad.mesh(),
-        MeshMaterial2d(impact_fire_materials.add(material)),
-        Transform::from_scale(Vec3::splat(2. * IMPACT_MESH_HALF_SIZE)),
-        ZDepth::GROUND_EFFECT,
-        Visibility::Hidden,
-    ));
-}
-
-fn on_add_pilot_flame_set_up(
-    trigger: On<Add<PilotFlame>>,
-    mut commands: Commands,
-    unit_quad: Res<UnitQuad>,
-    mut pilot_materials: ResMut<Assets<PilotFlameMaterial>>,
-    pilots: Query<&ChildOf>,
-) {
-    let Ok(child_of) = pilots.get(trigger.entity) else { return; };
-    let material = PilotFlameMaterial { pilot: PilotFlameUniform { seed: seed_from_entity(child_of.parent()), size: PILOT_MESH_SIZE } };
-    commands.entity(trigger.entity).insert((
-        unit_quad.mesh(),
-        MeshMaterial2d(pilot_materials.add(material)),
-        Transform::from_scale(Vec3::splat(PILOT_MESH_SIZE)),
-        ZDepth::GROUND_EFFECT,
-        Visibility::Hidden,
-    ));
-}
-
 fn update_flames(
-    mut flame_materials: ResMut<Assets<FlameMaterial>>,
-    mut glow_materials: ResMut<Assets<FlameGlowMaterial>>,
-    mut flames: Query<(&ChildOf, &Children, &mut Transform, &mut Visibility, &MeshMaterial2d<FlameMaterial>), With<Flame>>,
-    mut glows: Query<(&mut Transform, &MeshMaterial2d<FlameGlowMaterial>), (With<FlameGlow>, Without<Flame>)>,
+    mut flames: Query<(&ChildOf, &Children, &mut Transform, &mut Visibility, &mut Flame)>,
+    mut glows: Query<(&mut Transform, &mut FlameGlow), Without<Flame>>,
     streams: Query<&FlameStream>,
 ) {
-    for (child_of, children, mut transform, mut visibility, material) in flames.iter_mut() {
+    for (child_of, children, mut transform, mut visibility, mut flame) in flames.iter_mut() {
         let Ok(stream) = streams.get(child_of.parent()) else { continue; };
         let Some(fuel) = stream.fuel() else {
             visibility.set_if_neq(Visibility::Hidden);
@@ -437,32 +298,27 @@ fn update_flames(
         let end = stream.hit.as_ref().map_or(head, |hit| hit.distance);
         let hit = f32::from(stream.hit.is_some());
         let venting = stream.is_venting();
-        if let Some(mut current) = flame_materials.get_mut(&material.0) {
-            let uniform = FlameUniform {
-                length,
-                half_width,
-                nozzle_half_width: stream.half_width_at(0.),
-                spread: stream.spread(),
-                head,
-                tail,
-                end,
-                hit,
-                venting: f32::from(venting),
-                ..current.flame
-            };
-            if current.flame != uniform {
-                current.flame = uniform;
-            }
-        }
+        flame.set_if_neq(Flame {
+            length,
+            half_width,
+            nozzle_half_width: stream.half_width_at(0.),
+            spread: stream.spread(),
+            head,
+            tail,
+            end,
+            hit,
+            venting: f32::from(venting),
+            ..*flame
+        });
 
         // Child of `Flame`: scale is relative to the parent stream quad.
         for &child in children {
-            let Ok((mut glow_transform, glow_material)) = glows.get_mut(child) else { continue; };
+            let Ok((mut glow_transform, mut glow)) = glows.get_mut(child) else { continue; };
             glow_transform.set_if_neq(Transform {
                 scale: Vec3::new((length + 2. * GLOW_MESH_OVERHANG) / length, GLOW_MESH_HALF_WIDTH / half_width, 1.),
                 ..*glow_transform
             });
-            let glow = FlameGlowUniform {
+            glow.set_if_neq(FlameGlow {
                 intensity: if venting { GLOW_VENTING } else { 1. },
                 near: -GLOW_MESH_OVERHANG,
                 far: length + GLOW_MESH_OVERHANG,
@@ -470,10 +326,7 @@ fn update_flames(
                 tail,
                 end,
                 hit,
-            };
-            if let Some(mut current) = glow_materials.get_mut(&glow_material.0) && current.glow != glow {
-                current.glow = glow;
-            }
+            });
         }
     }
 }
@@ -481,66 +334,41 @@ fn update_flames(
 fn update_impact_fires(
     mut commands: Commands,
     time: Res<Time>,
-    unit_quad: Res<UnitQuad>,
-    mut impact_fire_materials: ResMut<Assets<ImpactFireMaterial>>,
-    mut scorch_materials: ResMut<Assets<FlameScorchMaterial>>,
-    mut impact_fires: Query<(&ChildOf, &mut ImpactFire, &mut Transform, &mut Visibility, &MeshMaterial2d<ImpactFireMaterial>)>,
+    clock: Res<GameClock>,
+    mut impact_fires: Query<(&ChildOf, &mut ImpactFire, &mut ImpactFireVisual, &mut Transform, &mut Visibility)>,
     streams: Query<&FlameStream>,
 ) {
     let delta = time.delta_secs();
-    for (child_of, mut impact_fire, mut transform, mut visibility, material) in impact_fires.iter_mut() {
+    for (child_of, mut impact_fire, mut visual, mut transform, mut visibility) in impact_fires.iter_mut() {
         let Ok(stream) = streams.get(child_of.parent()) else { continue; };
-        let Some(mut current) = impact_fire_materials.get_mut(&material.0) else { continue; };
-        let mut uniform = current.impact;
+        let mut next = visual.clone();
 
         let burnt = match &stream.hit {
             Some(hit) => {
                 let tile_center = hit.coords.to_world_position_centered(GridImprint::default());
                 transform.set_if_neq(Transform { translation: tile_center.extend(transform.translation.z), ..*transform });
-                uniform.hit_point = stream.nozzle + stream.direction * hit.distance - tile_center;
-                uniform.direction = stream.direction;
+                next.hit_point = stream.nozzle + stream.direction * hit.distance - tile_center;
+                next.direction = stream.direction;
                 impact_fire.burn(hit.coords, delta)
             }
             None => impact_fire.fade(delta),
         };
-        uniform.intensity = impact_fire.intensity;
-        if current.impact != uniform {
-            current.impact = uniform;
-        }
+        next.intensity = impact_fire.intensity;
+        visual.set_if_neq(next);
         visibility.set_if_neq(if impact_fire.intensity > 0. { Visibility::Inherited } else { Visibility::Hidden });
 
         if let Some(burnt) = burnt {
-            let scorch = FlameScorchUniform {
-                life: 0.,
-                strength: burnt.strength,
-                seed: (burnt.coords.x * 31 + burnt.coords.y) as f32 % 97.,
-                half_size: SCORCH_MESH_HALF_SIZE,
-            };
             commands.spawn((
-                FlameScorch::new(),
-                unit_quad.mesh(),
-                MeshMaterial2d(scorch_materials.add(FlameScorchMaterial { scorch })),
-                Transform::from_translation(burnt.coords.to_world_position_centered(GridImprint::default()).extend(0.))
-                    .with_scale(Vec3::splat(2. * SCORCH_MESH_HALF_SIZE)),
-                ZDepth::GROUND_DECAL,
+                FlameScorch {
+                    start_time: clock.wrapped(),
+                    duration: SCORCH_DURATION,
+                    strength: burnt.strength,
+                    seed: (burnt.coords.x * 31 + burnt.coords.y) as f32 % 97.,
+                    half_size: SCORCH_MESH_HALF_SIZE,
+                },
+                Transform::from_translation(burnt.coords.to_world_position_centered(GridImprint::default()).extend(0.)),
             ));
         }
-    }
-}
-
-fn advance_flame_scorches(
-    mut commands: Commands,
-    time: Res<Time>,
-    mut scorch_materials: ResMut<Assets<FlameScorchMaterial>>,
-    mut scorches: Query<(Entity, &mut FlameScorch, &MeshMaterial2d<FlameScorchMaterial>)>,
-) {
-    for (entity, mut scorch, material) in scorches.iter_mut() {
-        let Some(life) = scorch.advance(time.delta_secs()) else {
-            commands.entity(entity).despawn();
-            continue;
-        };
-        let Some(mut current) = scorch_materials.get_mut(&material.0) else { continue; };
-        current.scorch.life = life;
     }
 }
 

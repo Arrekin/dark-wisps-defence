@@ -1,20 +1,19 @@
 import bevy_sprite_render::mesh2d::vertex_output::VertexOutput;
 import package::shaders::common::color::display_to_linear;
+import package::shaders::common::game_time::game_time_since;
 import package::shaders::common::value_noise::value_fbm_3d;
 
 // `InfernoDomeGround` shader: release flash and scorch decal under an `InfernoDome`.
 // Coordinates are in world units relative to dome center. Premultiplied output: scorch darkens
 // ground via `alpha`, while release flash adds light (`rgb`).
 
-// Field order and types mirror `InfernoDomeUniform` in weaponry_internal/src/inferno_dome.rs.
-struct InfernoDomeGround {
-    age: f32,        // elapsed seconds since spawn
+// Field order and types mirror `InfernoDomeGround` in weaponry_internal/src/inferno_dome.rs.
+struct Instance {
+    start_time: f32, // wrapped game time of the discharge
     radius: f32,     // dome radius in world units
     seed: f32,       // per-entity noise offset
     half_size: f32,  // quad half-size in world units
 };
-
-@group(2) @binding(0) var<uniform> ground: InfernoDomeGround;
 
 // Release flash
 const FLASH_LIGHT: f32 = 0.25;
@@ -26,12 +25,11 @@ const SCORCH: f32 = 0.2;
 const SCORCH_DURATION: f32 = 2.5;  // mirrors `GROUND_DURATION` in weaponry_internal/src/inferno_dome.rs
 const SCORCH_DARKNESS: f32 = 0.7;
 
-@fragment
-fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
+fn look(mesh: VertexOutput, ground: Instance) -> vec4<f32> {
     let p = (vec2<f32>(mesh.uv.x, 1.0 - mesh.uv.y) - vec2<f32>(0.5)) * 2.0 * ground.half_size;
     let d = length(p);
     let radius = ground.radius;
-    let age = ground.age;
+    let age = game_time_since(ground.start_time);
     var alpha = 0.0;
 
     let inside = smoothstep(radius + 10.0, radius - 14.0, d);

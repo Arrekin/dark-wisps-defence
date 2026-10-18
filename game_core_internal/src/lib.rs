@@ -1,18 +1,24 @@
-use bevy::{ecs::schedule::IntoScheduleConfigs, prelude::*, transform::TransformSystems};
+use bevy::{prelude::*, transform::TransformSystems};
+use bytemuck::{Pod, Zeroable};
 
 use alteration::modifiers::prelude::IncomingDamageMultiplier;
-use game_core::{motion::{Locomotion, MotionSystems}, prelude::*};
+use game_core::{motion::{Locomotion, MotionSystems}, prelude::*, shared_gpu::{SharedGpuBinding, SharedGpuBuffers, SharedGpuWriter}};
 use grids::{energy_supply::EnergySupplyGrid, prelude::{EnergySupplySystems, GridVersion}};
 
 pub struct GameCorePlugin;
 impl Plugin for GameCorePlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_observer(on_insert_zdepth_apply_zdepth)
-            .add_systems(
-                PostUpdate,
+            .init_resource::<SharedGpuBuffers>()
+            .add_message::<DamageMessage>()
+            .add_systems(PostUpdate, (
                 enforce_zdepth_world_z.after(TransformSystems::Propagate),
-            )
+                track_locomotion.in_set(MotionSystems::Track).after(TransformSystems::Propagate),
+                process_damage.run_if(on_message::<DamageMessage>),
+                update_power_state.after(EnergySupplySystems),
+                upload_gpu_map_info.run_if(resource_changed::<MapInfo>),
+            ))
+            .add_observer(on_insert_zdepth_set_local_z)
             // Technical-state global observers: fold primitive component
             // events into one shared `TechnicalStateChanged` event. They fire
             // for every entity; the event is a no-op unless the target entity
@@ -21,21 +27,22 @@ impl Plugin for GameCorePlugin {
             .add_observer(on_remove_is_powered_emit_technical_state_changed)
             .add_observer(on_insert_disabled_by_player_emit_technical_state_changed)
             .add_observer(on_remove_disabled_by_player_emit_technical_state_changed)
-            .add_systems(
-                PostUpdate,
-                track_locomotion
-                    .in_set(MotionSystems::Track)
-                    .after(TransformSystems::Propagate),
-            )
-            .add_message::<DamageMessage>()
-            .add_systems(PostUpdate, (
-                process_damage.run_if(on_message::<DamageMessage>),
-                update_power_state.after(EnergySupplySystems),
-            ))
             .add_observer(on_add_needs_power_init_power_state)
             .add_observer(on_moment_happened_propagate_to_watchers)
             .add_observer(on_add_display_icon_switcher_load_display_icon);
     }
+}
+
+/// The GPU side of [`MapInfo`]. Field order and types mirror `GpuMapInfo` in
+/// `assets/shaders/common/map_info.wesl`.
+#[derive(Clone, Copy, Pod, Zeroable)]
+#[repr(C)]
+struct GpuMapInfo {
+    grid_bounds: UVec2,
+}
+
+fn upload_gpu_map_info(mut shared_gpu: SharedGpuWriter, map_info: Res<MapInfo>) {
+    shared_gpu.write(SharedGpuBinding::MapInfo, [GpuMapInfo { grid_bounds: map_info.grid_bounds.into() }]);
 }
 
 // ============================================================================
@@ -51,19 +58,19 @@ fn on_moment_happened_propagate_to_watchers(
     watchers: Query<&MomentWatchers>,
 ) {
     let moment_entity = trigger.entity;
-    let Ok(watcher_list) = watchers.get(moment_entity) else { return };
+    let Ok(watcher_list) = watchers.get(moment_entity) else { return; };
     for watcher in watcher_list.iter() {
         commands.trigger(MomentHappened { entity: watcher });
     }
 }
 
-fn on_insert_zdepth_apply_zdepth(
+fn on_insert_zdepth_set_local_z(
     trigger: On<Insert<ZDepth>>,
     mut transforms: Query<(&mut Transform, &ZDepth)>,
 ) {
     let entity = trigger.entity;
     let Ok((mut transform, z_depth)) = transforms.get_mut(entity) else { return; };
-    transform.translation.z = z_depth.0;
+    transform.translation.z = z_depth.world_z(entity);
 }
 
 fn on_add_display_icon_switcher_load_display_icon(
@@ -73,18 +80,19 @@ fn on_add_display_icon_switcher_load_display_icon(
     switchers: Query<&DisplayIconSwitcher>,
 ) {
     let entity = trigger.entity;
-    let Ok(switcher) = switchers.get(entity) else { return };
+    let Ok(switcher) = switchers.get(entity) else { return; };
     commands.entity(entity).insert(DisplayIcon(asset_server.load(&switcher.0)));
 }
 
 /// See `ZDepth` docs. Runs after propagation so it sees final world transforms;
 /// the equality guard keeps unchanged entities from dirtying `GlobalTransform`
 /// (and re-triggering render extraction) every frame.
-fn enforce_zdepth_world_z(mut transforms: Query<(&mut GlobalTransform, &ZDepth)>) {
-    for (mut global_transform, z_depth) in transforms.iter_mut() {
+fn enforce_zdepth_world_z(mut transforms: Query<(Entity, &mut GlobalTransform, &ZDepth)>) {
+    for (entity, mut global_transform, z_depth) in transforms.iter_mut() {
+        let world_z = z_depth.world_z(entity);
         let mut affine = global_transform.affine();
-        if affine.translation.z != z_depth.0 {
-            affine.translation.z = z_depth.0;
+        if affine.translation.z != world_z {
+            affine.translation.z = world_z;
             *global_transform = GlobalTransform::from(affine);
         }
     }
@@ -149,7 +157,7 @@ fn on_add_needs_power_init_power_state(
     commands.entity(entity).observe(on_insert_needs_power_coords_refresh_power_state);
 }
 
-/// Local observer triggered when GridCoords or GridImprint changes on NeedsPower entities
+/// Refreshes the power state when the consumer's coords or imprint change.
 fn on_insert_needs_power_coords_refresh_power_state(
     trigger: On<Insert<(GridCoords, GridImprint)>>,
     mut commands: Commands,
@@ -169,14 +177,13 @@ fn on_insert_needs_power_coords_refresh_power_state(
     }
 }
 
-/// System that updates power states when the energy grid changes
+/// Refreshes every consumer's power state when the energy supply grid's version changes.
 fn update_power_state(
     mut commands: Commands,
     energy_supply_grid: Res<EnergySupplyGrid>,
     power_entities: Query<(Entity, &GridCoords, &GridImprint, Has<IsPowered>), With<NeedsPower>>,
     mut current_energy_supply_grid_version: Local<GridVersion>,
 ) {
-    // Only run when energy grid version changes
     if *current_energy_supply_grid_version == energy_supply_grid.version { return; }
     *current_energy_supply_grid_version = energy_supply_grid.version;
 

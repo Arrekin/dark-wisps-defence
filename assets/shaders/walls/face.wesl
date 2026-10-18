@@ -1,13 +1,12 @@
 import bevy_ui_render::ui_vertex_output::UiVertexOutput;
 import package::shaders::common::core::CELL_SIZE;
-import package::shaders::common::map_light::MAP_SUN_GROUND_DIRECTION;
-import package::shaders::walls::look::{WallStyle, LIGHT_PROBE, eroded_distance, plate_noise, single_cell_distance, wall_shading};
+import package::shaders::walls::look::single_cell_wall;
+import package::shaders::walls::styles::wall_style;
 
-// Renders one isolated wall cell for style selection. An analytic box distance replaces the map
-// canvas's neighbor-derived field; all surface layers still come from `shaders::walls::look`.
-// Contact shadow is omitted because the swatch is composited onto a UI panel.
+// One isolated wall cell as a UI swatch for style selection.
 
-@group(1) @binding(0) var<uniform> style: WallStyle;
+// One-based index into the shared wall style table.
+@group(1) @binding(0) var<uniform> style_index: u32;
 
 @fragment
 fn fragment(in: UiVertexOutput) -> @location(0) vec4<f32> {
@@ -18,14 +17,5 @@ fn fragment(in: UiVertexOutput) -> @location(0) vec4<f32> {
     // World-coordinate span of one screen pixel at the UI node's rendered size.
     let texel = CELL_SIZE / max(in.size.x, 1.0);
 
-    let raw_distance = single_cell_distance(world);
-    let d = eroded_distance(raw_distance, world, style);
-
-    let probe = max(LIGHT_PROBE, texel);
-    let lit = -(single_cell_distance(world + MAP_SUN_GROUND_DIRECTION * probe) - raw_distance) / probe;
-
-    let plate = plate_noise(world, style);
-    let colour = wall_shading(d, lit, plate, texel, style);
-
-    return vec4<f32>(colour, smoothstep(-texel, texel, d));
+    return single_cell_wall(world, texel, wall_style(style_index));
 }

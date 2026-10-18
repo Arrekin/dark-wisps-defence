@@ -2,10 +2,11 @@ use bevy::prelude::*;
 
 use logging::prelude::*;
 use persistence::prelude::*;
-use states::MapLoadingStage;
+use session::StatsWispsKilled;
+use states::prelude::MapLoadingStage;
 use wisps::prelude::WispDied;
 
-pub struct StatsPlugin;
+pub(crate) struct StatsPlugin;
 impl Plugin for StatsPlugin {
     fn build(&self, app: &mut App) {
         app
@@ -15,9 +16,6 @@ impl Plugin for StatsPlugin {
             .register_loader(MapLoadingStage::LoadResources, "stats", load_stats);
     }
 }
-
-#[derive(Resource, Default)]
-pub struct StatsWispsKilled(pub usize);
 
 fn on_wisp_died_increment_stats(
     _trigger: On<WispDied>,

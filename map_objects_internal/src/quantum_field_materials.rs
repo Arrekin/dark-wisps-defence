@@ -1,7 +1,7 @@
 //! Materials for quantum-field UI faces and world-space placement previews.
 //!
-//! Both reuse the boundary and moiré glow from `shaders::quantum_field::look`. Frame distortion remains in
-//! the map post-process shader.
+//! Both reuse the boundary and moiré glow from `shaders::quantum_field::look`. Frame distortion is in
+//! the `QuantumFieldAnomaly` lane visual.
 
 use bevy::{
     prelude::*,
@@ -46,6 +46,7 @@ impl Material2d for QuantumFieldQuadMaterial {
     fn fragment_shader() -> ShaderRef {
         "shaders/quantum_field/quad.wesl".into()
     }
+
     fn alpha_mode(&self) -> AlphaMode2d {
         AlphaMode2d::Blend
     }

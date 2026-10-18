@@ -1,6 +1,4 @@
-
-// Shared procedural glow for map and UI rendering: boundary, interior tint, and moiré lattice.
-// Frame-sampling distortion remains in post_process.wesl.
+// Procedural quantum field glow: boundary, interior tint and moiré lattice.
 
 import package::shaders::common::core::TAU;
 import package::shaders::common::value_noise::{value_fbm_2d, value_noise_curl_2d};

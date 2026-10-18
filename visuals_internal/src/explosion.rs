@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use game_core::prelude::{GridImprint, MapBound, ZDepth};
 use visuals::prelude::BuilderExplosion;
 
-use crate::common::AnimationController;
+use crate::sprite_animation::AnimationController;
 
 pub(crate) struct ExplosionPlugin;
 impl Plugin for ExplosionPlugin {
@@ -42,7 +42,7 @@ impl FromWorld for ExplosionAtlas {
 }
 
 #[derive(Component)]
-#[require(MapBound, ZDepth::GROUND_EFFECT)]
+#[require(MapBound, ZDepth::GroundEffect)]
 pub(crate) struct Explosion;
 
 fn on_builder_add_spawn_explosion(

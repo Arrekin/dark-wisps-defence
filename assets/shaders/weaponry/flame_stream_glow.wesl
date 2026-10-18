@@ -6,8 +6,8 @@ import package::shaders::weaponry::flame_stream_common::BREAKUP;
 // at `end` when hitting a wisp (`hit == 1.0`).
 // Coordinates (`s`, `u`) are in world units relative to the nozzle.
 
-// Field order and types mirror `FlameGlowUniform` in weaponry_internal/src/flame_stream_fire.rs.
-struct FlameGlow {
+// Field order and types mirror `FlameGlow` in weaponry_internal/src/flame_stream_fire.rs.
+struct Instance {
     intensity: f32,   // 1.0 while firing, `GLOW_VENTING` while venting
     near: f32,        // axial coordinate at the quad's near edge (`-GLOW_MESH_OVERHANG`)
     far: f32,         // axial coordinate at the quad's far edge (`length + GLOW_MESH_OVERHANG`)
@@ -17,16 +17,12 @@ struct FlameGlow {
     hit: f32,         // 1.0 when hitting a wisp, else 0.0
 };
 
-@group(2) @binding(0)
-var<uniform> glow: FlameGlow;
-
 const COLOR: vec3<f32> = vec3<f32>(1.0, 0.42, 0.12);
 const STREAM_LIGHT: f32 = 0.08;
 const IMPACT_LIGHT: f32 = 0.15;
 const IMPACT_RADIUS: f32 = 34.0;
 
-@fragment
-fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
+fn look(mesh: VertexOutput, glow: Instance) -> vec4<f32> {
     let s = mix(glow.near, glow.far, mesh.uv.x);
     let u = (0.5 - mesh.uv.y) * 2.0 * glow.half_width;
     let time = globals.time;

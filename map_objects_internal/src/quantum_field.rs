@@ -39,6 +39,8 @@ use states::prelude::{GameState, MapLoadingStage, UiInteraction};
 use units::expedition_drone::{DroneState, ExpeditionDrone, ExpeditionDroneDeploymentRequest};
 use widgets::prelude::*;
 
+use crate::quantum_field_anomaly::QuantumFieldAnomaly;
+
 pub(crate) struct QuantumFieldPlugin;
 impl Plugin for QuantumFieldPlugin {
     fn build(&self, app: &mut App) {
@@ -192,15 +194,12 @@ impl BuilderQuantumField {
             .remove::<BuilderQuantumField>()
             .insert((
                 Name::new("Quantum Field"),
-                // No sprite/mesh: the quantum field is drawn entirely by the
-                // `quantum_field_post_process` screen-space pass, which locates the field
-                // via its Transform + GridImprint. Transform is still required for the
-                // effect and for the info-panel preview camera to follow.
                 Transform::from_translation(builder.grid_position.to_world_position_centered(builder.grid_imprint).extend(0.)),
                 builder.grid_position,
                 builder.grid_imprint,
                 quantum_field,
                 ExpeditionZone::default(),
+                QuantumFieldAnomaly::default(),
             ));
     }
 }

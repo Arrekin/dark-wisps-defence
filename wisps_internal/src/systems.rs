@@ -16,7 +16,7 @@ use visuals::prelude::*;
 use wisps::prelude::*;
 
 use super::{
-    materials::{WispLocomotiveMaterial, WispWaterMaterial},
+    looks::{WispMotionVisual, WispWaterVisual, wisp_motion},
     spawning::DeathLoot,
 };
 
@@ -24,33 +24,21 @@ use super::{
 const CHARGE_SPEED_MULTIPLIER: f32 = 5.0;
 const BACKOFF_SPEED_MULTIPLIER: f32 = 0.5;
 
-/// Drives each water wisp's material from its [`Locomotion`], turning measured
-/// speed into `vigor` (the shader turns that into deform + cadence) and feeding
-/// its travel direction.
+// Motion look
+/// Minimum change in vigor or a heading coordinate that triggers a visual update.
+const DRIVE_EPSILON: f32 = 0.01;
+
+/// Updates water-wisp vigor and heading from [`Locomotion`].
+/// Writes only when motion inputs exceed `DRIVE_EPSILON` or the shader clock wraps.
 ///
-/// To stay cheap for a swarm, it touches the material — and thus triggers a GPU
-/// upload — only when vigor or heading actually changes. A wisp cruising in a
-/// straight line or sitting idle animates entirely from the shader clock with no
-/// upload at all; writes happen only on turns and speed changes.
-///
-/// Phases use the anchor scheme on `WispWaterMaterial`: on a change we advance each
-/// phase by the time it ran under the OLD vigor's rate, then restart the clock at
-/// `now`, keeping the shader's extrapolated phase continuous. Rates are `f(vigor)`,
-/// so rather than shuttle them through the material we recompute them both here (for
-/// the re-anchor) and in the shader (for the extrapolation) — see the rate constants.
-pub(crate) fn drive_water_material(
-    mut materials: ResMut<Assets<WispWaterMaterial>>,
+/// Before changing vigor, advances each oscillator phase at its previous rate and resets the
+/// time anchor. This keeps the shader animation continuous across speed changes.
+pub(crate) fn drive_wisp_water_look(
     time: Res<Time>,
-    wisps: Query<(&Locomotion, &MeshMaterial2d<WispWaterMaterial>)>,
+    mut wisps: Query<(&Locomotion, &mut WispWaterVisual)>,
 ) {
-    // An input must drift past this (per component) before we re-upload the material.
-    const DRIVE_EPSILON: f32 = 0.01;
-    // Measured speed (world units/sec) that maps to vigor 1.0; vigor is unbounded above.
-    const VIGOR_SWEET_SPOT: f32 = 60.0;
-    // Oscillator cadences, radians/sec: rate = rest + swing * vigor. These MUST match
-    // the same-named constants in assets/shaders/wisps/water_look.wesl, which recomputes the
-    // rates from vigor for its phase extrapolation; here they give the OLD rate for the
-    // re-anchor. (A divergence between the two shows up as a phase snap on speed changes.)
+    // Rates in radians/sec: rest + swing * vigor. Keep these in sync with the constants in
+    // assets/shaders/wisps/water_look.wesl to prevent phase jumps when speed changes.
     const STROKE_RATE_REST: f32 = 3.5;
     const STROKE_RATE_SWING: f32 = 3.5;
     const SURF_RATE_REST: f32 = 1.5;
@@ -60,69 +48,48 @@ pub(crate) fn drive_water_material(
     let now = time.elapsed_wrapped().as_secs_f32();
     let wrap_period = time.wrap_period().as_secs_f32();
 
-    for (locomotion, material_handle) in wisps.iter() {
-        let handle = &material_handle.0;
-        let Some(material) = materials.get(handle) else { continue; };
+    for (locomotion, mut visual) in wisps.iter_mut() {
+        let (vigor, heading) = wisp_motion(locomotion);
 
-        let velocity = locomotion.velocity();
-        let vigor = velocity.length() / VIGOR_SWEET_SPOT; // unbounded; 1.0 at the sweet spot
-        // World heading → quad-local sample space (Rectangle UV V axis points down).
-        let heading = velocity.normalize_or_zero();
-        let heading_x = heading.x;
-        let heading_y = -heading.y;
-
-        // Copy what the material already holds so the immutable borrow ends before
-        // we ask for a mutable one.
-        let applied_vigor = material.vigor;
-        let applied_heading_x = material.heading_x;
-        let applied_heading_y = material.heading_y;
-        let applied_anchor = material.anchor_time;
+        // Read through `Deref` first, so an unchanged wisp is not marked changed.
+        let applied_vigor = visual.look.vigor;
+        let applied_heading = visual.look.heading;
+        let applied_anchor = visual.look.anchor_time;
 
         let vigor_changed = (vigor - applied_vigor).abs() > DRIVE_EPSILON;
-        let heading_changed = (heading_x - applied_heading_x).abs() > DRIVE_EPSILON
-            || (heading_y - applied_heading_y).abs() > DRIVE_EPSILON;
+        let heading_changed = (heading - applied_heading).abs().max_element() > DRIVE_EPSILON;
         let clock_wrapped = now < applied_anchor;
         if !(vigor_changed || heading_changed || clock_wrapped) { continue; }
 
-        let Some(mut material) = materials.get_mut(handle) else { continue; };
-        // Advance each phase by the time it ran under the OLD vigor's rate, then
-        // restart the clock at `now` so the shader's extrapolation stays continuous.
-        let elapsed = if now >= material.anchor_time {
-            now - material.anchor_time
+        let look = &mut visual.look;
+        // Preserve the phase accumulated at the previous rate before changing vigor.
+        let elapsed = if now >= look.anchor_time {
+            now - look.anchor_time
         } else {
-            now + wrap_period - material.anchor_time
+            now + wrap_period - look.anchor_time
         };
-        material.stroke_anchor_phase += elapsed * (STROKE_RATE_REST + STROKE_RATE_SWING * material.vigor);
-        material.surf_anchor_phase += elapsed * (SURF_RATE_REST + SURF_RATE_SWING * material.vigor);
-        material.anchor_time = now;
-        material.vigor = vigor; // the shader derives deform + cadence from this
-        material.heading_x = heading_x;
-        material.heading_y = heading_y;
+        look.stroke_anchor_phase += elapsed * (STROKE_RATE_REST + STROKE_RATE_SWING * look.vigor);
+        look.surf_anchor_phase += elapsed * (SURF_RATE_REST + SURF_RATE_SWING * look.vigor);
+        look.anchor_time = now;
+        look.vigor = vigor;
+        look.heading = heading;
     }
 }
 
-/// Feeds the anchor-free wisp materials (electric, light, fire) from each wisp's
-/// [`Locomotion`]: `vigor` and `heading` drive whatever motion-reactive look the
-/// shader defines. Gated to stay cheap for a swarm — a material re-uploads only
-/// when measured velocity drifts past a threshold, so a wisp cruising in a straight
-/// line or sitting idle uploads nothing and animates off the GPU clock.
-pub(crate) fn drive_wisp_locomotion<M: WispLocomotiveMaterial>(
-    mut materials: ResMut<Assets<M>>,
-    wisps: Query<(&Locomotion, &MeshMaterial2d<M>)>,
-) {
-    // Measured velocity must drift this many world units/sec before we re-upload.
-    const DRIVE_EPSILON: f32 = 0.5;
+/// Updates motion inputs for fire, light and electric visuals from [`Locomotion`].
+/// Writes only when vigor or a heading coordinate changes by more than `DRIVE_EPSILON`,
+/// avoiding redundant component changes while the shaders continue animating.
+pub(crate) fn drive_wisp_motion_look<V: WispMotionVisual>(mut wisps: Query<(&Locomotion, &mut V)>) {
 
-    for (locomotion, material_handle) in wisps.iter() {
-        let handle = &material_handle.0;
-        let Some(material) = materials.get(handle) else { continue; };
+    for (locomotion, mut visual) in wisps.iter_mut() {
+        let (vigor, heading) = wisp_motion(locomotion);
+        let applied = visual.motion_look();
+        let is_changed = (vigor - applied.vigor).abs() > DRIVE_EPSILON
+            || (heading - applied.heading).abs().max_element() > DRIVE_EPSILON;
+        if !is_changed { continue; }
 
-        if material.locomotion().velocity().abs_diff_eq(locomotion.velocity(), DRIVE_EPSILON) {
-            continue;
-        }
-
-        let Some(mut material) = materials.get_mut(handle) else { continue; };
-        material.set_locomotion(locomotion.clone());
+        let look = visual.motion_look_mut();
+        (look.vigor, look.heading) = (vigor, heading);
     }
 }
 

@@ -55,12 +55,7 @@
 //! - **ScanSpot**: Ground projection that wanders within target bounds
 //! - **ScanningBeam**: Tapered cone from drone to spot (shader-based)
 
-use bevy::{
-    prelude::*,
-    render::render_resource::AsBindGroup,
-    shader::ShaderRef,
-    sprite_render::{AlphaMode2d, Material2d, Material2dPlugin},
-};
+use bevy::{prelude::*, reflect::TypePath, render::render_resource::ShaderType};
 
 use buildings::prelude::ExplorationCenter;
 use game_core::{
@@ -82,15 +77,18 @@ use units::{
     },
     prelude::*,
 };
-use visuals::unit_quad::UnitQuad;
+use visuals::{
+    lane::{LanePlugin, LaneVisual},
+    shader::seed_from_entity,
+};
 
 pub(crate) struct ExpeditionDronePlugin;
 impl Plugin for ExpeditionDronePlugin {
     fn build(&self, app: &mut App) {
         app
             .add_plugins((
-                Material2dPlugin::<ScanningBeamMaterial>::default(),
-                Material2dPlugin::<ScanSpotMaterial>::default(),
+                LanePlugin::<ScanningBeamVisual>::default(),
+                LanePlugin::<ScanSpotVisual>::default(),
             ))
             .add_systems(Update, (
                 (
@@ -121,8 +119,6 @@ const HOME_ARRIVAL_DISTANCE: f32 = 10.0;
 const SCAN_SPOT_REACH_DISTANCE: f32 = 2.0;
 /// Fraction of the target diagonal beyond which the spot snaps back onto the target.
 const SCAN_SPOT_SNAP_FACTOR: f32 = 0.75;
-/// Pulse cycles per second on the beam and the spot.
-const SCAN_PULSE_SPEED: f32 = 0.8;
 
 /// Refuels drones at home base. Transitions to Deploying when full (auto-redeploy).
 /// The state observer handles the Deploying→Stationed fallback if there is no valid mission.
@@ -387,17 +383,14 @@ fn zone_scan_progress_system(
 /// Updates scanning beam position and appearance.
 /// - Hides beam when drone beam is inactive
 /// - Stretches beam from drone front to scan spot
-/// - Animates pulse effect traveling down the beam
 #[log_tags(Tag::Units)]
 fn scanning_beam_update(
     mut commands: Commands,
-    mut beam_materials: ResMut<Assets<ScanningBeamMaterial>>,
-    time: Res<Time>,
     drones: Query<(&Transform, &ExpeditionDrone)>,
     spots: Query<&Transform, With<ScanSpot>>,
-    mut beams: Query<(Entity, &mut Transform, &ScanningBeam, &MeshMaterial2d<ScanningBeamMaterial>), (Without<ExpeditionDrone>, Without<ScanSpot>)>,
+    mut beams: Query<(Entity, &mut Transform, &mut Visibility, &ScanningBeam), (Without<ExpeditionDrone>, Without<ScanSpot>)>,
 ) {
-    for (beam_entity, mut beam_transform, beam, material_handle) in beams.iter_mut() {
+    for (beam_entity, mut beam_transform, mut beam_visibility, beam) in beams.iter_mut() {
         let Ok((drone_transform, drone)) = drones.get(beam.drone) else {
             // TODO: perhaps there will be a better way to handling on drone removed to delete beam and spot
             commands.entity(beam_entity).despawn();
@@ -408,9 +401,10 @@ fn scanning_beam_update(
         let Ok(spot_transform) = spots.get(beam.spot) else { continue };
 
         if !drone.is_beam_active {
-            beam_transform.scale = Vec3::ZERO;
+            beam_visibility.set_if_neq(Visibility::Hidden);
             continue;
         }
+        beam_visibility.set_if_neq(Visibility::Inherited);
 
         let drone_position = drone_transform.translation.xy();
         let drone_forward = (drone_transform.rotation * Vec3::X).xy().normalize();
@@ -426,14 +420,7 @@ fn scanning_beam_update(
         beam_transform.translation.y = beam_center.y;
         beam_transform.rotation = Quat::from_rotation_z(beam_angle);
 
-        let spot_diameter = SPOT_RADIUS * 2.0;
-        beam_transform.scale = Vec3::new(beam_length, spot_diameter, 1.0);
-
-        if let Some(mut material) = beam_materials.get_mut(material_handle) {
-            material.start_width = BEAM_START_WIDTH / spot_diameter;
-            material.end_width = 1.0;
-            material.pulse = (material.pulse + time.delta_secs() * SCAN_PULSE_SPEED) % 1.0;
-        }
+        beam_transform.scale = Vec3::new(beam_length, SPOT_RADIUS * 2.0, 1.0);
     }
 }
 
@@ -443,21 +430,21 @@ fn scanning_beam_update(
 /// - Moves spot toward random destination within target bounds
 /// - Elongates spot based on distance to drone (perspective effect)
 fn scan_spot_update(
-    mut spot_materials: ResMut<Assets<ScanSpotMaterial>>,
     time: Res<Time>,
     drones: Query<(&Transform, &ExpeditionDrone), Without<ScanSpot>>,
     targets: Query<(&GridCoords, &GridImprint), Without<ExpeditionDrone>>,
     beams: Query<&ScanningBeam>,
-    mut spots: Query<(&mut Transform, &mut ScanSpot, &MeshMaterial2d<ScanSpotMaterial>), Without<ExpeditionDrone>>,
+    mut spots: Query<(&mut Transform, &mut Visibility, &mut ScanSpot), Without<ExpeditionDrone>>,
 ) {
     for beam in beams.iter() {
-        let Ok((mut spot_transform, mut spot, material_handle)) = spots.get_mut(beam.spot) else { continue; };
+        let Ok((mut spot_transform, mut spot_visibility, mut spot)) = spots.get_mut(beam.spot) else { continue; };
         let Ok((drone_transform, drone)) = drones.get(beam.drone) else { continue; };
 
         if !drone.is_beam_active {
-            spot_transform.scale = Vec3::ZERO;
+            spot_visibility.set_if_neq(Visibility::Hidden);
             continue;
         }
+        spot_visibility.set_if_neq(Visibility::Inherited);
 
         let Some(target_entity) = drone.mission_target else { continue; };
         let Ok((target_coords, target_imprint)) = targets.get(target_entity) else { continue; };
@@ -505,51 +492,36 @@ fn scan_spot_update(
         spot_transform.rotation = Quat::from_rotation_z(angle_to_drone);
         let elongation = 1.0 + distance * SPOT_ELONGATION_FACTOR;
         spot_transform.scale = Vec3::new(SPOT_RADIUS * elongation, SPOT_RADIUS, 1.0);
-
-        if let Some(mut material) = spot_materials.get_mut(material_handle) {
-            material.pulse = (material.pulse + time.delta_secs() * SCAN_PULSE_SPEED) % 1.0;
-        }
     }
 }
 
-/// Shader material for the tapered beam effect. Width interpolates from narrow (drone) to wide (spot).
-#[derive(Asset, TypePath, Debug, Clone, AsBindGroup)]
-pub(crate) struct ScanningBeamMaterial {
-    #[uniform(0)]
-    pub start_width: f32,  // width at drone end (narrow)
-    #[uniform(0)]
-    pub end_width: f32,    // width at spot end (wide)
-    #[uniform(0)]
-    pub pulse: f32,        // animation 0-1
+/// Tapered beam visual stored on the `ScanningBeam` entity. Field order and types mirror `Instance` in
+/// `assets/shaders/units/scanning_beam.wesl`.
+#[derive(Component, ShaderType, TypePath, Clone)]
+pub(crate) struct ScanningBeamVisual {
+    /// Width at the drone end, relative to the spot diameter.
+    start_width: f32,
+    /// Phase offset of the scan pulse.
+    seed: f32,
 }
-impl Default for ScanningBeamMaterial {
-    fn default() -> Self {
-        Self { start_width: 0.1, end_width: 0.4, pulse: 0.0 }
-    }
+impl LaneVisual for ScanningBeamVisual {
+    const LABEL: &'static str = "scanning_beam";
+    const LOOK: &'static str = "shaders::units::scanning_beam";
 }
 
-impl Material2d for ScanningBeamMaterial {
-    fn fragment_shader() -> ShaderRef {
-        "shaders/units/scanning_beam.wesl".into()
-    }
-    fn alpha_mode(&self) -> AlphaMode2d {
-        AlphaMode2d::Blend
-    }
+/// Ground spot visual stored on the `ScanSpot` entity. Field order and types mirror `Instance` in
+/// `assets/shaders/units/scan_spot.wesl`.
+#[derive(Component, ShaderType, TypePath, Clone)]
+pub(crate) struct ScanSpotVisual {
+    /// Phase offset of the scan pulse.
+    seed: f32,
 }
+impl LaneVisual for ScanSpotVisual {
+    const LABEL: &'static str = "scan_spot";
+    const LOOK: &'static str = "shaders::units::scan_spot";
 
-/// Material for the scan spot (ground projection).
-#[derive(Asset, TypePath, Debug, Clone, AsBindGroup, Default)]
-pub(crate) struct ScanSpotMaterial {
-    #[uniform(0)]
-    pub pulse: f32,  // animation 0-1
-}
-
-impl Material2d for ScanSpotMaterial {
-    fn fragment_shader() -> ShaderRef {
-        "shaders/units/scan_spot.wesl".into()
-    }
-    fn alpha_mode(&self) -> AlphaMode2d {
-        AlphaMode2d::Blend
+    fn mesh() -> Mesh {
+        Circle::new(1.0).into()
     }
 }
 
@@ -626,10 +598,6 @@ fn on_builder_add_spawn_expedition_drone(
     trigger: On<Add<BuilderExpeditionDrone>>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    unit_quad: Res<UnitQuad>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut beam_materials: ResMut<Assets<ScanningBeamMaterial>>,
-    mut spot_materials: ResMut<Assets<ScanSpotMaterial>>,
     builders: Query<&BuilderExpeditionDrone>,
     home_bases: Query<&Transform, With<ExplorationCenter>>,
 ) {
@@ -645,29 +613,24 @@ fn on_builder_add_spawn_expedition_drone(
         return;
     };
 
-    // Create scanning visual materials
-    let beam_material = beam_materials.add(ScanningBeamMaterial::default());
-    let spot_mesh = meshes.add(Circle::new(1.0));
-    let spot_material = spot_materials.add(ScanSpotMaterial::default());
+    // The beam and spot share one seed, so their pulses stay in step.
+    let seed = seed_from_entity(entity);
 
     // Spawn scan spot
     let spot_entity = commands.spawn((
-        Mesh2d(spot_mesh),
-        MeshMaterial2d(spot_material),
-        Transform {
-            translation: position.extend(0.),
-            scale: Vec3::ZERO, // Start hidden
-            ..default()
-        },
+        ScanSpotVisual { seed },
+        Transform::from_translation(position.extend(0.)),
+        Visibility::Hidden,
         ScanSpot {
             destination: position,
         },
     )).id();
 
     // Spawn beam
+    let spot_diameter = SPOT_RADIUS * 2.0;
     commands.spawn((
-        unit_quad.mesh(),
-        MeshMaterial2d(beam_material),
+        ScanningBeamVisual { start_width: BEAM_START_WIDTH / spot_diameter, seed },
+        Visibility::Hidden,
         ScanningBeam {
             drone: entity,
             spot: spot_entity,

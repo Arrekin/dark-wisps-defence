@@ -30,7 +30,7 @@ impl Indicators {
 }
 
 #[derive(Component)]
-#[require(Transform, Visibility, Sprite, ZDepth::MAP_UI)]
+#[require(Transform, Visibility, Sprite, ZDepth::MapUi)]
 pub struct IndicatorDisplay {
     pub active_index: usize,
     pub cycle_time: f32,

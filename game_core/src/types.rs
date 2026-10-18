@@ -29,6 +29,28 @@ impl BuildingType {
     pub fn is_energy_consumer(&self) -> bool {
         !matches!(self, BuildingType::MainBase)
     }
+
+    /// GPU building-type index, mirrored by `BUILDING_*` and `TOWER_*` in
+    /// `assets/shaders/grids/obstacles.wesl`. Zero means no building; tower indices start at 32.
+    pub fn gpu_index(self) -> u32 {
+        match self {
+            Self::MainBase => 1,
+            Self::EnergyRelay => 2,
+            Self::MiningComplex => 3,
+            Self::ExplorationCenter => 4,
+            Self::Forge => 5,
+            Self::Tower(tower_type) => 32 + match tower_type {
+                TowerType::Blaster => 0,
+                TowerType::Cannon => 1,
+                TowerType::RocketLauncher => 2,
+                TowerType::Emitter => 3,
+                TowerType::Field => 4,
+                TowerType::Flamethrower => 5,
+                TowerType::BlazeMortar => 6,
+                TowerType::Inferno => 7,
+            },
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, EnumIter)]
@@ -114,5 +136,22 @@ impl Shard {
 impl std::fmt::Display for Shard {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} {}", self.shard_type, self.tier)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bevy::platform::collections::HashSet;
+
+    use super::*;
+
+    #[test]
+    fn building_gpu_indices_are_unique_and_fit_a_byte() {
+        let mut seen = HashSet::new();
+        for building_type in BuildingType::all() {
+            let index = building_type.gpu_index();
+            assert!(index != 0 && index < 256, "{building_type:?} has GPU index {index} outside 1..256");
+            assert!(seen.insert(index), "{building_type:?} shares GPU index {index}");
+        }
     }
 }

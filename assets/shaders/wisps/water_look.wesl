@@ -1,4 +1,4 @@
-
+import package::shaders::common::effect_visuals::BRITTLE_BIT;
 import package::shaders::common::voronoi_border::voronoi_border_2d;
 
 // Pure-procedural water wisp: a living droplet of liquid.
@@ -8,13 +8,13 @@ import package::shaders::common::voronoi_border::voronoi_border_2d;
 // lunges with surface tension as it swims along its path. Nothing is sampled
 // from a texture — every feature is generated from the UV and time.
 
+// Field order and types mirror `WispWaterLook` in wisps_internal/src/looks.rs.
 struct WispWaterLook {
     seed: f32,          // per-instance phase offset, decorrelates a cluster of wisps
     wobble: f32,        // surface-tension silhouette amplitude (at rest)
     flow_speed: f32,    // master animation speed
     tint: f32,          // -1..1 hue shift between deeper blue and brighter teal
-    heading_x: f32,     // unit travel direction (quad-local), x
-    heading_y: f32,     // unit travel direction (quad-local), y
+    heading: vec2<f32>, // unit travel direction (quad-local)
     vigor: f32,         // measured speed / sweet-spot; the shader derives deform AND cadence from it
     // Oscillator phases are extrapolated from the GPU clock as
     // `anchor_phase + (globals.time - anchor_time) * rate(vigor)`, so the wobble
@@ -25,9 +25,7 @@ struct WispWaterLook {
     anchor_time: f32,         // GPU-clock time the phases were anchored (wrapped seconds)
 };
 
-const BRITTLE: u32 = 1u;
-
-// Mesh padding factor. Mirrors `WispWaterMaterial::QUAD_SCALE` in wisps_internal/src/materials.rs:
+// Mesh padding factor. Mirrors `WispWaterVisual::QUAD_SCALE` in wisps_internal/src/looks.rs:
 // the mesh is built this many times the grid footprint, and we scale UV by it to keep
 // the droplet's real size while leaving margin for it to wobble/lunge. Keep equal.
 const QUAD_SCALE: f32 = 2.4;
@@ -74,9 +72,8 @@ fn wisp_water(uv: vec2<f32>, time: f32, look: WispWaterLook, effects_mask: u32) 
     let deform = DEFORM_ASYMP * look.vigor / (look.vigor + DEFORM_ASYMP - 1.0);
 
     // Travel direction (falls back to a fixed axis while at rest, where deform ≈ 0).
-    let heading_raw = vec2<f32>(look.heading_x, look.heading_y);
-    let hlen = length(heading_raw);
-    let h = select(vec2<f32>(0.0, -1.0), heading_raw / max(hlen, 1e-4), hlen > 1e-3);
+    let hlen = length(look.heading);
+    let h = select(vec2<f32>(0.0, -1.0), look.heading / max(hlen, 1e-4), hlen > 1e-3);
     let h_perp = vec2<f32>(-h.y, h.x);
 
     // Locomotion strokes drive a forward lurch and a lateral wriggle. The cadence
@@ -149,7 +146,7 @@ fn wisp_water(uv: vec2<f32>, time: f32, look: WispWaterLook, effects_mask: u32) 
     alpha = clamp(alpha, 0.0, 1.0);
 
     var color = vec4<f32>(col, alpha);
-    if ((effects_mask & BRITTLE) != 0u) {
+    if ((effects_mask & BRITTLE_BIT) != 0u) {
         color = brittle(color, q, body, look.seed);
     }
     return color;

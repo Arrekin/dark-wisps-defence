@@ -1,8 +1,9 @@
 use bevy::prelude::*;
 
-use game_core::prelude::{GridCoords, GridImprint, IsOperational, MapInfo};
+use game_core::{prelude::{GridCoords, GridImprint, IsOperational, MapInfo}, shared_gpu::{SharedGpuBinding, SharedGpuWriter}};
 use grids::{
     EmissionsGridSpreadAffector,
+    GridVersion,
     emissions::{EmissionsEnergyRecalculateAll, EmissionsGrid, EmitterChangedMessage, EmitterEnergy},
     obstacles::ObstacleGrid,
     search::flooding::flood_emissions,
@@ -17,7 +18,7 @@ impl Plugin for EmissionsPlugin {
             .init_resource::<EmissionsEnergyRecalculateAll>()
             .add_message::<EmitterChangedMessage>()
             .add_systems(OnExit(MapLoadingStage::LoadMapInfo), |mut commands: Commands, map_info: Res<MapInfo>| { commands.insert_resource(EmissionsGrid::new_with_size(map_info.grid_bounds)); })
-            .add_systems(PostUpdate, update_emissions_grid)
+            .add_systems(PostUpdate, (update_emissions_grid, upload_gpu_emissions_energy).chain())
             .add_observer(on_add_emitter_energy_register_emitter)
             .add_observer(on_insert_emissions_spread_affector_flag_for_recalculation)
             .add_observer(on_remove_emissions_spread_affector_flag_for_recalculation);
@@ -93,7 +94,7 @@ fn update_emissions_grid(
                 &mut emissions_grid,
                 &obstacle_grid,
                 grid_imprint.iter(*coords),
-                &vec![emitter.0.clone()],
+                [&emitter.0],
                 |field| !field.has_wall(),
             );
         }
@@ -109,4 +110,16 @@ fn update_emissions_grid(
             );
         }
     }
+}
+
+/// Uploads the energy layer when its version changes or a map load replaces the grid.
+fn upload_gpu_emissions_energy(
+    mut shared_gpu: SharedGpuWriter,
+    emissions_grid: Res<EmissionsGrid>,
+    mut uploaded_version: Local<Option<GridVersion>>,
+) {
+    if !emissions_grid.is_added() && *uploaded_version == Some(emissions_grid.version.energy) { return; }
+    *uploaded_version = Some(emissions_grid.version.energy);
+
+    shared_gpu.write(SharedGpuBinding::EmissionsEnergy, emissions_grid.grid.iter().map(|emissions| emissions.energy));
 }

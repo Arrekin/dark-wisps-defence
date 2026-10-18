@@ -1,4 +1,5 @@
 import bevy_sprite_render::mesh2d::vertex_output::VertexOutput;
+import package::shaders::common::map_info::{grid_bounds, grid_contains, grid_index};
 
 // Tower Ranges Overlay Shader
 // - TowerRangeCell channels:
@@ -17,25 +18,20 @@ import bevy_sprite_render::mesh2d::vertex_output::VertexOutput;
 // Dash pattern:
 // - Two gaps per edge at 1/3 and 2/3. Endpoints remain on to keep corners clean.
 // - GAP_HALF controls the half-width of each gap.
-//
+
+// Field order and types mirror `TowerRangeCell` in overlays/src/towers_range.rs.
 struct TowerRangeCell {
     signature: u32,
     cover_count: u32,
     highlight: u32,
 }
 
-struct UniformGridData {
-    grid_width: u32,
-    grid_height: u32,
-}
-
 @group(2) @binding(0) var<storage, read> cells: array<TowerRangeCell>;
-@group(2) @binding(1) var<uniform> uniforms: UniformGridData;
 
 // Rendering constants
-const blockSize: f32 = 16.0; // Size of each block in pixels
-const outlineThickness: f32 = 2.0; // Size of the outline in pixels
-const outlineRatio: f32 = outlineThickness / blockSize; // Outline thickness relative to cell size
+const BLOCK_SIZE: f32 = 16.0; // Size of each block in pixels
+const OUTLINE_THICKNESS: f32 = 2.0; // Size of the outline in pixels
+const OUTLINE_RATIO: f32 = OUTLINE_THICKNESS / BLOCK_SIZE;
 
 // Dash segmentation: fixed 2-gap pattern per cell edge; each gap half-width in [0..1] of the cell edge
 const GAP_HALF: f32 = 0.070;
@@ -47,23 +43,20 @@ const SELECTED_OUTLINE_COLOR: vec4<f32> = vec4<f32>(0.0, 1.0, 1.0, 0.9); // Cyan
 fn get_cell_data(uv: vec2<f32>) -> TowerRangeCell {
     // Clamp UV coordinates to valid range to prevent bleeding at edges
     let clamped_uv = clamp(uv, vec2<f32>(0.0), vec2<f32>(0.9999));
-    let grid_pos = vec2<u32>(clamped_uv * vec2<f32>(f32(uniforms.grid_width), f32(uniforms.grid_height)));
-    let index = grid_pos.y * uniforms.grid_width + grid_pos.x;
+    let coords = vec2<i32>(clamped_uv * vec2<f32>(grid_bounds()));
+    let index = grid_index(coords);
 
-    // Additional safety check: ensure grid coordinates are within bounds
-    if (grid_pos.x >= uniforms.grid_width || grid_pos.y >= uniforms.grid_height || index >= arrayLength(&cells)) {
-        return TowerRangeCell(0u, 0u, 0u); // Return empty cell if out of bounds
+    if (!grid_contains(coords) || index >= arrayLength(&cells)) {
+        return TowerRangeCell(0u, 0u, 0u);
     }
 
     return cells[index];
 }
 
-// Removed unused EdgeInfo and helper functions; fragment() performs direct neighbor checks.
-
-fn dashed_mask_oriented(blockPosition: vec2<f32>, vertical: bool) -> bool {
+fn dashed_mask_oriented(block_position: vec2<f32>, vertical: bool) -> bool {
     // Static per-cell pattern: 2 evenly spaced gaps at 1/3 and 2/3 along the edge.
     // Endpoints (0 and 1) are always ON for clean joins across cells and at corners.
-    let along = select(blockPosition.x, blockPosition.y, vertical);
+    let along = select(block_position.x, block_position.y, vertical);
     let gap1 = abs(along - (1.0 / 3.0)) < GAP_HALF;
     let gap2 = abs(along - (2.0 / 3.0)) < GAP_HALF;
     return !(gap1 || gap2);
@@ -74,34 +67,33 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
     let uv = mesh.uv;
     
     // Position within the block (cell)
-    let blockPosition = fract(uv * vec2<f32>(f32(uniforms.grid_width), f32(uniforms.grid_height)));
+    let block_position = fract(uv * vec2<f32>(grid_bounds()));
 
     // Check if we're at the very edge of a block
-    let atEdge = blockPosition.x <= outlineRatio || blockPosition.x >= (1.0 - outlineRatio) ||
-                 blockPosition.y <= outlineRatio || blockPosition.y >= (1.0 - outlineRatio);
+    let at_edge = block_position.x <= OUTLINE_RATIO || block_position.x >= (1.0 - OUTLINE_RATIO) ||
+                  block_position.y <= OUTLINE_RATIO || block_position.y >= (1.0 - OUTLINE_RATIO);
 
-                     // Get cell data from buffer
     let cell = get_cell_data(uv);
 
     // Early out: empty cells contribute no edges (edges are drawn from the inside cell) and we are only interested in edges
-    if (!atEdge || (cell.cover_count == 0u && cell.highlight == 0u)) {
+    if (!at_edge || (cell.cover_count == 0u && cell.highlight == 0u)) {
         return BASE_COLOR;
     }
 
     // Reuse highlight flag
     let curr_is_highlight = (cell.highlight != 0u);
 
-    let stepSize = vec2<f32>(1.0 / f32(uniforms.grid_width), 1.0 / f32(uniforms.grid_height));
-    let in_vertical_band = (blockPosition.x <= outlineRatio) || (blockPosition.x >= (1.0 - outlineRatio));
-    let in_horizontal_band = (blockPosition.y <= outlineRatio) || (blockPosition.y >= (1.0 - outlineRatio));
+    let step_size = 1.0 / vec2<f32>(grid_bounds());
+    let in_vertical_band = (block_position.x <= OUTLINE_RATIO) || (block_position.x >= (1.0 - OUTLINE_RATIO));
+    let in_horizontal_band = (block_position.y <= OUTLINE_RATIO) || (block_position.y >= (1.0 - OUTLINE_RATIO));
 
     // Vertical orientation: sample left/right neighbor
     var draw_highlight_v = false;
     var draw_signature_v = false;
     var dash_v = false;
     if (in_vertical_band) {
-        let is_right_band = blockPosition.x >= (1.0 - outlineRatio);
-        let neighbor_uv_v = uv + vec2<f32>(select(-stepSize.x, stepSize.x, is_right_band), 0.0);
+        let is_right_band = block_position.x >= (1.0 - OUTLINE_RATIO);
+        let neighbor_uv_v = uv + vec2<f32>(select(-step_size.x, step_size.x, is_right_band), 0.0);
         let neighbor_v = get_cell_data(neighbor_uv_v);
         let curr_highlight_v = curr_is_highlight;
         let neigh_highlight_v = (neighbor_v.highlight != 0u);
@@ -120,7 +112,7 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
                                 || (cell.cover_count == neighbor_v.cover_count && cell.cover_count == 1u)
                                 || (cell.cover_count == neighbor_v.cover_count && cell.cover_count > 1u && cell.signature > neighbor_v.signature)
                             );
-        dash_v = dashed_mask_oriented(blockPosition, true);
+        dash_v = dashed_mask_oriented(block_position, true);
     }
 
     // Horizontal orientation: sample below/above neighbor
@@ -128,8 +120,8 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
     var draw_signature_h = false;
     var dash_h = false;
     if (in_horizontal_band) {
-        let is_top_band = blockPosition.y >= (1.0 - outlineRatio);
-        let neighbor_uv_h = uv + vec2<f32>(0.0, select(-stepSize.y, stepSize.y, is_top_band));
+        let is_top_band = block_position.y >= (1.0 - OUTLINE_RATIO);
+        let neighbor_uv_h = uv + vec2<f32>(0.0, select(-step_size.y, step_size.y, is_top_band));
         let neighbor_h = get_cell_data(neighbor_uv_h);
         let curr_highlight_h = curr_is_highlight;
         let neigh_highlight_h = (neighbor_h.highlight != 0u);
@@ -142,7 +134,7 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
                                 || (cell.cover_count == neighbor_h.cover_count && cell.cover_count == 1u)
                                 || (cell.cover_count == neighbor_h.cover_count && cell.cover_count > 1u && cell.signature > neighbor_h.signature)
                             );
-        dash_h = dashed_mask_oriented(blockPosition, false);
+        dash_h = dashed_mask_oriented(block_position, false);
     }
 
     // Priority: highlight > signature. Combine vertical/horizontal (corners) with OR.
@@ -152,10 +144,10 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
     // Corner fix: force fill at corner junctions for symmetry; if only diagonal neighbor is inside,
     // draw a single pixel so corners don't look hollow regardless of dash mask.
     if (in_vertical_band && in_horizontal_band && !(draw_highlight_any || draw_signature_any)) {
-        let is_right_band = blockPosition.x >= (1.0 - outlineRatio);
-        let is_top_band = blockPosition.y >= (1.0 - outlineRatio);
-        let neighbor_uv_d = uv + vec2<f32>(select(-stepSize.x, stepSize.x, is_right_band),
-                                            select(-stepSize.y, stepSize.y, is_top_band));
+        let is_right_band = block_position.x >= (1.0 - OUTLINE_RATIO);
+        let is_top_band = block_position.y >= (1.0 - OUTLINE_RATIO);
+        let neighbor_uv_d = uv + vec2<f32>(select(-step_size.x, step_size.x, is_right_band),
+                                            select(-step_size.y, step_size.y, is_top_band));
         let neighbor_d = get_cell_data(neighbor_uv_d);
         let curr_highlight_d = curr_is_highlight;
         let neigh_highlight_d = (neighbor_d.highlight != 0u);

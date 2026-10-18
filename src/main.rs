@@ -6,41 +6,47 @@ use states::{AdminMode, prelude::*};
 fn main() {
     App::new()
         .insert_resource(ClearColor(Color::srgb_u8(30, 31, 34)))
+        // Engine
         .add_plugins((
             DefaultPlugins
                 .set(ImagePlugin::default_nearest())
                 // Warning: VSync is causing a lot of issues with mouse events processing
                 .set(WindowPlugin { primary_window: Some(Window { present_mode: PresentMode::AutoNoVsync, ..default() }), ..default() }),
             MeshPickingPlugin,
-            buildings_internal::BuildingsPlugin,
-            map_objects_internal::MapObjectsPlugin,
-            narrative_internal::NarrativePlugin,
-            overlays::OverlaysPlugin,
-            weaponry_internal::WeaponryPlugin,
-            hud_internal::HudPlugin,
-            units_internal::UnitsPlugin,
-            wisps_internal::WispsPlugin,
         ))
+        // Foundation: shared state, persistence, the map grids and drawing infrastructure
         .add_plugins((
-            game_core_internal::GameCorePlugin,
             logging::LoggingPlugin,
             states::StatesPlugin,
             persistence::PersistencePlugin,
+            game_core_internal::GameCorePlugin,
+            session_internal::SessionPlugin,
+            almanach::AlmanachPlugin,
+            grids_internal::GridsPlugin,
+            visuals_internal::VisualsPlugin,
             viewport::ViewportPlugin,
-            session::SessionPlugin,
+            widgets_internal::WidgetsPlugin,
+        ))
+        // Domains
+        .add_plugins((
             alteration_internal::AlterationPlugin,
             resources_internal::ResourcesPlugin,
             shards_internal::ShardsPlugin,
             research_internal::ResearchPlugin,
+            map_objects_internal::MapObjectsPlugin,
+            buildings_internal::BuildingsPlugin,
+            weaponry_internal::WeaponryPlugin,
+            units_internal::UnitsPlugin,
+            wisps_internal::WispsPlugin,
+            narrative_internal::NarrativePlugin,
         ))
+        // Player-facing layers and tools
         .add_plugins((
-            grids_internal::GridsPlugin,
-            almanach::AlmanachPlugin,
-            widgets_internal::WidgetsPlugin,
+            hud_internal::HudPlugin,
+            overlays::OverlaysPlugin,
+            editor::EditorPlugin,
+            byoaic::ByoaicPlugin,
         ))
-        .add_plugins(editor::EditorPlugin)
-        .add_plugins(visuals_internal::VisualsPlugin)
-        .add_plugins(byoaic::ByoaicPlugin)
         .add_systems(PostStartup, |mut commands: Commands| { commands.queue(LaunchAction::default()); })
         .run();
 }

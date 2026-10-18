@@ -1,13 +1,13 @@
 import bevy_sprite_render::mesh2d::vertex_output::VertexOutput;
 import package::shaders::common::core::CELL_SIZE;
-import package::shaders::common::map_light::MAP_SUN_GROUND_DIRECTION;
-import package::shaders::walls::look::{WallStyle, LIGHT_PROBE, eroded_distance, plate_noise, single_cell_distance, wall_shading};
+import package::shaders::walls::look::single_cell_wall;
+import package::shaders::walls::styles::wall_style;
 
-// One isolated wall cell in world space. An analytic box distance replaces the map canvas's
-// neighbor-derived field; all surface layers still come from `shaders::walls::look`.
+// One isolated wall cell in world space, for placement previews.
 
+// Field order and types mirror `WallQuadMaterial` in map_objects_internal/src/wall_materials.rs.
 struct WallQuad {
-    style: WallStyle,
+    style_index: u32, // one-based index into the shared wall style table
     alpha: f32,
 }
 @group(2) @binding(0) var<uniform> settings: WallQuad;
@@ -20,15 +20,6 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // World-coordinate span of one screen pixel at the quad's rendered size.
     let texel = max(fwidth(world.x), 0.001);
-
-    let raw_distance = single_cell_distance(world);
-    let d = eroded_distance(raw_distance, world, settings.style);
-
-    let probe = max(LIGHT_PROBE, texel);
-    let lit = -(single_cell_distance(world + MAP_SUN_GROUND_DIRECTION * probe) - raw_distance) / probe;
-
-    let plate = plate_noise(world, settings.style);
-    let colour = wall_shading(d, lit, plate, texel, settings.style);
-
-    return vec4<f32>(colour, smoothstep(-texel, texel, d) * settings.alpha);
+    let wall = single_cell_wall(world, texel, wall_style(settings.style_index));
+    return vec4<f32>(wall.rgb, wall.a * settings.alpha);
 }

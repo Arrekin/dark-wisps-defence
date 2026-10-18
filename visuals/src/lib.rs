@@ -1,18 +1,21 @@
+#![feature(associated_type_defaults)]
+
 pub mod canvas;
 pub mod color_pulsation;
-pub mod post_process;
+pub mod cut_lane;
+pub mod effect_visuals;
 pub mod explosion;
+pub mod lane;
 pub mod map_light;
+pub mod paint_lane;
+pub mod render_schedule;
 pub mod shader;
-pub mod unit_quad;
+pub mod shared_gpu;
+pub mod transient_visual;
 pub mod wisp_attack;
-pub mod effect_material;
 
 pub mod prelude {
-    pub use super::canvas::MapCanvasBundle;
     pub use super::color_pulsation::ColorPulsation;
-    pub use super::effect_material::{EffectVisualMaterial, EffectVisualUniform, sync_effect_visuals};
     pub use super::explosion::BuilderExplosion;
-    pub use super::post_process::{ForceFieldPostProcessSet, InfernoDomePostProcessSet, InfernoHazePostProcessSet, QuantumFieldPostProcessSet, RipplePostProcessSet};
     pub use super::wisp_attack::BuilderWispAttackEffect;
 }

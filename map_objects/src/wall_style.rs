@@ -23,7 +23,7 @@ pub struct WallStyleSurface {
     pub plate_noise_scale: f32,
     pub shadow_length: f32,
     /// Fills the struct to 16 bytes. This keeps `WallStyle` at a multiple of its 16-byte
-    /// alignment, and uniform layout requires 16 bytes for a nested struct.
+    /// alignment, so the style table's array stride equals its Rust size.
     pub _padding: Vec2,
 }
 impl WallStyleSurface {
@@ -35,8 +35,8 @@ impl WallStyleSurface {
 /// GPU-side parameter set for wall shaders. Field order and types mirror the
 /// `WallStyle` struct in `assets/shaders/walls/look.wesl` exactly.
 ///
-/// The wall canvas uploads it as raw bytes into a storage array, so its Rust layout must equal
-/// the WGSL layout. The swatch material binds it as a uniform through [`ShaderType`].
+/// Uploaded as raw bytes in a storage array. Rust field offsets and size must match the WGSL
+/// layout and array stride.
 #[repr(C)]
 #[derive(ShaderType, Pod, Zeroable, Clone, Copy, Debug)]
 pub struct WallStyle {
@@ -66,6 +66,12 @@ pub struct WallStyleEntry {
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[component(immutable)]
 pub struct WallStyleKey(pub u32);
+impl WallStyleKey {
+    /// The style index shaders use: one-based, so 0 can mean open ground.
+    pub fn shader_index(self) -> u32 {
+        self.0 + 1
+    }
+}
 
 /// Converts the placer's opaque style index to a wall style key.
 impl From<PlacementStyle> for WallStyleKey {
@@ -80,7 +86,6 @@ impl From<PlacementStyle> for WallStyleKey {
 pub struct WallStyles {
     pub entries: Vec<WallStyleEntry>,
 }
-
 impl WallStyles {
     /// The styles a map starts with. Colours are authored as sRGB; widths are world pixels.
     pub fn presets() -> Self {
@@ -162,6 +167,9 @@ impl WallStyles {
         self.entries.get(key.0 as usize).map(|entry| &entry.style)
     }
 
+    pub fn contains(&self, key: WallStyleKey) -> bool {
+        (key.0 as usize) < self.entries.len()
+    }
 }
 
 /// Which term the wall shader draws instead of the finished wall. Discriminants are the

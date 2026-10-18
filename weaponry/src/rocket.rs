@@ -6,10 +6,10 @@ use game_core::prelude::{SSS, ZDepth};
 use super::components::Projectile;
 
 #[derive(Component)]
-#[require(AttackDamage, Projectile, ZDepth::PROJECTILE)]
+#[require(AttackDamage, Projectile, ZDepth::Projectile)]
 pub struct Rocket;
 #[derive(Component)]
-#[require(ZDepth::PROJECTILE_UNDER)]
+#[require(ZDepth::ProjectileUnder)]
 pub struct RocketExhaust;
 
 // Rocket follows Wisp, and if the wisp no longer exists, looks for another target

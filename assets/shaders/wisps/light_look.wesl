@@ -1,6 +1,7 @@
-
 import package::shaders::common::core::TAU;
+import package::shaders::common::effect_visuals::BRITTLE_BIT;
 import package::shaders::common::voronoi_border::{voronoi_border_2d, voronoi_hash_2d};
+import package::shaders::wisps::motion_look::WispMotionLook;
 
 // Pure-procedural light wisp: a radiant prism-star.
 //
@@ -10,15 +11,6 @@ import package::shaders::common::voronoi_border::{voronoi_border_2d, voronoi_has
 // (an angular dispersion fan, distinct from the quantum field's chromatic rim). A
 // crisp star glint sits over the core. Travelling brightens and flares it and
 // sheds tiny spectral motes into its wake. Nothing is sampled from a texture.
-
-struct WispLightLook {
-    seed: f32,      // per-instance phase offset, decorrelates a cluster of wisps
-    vigor: f32,     // measured speed / sweet-spot; brightens, flares + sheds motes (0 at rest)
-    heading_x: f32, // unit travel direction (quad-local), x
-    heading_y: f32, // unit travel direction (quad-local), y
-};
-
-const BRITTLE: u32 = 1u;
 
 // ── Radiance tuning ──────────────────────────────────────────────────────────
 const RAYS_PRIMARY: f32 = 7.0;    // long beam count
@@ -61,7 +53,7 @@ fn brittle(color: vec4<f32>, p: vec2<f32>, seed: f32) -> vec4<f32> {
     return vec4<f32>(rgb, max(color.a, crack)); // opaque so the cage always reads
 }
 
-fn wisp_light(uv: vec2<f32>, time: f32, look: WispLightLook, effects_mask: u32) -> vec4<f32> {
+fn wisp_light(uv: vec2<f32>, time: f32, look: WispMotionLook, effects_mask: u32) -> vec4<f32> {
     let p = uv - vec2<f32>(0.5);
     let r = length(p) * 2.0; // 0 at centre, ~1 at the inscribed edge
     let ang = atan2(p.y, p.x);
@@ -96,7 +88,7 @@ fn wisp_light(uv: vec2<f32>, time: f32, look: WispLightLook, effects_mask: u32) 
 
     // ── Motion as a separate layer: shed tiny glinting motes into the wake. The
     //    star itself is untouched — speed only adds these motes and a little glow.
-    let heading = vec2<f32>(look.heading_x, look.heading_y);
+    let heading = look.heading;
     let wake = -heading;                          // opposite to travel
     let wake_perp = vec2<f32>(-wake.y, wake.x);
     var motes = 0.0;                // scalar coverage (drives alpha/energy)
@@ -124,7 +116,7 @@ fn wisp_light(uv: vec2<f32>, time: f32, look: WispLightLook, effects_mask: u32) 
     let alpha = clamp(energy * edge, 0.0, 1.0);
 
     var color = vec4<f32>(rgb, alpha);
-    if ((effects_mask & BRITTLE) != 0u) {
+    if ((effects_mask & BRITTLE_BIT) != 0u) {
         color = brittle(color, p, look.seed);
     }
     return color;

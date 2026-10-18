@@ -1,38 +1,28 @@
-import bevy_core_pipeline::fullscreen_vertex_shader::FullscreenVertexOutput;
+// Quantum field overlay that distorts and duplicates the scene beneath the field's rectangle.
+// Samples the ground and surface bands before the air band draws.
+
+import bevy_sprite_render::mesh2d::{vertex_output::VertexOutput, view_bindings::globals};
+import package::shaders::common::beneath::beneath_at_world;
 import package::shaders::common::core::TAU;
 import package::shaders::common::value_noise::value_fbm_2d;
-import package::shaders::quantum_field::look::{QuantumFieldMasks, quantum_field_masks, quantum_field_glow, box_sdf, COLOR_BOUNDARY};
-import package::shaders::common::screen::{ScreenView, screen_uv_to_world, screen_world_to_uv};
+import package::shaders::quantum_field::look::{quantum_field_masks, quantum_field_glow, box_sdf, COLOR_BOUNDARY};
 
-// Quantum field anomaly. Screen-space pass over the already-rendered frame, so it can
-// distort / ghost the walls, wisps and towers sitting on top of a field's rectangle.
-// See documentation/architecture/post_process_effects.md for the architecture + GPU data contract.
+// Mirrors `MAX_COLLAPSE_POINTS` in map_objects_internal/src/quantum_field_anomaly.rs.
+const MAX_COLLAPSE_POINTS: u32 = 4u;
 
-@group(0) @binding(0) var screen_texture: texture_2d<f32>;
-@group(0) @binding(1) var screen_sampler: sampler;
-@group(0) @binding(2) var<uniform> camera: CameraData;
-@group(0) @binding(3) var<storage, read> fields: array<QuantumFieldEntry>;
-@group(0) @binding(4) var<storage, read> collapse_points: array<CollapsePoint>;
-
-struct CameraData {
-    world_pos:      vec2<f32>,
-    viewport_size:  vec2<f32>,
-    global_time:    f32,
-    field_count:    u32,
-    collapse_count: u32, // active scan-collapse points (the storage buffer never shrinks, so we
-                         // can't trust arrayLength — loop on this explicit count instead)
-}
-
-struct QuantumFieldEntry {
+// Field order and types mirror `QuantumFieldAnomaly` in map_objects_internal/src/quantum_field_anomaly.rs.
+struct Instance {
     center:         vec2<f32>,
     half_extent:    vec2<f32>,
     solve_progress: f32, // 0 = fresh anomaly, 1 = solved
     seed:           f32, // per-field noise offset
-}
-
-struct CollapsePoint {
-    pos: vec2<f32>, // scan-beam ground spot (world space)
-}
+    collapse_count: u32,
+    // Ground positions of the scan-beam spots observing this field.
+    collapse_points: array<vec2<f32>, MAX_COLLAPSE_POINTS>,
+};
+// Fields gathered for this frame, used to assign each pixel to one field.
+// `READS_ALL_INSTANCES` makes the generated entry shader import this declaration.
+@group(2) @binding(0) var<storage, read> instances: array<Instance>;
 
 // ── Effect switches ──────────────────────────────────────────────────────────
 const ENABLE_SCHLIEREN:            bool = true;
@@ -60,39 +50,31 @@ const PHASE_FLICKER_DEPTH:  f32 = 0.6;   // how strongly the rim dims (0..1)
 const SCAN_COLLAPSE_RADIUS: f32 = 40.0;  // world-unit radius of the calmed region per scan spot
 const SCAN_GLOW:           f32 = 0.5;    // brightness of the soft "observed" rim
 
-fn sample_rgb(uv: vec2<f32>) -> vec3<f32> {
-    return textureSampleLevel(screen_texture, screen_sampler, uv, 0.0).rgb;
-}
+fn overlay(in: VertexOutput, field: Instance) -> vec4<f32> {
+    let world_pos = in.world_position.xy;
+    let t = globals.time;
 
-@fragment
-fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
-    let count = camera.field_count;
-    if count == 0u {
-        return textureSampleLevel(screen_texture, screen_sampler, in.uv, 0.0);
-    }
-
-    let view = ScreenView(camera.world_pos, camera.viewport_size);
-    let world_pos = screen_uv_to_world(in.uv, view);
-    let t = camera.global_time;
-
-    // Fields never overlap (placement validator), so the deepest box (smallest SDF) wins.
+    // Fields never overlap (placement validator), but their quads' margins can; each pixel
+    // belongs to the deepest box (smallest SDF), and other quads leave it alone.
     var best_sdf = 1.0e9;
     var best_idx = 0u;
-    for (var i = 0u; i < count; i++) {
-        let sdf = box_sdf(world_pos - fields[i].center, fields[i].half_extent);
+    for (var i = 0u; i < arrayLength(&instances); i++) {
+        let sdf = box_sdf(world_pos - instances[i].center, instances[i].half_extent);
         if sdf < best_sdf {
             best_sdf = sdf;
             best_idx = i;
         }
     }
-    let field = fields[best_idx];
+    if best_idx != in.instance_index {
+        discard;
+    }
 
     let to_center = world_pos - field.center;
     let masks = quantum_field_masks(to_center, field.half_extent, world_pos, t, field.seed, field.solve_progress);
 
     // Anything well outside the (possibly wobbled) edge is untouched.
     if masks.edge_sdf > BOUNDARY_OUTER_BAND {
-        return textureSampleLevel(screen_texture, screen_sampler, in.uv, 0.0);
+        discard;
     }
 
     // ── Scan-collapse: where a drone beam observes the field, the anomaly calms locally ──
@@ -100,14 +82,14 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     // the real object and the chaotic lattice eases (observation collapses the wavefunction).
     var collapse = 0.0;
     if ENABLE_SCAN_COLLAPSE {
-        for (var i = 0u; i < camera.collapse_count; i++) {
-            let d = distance(world_pos, collapse_points[i].pos);
+        for (var i = 0u; i < field.collapse_count; i++) {
+            let d = distance(world_pos, field.collapse_points[i]);
             collapse = max(collapse, smoothstep(SCAN_COLLAPSE_RADIUS, SCAN_COLLAPSE_RADIUS * 0.35, d));
         }
         collapse *= masks.interior;
     }
 
-    // ── Build the world-space coordinate we sample the frame from ──────────────
+    // ── Build the world-space coordinate we sample the scene from ──────────────
     var sample_world = world_pos;
 
     if ENABLE_SCHLIEREN {
@@ -119,28 +101,28 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     // displacement vanish, so the observed area shows crystal-clear reality (rim still distorts).
     sample_world = mix(sample_world, world_pos, collapse);
 
-    // ── Sample the frame: superposition ghosting + chromatic decoherence ───────
+    // ── Sample the scene: superposition ghosting + chromatic decoherence ───────
     var rgb: vec3<f32>;
     if ENABLE_SUPERPOSITION {
         let spread = SUPERPOSITION_OFFSET * masks.weirdness * masks.interior * (1.0 - collapse);
-        var acc  = sample_rgb(screen_world_to_uv(sample_world, view)) * 2.0; // real position weighted higher
+        var acc  = beneath_at_world(sample_world).rgb * 2.0; // real position weighted higher
         var wsum = 2.0;
         for (var k = 0; k < SUPERPOSITION_TAPS; k++) {
             let ang = TAU * f32(k) / f32(SUPERPOSITION_TAPS) + t * SUPERPOSITION_SPIN;
             let off = vec2<f32>(cos(ang), sin(ang)) * spread;
-            acc += sample_rgb(screen_world_to_uv(sample_world + off, view));
+            acc += beneath_at_world(sample_world + off).rgb;
             wsum += 1.0;
         }
         rgb = acc / wsum;
     } else {
-        rgb = sample_rgb(screen_world_to_uv(sample_world, view));
+        rgb = beneath_at_world(sample_world).rgb;
     }
     if ENABLE_DECOHERENCE {
         let split = DECOHERENCE_SPLIT * masks.weirdness * masks.interior * (1.0 - collapse);
         let len   = length(to_center);
         let dir   = select(vec2<f32>(1.0, 0.0), to_center / max(len, 0.001), len > 0.001);
-        let cr = sample_rgb(screen_world_to_uv(sample_world + dir * split, view)).r;
-        let cb = sample_rgb(screen_world_to_uv(sample_world - dir * split, view)).b;
+        let cr = beneath_at_world(sample_world + dir * split).r;
+        let cb = beneath_at_world(sample_world - dir * split).b;
         rgb = vec3<f32>(cr, rgb.g, cb);
     }
 
@@ -156,5 +138,5 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let collapse_rim = collapse * (1.0 - collapse) * 4.0; // peaks at the disc edge
     result += COLOR_BOUNDARY * collapse_rim * SCAN_GLOW;
 
-    return vec4<f32>(result, 1.0);
+    return vec4<f32>(result, beneath_at_world(world_pos).a);
 }

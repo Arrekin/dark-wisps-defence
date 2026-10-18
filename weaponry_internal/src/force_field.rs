@@ -20,6 +20,8 @@ use weaponry::{
     prelude::*,
 };
 
+use crate::force_field_dome::{ForceFieldDome, ForceFieldImpacts};
+
 const PROGRESS_SPEED: f32 = 0.8; // progress units per second (0→1 in ~1.25s)
 
 pub(crate) struct ForceFieldPlugin;
@@ -52,6 +54,8 @@ fn on_builder_add_spawn_force_field(
             ForceFieldState::Growing,
             ForceFieldGeneratedBy(builder.tower_entity),
             Transform::from_translation(builder.world_position),
+            ForceFieldDome::default(),
+            ForceFieldImpacts::default(),
         ));
 }
 

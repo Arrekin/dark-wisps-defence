@@ -1,5 +1,6 @@
 import bevy_sprite_render::mesh2d::vertex_output::VertexOutput;
 import package::shaders::common::fire_ramp::fire_ramp;
+import package::shaders::common::game_time::game_time_since;
 import package::shaders::common::hash::{hash_coords, hash_mix, hash_unit};
 import package::shaders::common::value_noise::{value_fbm_3d, value_noise_3d};
 
@@ -11,15 +12,16 @@ import package::shaders::common::value_noise::{value_fbm_3d, value_noise_3d};
 // - `spill`: additive ground glow outside the rim during breakup.
 // - `embers`: additive falling particles spawned on a 2D cell grid (`EMBER_CELL`).
 
-// Field order and types mirror `InfernoDomeUniform` in weaponry_internal/src/inferno_dome.rs.
-struct InfernoDome {
-    age: f32,        // elapsed seconds since spawn
+// Field order and types mirror `InfernoDomeFire` in weaponry_internal/src/inferno_dome.rs.
+struct Instance {
+    start_time: f32, // wrapped game time of the discharge
     radius: f32,     // dome radius in world units
     seed: f32,       // per-entity noise offset
     half_size: f32,  // quad half-size in world units
 };
 
-@group(2) @binding(0) var<uniform> dome: InfernoDome;
+// The instance being drawn, set by `look` for the helpers below.
+var<private> dome: Instance;
 
 // Heat
 const HEAT_CAP: f32 = 0.97;
@@ -227,10 +229,10 @@ fn embers(p: vec2<f32>, radius: f32, age: f32) -> vec3<f32> {
     return color;
 }
 
-@fragment
-fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
+fn look(mesh: VertexOutput, instance: Instance) -> vec4<f32> {
+    dome = instance;
     let p = (vec2<f32>(mesh.uv.x, 1.0 - mesh.uv.y) - vec2<f32>(0.5)) * 2.0 * dome.half_size;
-    let age = dome.age;
+    let age = game_time_since(dome.start_time);
     let radius = dome.radius;
     let progress = age / BREAKUP_TIME;
 

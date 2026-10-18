@@ -1,9 +1,24 @@
 use bevy::prelude::*;
 
-use game_core::prelude::{GridCoords, GridImprint, MapBound, ZDepth};
+use game_core::prelude::{GridCoords, GridImprint, MapBound};
 use grids::{prelude::ObstacleGridObject, EmissionsGridSpreadAffector};
 
 pub mod wall_style;
+
+pub mod prelude {
+    pub use super::{
+        BuilderDarkOreSideMenuTooltip,
+        BuilderQuantumFieldSideMenuTooltip,
+        BuilderWallSideMenuTooltip,
+        DarkOre, DarkOreAreaScanner, DarkOreInRange,
+        ExpeditionZone,
+        HasOreInScannerRange,
+        NoOreInScannerRange,
+        QuantumField,
+        QuantumFieldSolved,
+        Wall,
+    };
+}
 
 /// Drawn by the dark ore canvas from `GridCoords`.
 #[derive(Component)]
@@ -30,19 +45,12 @@ pub struct BuilderWallSideMenuTooltip(pub Entity);
 pub struct BuilderQuantumFieldSideMenuTooltip(pub Entity);
 
 /// Progressive obstacle requiring drone scanning to solve.
-/// Layers are defined at spawn time; current_layer indexes into the layers vec.
 #[derive(Component, Default)]
-#[require(MapBound, ObstacleGridObject = ObstacleGridObject::QuantumField, ZDepth::OBSTACLE)]
+#[require(MapBound, ObstacleGridObject = ObstacleGridObject::QuantumField)]
 pub struct QuantumField;
 
-/// Marks an entity as a valid target for expedition drones.
-///
-/// Drones accumulate scan progress here while their beam is active over this entity.
-/// The owning system (e.g., QuantumField) should poll and consume progress via
-/// `take_accumulated_scan_progress()` to drive its own mechanics.
-///
-/// This decoupling allows different entity types to use drone scanning without
-/// the drone system needing to know about their specific progression logic.
+/// Accumulates expedition-drone scan progress while a beam is active over the entity.
+/// The target's domain consumes progress through `take_accumulated_scan_progress`.
 #[derive(Component, Default)]
 pub struct ExpeditionZone {
     pub accumulated_scan_progress: f32,
@@ -56,7 +64,7 @@ impl ExpeditionZone {
     }
 }
 
-/// Marker for fully-solved QuantumFields. Removes ExpeditionZone to prevent further scanning.
+/// Marks a quantum field whose layers are all solved.
 #[derive(Component)]
 pub struct QuantumFieldSolved;
 
@@ -73,19 +81,4 @@ pub struct DarkOreInRange(pub Vec<Entity>);
 #[require(GridCoords, DarkOreInRange, NoOreInScannerRange)]
 pub struct DarkOreAreaScanner {
     pub range_imprint: GridImprint,
-}
-
-pub mod prelude {
-    pub use super::{
-        BuilderDarkOreSideMenuTooltip,
-        BuilderQuantumFieldSideMenuTooltip,
-        BuilderWallSideMenuTooltip,
-        DarkOre, DarkOreAreaScanner, DarkOreInRange,
-        ExpeditionZone,
-        HasOreInScannerRange,
-        NoOreInScannerRange,
-        QuantumField,
-        QuantumFieldSolved,
-        Wall,
-    };
 }

@@ -49,7 +49,7 @@ pub enum DroneState {
 }
 
 #[derive(Component)]
-#[require(MapBound, ZDepth::AERIAL_UNIT)]
+#[require(MapBound, ZDepth::AerialUnit)]
 pub struct ExpeditionDrone {
     pub mission_target: Option<Entity>, // current mission target (ExpeditionZone)
     pub heading: f32,             // current facing direction in radians
@@ -72,14 +72,14 @@ impl ExpeditionDrone {
 }
 
 #[derive(Component)]
-#[require(MapBound, ZDepth::GROUND_EFFECT)]
+#[require(MapBound, ZDepth::GroundEffect)]
 pub struct ScanningBeam {
     pub drone: Entity,
     pub spot: Entity,  // the scan spot entity
 }
 
 #[derive(Component)]
-#[require(MapBound, ZDepth::GROUND_EFFECT)]
+#[require(MapBound, ZDepth::GroundEffect)]
 pub struct ScanSpot {
     pub destination: Vec2, // where moving toward (world coords)
 }

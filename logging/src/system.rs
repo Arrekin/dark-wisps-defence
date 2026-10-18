@@ -99,6 +99,7 @@ pub enum Tag {
     Units,
     Shards,
     MapObjects,
+    Rendering,
 }
 
 // ── TagSet ────────────────────────────────────────────────────────────────────

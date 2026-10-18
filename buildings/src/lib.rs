@@ -17,7 +17,7 @@ pub struct BuilderBuildingSideMenuTooltip {
 }
 
 #[derive(Component, Clone, Debug, Default)]
-#[require(AutoGridTransformSync, ZDepth::BUILDING, MaxIntegrityPoints, MapBound, ObstacleGridObject = ObstacleGridObject::Building, ModifierBank)]
+#[require(AutoGridTransformSync, ZDepth::Building, MaxIntegrityPoints, MapBound, ObstacleGridObject = ObstacleGridObject::Building, ModifierBank)]
 pub struct Building;
 
 #[derive(Component)]
