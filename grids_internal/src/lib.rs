@@ -6,7 +6,6 @@ pub(crate) mod obstacles;
 pub(crate) mod tower_ranges;
 pub(crate) mod energy_supply;
 pub(crate) mod wisps;
-pub(crate) mod force_fields;
 pub(crate) mod emissions;
 pub(crate) mod transform_sync;
 pub(crate) mod placement;
@@ -20,7 +19,6 @@ impl Plugin for GridsPlugin {
             emissions::EmissionsPlugin,
             wisps::WispsGridPlugin,
             tower_ranges::TowerRangesPlugin,
-            force_fields::ForceFieldGridPlugin,
             transform_sync::GridTransformSyncPlugin,
             placement::GridObjectPlacerPlugin,
         ));

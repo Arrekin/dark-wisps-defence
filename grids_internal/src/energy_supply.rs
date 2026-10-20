@@ -13,7 +13,7 @@ pub(crate) struct EnergySupplyPlugin;
 impl Plugin for EnergySupplyPlugin {
     fn build(&self, app: &mut App) {
         app
-            .insert_resource(EnergySupplyGrid::new_empty())
+            .init_resource::<EnergySupplyGrid>()
             .init_resource::<EnergySupplyRecalculatePower>()
             .add_message::<SupplierChangedMessage>()
             .add_systems(OnExit(MapLoadingStage::LoadMapInfo), |mut commands: Commands, map_info: Res<MapInfo>| { commands.insert_resource(EnergySupplyGrid::new_with_size(map_info.grid_bounds)); })

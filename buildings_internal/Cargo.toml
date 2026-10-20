@@ -8,6 +8,7 @@ bevy = { workspace = true }
 nanorand = { workspace = true }
 logging = { workspace = true }
 buildings = { workspace = true }
+fields = { workspace = true }
 game_core = { workspace = true }
 grids = { workspace = true }
 alteration = { workspace = true }

@@ -1,10 +1,10 @@
 use bevy::prelude::*;
 
-use game_core::shared_gpu::{SharedGpuBinding, SharedGpuWriter};
 use logging::prelude::*;
 use persistence::prelude::*;
 use session::GameClock;
 use states::prelude::{GameState, MapLoadingStage};
+use visuals::shared_gpu::{SharedGpuBinding, SharedGpuWriter};
 
 pub(crate) struct GameClockPlugin;
 impl Plugin for GameClockPlugin {

@@ -2,8 +2,6 @@ pub(crate) mod cannonball;
 pub(crate) mod fireball;
 pub(crate) mod flame_stream;
 pub(crate) mod flame_stream_fire;
-pub(crate) mod force_field;
-pub(crate) mod force_field_dome;
 pub(crate) mod inferno_dome;
 pub(crate) mod laser_dart;
 pub(crate) mod lob;
@@ -26,8 +24,6 @@ impl Plugin for WeaponryPlugin {
                 inferno_dome::InfernoDomePlugin,
                 rocket::RocketPlugin,
                 ripple::RipplePlugin,
-                force_field::ForceFieldPlugin,
-                force_field_dome::ForceFieldDomePlugin,
             ));
     }
 }

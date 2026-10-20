@@ -9,10 +9,10 @@ use bevy::{
     sprite_render::{AlphaMode2d, Material2d, Material2dPlugin, MeshMaterial2d},
 };
 
-use game_core::{prelude::{GridCoords, MapInfo, ZDepth}, shared_gpu::{SharedGpuBinding, SharedGpuWriter}};
+use game_core::prelude::{GridCoords, MapInfo, ZDepth};
 use map_objects::{prelude::Wall, wall_style::{WallCanvasDebug, WallStyleKey, WallStyles}};
 use states::prelude::MapLoadingStage;
-use visuals::{canvas::MapCanvasBundle, specialize_with_shared_gpu};
+use visuals::{canvas::MapCanvasBundle, shared_gpu::{SharedGpuBinding, SharedGpuWriter}, specialize_with_shared_gpu};
 
 pub(crate) struct WallCanvasPlugin;
 impl Plugin for WallCanvasPlugin {

@@ -49,15 +49,6 @@ impl Default for IntegrityPoints {
     }
 }
 
-/// Tracks which `ForceField` entity currently owns this entity's grid cell.
-///
-/// Managed exclusively by `field_tracking_system` in the game crate.
-/// Added at spawn to any entity that can be affected by force fields (wisps, drones, etc.).
-#[derive(Component, Default)]
-pub struct FieldAffectable {
-    pub current_field: Option<Entity>,
-}
-
 // ============================================================================
 // Power & Operational State
 // ============================================================================

@@ -2180,6 +2180,7 @@ dependencies = [
  "alteration",
  "bevy",
  "buildings",
+ "fields",
  "game_core",
  "grids",
  "hud",
@@ -2613,6 +2614,7 @@ dependencies = [
  "buildings_internal",
  "byoaic",
  "editor",
+ "fields_internal",
  "game_core_internal",
  "grids_internal",
  "hud_internal",
@@ -2974,6 +2976,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b97b65636e5b9ef369943878ac74335ba1c55c1cb6adbf1e2c293c624248d693"
 
 [[package]]
+name = "fields"
+version = "0.2.0"
+dependencies = [
+ "bevy",
+ "game_core",
+ "grids",
+]
+
+[[package]]
+name = "fields_internal"
+version = "0.2.0"
+dependencies = [
+ "bevy",
+ "bytemuck",
+ "fields",
+ "game_core",
+ "grids",
+ "states",
+ "visuals",
+]
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3148,7 +3172,6 @@ name = "game_core"
 version = "0.2.0"
 dependencies = [
  "bevy",
- "bytemuck",
  "lib-derive",
  "nanorand",
  "serde",
@@ -3164,6 +3187,7 @@ dependencies = [
  "bytemuck",
  "game_core",
  "grids",
+ "visuals",
 ]
 
 [[package]]
@@ -3339,6 +3363,7 @@ dependencies = [
  "logging",
  "states",
  "viewport",
+ "visuals",
 ]
 
 [[package]]
@@ -5731,6 +5756,7 @@ dependencies = [
  "persistence",
  "session",
  "states",
+ "visuals",
  "wisps",
 ]
 
@@ -6638,6 +6664,7 @@ version = "0.2.0"
 dependencies = [
  "alteration",
  "bevy",
+ "bytemuck",
  "game_core",
  "session",
  "strum",
@@ -6889,7 +6916,6 @@ dependencies = [
  "alteration",
  "bevy",
  "game_core",
- "nanorand",
 ]
 
 [[package]]
@@ -7588,6 +7614,7 @@ version = "0.2.0"
 dependencies = [
  "alteration",
  "bevy",
+ "fields",
  "game_core",
  "grids",
  "nanorand",

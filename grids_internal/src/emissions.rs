@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use game_core::{prelude::{GridCoords, GridImprint, IsOperational, MapInfo}, shared_gpu::{SharedGpuBinding, SharedGpuWriter}};
+use game_core::prelude::{GridCoords, GridImprint, IsOperational, MapInfo};
 use grids::{
     EmissionsGridSpreadAffector,
     GridVersion,
@@ -9,12 +9,13 @@ use grids::{
     search::flooding::flood_emissions,
 };
 use states::prelude::MapLoadingStage;
+use visuals::shared_gpu::{SharedGpuBinding, SharedGpuWriter};
 
 pub(crate) struct EmissionsPlugin;
 impl Plugin for EmissionsPlugin {
     fn build(&self, app: &mut App) {
         app
-            .insert_resource(EmissionsGrid::new_empty())
+            .init_resource::<EmissionsGrid>()
             .init_resource::<EmissionsEnergyRecalculateAll>()
             .add_message::<EmitterChangedMessage>()
             .add_systems(OnExit(MapLoadingStage::LoadMapInfo), |mut commands: Commands, map_info: Res<MapInfo>| { commands.insert_resource(EmissionsGrid::new_with_size(map_info.grid_bounds)); })

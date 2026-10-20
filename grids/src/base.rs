@@ -6,7 +6,7 @@ use game_core::prelude::{Bounds, GridCoords};
 
 use crate::{FieldTrait, GridVersionTrait};
 
-#[derive(Resource)]
+#[derive(Resource, Default)]
 pub struct BaseGrid<FieldType, GridVersionType> where FieldType: FieldTrait, GridVersionType: GridVersionTrait {
     pub bounds: Bounds,
     pub grid: Vec<FieldType>,
@@ -14,13 +14,6 @@ pub struct BaseGrid<FieldType, GridVersionType> where FieldType: FieldTrait, Gri
 }
 
 impl<FieldType, GridVersionType> BaseGrid<FieldType, GridVersionType> where FieldType: FieldTrait, GridVersionType: GridVersionTrait {
-    pub fn new_empty() -> Self {
-        Self {
-            bounds: Bounds::default(),
-            grid: vec![],
-            version: GridVersionType::default(),
-        }
-    }
     pub fn new_with_size(bounds: impl Into<Bounds>) -> Self {
         let bounds = bounds.into();
         Self {

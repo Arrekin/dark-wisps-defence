@@ -12,6 +12,10 @@ use alteration::{
     modifiers::prelude::*,
 };
 use buildings::prelude::*;
+use fields::{
+    field::{FieldEntered, FieldExited, GeneratedField},
+    prelude::*,
+};
 use game_core::prelude::*;
 use grids::placement::{annotate_non_empty, PlacementModes, PlaceRequest};
 use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
@@ -20,10 +24,6 @@ use persistence::prelude::*;
 use resources::prelude::*;
 use shards::prelude::*;
 use states::prelude::*;
-use weaponry::{
-    force_field::{ForceFieldEntered, ForceFieldExited, GeneratedForceField},
-    prelude::*,
-};
 
 use crate::{common::*, tooltip::building_tooltip};
 
@@ -35,15 +35,20 @@ impl Plugin for TowerFieldPlugin {
         app
             .add_observer(BuilderTowerField::on_builder_add_spawn_tower_field)
             .add_observer(on_tower_field_place_request_do_so)
-            .add_observer(on_tower_field_despawn_shrink_orphaned_force_field.run_if(in_state(InGame)))
             .add_systems(CollectSave, collect_tower_fields)
             .register_loader(MapLoadingStage::SpawnMapElements, "tower_fields", load_tower_fields)
             .register_building(BuildingType::Tower(TowerType::Field), almanach_info);
     }
 }
 
+// Field size
 const FIELD_RANGE_CELLS: f32 = 7.0;
-const SLOW_AMOUNT: f32 = 40.0; // world units per second reduction in MovementSpeed
+/// Extra radius in cells. Half a cell aligns the rim with cell edges along the grid axes.
+const FIELD_RIM_OFFSET_CELLS: f32 = 0.5;
+
+// Slow effect
+/// Reduction in a wisp's `MovementSpeed`, in world pixels per second.
+const SLOW_AMOUNT: f32 = 40.0;
 
 #[derive(Component, SSS)]
 pub(crate) struct BuilderTowerField {
@@ -129,23 +134,73 @@ impl BuilderTowerField {
             ))
             .observe(Self::on_insert_attack_range_resize_force_field)
             .observe(on_technical_state_changed_recompute_operational)
-            .observe(Self::on_add_is_operational_grow_force_field)
-            .observe(Self::on_remove_is_operational_shrink_force_field.run_if(in_state(InGame)));
+            .observe(Self::on_add_is_operational_unfold_force_field)
+            .observe(Self::on_remove_is_operational_fold_force_field);
+        let field_position = builder.grid_position.to_world_position_centered(building_info.grid_imprint);
+        commands.spawn(BuilderForceField::new(entity, field_position))
+            .observe(Self::on_field_entered_apply_effect)
+            .observe(Self::on_field_exited_remove_effect);
         for (content_id, socket) in &building_info.sockets {
             commands.trigger(ShardSocketUpsert::new(entity, content_id.clone(), socket.clone()));
         }
         commands.trigger(TechnicalStateChanged { entity, kind: TechnicalChange::JustSpawned });
     }
 
+    fn field_radius(attack_range: &AttackRange) -> f32 {
+        (attack_range.get() + FIELD_RIM_OFFSET_CELLS) * CELL_SIZE
+    }
+
     fn on_insert_attack_range_resize_force_field(
         trigger: On<Insert<AttackRange>>,
-        towers: Query<(Option<&GeneratedForceField>, &AttackRange), With<TowerField>>,
-        mut fields: Query<&mut ForceField>,
+        towers: Query<(&GeneratedField, &AttackRange), (With<TowerField>, With<IsOperational>)>,
+        mut fields: Query<&mut Field>,
     ) {
         let Ok((generated_field, attack_range)) = towers.get(trigger.entity) else { return; };
-        let Some(generated_field) = generated_field else { return; };
         let Ok(mut field) = fields.get_mut(generated_field.field()) else { return; };
-        field.radius = attack_range.get() * CELL_SIZE;
+        field.target_radius = Self::field_radius(attack_range);
+    }
+
+    fn on_add_is_operational_unfold_force_field(
+        trigger: On<Add<IsOperational>>,
+        towers: Query<(&GeneratedField, &AttackRange), With<TowerField>>,
+        mut fields: Query<&mut Field>,
+    ) {
+        let Ok((generated_field, attack_range)) = towers.get(trigger.entity) else { return; };
+        let Ok(mut field) = fields.get_mut(generated_field.field()) else { return; };
+        field.target_radius = Self::field_radius(attack_range);
+    }
+
+    fn on_remove_is_operational_fold_force_field(
+        trigger: On<Remove<IsOperational>>,
+        towers: Query<&GeneratedField, With<TowerField>>,
+        mut fields: Query<&mut Field>,
+    ) {
+        let Ok(generated_field) = towers.get(trigger.entity) else { return; };
+        let Ok(mut field) = fields.get_mut(generated_field.field()) else { return; };
+        field.target_radius = 0.;
+    }
+
+    fn on_field_entered_apply_effect(
+        trigger: On<FieldEntered>,
+        mut commands: Commands,
+    ) {
+        commands.spawn(
+            BuilderSlowEffect::new(trigger.target, SLOW_AMOUNT).with_source(trigger.field),
+        );
+    }
+
+    fn on_field_exited_remove_effect(
+        trigger: On<FieldExited>,
+        mut commands: Commands,
+        sources: Query<&EffectSourceOf>,
+        effects: Query<&EffectTarget, With<FieldEffect>>,
+    ) {
+        let Ok(sourced) = sources.get(trigger.field) else { return; };
+        for effect_entity in sourced.iter() {
+            if effects.get(effect_entity).is_ok_and(|effect_target| effect_target.0 == trigger.target) {
+                commands.entity(effect_entity).despawn();
+            }
+        }
     }
 }
 
@@ -202,87 +257,4 @@ fn load_tower_fields(ctx: &mut LoadContext) -> LoadResult {
         ctx.insert(entity, builder);
         Ok(())
     })
-}
-
-impl BuilderTowerField {
-    fn on_add_is_operational_grow_force_field(
-        trigger: On<Add<IsOperational>>,
-        mut commands: Commands,
-        towers: Query<(Option<&GeneratedForceField>, &AttackRange, &Transform), With<TowerField>>,
-    ) {
-        let tower_entity = trigger.entity;
-        let Ok((generated_field, attack_range, transform)) = towers.get(tower_entity) else { return; };
-
-        if let Some(generated_field) = generated_field {
-            commands.entity(generated_field.field()).insert(ForceFieldState::Growing);
-        } else {
-            let radius = attack_range.get() * CELL_SIZE;
-            commands.spawn(BuilderForceField::new(radius, tower_entity, transform.translation))
-                .observe(Self::on_field_entered_apply_effect)
-                .observe(Self::on_field_exited_remove_effect)
-                .observe(Self::on_field_despawn_remove_all_effects.run_if(in_state(InGame)));
-        }
-    }
-
-    fn on_remove_is_operational_shrink_force_field(
-        trigger: On<Remove<IsOperational>>,
-        mut commands: Commands,
-        towers: Query<&GeneratedForceField, With<TowerField>>,
-    ) {
-        let Ok(generated_field) = towers.get(trigger.entity) else { return; };
-        commands.entity(generated_field.field()).insert(ForceFieldState::Shrinking);
-    }
-
-    fn on_field_entered_apply_effect(
-        trigger: On<ForceFieldEntered>,
-        mut commands: Commands,
-    ) {
-        commands.spawn(
-            BuilderSlowEffect::new(trigger.target, SLOW_AMOUNT).with_source(trigger.field),
-        );
-    }
-
-    fn on_field_exited_remove_effect(
-        trigger: On<ForceFieldExited>,
-        mut commands: Commands,
-        sources: Query<&EffectSourceOf>,
-        effects: Query<&EffectTarget, With<FieldEffect>>,
-    ) {
-        let field_entity = trigger.field;
-        let target_entity = trigger.target;
-        let Ok(sourced) = sources.get(field_entity) else { return; };
-        for effect_entity in sourced.iter() {
-            let Ok(effect_target) = effects.get(effect_entity) else { continue; };
-            if effect_target.0 == target_entity {
-                commands.entity(effect_entity).despawn();
-            }
-        }
-    }
-
-    fn on_field_despawn_remove_all_effects(
-        trigger: On<Despawn<ForceField>>,
-        mut commands: Commands,
-        sources: Query<&EffectSourceOf>,
-        effects: Query<(), With<FieldEffect>>,
-    ) {
-        let field_entity = trigger.entity;
-        let Ok(sourced) = sources.get(field_entity) else { return; };
-        // Despawn every FieldEffect this field spawned, regardless of which target it was on.
-        for effect_entity in sourced.iter() {
-            if effects.contains(effect_entity) {
-                commands.entity(effect_entity).despawn();
-            }
-        }
-    }
-}
-
-fn on_tower_field_despawn_shrink_orphaned_force_field(
-    trigger: On<Despawn<TowerField>>,
-    mut commands: Commands,
-    towers: Query<&GeneratedForceField>,
-) {
-    let tower_entity = trigger.entity;
-    let Ok(generated_field) = towers.get(tower_entity) else { return; };
-    // Begin shrinking the orphaned force field — it will self-despawn when progress reaches 0.
-    commands.entity(generated_field.field()).insert(ForceFieldState::Shrinking);
 }

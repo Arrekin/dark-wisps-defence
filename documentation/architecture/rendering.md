@@ -68,8 +68,8 @@ an overlay does not sample the output of an earlier overlay in its band.
 This gives effects a predictable composition boundary. For example, a force field before the
 air band refracts the ground and surface, then adds its shell light as an overlay. The shell
 does not refract itself, and aerial units drawn afterward remain undistorted. Overlapping force
-fields contribute to the same displacement operation. A shader can compare their instance
-data to assign each pixel to one field and draw a seam between them.
+fields contribute to the same displacement operation. Each field's look reads the shared field
+index to draw within the area its field owns, and to draw a seam between neighbours.
 
 ### Why cuts belong to bands
 
@@ -162,7 +162,7 @@ own obstacle snapshot or upload system.
 The owning domain is responsible for the shader-facing layout and for making valid data
 available before it is drawn. A buffer's existence alone does not guarantee that its contents
 are ready for a consumer. Binding numbers, layouts and upload contracts are maintained with
-the [shared-data API](../../game_core/src/shared_gpu.rs) and the corresponding shader modules.
+the [shared-data API](../../visuals/src/shared_gpu.rs) and the corresponding shader modules.
 
 ### Time and temporary visuals
 

@@ -17,13 +17,14 @@ use bevy::{
 };
 use strum::IntoEnumIterator;
 
-use game_core::shared_gpu::{SharedGpuBinding, SharedGpuBuffers};
-use visuals::shared_gpu::{BENEATH_SAMPLER_BINDING, BENEATH_TEXTURE_BINDING, SHARED_GPU_GROUP, gap_layout, shared_gpu_layout};
+use visuals::shared_gpu::{BENEATH_SAMPLER_BINDING, BENEATH_TEXTURE_BINDING, SHARED_GPU_GROUP, SharedGpuBinding, SharedGpuBuffers, gap_layout, shared_gpu_layout};
 
 pub(crate) struct SharedGpuPlugin;
 impl Plugin for SharedGpuPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(ExtractResourcePlugin::<SharedGpuBuffers>::default());
+        app
+            .init_resource::<SharedGpuBuffers>()
+            .add_plugins(ExtractResourcePlugin::<SharedGpuBuffers>::default());
         let Some(render_app) = app.get_sub_app_mut(RenderApp) else { return; };
         render_app.add_systems(Render, prepare_shared_gpu_bind_group.in_set(RenderSystems::PrepareBindGroups));
     }

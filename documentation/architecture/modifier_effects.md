@@ -117,12 +117,11 @@ ExpiryQueue pops entry → despawn effect instance
   → observer removes from bank, re-aggregates, materializes
 ```
 
-**Source force field despawned:**
+**Target leaves a source field:**
 ```
-ForceField despawned
-  → On<Despawn<ForceField>> reads EffectSourceOf to find its FieldEffect instances
-  → domain observer despawns those effects
-  → On<Remove<ModifierContributions>> removes their values from each target's ModifierBank
+FieldExited fires on the field
+  → domain observer reads EffectSourceOf to find the FieldEffect instances on that target and despawns them
+  → On<Remove<ModifierContributions>> removes their values from the target's ModifierBank
   → affected stat components are recalculated
 ```
 `EffectSource` is a lookup relationship, not a despawn cascade; each source domain decides how to remove its effects.

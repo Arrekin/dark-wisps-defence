@@ -13,6 +13,7 @@ logging = { workspace = true }
 states = { workspace = true }
 almanach = { workspace = true }
 viewport = { workspace = true }
+visuals = { workspace = true }
 
 [lints]
 workspace = true

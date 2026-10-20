@@ -10,10 +10,10 @@ use bevy::{
 };
 
 use almanach::Almanach;
-use game_core::{prelude::{GridCoords, MapInfo, ZDepth}, shared_gpu::{SharedGpuBinding, SharedGpuWriter}};
+use game_core::prelude::{GridCoords, MapInfo, ZDepth};
 use map_objects::prelude::DarkOre;
 use states::prelude::MapLoadingStage;
-use visuals::{canvas::MapCanvasBundle, specialize_with_shared_gpu};
+use visuals::{canvas::MapCanvasBundle, shared_gpu::{SharedGpuBinding, SharedGpuWriter}, specialize_with_shared_gpu};
 
 pub(crate) struct DarkOreCanvasPlugin;
 impl Plugin for DarkOreCanvasPlugin {

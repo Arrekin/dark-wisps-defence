@@ -36,6 +36,7 @@ fn main() {
             map_objects_internal::MapObjectsPlugin,
             buildings_internal::BuildingsPlugin,
             weaponry_internal::WeaponryPlugin,
+            fields_internal::FieldsPlugin,
             units_internal::UnitsPlugin,
             wisps_internal::WispsPlugin,
             narrative_internal::NarrativePlugin,

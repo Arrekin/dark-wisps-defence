@@ -18,6 +18,7 @@ shards_internal = { workspace = true }
 overlays = { workspace = true }
 units_internal = { workspace = true }
 weaponry_internal = { workspace = true }
+fields_internal = { workspace = true }
 map_objects_internal = { workspace = true }
 narrative_internal = { workspace = true }
 hud_internal = { workspace = true }
@@ -51,6 +52,8 @@ members = [
   "overlays",
   "units_internal",
   "weaponry_internal",
+  "fields",
+  "fields_internal",
   "map_objects_internal",
   "narrative_internal",
   "hud_internal",
@@ -129,6 +132,8 @@ narrative = { path = "narrative" }
 overlays = { path = "overlays" }
 units_internal = { path = "units_internal" }
 weaponry_internal = { path = "weaponry_internal" }
+fields = { path = "fields" }
+fields_internal = { path = "fields_internal" }
 map_objects_internal = { path = "map_objects_internal" }
 narrative_internal = { path = "narrative_internal" }
 hud_internal = { path = "hud_internal" }

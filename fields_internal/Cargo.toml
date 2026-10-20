@@ -1,0 +1,16 @@
+[package]
+name = "fields_internal"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy = { workspace = true }
+bytemuck = { workspace = true }
+fields = { workspace = true }
+game_core = { workspace = true }
+grids = { workspace = true }
+states = { workspace = true }
+visuals = { workspace = true }
+
+[lints]
+workspace = true

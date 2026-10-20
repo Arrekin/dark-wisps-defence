@@ -2,14 +2,14 @@ use bevy::{prelude::*, transform::TransformSystems};
 use bytemuck::{Pod, Zeroable};
 
 use alteration::modifiers::prelude::IncomingDamageMultiplier;
-use game_core::{motion::{Locomotion, MotionSystems}, prelude::*, shared_gpu::{SharedGpuBinding, SharedGpuBuffers, SharedGpuWriter}};
+use game_core::{motion::{Locomotion, MotionSystems}, prelude::*};
 use grids::{energy_supply::EnergySupplyGrid, prelude::{EnergySupplySystems, GridVersion}};
+use visuals::shared_gpu::{SharedGpuBinding, SharedGpuWriter};
 
 pub struct GameCorePlugin;
 impl Plugin for GameCorePlugin {
     fn build(&self, app: &mut App) {
         app
-            .init_resource::<SharedGpuBuffers>()
             .add_message::<DamageMessage>()
             .add_systems(PostUpdate, (
                 enforce_zdepth_world_z.after(TransformSystems::Propagate),

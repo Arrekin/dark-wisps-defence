@@ -11,7 +11,6 @@ pub mod obstacles;
 pub mod tower_ranges;
 pub mod energy_supply;
 pub mod wisps;
-pub mod force_fields;
 pub mod visited;
 pub mod emissions;
 pub mod placement;
