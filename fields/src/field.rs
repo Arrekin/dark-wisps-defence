@@ -1,9 +1,3 @@
-//! # Field
-//!
-//! Fields divide space between towers. Each point belongs to at most one field, regardless of
-//! type. Every field entity carries [`Field`] for its radius and strength, alongside a component
-//! that identifies its type.
-
 use bevy::prelude::*;
 
 use game_core::prelude::MapBound;
@@ -57,17 +51,17 @@ pub struct FieldAffectable {
 // ── Field ──────────────────────────────────────────────────────────────────────────────
 
 /// Field types. Discriminants mirror the `FIELD_*` constants in fields.wesl.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u32)]
 pub enum FieldType {
     Force,
+    Crucible,
 }
 
-/// Radius, strength, and type shared by all fields. The entity's `Transform` sets its centre.
+/// Radius and strength shared by all fields. The entity's `Transform` sets its centre.
 #[derive(Component)]
 #[require(MapBound)]
 pub struct Field {
-    pub field_type: FieldType,
     /// Current radius in world pixels.
     pub current_radius: f32,
     /// Desired radius in world pixels, set by the generator.
@@ -75,12 +69,13 @@ pub struct Field {
     /// Weight in ownership comparisons. Higher values claim more overlap; must be positive.
     pub strength: f32,
 }
-impl Field {
-    /// Creates a field with both radii at zero and strength 1.
-    pub fn new(field_type: FieldType) -> Self {
-        Self { field_type, current_radius: 0., target_radius: 0., strength: 1. }
+impl Default for Field {
+    /// Both radii at zero and strength 1.
+    fn default() -> Self {
+        Self { current_radius: 0., target_radius: 0., strength: 1. }
     }
-
+}
+impl Field {
     /// Moves the current radius toward the target radius by at most `max_step`, up or down.
     pub fn step_toward_target(&mut self, max_step: f32) {
         self.current_radius += (self.target_radius - self.current_radius).clamp(-max_step, max_step);

@@ -38,6 +38,7 @@ const TOWER_FIELD: u32 = 36u;
 const TOWER_FLAMETHROWER: u32 = 37u;
 const TOWER_BLAZE_MORTAR: u32 = 38u;
 const TOWER_INFERNO: u32 = 39u;
+const TOWER_CRUCIBLE: u32 = 40u;
 
 // Returns the packed cell, or STRUCTURE_OFF_MAP with no other bits set outside the map.
 fn obstacle_cell_at(coords: vec2<i32>) -> u32 {

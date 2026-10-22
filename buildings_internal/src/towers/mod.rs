@@ -20,6 +20,7 @@ impl Plugin for TowersPlugin {
                 emitter::tower_inferno::TowerInfernoPlugin,
                 emitter::tower_inferno_fire::TowerInfernoFirePlugin,
                 field::tower_field::TowerFieldPlugin,
+                field::tower_crucible::TowerCruciblePlugin,
             ));
     }
 }

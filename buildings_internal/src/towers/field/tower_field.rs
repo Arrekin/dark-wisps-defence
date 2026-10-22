@@ -27,7 +27,6 @@ use states::prelude::*;
 
 use crate::{common::*, tooltip::building_tooltip};
 
-
 pub(crate) struct TowerFieldPlugin;
 impl Plugin for TowerFieldPlugin {
     fn build(&self, app: &mut App) {
@@ -152,7 +151,7 @@ impl BuilderTowerField {
 
     fn on_insert_attack_range_resize_force_field(
         trigger: On<Insert<AttackRange>>,
-        towers: Query<(&GeneratedField, &AttackRange), (With<TowerField>, With<IsOperational>)>,
+        towers: Query<(&GeneratedField, &AttackRange), With<IsOperational>>,
         mut fields: Query<&mut Field>,
     ) {
         let Ok((generated_field, attack_range)) = towers.get(trigger.entity) else { return; };
@@ -162,7 +161,7 @@ impl BuilderTowerField {
 
     fn on_add_is_operational_unfold_force_field(
         trigger: On<Add<IsOperational>>,
-        towers: Query<(&GeneratedField, &AttackRange), With<TowerField>>,
+        towers: Query<(&GeneratedField, &AttackRange)>,
         mut fields: Query<&mut Field>,
     ) {
         let Ok((generated_field, attack_range)) = towers.get(trigger.entity) else { return; };
@@ -172,7 +171,7 @@ impl BuilderTowerField {
 
     fn on_remove_is_operational_fold_force_field(
         trigger: On<Remove<IsOperational>>,
-        towers: Query<&GeneratedField, With<TowerField>>,
+        towers: Query<&GeneratedField>,
         mut fields: Query<&mut Field>,
     ) {
         let Ok(generated_field) = towers.get(trigger.entity) else { return; };

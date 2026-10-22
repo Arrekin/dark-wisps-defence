@@ -10,7 +10,7 @@ import package::shaders::wisps::motion_look::WispMotionLook;
 // from its surface all around it and flicker chaotically, giving the vibe of the
 // core being on fire. Each lick is one stylized flame (`flame_mask`): a teardrop
 // shape mask, swayed and pinched to a point, modulated by smooth simplex noise
-// scrolling outward, dissolving into breaking wisps at its tip. The licks are the
+// scrolling outward, dissolving into breaking tendrils at its tip. The licks are the
 // same flame instanced around the orb, each in its own outward-radial frame with
 // its own size, angle and phase. Composited additively, so the flames stay
 // translucent over the orb. While the wisp travels, the licks stretch and lean
@@ -54,7 +54,7 @@ const NOISE_SPEED: f32 = 2.7;
 const NOISE_GAIN: f32 = 0.5;
 const NOISE_MULT: f32 = 0.35;
 
-// ── Top falloff: dissolves each lick's tip into breaking wisps ────────────────
+// ── Top falloff: dissolves each lick's tip into breaking tendrils ────────────
 const FALLOFF_MIN: f32 = 0.2;
 const FALLOFF_MAX: f32 = 1.3;
 const FALLOFF_EXPONENT: f32 = 0.9;
@@ -113,7 +113,7 @@ fn flame_mask(fx: f32, fy: f32, t: f32, seed: f32) -> f32 {
     let up1 = 0.5 + snoise(vec2<f32>(fx, fy) * NOISE_SCALE * 1.7 + vec2<f32>(seed + 4.0, -t * NOISE_SPEED * 0.8)) * NOISE_MULT + NOISE_GAIN;
     var flame = base * up0 * up1;
 
-    // Dissolve the tip into breaking wisps.
+    // Dissolve the tip into breaking tendrils.
     let falloff = smoothstep(FALLOFF_MIN, FALLOFF_MAX, pow(max(fy, 0.0), FALLOFF_EXPONENT));
     return clamp(flame - falloff, 0.0, 1.0);
 }

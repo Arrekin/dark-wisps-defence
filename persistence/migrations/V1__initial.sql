@@ -194,6 +194,11 @@ CREATE TABLE IF NOT EXISTS tower_fields (
     FOREIGN KEY(id) REFERENCES entities(id)
 );
 
+CREATE TABLE IF NOT EXISTS tower_crucibles (
+    id INTEGER PRIMARY KEY,
+    FOREIGN KEY(id) REFERENCES entities(id)
+);
+
 -- How far each shooting tower is into its reload, in seconds.
 CREATE TABLE IF NOT EXISTS tower_shooting_timers (
     entity_id INTEGER PRIMARY KEY,

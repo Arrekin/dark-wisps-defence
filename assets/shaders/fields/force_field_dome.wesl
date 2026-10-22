@@ -344,8 +344,6 @@ fn impact_ripples(world_position: vec2<f32>, shell: Shell, field: Instance, cent
 struct Surface {
     shell: Shell,
     boundary: FieldBoundary,
-    // Px to the edge of the area: the rim or the nearest seam.
-    edge: f32,
     // The scene shift of the cuts and ripples, in px.
     shift: vec2<f32>,
     // Brightness change from the cuts, relative to the scene beneath.
@@ -357,8 +355,7 @@ struct Surface {
 fn surface_at(world_position: vec2<f32>, field: Instance, shape: FieldShape, time: f32, for_light: bool) -> Surface {
     let shell = shell_at(world_position, shape.center, shape.current_radius);
     let boundary = field_boundary(field.slot, world_position);
-    let edge = min(boundary.rim, boundary.first.distance);
-    let dark = for_light && shell.reach < 1.0 - VEIL_REACH && edge > STRAND_REACH;
+    let dark = for_light && shell.reach < 1.0 - VEIL_REACH && boundary.edge > STRAND_REACH;
     var cuts = vec3<f32>(0.0);
     if !dark {
         cuts = web_cuts(shell, time, field.seed);
@@ -366,9 +363,9 @@ fn surface_at(world_position: vec2<f32>, field: Instance, shape: FieldShape, tim
     let edge_on = mix(1.0, 0.35 + 1.6 * pow(1.0 - shell.height, 1.5), WEB_EDGE_ON);
     let ripples = impact_ripples(world_position, shell, field, shape.center);
     // Displacement fades in from the edge so the scene does not tear along it.
-    let shift = (cuts.xy * edge_on - ripples.xy) * smoothstep(0.0, 4.0, edge);
-    let burn = cuts.z * edge_on * smoothstep(0.0, 2.0, edge);
-    return Surface(shell, boundary, edge, shift, burn, ripples.z);
+    let shift = (cuts.xy * edge_on - ripples.xy) * smoothstep(0.0, 4.0, boundary.edge);
+    let burn = cuts.z * edge_on * smoothstep(0.0, 2.0, boundary.edge);
+    return Surface(shell, boundary, shift, burn, ripples.z);
 }
 
 fn displace(in: VertexOutput, field: Instance) -> vec4<f32> {
@@ -385,7 +382,7 @@ fn displace(in: VertexOutput, field: Instance) -> vec4<f32> {
         value_noise_3d(vec3<f32>(wobble_point, globals.time * 0.3)),
         value_noise_3d(vec3<f32>(wobble_point + 7.0, globals.time * 0.3)),
     ) - 0.5;
-    let lens = (-shell.direction * LENS * pow(1.0 - shell.height, 2.0) + wobble * 2.0 * WOBBLE * band) * smoothstep(0.0, 4.0, surface.edge);
+    let lens = (-shell.direction * LENS * pow(1.0 - shell.height, 2.0) + wobble * 2.0 * WOBBLE * band) * smoothstep(0.0, 4.0, surface.boundary.edge);
     let offset = (surface.shift + lens) * field.progress;
     return vec4<f32>(world_offset_to_uv(offset), surface.burn * field.progress, 0.0);
 }
@@ -414,14 +411,14 @@ fn overlay(in: VertexOutput, field: Instance) -> vec4<f32> {
     let surface = surface_at(world_position, field, shape, time, true);
     let shell = surface.shell;
     let seam = surface.boundary.first.distance;
-    let inside = smoothstep(0.0, 2.0, surface.edge);
+    let inside = smoothstep(0.0, 2.0, surface.boundary.edge);
     // A seam is a standing wall between two domes, as tall as the dome above it.
     let wall_height = pow(shell.height, WALL_HEIGHT_POWER);
     let strand_weight = select(1.0, wall_height * STRAND_SEAM, seam < surface.boundary.rim);
 
     // The strands and veils lie behind the cuts and shift with them.
     let seen_shift = surface.shift * WEB_KINK;
-    let seen_edge = surface.edge - dot(seen_shift, shell.direction);
+    let seen_edge = surface.boundary.edge - dot(seen_shift, shell.direction);
     let seen_around = shell.around + dot(seen_shift, vec2<f32>(-shell.direction.y, shell.direction.x)) / max(length(shell.offset), 1.0);
     var light = shimmering_strands(shell, seen_around, seen_edge, time, field.seed) * strand_weight
               + veils(shell, seen_around, time, field.seed) * inside;

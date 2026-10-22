@@ -25,6 +25,7 @@ struct FieldShape {
 
 // Mirrors `FieldType` in fields/src/field.rs.
 const FIELD_FORCE: u32 = 0u;
+const FIELD_CRUCIBLE: u32 = 1u;
 
 const NO_FIELD: u32 = 0xffffffffu;
 
@@ -105,19 +106,23 @@ struct FieldBoundary {
     // The two nearest seams, nearest first.
     first: FieldSeam,
     second: FieldSeam,
+    // Distance to the edge of the field's area: the rim or the nearest seam, whichever is closer.
+    edge: f32,
 };
 
 // Distance in world pixels to the nearer intersection of two field circles.
 // Returns `NO_SEAM_DISTANCE` when the circles do not cross.
-fn rims_crossing_distance(p: vec2<f32>, center: vec2<f32>, radius: f32, other_center: vec2<f32>, other_radius: f32) -> f32 {
-    let apart = distance(center, other_center);
+fn rims_crossing_distance(p: vec2<f32>, field: FieldShape, other: FieldShape) -> f32 {
+    let radius = field.current_radius;
+    let other_radius = other.current_radius;
+    let apart = distance(field.center, other.center);
     if apart < 1.0e-3 || apart >= radius + other_radius || apart <= abs(radius - other_radius) {
         return NO_SEAM_DISTANCE;
     }
     let along = (radius * radius - other_radius * other_radius + apart * apart) / (2.0 * apart);
     let half_chord = sqrt(max(radius * radius - along * along, 0.0));
-    let axis = (other_center - center) / apart;
-    let middle = center + axis * along;
+    let axis = (other.center - field.center) / apart;
+    let middle = field.center + axis * along;
     let across = vec2<f32>(-axis.y, axis.x);
     return min(distance(p, middle + across * half_chord), distance(p, middle - across * half_chord));
 }
@@ -143,7 +148,7 @@ fn seam_distance(p: vec2<f32>, field: FieldShape, other: FieldShape) -> f32 {
         return across;
     }
     // The seam ends where the two rims cross.
-    return rims_crossing_distance(p, field.center, field.current_radius, other.center, other.current_radius);
+    return rims_crossing_distance(p, field, other);
 }
 
 // Finds the field's rim and two nearest seams among candidates in the point's cell.
@@ -151,7 +156,7 @@ fn seam_distance(p: vec2<f32>, field: FieldShape, other: FieldShape) -> f32 {
 fn field_boundary(slot: u32, world_position: vec2<f32>) -> FieldBoundary {
     let none = FieldSeam(NO_FIELD, NO_SEAM_DISTANCE);
     let field = field_shapes[slot];
-    var boundary = FieldBoundary(field.current_radius - distance(world_position, field.center), none, none);
+    var boundary = FieldBoundary(field.current_radius - distance(world_position, field.center), none, none, 0.0);
     let candidates = field_candidates_at(world_position);
     for (var entry = candidates.x; entry < candidates.y; entry++) {
         let other_slot = field_cell_entries[entry];
@@ -165,5 +170,6 @@ fn field_boundary(slot: u32, world_position: vec2<f32>) -> FieldBoundary {
             boundary.second = seam;
         }
     }
+    boundary.edge = min(boundary.rim, boundary.first.distance);
     return boundary;
 }

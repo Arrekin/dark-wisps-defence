@@ -66,8 +66,12 @@ pub struct TowerRocketLauncher;
 pub struct TowerEmitter;
 
 #[derive(Component)]
-#[require(Tower, Building, BuildingType = BuildingType::Tower(TowerType::Field))]
+#[require(Tower, Building, BuildingType = BuildingType::Tower(TowerType::Field), AttackRange)]
 pub struct TowerField;
+
+#[derive(Component)]
+#[require(Tower, Building, BuildingType = BuildingType::Tower(TowerType::Crucible), AttackRange)]
+pub struct TowerCrucible;
 
 #[derive(Component)]
 #[require(Tower, Building, BuildingType = BuildingType::Tower(TowerType::Flamethrower), AttackRange, AttackSpeed, AttackDamage, TowerShootingTimer, TowerWispTarget)]
@@ -116,6 +120,7 @@ pub mod prelude {
         TowerBlaster,
         TowerBlazeMortar,
         TowerCannon,
+        TowerCrucible,
         TowerEmitter,
         TowerField,
         TowerFlamethrower,

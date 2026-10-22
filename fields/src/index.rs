@@ -55,14 +55,14 @@ pub struct IndexedField {
 }
 impl IndexedField {
     /// Copies the field data and computes its grid coverage, including [`FIELD_INDEX_MARGIN`].
-    fn new(entity: Entity, center: Vec2, field: &Field) -> Self {
+    fn new(entity: Entity, field_type: FieldType, center: Vec2, field: &Field) -> Self {
         let imprint = (field.current_radius > 0.).then(|| {
             let reach = field.current_radius + FIELD_INDEX_MARGIN;
             let origin = GridCoords::from_world_vec2(center - Vec2::splat(reach));
             let end = GridCoords::from_world_vec2(center + Vec2::splat(reach));
             (origin, GridImprint::Rectangle { width: end.x - origin.x + 1, height: end.y - origin.y + 1 })
         });
-        Self { entity, field_type: field.field_type, center, current_radius: field.current_radius, strength: field.strength, imprint }
+        Self { entity, field_type, center, current_radius: field.current_radius, strength: field.strength, imprint }
     }
 
     /// Returns `(distance / (radius * strength))²` for a point inside the field.
@@ -101,16 +101,16 @@ impl FieldIndex {
     }
 
     /// Gives `entity` a slot and lists it in the cells its imprint covers.
-    pub fn insert(&mut self, entity: Entity, center: Vec2, field: &Field) -> FieldSlot {
+    pub fn insert(&mut self, entity: Entity, field_type: FieldType, center: Vec2, field: &Field) -> FieldSlot {
         let slot = FieldSlot(self.free_slots.pop().unwrap_or_else(|| { self.slots.push(None); self.slots.len() - 1 }));
-        self.write(slot, Some(IndexedField::new(entity, center, field)));
+        self.write(slot, Some(IndexedField::new(entity, field_type, center, field)));
         slot
     }
 
     /// Updates the field data. Rebuilds its cell memberships only if the imprint changed.
-    pub fn update(&mut self, slot: FieldSlot, center: Vec2, field: &Field) {
+    pub fn update(&mut self, slot: FieldSlot, field_type: FieldType, center: Vec2, field: &Field) {
         let Some(indexed_field) = self.slots[slot.0] else { return; };
-        self.write(slot, Some(IndexedField::new(indexed_field.entity, center, field)));
+        self.write(slot, Some(IndexedField::new(indexed_field.entity, field_type, center, field)));
     }
 
     /// Frees the slot if `entity` still holds it.

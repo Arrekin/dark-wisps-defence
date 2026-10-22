@@ -46,20 +46,20 @@ fn on_add_field_join_index(
     trigger: On<Add<Field>>,
     mut commands: Commands,
     mut index: ResMut<FieldIndex>,
-    fields: Query<(&Field, &Transform)>,
+    fields: Query<(&Field, &FieldType, &Transform)>,
 ) {
-    let Ok((field, transform)) = fields.get(trigger.entity) else { return; };
-    let slot = index.insert(trigger.entity, transform.translation.xy(), field);
+    let Ok((field, field_type, transform)) = fields.get(trigger.entity) else { return; };
+    let slot = index.insert(trigger.entity, *field_type, transform.translation.xy(), field);
     commands.entity(trigger.entity).insert(slot);
 }
 
 /// Rewrites the slots of fields that changed or moved.
 fn sync_field_index(
     mut index: ResMut<FieldIndex>,
-    changed_fields: Query<(&Field, &Transform, &FieldSlot), Or<(Changed<Field>, Changed<Transform>)>>,
+    changed_fields: Query<(&Field, &FieldType, &Transform, &FieldSlot), Or<(Changed<Field>, Changed<Transform>)>>,
 ) {
-    for (field, transform, slot) in changed_fields.iter() {
-        index.update(*slot, transform.translation.xy(), field);
+    for (field, field_type, transform, slot) in changed_fields.iter() {
+        index.update(*slot, *field_type, transform.translation.xy(), field);
     }
 }
 
@@ -157,9 +157,9 @@ pub(crate) fn resize_fields(
     time: Res<Time>,
     mut fields: Query<(Entity, &mut Field, Has<FieldGeneratedBy>)>,
 ) {
-    for (entity, mut field, has_owner) in fields.iter_mut() {
+    for (entity, mut field, has_generator) in fields.iter_mut() {
         // An orphan despawns one frame after reaching 0, so its members exit while it still exists.
-        if !has_owner && field.current_radius <= 0. {
+        if !has_generator && field.current_radius <= 0. {
             commands.entity(entity).despawn();
             continue;
         }

@@ -114,15 +114,16 @@ Slow, massive lobbing projectile that deals massive AoE damage.
 - **Light → Starshell** - Throws a flare into the air on a not-too-fast lob, applying a bit of light essence around it. In the air it bursts, casting a targeted cone of light from the air down to the ground in its general flight direction; every wisp inside the cone's footprint gets **Daze**. Hooks TBD.
 
 ## Tower Rocket Launcher
-Medium reload speed and medium damage to target + reduced AoE damage. Massive range. Launches guided projectile that switches target if current target is destroyed. Has a minimum range limitation. 
+Medium reload speed and medium damage to target + reduced AoE damage. Massive range. Launches guided projectile that switches target if current target is destroyed. Has a minimum range limitation.
+
+Baseline hook proposal:
+- T2 seeking: Missle prioritises targets afflicted with its T2 type.
 
 **Stat shard sockets**: Attack Speed, Range, Projectile Speed
 **Base hooks**: Hit moment: Apply `Tier 2` affliction to direct target. Shower surroundings with `Tier 1` essence damage. 
 **Evolutions**:
 - **Electric → Lightning Spire** - Launches a slow orb of ball lightning that hunts its target, zapping everything it passes. Has its own lifetime, draining more on zaps and picks new random target within tower range on target destruction. `Tier 2` passive short aura of given essence expanding from the orb. `Tier 1` %X chance to flavor the zap. 
-- **Fire → Sky Lanterns** - Releases lanterns that drift slowly across the map in a direction the player sets (within a limited angle), exuding a heat aura that applies fire essence pressure to wisps below. They target no one and fly until they leave the map, so wisps can be pre-heated from the far edge of the map.
-	- **Drift** - lanterns adjust their heading here and there as they fly. Nearby wisps give a lantern a small boost toward them, but only when the wisp lies within an acceptable match of the lantern's own direction.
-	- **Altitude** - lanterns rise slowly after release and the aura activates only once they reach altitude, leaving the area around the tower unaffected.
+- **Fire → Napalm Battery** - Launches a swarm of tiny, lobbed projectiles that blanket target area with napalm(over-time burning ground)
 	- Hooks TBD.
 - **Water → Water Hose** - Shoots a lobbed stream of water at a far-away target; only the target area is hit. Deals basic water damage, infuses water essence and fills any **Crater** it hits. The stream slowly drags after a moving target during ejection, so fast wisps can outrun it. Leaves small **Mist** pockets along the lob, which sink onto whatever lies beneath. Hooks TBD.
 - **Light → Mirror Array** - Fires a laser up to a mirror drone in the air, which bounces it down onto a single grid cell, frying everything that passes through it when it fires. Massive damage at the cost of manual setup, making it strongest at chokepoints.

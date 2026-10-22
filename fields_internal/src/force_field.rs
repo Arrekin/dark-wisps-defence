@@ -56,7 +56,6 @@ fn on_builder_add_spawn_force_field(
     commands.entity(entity)
         .remove::<BuilderForceField>()
         .insert((
-            Field::new(FieldType::Force),
             ForceField,
             FieldGeneratedBy(builder.tower_entity),
             Transform::from_translation(builder.world_position.extend(0.)),
@@ -130,11 +129,10 @@ fn on_field_entered_record_impact(
     transforms: Query<&Transform>,
     mut impacts: Query<&mut ForceFieldImpacts>,
 ) {
-    let event = trigger.event();
     // Crossing a seam from a neighbouring field is not an impact.
-    if event.exited_field.is_some() { return; }
-    let Ok(wisp_transform) = transforms.get(event.target) else { return; };
-    let Ok(mut field_impacts) = impacts.get_mut(event.field) else { return; };
+    if trigger.exited_field.is_some() { return; }
+    let Ok(wisp_transform) = transforms.get(trigger.target) else { return; };
+    let Ok(mut field_impacts) = impacts.get_mut(trigger.field) else { return; };
     field_impacts.record(wisp_transform.translation.xy(), time.elapsed_secs());
 }
 
