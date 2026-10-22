@@ -274,7 +274,7 @@ fn tick_active_summoning_system(
     clock: Res<GameClock>,
     mut summonings: Query<(Entity, &Summoning, &mut SummoningRuntime), With<SummoningActive>>,
 ) {
-    let now = clock.elapsed;
+    let now = clock.now();
     let mut rng = nanorand::tls_rng();
 
     for (entity, summoning, mut runtime) in summonings.iter_mut() {
@@ -292,7 +292,7 @@ fn tick_active_summoning_system(
                 }
                 runtime.produced = runtime.produced.saturating_add(to_spawn);
                 let jitter_offset = if jitter > 0.0 { (rng.generate::<f32>() * 2.0 - 1.0) * jitter } else { 0.0 };
-                runtime.next_spawn_time = now + f64::from(seconds + jitter_offset);
+                runtime.next_spawn_time = clock.from_now(seconds + jitter_offset);
             }
         }
 

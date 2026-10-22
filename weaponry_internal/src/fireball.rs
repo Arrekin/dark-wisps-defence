@@ -33,7 +33,7 @@ use visuals::{
     lane::{LanePlugin, LaneVisual},
     shader::{ADDITIVE_BLENDING, seed_from_entity},
 };
-use weaponry::{lob::Lob, prelude::*};
+use weaponry::{lob::{Lob, LobInFlight}, prelude::*};
 use wisps::prelude::Wisp;
 
 use crate::lob::{LoadLobExtension, LobBody, LobDiscImage, SaveLobExtension, advance_lobs};
@@ -241,7 +241,6 @@ fn on_builder_add_spawn_fireball(
         .remove::<BuilderFireball>()
         .insert_some(builder.shooter.map(ProjectileOf))
         .insert((
-            Transform::from_translation(lob.current().ground_position.extend(0.)),
             Fireball,
             lob,
             builder.damage,
@@ -264,11 +263,11 @@ fn fireball_hit_system(
     mut damage_messages: MessageWriter<DamageMessage>,
     clock: Res<GameClock>,
     wisps_grid: Res<WispsGrid>,
-    fireballs: Query<(Entity, &Lob, &AttackDamage), With<Fireball>>,
+    fireballs: Query<(Entity, &Lob, &AttackDamage), (With<Fireball>, With<LobInFlight>)>,
     wisps: Query<(), With<Wisp>>,
 ) {
     for (entity, lob, attack_damage) in fireballs.iter() {
-        if !lob.is_landed() { continue; }
+        if !lob.is_landed(clock.now()) { continue; }
 
         let landing_coords = GridCoords::from_world_vec2(lob.target());
         let seed = seed_from_entity(entity);
@@ -294,18 +293,19 @@ fn fireball_hit_system(
 }
 
 fn update_fireball_visuals(
-    lobs: Query<&Lob, With<Fireball>>,
+    clock: Res<GameClock>,
+    lobs: Query<&Lob, (With<Fireball>, With<LobInFlight>)>,
     mut bodies: Query<(&ChildOf, &mut FireballBody)>,
     mut glows: Query<(&ChildOf, &mut Transform, &mut FireballGlow)>,
 ) {
     for (child_of, mut body) in bodies.iter_mut() {
         let Ok(lob) = lobs.get(child_of.parent()) else { continue; };
-        let tail = 1. + (lob.speed_ratio() - 1.) * TAIL_SPEED_RESPONSE;
+        let tail = 1. + (lob.speed_ratio(clock.now()) - 1.) * TAIL_SPEED_RESPONSE;
         body.set_if_neq(FireballBody { tail, ..*body });
     }
     for (child_of, mut transform, mut glow) in glows.iter_mut() {
         let Ok(lob) = lobs.get(child_of.parent()) else { continue; };
-        let height_in_cells = lob.current().height / CELL_SIZE;
+        let height_in_cells = lob.current(clock.now()).height / CELL_SIZE;
         transform.scale = Vec3::splat(1. + GLOW_SPREAD * height_in_cells);
         let intensity = GLOW_INTENSITY / (1. + height_in_cells * height_in_cells * GLOW_FALLOFF);
         glow.set_if_neq(FireballGlow { intensity, ..*glow });

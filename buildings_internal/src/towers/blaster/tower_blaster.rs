@@ -9,7 +9,7 @@ use alteration::{
     modifiers::prelude::*,
 };
 use buildings::prelude::*;
-use game_core::{math::angle_difference, prelude::*};
+use game_core::prelude::*;
 use grids::placement::{annotate_non_empty, PlacementModes, PlaceRequest};
 use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
 use logging::prelude::*;
@@ -233,10 +233,7 @@ fn shooting_system(
             continue;
         };
 
-        // Check if the tower top is facing the target
-        let direction_to_target = wisp_position - transform.translation.xy();
-        let target_angle = direction_to_target.y.atan2(direction_to_target.x);
-        if angle_difference(target_angle, top_rotation.current_angle).abs() > std::f32::consts::PI / 36. { continue; }
+        if !top_rotation.is_facing(wisp_position - transform.translation.xy()) { continue; }
 
         // Calculate transform offset in the direction we are aiming
         let tower_world_width = grid_imprint.world_size().x;

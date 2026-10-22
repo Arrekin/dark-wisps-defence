@@ -5,11 +5,13 @@ edition.workspace = true
 
 [dependencies]
 bevy = { workspace = true }
+bytemuck = { workspace = true }
 game_core = { workspace = true }
 grids = { workspace = true }
 buildings = { workspace = true }
 alteration = { workspace = true }
 logging = { workspace = true }
+session = { workspace = true }
 states = { workspace = true }
 almanach = { workspace = true }
 viewport = { workspace = true }

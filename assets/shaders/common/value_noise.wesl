@@ -23,6 +23,22 @@ fn value_fbm_2d(p: vec2<f32>) -> f32 {
         + value_noise_2d(p * 2.1 + vec2<f32>(4.3, 1.7)) * 0.4;
 }
 
+// Combines noise octaves into a value in [0, 1] with mean near 0.5. Requires at least one octave.
+// Each octave shifts and scales the sample point to avoid aligning the lattices.
+fn value_fbm_2d_octaves(p: vec2<f32>, octaves: i32) -> f32 {
+    var total = 0.0;
+    var amplitude = 0.5;
+    var norm = 0.0;
+    var point = p;
+    for (var i = 0; i < octaves; i++) {
+        total = total + amplitude * value_noise_2d(point);
+        norm = norm + amplitude;
+        point = point * 2.03 + vec2<f32>(1.7, 9.2);
+        amplitude = amplitude * 0.5;
+    }
+    return total / norm;
+}
+
 // Divergence-free curl of a scalar noise potential, producing flow without sources or sinks.
 fn value_noise_curl_2d(p: vec2<f32>) -> vec2<f32> {
     let e = 0.5; // Central-difference step in noise-space units.

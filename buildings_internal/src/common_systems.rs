@@ -5,7 +5,7 @@ use bevy::prelude::*;
 use almanach::prelude::*;
 use alteration::modifiers::prelude::*;
 use buildings::prelude::*;
-use game_core::{math::angle_difference, prelude::*};
+use game_core::prelude::*;
 use grids::{
     prelude::*,
     search::targetfinding::target_find_closest_wisp,
@@ -130,10 +130,7 @@ fn rotational_aiming_system(
         let TowerWispTarget::Wisp(target_wisp) = target else { continue; };
         let Ok(wisp_position) = wisps.get(*target_wisp).map(|target| target.translation.xy()) else { continue; };
 
-        let direction_to_target = wisp_position - tower_transform.translation.xy();
-        let target_angle = direction_to_target.y.atan2(direction_to_target.x);
-
-        let angle_delta = angle_difference(target_angle, rotation.current_angle);
+        let angle_delta = rotation.angle_to(wisp_position - tower_transform.translation.xy());
 
         let rotation_delta = rotation.speed * time.delta_secs();
         rotation.current_angle += angle_delta.clamp(-rotation_delta, rotation_delta);

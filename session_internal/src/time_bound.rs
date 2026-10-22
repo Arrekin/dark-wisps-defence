@@ -43,7 +43,7 @@ fn expire_time_bounds(
     time_bounds: Query<&TimeBound>,
 ) {
     while let Some(next) = queue.heap.peek_mut() {
-        if next.0.ends_at > clock.elapsed { break; }
+        if next.0.ends_at > clock.now() { break; }
         let Reverse(entry) = PeekMut::pop(next);
         let Ok(time_bound) = time_bounds.get(entry.entity) else { continue; };
         // Ignore an expiry superseded by a new end time.

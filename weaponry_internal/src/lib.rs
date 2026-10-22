@@ -5,6 +5,8 @@ pub(crate) mod flame_stream_fire;
 pub(crate) mod inferno_dome;
 pub(crate) mod laser_dart;
 pub(crate) mod lob;
+pub(crate) mod napalm;
+pub(crate) mod napalm_bomb;
 pub(crate) mod ripple;
 pub(crate) mod rocket;
 
@@ -22,6 +24,8 @@ impl Plugin for WeaponryPlugin {
                 flame_stream::FlameStreamPlugin,
                 flame_stream_fire::FlameStreamFirePlugin,
                 inferno_dome::InfernoDomePlugin,
+                napalm::NapalmPlugin,
+                napalm_bomb::NapalmBombPlugin,
                 rocket::RocketPlugin,
                 ripple::RipplePlugin,
             ));

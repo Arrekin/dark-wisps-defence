@@ -16,6 +16,7 @@ impl Plugin for TowersPlugin {
                 cannon::tower_cannon::TowerCannonPlugin,
                 cannon::tower_blaze_mortar::TowerBlazeMortarPlugin,
                 rocket_launcher::tower_rocket_launcher::TowerRocketLauncherPlugin,
+                rocket_launcher::tower_napalm_battery::TowerNapalmBatteryPlugin,
                 emitter::tower_emitter::TowerEmitterPlugin,
                 emitter::tower_inferno::TowerInfernoPlugin,
                 emitter::tower_inferno_fire::TowerInfernoFirePlugin,

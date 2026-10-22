@@ -1,5 +1,5 @@
 import bevy_sprite_render::mesh2d::vertex_output::VertexOutput;
-import package::shaders::common::core::{CELL_SIZE, bounds_contains, bounds_index};
+import package::shaders::common::core::{CELL_HALF, CELL_SIZE, bounds_contains, bounds_index};
 
 // Draws placement validity around the imprint and highlights relevant cells. The object preview
 // is rendered separately by a child entity below this quad.
@@ -119,7 +119,7 @@ fn hatch_coverage(world: vec2<f32>, half_width: f32, texel: f32) -> f32 {
 // object drawn underneath it.
 fn cell_frame_coverage(world: vec2<f32>, cell: vec2<i32>, texel: f32) -> f32 {
     let from_center = abs(world - (vec2<f32>(cell) + 0.5) * CELL_SIZE);
-    let box_distance = max(from_center.x, from_center.y) - (CELL_SIZE * 0.5 - FRAME_INSET);
+    let box_distance = max(from_center.x, from_center.y) - (CELL_HALF - FRAME_INSET);
     return 1.0 - smoothstep(FRAME_WIDTH * 0.5 - texel, FRAME_WIDTH * 0.5 + texel, abs(box_distance));
 }
 

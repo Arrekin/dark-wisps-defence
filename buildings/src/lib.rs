@@ -85,6 +85,10 @@ pub struct TowerBlazeMortar;
 #[require(Tower, Building, BuildingType = BuildingType::Tower(TowerType::Inferno), AttackRange, AttackSpeed, TowerShootingTimer, TowerWispTarget)]
 pub struct TowerInferno;
 
+#[derive(Component)]
+#[require(Tower, Building, BuildingType = BuildingType::Tower(TowerType::NapalmBattery), AttackRange, AttackSpeed, TowerShootingTimer, TowerWispTarget)]
+pub struct TowerNapalmBattery;
+
 #[derive(Component, Clone, Default)]
 #[require(AttackSpeed)]
 pub struct TowerShootingTimer(pub Timer);
@@ -125,6 +129,7 @@ pub mod prelude {
         TowerField,
         TowerFlamethrower,
         TowerInferno,
+        TowerNapalmBattery,
         TowerRocketLauncher,
         TowerShootingTimer,
         TowerWispTarget,

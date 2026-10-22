@@ -3,6 +3,7 @@ const TAU: f32 = 6.28318530718;
 
 // World pixels per grid cell. Mirrors `game_core::grid::CELL_SIZE`.
 const CELL_SIZE: f32 = 32.0;
+const CELL_HALF: f32 = CELL_SIZE * 0.5;
 
 // Mirrors `Bounds::contains` in `game_core::grid`.
 fn bounds_contains(coords: vec2<i32>, bounds: vec2<u32>) -> bool {

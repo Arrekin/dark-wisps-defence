@@ -6,6 +6,7 @@ pub mod fireball;
 pub mod flame_stream;
 pub mod inferno_dome;
 pub mod lob;
+pub mod napalm_bomb;
 pub mod ripple;
 
 pub mod prelude {
@@ -15,6 +16,7 @@ pub mod prelude {
     pub use super::flame_stream::FlameStream;
     pub use super::inferno_dome::InfernoDome;
     pub use super::laser_dart::{BuilderLaserDart, LaserDart, LaserDartTarget};
+    pub use super::napalm_bomb::{BuilderNapalmBomb, NapalmBomb};
     pub use super::ripple::{BuilderRipple, Ripple};
     pub use super::rocket::{BuilderRocket, Rocket, RocketExhaust, RocketTarget};
 }

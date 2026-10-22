@@ -51,9 +51,13 @@ pub struct WispHeading {
     grid_coords: &'static GridCoords,
 }
 impl WispHeadingItem<'_, '_> {
-    /// World-space center of the next path cell, or the current cell if no next step exists.
+    /// The next path cell, or the current cell if no next step exists.
+    pub fn next_cell(&self) -> GridCoords {
+        self.grid_path.next_in_path().unwrap_or(*self.grid_coords)
+    }
+    /// World-space center of [`Self::next_cell`].
     pub fn next_cell_center(&self) -> Vec2 {
-        self.grid_path.next_in_path().unwrap_or(*self.grid_coords).to_world_position_centered(WISP_GRID_IMPRINT)
+        self.next_cell().to_world_position_centered(WISP_GRID_IMPRINT)
     }
 }
 

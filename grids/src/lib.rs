@@ -10,6 +10,7 @@ pub mod base;
 pub mod obstacles;
 pub mod tower_ranges;
 pub mod energy_supply;
+pub mod ground_cover;
 pub mod wisps;
 pub mod visited;
 pub mod emissions;

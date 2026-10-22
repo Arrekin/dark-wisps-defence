@@ -1,13 +1,16 @@
 //! # Lob flight and presentation
 //!
-//! Advances `Lob` flight while keeping gameplay positions on the ground. Each projectile spawns
-//! two visual children, which this module updates:
+//! Updates lobbed projectiles from the game clock, keeping gameplay positions on the ground.
+//! Projectiles with a future launch time wait hidden at their origin with `LobAwaitingLaunch`.
+//! At launch, they become visible and switch to `LobInFlight`, enabling movement and visual updates.
+//!
+//! Each projectile spawns two visual children, which this module updates:
 //! - `LobBody` grows with height and shifts along the flight line away from its midpoint to simulate
 //!   perspective. Its screen path stays straight, with slower motion near launch and landing.
 //! - `LobShadow` falls away from the sun, spreading and fading with height.
 //!
 //! Focused towers with `LobPreview` show dotted body and shadow paths using their `LobProfile`.
-//! The preview targets the latest shot still in flight, or the target wisp's next cell. Target
+//! The preview targets the latest shot in flight, or the target wisp's next cell. Target
 //! changes and dot spacing are smoothed; perspective packs dots near launch and landing. Body
 //! dots grow and brighten with height, while shadow dots spread and fade. Each tower reuses a
 //! fixed pool of dots, hidden when the preview has no target. Losing focus clears the preview.
@@ -25,9 +28,10 @@ use buildings::prelude::TowerWispTarget;
 use game_core::prelude::{CELL_SIZE, ZDepth};
 use hud::prelude::FocusedMapObject;
 use persistence::{prelude::*, rusqlite};
+use session::GameClock;
 use states::prelude::GameState;
 use visuals::map_light::{MAP_SUN_DIRECTION, MAP_SUN_GROUND_DIRECTION};
-use weaponry::{lob::{Lob, LobPreview, LobProfile}, prelude::FiredProjectiles};
+use weaponry::{lob::{Lob, LobAwaitingLaunch, LobInFlight, LobPreview, LobProfile}, prelude::FiredProjectiles};
 use wisps::prelude::{Wisp, WispHeading};
 
 pub(crate) struct LobPlugin;
@@ -36,10 +40,11 @@ impl Plugin for LobPlugin {
         app
             .init_resource::<LobDiscImage>()
             .add_systems(Update, (
-                advance_lobs.run_if(in_state(GameState::Running)),
+                (launch_awaiting_lobs, advance_lobs).chain().run_if(in_state(GameState::Running)),
                 update_lob_visuals,
             ).chain())
             .add_systems(Update, (update_lob_preview_targets, update_lob_preview_dots).chain())
+            .add_observer(on_add_lob_insert_launch_phase)
             .add_observer(on_add_lob_preview_spawn_dots)
             .add_observer(on_remove_focused_map_object_clear_lob_preview_target);
     }
@@ -214,33 +219,60 @@ impl LobDiscImage {
     }
 }
 
-pub(crate) fn advance_lobs(
-    time: Res<Time>,
-    mut lobs: Query<(&mut Lob, &mut Transform)>,
+fn on_add_lob_insert_launch_phase(
+    trigger: On<Add<Lob>>,
+    mut commands: Commands,
+    clock: Res<GameClock>,
+    mut lobs: Query<(&Lob, &mut Transform)>,
 ) {
-    for (mut lob, mut transform) in lobs.iter_mut() {
-        lob.advance(time.delta_secs());
-        transform.translation = lob.current().ground_position.extend(transform.translation.z);
+    let entity = trigger.entity;
+    let Ok((lob, mut transform)) = lobs.get_mut(entity) else { return; };
+    transform.translation = lob.current(clock.now()).ground_position.extend(transform.translation.z);
+    if lob.is_awaiting_launch(clock.now()) {
+        commands.entity(entity).insert((LobAwaitingLaunch, Visibility::Hidden));
+    } else {
+        commands.entity(entity).insert((LobInFlight, Visibility::Inherited));
+    }
+}
+
+fn launch_awaiting_lobs(
+    mut commands: Commands,
+    clock: Res<GameClock>,
+    lobs: Query<(Entity, &Lob), With<LobAwaitingLaunch>>,
+) {
+    for (entity, lob) in lobs.iter() {
+        if lob.is_awaiting_launch(clock.now()) { continue; }
+        commands.entity(entity).remove::<LobAwaitingLaunch>().insert((LobInFlight, Visibility::Inherited));
+    }
+}
+
+pub(crate) fn advance_lobs(
+    clock: Res<GameClock>,
+    mut lobs: Query<(&Lob, &mut Transform), With<LobInFlight>>,
+) {
+    for (lob, mut transform) in lobs.iter_mut() {
+        transform.translation = lob.current(clock.now()).ground_position.extend(transform.translation.z);
     }
 }
 
 fn update_lob_visuals(
-    lobs: Query<&Lob>,
-    mut bodies: Query<(&ChildOf, &mut Transform), With<LobBody>>,
-    mut shadows: Query<(&ChildOf, &mut Transform, &mut Sprite), (With<LobShadow>, Without<LobBody>)>,
+    clock: Res<GameClock>,
+    lobs: Query<(&Lob, &Children), With<LobInFlight>>,
+    mut bodies: Query<&mut Transform, With<LobBody>>,
+    mut shadows: Query<(&mut Transform, &mut Sprite), (With<LobShadow>, Without<LobBody>)>,
 ) {
-    for (child_of, mut transform) in bodies.iter_mut() {
-        let Ok(lob) = lobs.get(child_of.parent()) else { continue; };
-        let view = LobView::at(lob, lob.progress(), PARALLAX_STRETCH);
-        transform.translation = view.body_offset.extend(transform.translation.z);
-        transform.scale = Vec3::splat(view.body_scale);
-    }
-    for (child_of, mut transform, mut sprite) in shadows.iter_mut() {
-        let Ok(lob) = lobs.get(child_of.parent()) else { continue; };
-        let view = LobView::at(lob, lob.progress(), PARALLAX_STRETCH);
-        transform.translation = view.shadow_offset.extend(transform.translation.z);
-        transform.scale = Vec3::splat(view.shadow_scale);
-        sprite.color.set_alpha(SHADOW_COLOR.alpha() * view.shadow_opacity);
+    for (lob, children) in lobs.iter() {
+        let view = LobView::at(lob, lob.progress(clock.now()), PARALLAX_STRETCH);
+        for child in children.iter() {
+            if let Ok(mut transform) = bodies.get_mut(child) {
+                transform.translation = view.body_offset.extend(transform.translation.z);
+                transform.scale = Vec3::splat(view.body_scale);
+            } else if let Ok((mut transform, mut sprite)) = shadows.get_mut(child) {
+                transform.translation = view.shadow_offset.extend(transform.translation.z);
+                transform.scale = Vec3::splat(view.shadow_scale);
+                sprite.color.set_alpha(SHADOW_COLOR.alpha() * view.shadow_opacity);
+            }
+        }
     }
 }
 
@@ -274,12 +306,12 @@ fn on_add_lob_preview_spawn_dots(
 fn update_lob_preview_targets(
     time: Res<Time>,
     mut previews: Query<(&TowerWispTarget, Option<&FiredProjectiles>, &mut LobPreviewTarget), (With<LobPreview>, With<FocusedMapObject>)>,
-    lobs: Query<&Lob>,
+    lobs: Query<&Lob, With<LobInFlight>>,
     wisps: Query<WispHeading, With<Wisp>>,
 ) {
     let settle = 1. - (-PREVIEW_SETTLE_RATE * time.delta_secs()).exp();
     for (target, fired_projectiles, mut preview_target) in previews.iter_mut() {
-        let in_flight_target = fired_projectiles.and_then(FiredProjectiles::latest).and_then(|projectile| lobs.get(projectile).ok()).map(|lob| lob.target());
+        let in_flight_target = fired_projectiles.into_iter().flat_map(FiredProjectiles::newest_first).find_map(|projectile| lobs.get(projectile).ok()).map(Lob::target);
         let shot_point = in_flight_target.or_else(|| {
             let TowerWispTarget::Wisp(target_wisp) = *target else { return None; };
             wisps.get(target_wisp).ok().map(|wisp_heading| wisp_heading.next_cell_center())
@@ -319,7 +351,8 @@ fn update_lob_preview_dots(
             }
             continue;
         };
-        let lob = lob_profile.lob(owner_transform.translation().xy(), target);
+        // The preview samples the flight by progress, so its launch time is irrelevant.
+        let lob = lob_profile.lob(owner_transform.translation().xy(), target, 0.);
         let flight_distance = lob.origin().distance(lob.target()).max(1.);
         // Endpoint screen speed / ground speed = 1 - 2 * stretch * apex / CAMERA_HEIGHT.
         let visual_apex = lob.apex().clamp(1., CAMERA_HEIGHT * MAX_VISUAL_HEIGHT);
@@ -361,8 +394,8 @@ pub(crate) trait SaveLobExtension {
 }
 impl SaveLobExtension for SaveContext<'_> {
     fn save_lob(&self, entity_id: u32, lob: &Lob) -> rusqlite::Result<usize> {
-        self.tx.prepare_cached("INSERT OR REPLACE INTO lobs (entity_id, origin_x, origin_y, target_x, target_y, duration, apex, elapsed) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)")?
-            .execute(rusqlite::params![entity_id, lob.origin().x, lob.origin().y, lob.target().x, lob.target().y, lob.duration(), lob.apex(), lob.elapsed()])
+        self.tx.prepare_cached("INSERT OR REPLACE INTO lobs (entity_id, origin_x, origin_y, target_x, target_y, duration, apex, launch_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)")?
+            .execute(rusqlite::params![entity_id, lob.origin().x, lob.origin().y, lob.target().x, lob.target().y, lob.duration(), lob.apex(), lob.launch_at()])
     }
 }
 
@@ -371,7 +404,7 @@ pub(crate) trait LoadLobExtension {
 }
 impl LoadLobExtension for LoadContext<'_> {
     fn lob(&self, old_id: u32) -> LoadResult<Lob> {
-        self.conn.prepare_cached("SELECT origin_x, origin_y, target_x, target_y, duration, apex, elapsed FROM lobs WHERE entity_id = ?1")
+        self.conn.prepare_cached("SELECT origin_x, origin_y, target_x, target_y, duration, apex, launch_at FROM lobs WHERE entity_id = ?1")
             .and_then(|mut statement| statement.query_row([old_id], |row| Ok(Lob::restore(
                 Vec2::new(row.get(0)?, row.get(1)?),
                 Vec2::new(row.get(2)?, row.get(3)?),

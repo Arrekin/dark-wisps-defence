@@ -3,13 +3,14 @@ import bevy_sprite_render::mesh2d::view_bindings::globals;
 import package::shaders::common::fire_ramp::{FIRE_HEAT_CAP, fire_ramp};
 import package::shaders::common::hash::{HASH_GOLDEN, hash_mix, hash_unit};
 import package::shaders::common::value_noise::value_fbm_3d;
-import package::shaders::weaponry::flame_stream_common::TILE_HALF;
+import package::shaders::weaponry::ground_fire::{GROUND_FIRE_ALL_CLOSED, ground_fire};
 
 // `ImpactFire` shader on a `FlameStream`'s hit tile (world units relative to tile center,
 // premultiplied alpha):
 // - `fan`: lateral splash at `hit_point`.
 // - `cling`: downstream flame tongues around `hit_point`.
-// - `tile_fire`: low flames and border rim across the `[-TILE_HALF, TILE_HALF]` cell.
+// - `tile_fire`: `ground_fire` across the cell with all sides closed, so it ends in a rim at the
+//   cell edge.
 // - `spark`: additive procedural particles deflecting backward/sideways from `hit_point`.
 
 // Field order and types mirror `ImpactFireVisual` in weaponry_internal/src/flame_stream_fire.rs.
@@ -52,16 +53,14 @@ fn look(mesh: VertexOutput, impact: Instance) -> vec4<f32> {
     let cling = smoothstep(17.0, 7.0, cling_radius + (tongues - 0.5) * 12.0) * smoothstep(3.5, 7.5, radius);
 
     // Full-cell surface flames and cell border highlight.
-    let tile_distance = max(abs(p.x), abs(p.y));
-    let tile_noise = value_fbm_3d(vec3<f32>(p / 5.0, time * 2.4), 4);
-    let tile = 1.0 - smoothstep(TILE_HALF - 3.0, TILE_HALF + 2.0, tile_distance + (tile_noise - 0.5) * 7.0);
-    let tile_fire = smoothstep(0.5, 0.64, tile_noise + 0.1) * tile;
+    let ground = ground_fire(p, mesh.world_position.xy, time, GROUND_FIRE_ALL_CLOSED);
+    let tile_fire = ground.coverage;
 
     let field = max(max(fan * smoothstep(0.38, 0.55, spray + 0.08), cling * smoothstep(0.42, 0.56, tongues + 0.1)), tile_fire);
     let heat = 0.45 + 0.4 * max(fan, cling) * spray + 0.15 * tile_fire;
     let fire_alpha = clamp(field * impact.intensity, 0.0, 1.0);
     var color = fire_ramp(min(heat, FIRE_HEAT_CAP)) * fire_alpha * 1.2;
-    let rim = smoothstep(2.5, 0.0, abs(tile_distance - TILE_HALF)) * impact.intensity * 0.25 * (0.6 + 0.4 * tile_noise);
+    let rim = ground.rim * impact.intensity;
     color += fire_ramp(0.5) * rim;
     let alpha = fire_alpha * 0.85 + rim * 0.3;
 

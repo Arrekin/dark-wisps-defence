@@ -5,9 +5,10 @@ use game_core::prelude::{ALL_DIRECTIONS, CELL_SIZE, DamageMessage, GridCoords, O
 use grids::wisps::WispsGrid;
 use logging::prelude::*;
 use persistence::{prelude::*, rusqlite};
+use session::GameClock;
 use states::prelude::{GameState, MapLoadingStage};
 use visuals::prelude::BuilderExplosion;
-use weaponry::{lob::Lob, prelude::*};
+use weaponry::{lob::{Lob, LobInFlight}, prelude::*};
 use wisps::prelude::Wisp;
 
 use crate::lob::{LoadLobExtension, LobBody, LobDiscImage, SaveLobExtension, advance_lobs};
@@ -69,15 +70,13 @@ fn on_builder_add_spawn_cannonball(
     let entity = trigger.entity;
     let Ok(builder) = builders.get(entity) else { return; };
 
-    let lob = builder.lob;
     let size = CELL_SIZE / 2.;
     commands.entity(entity)
         .remove::<BuilderCannonball>()
         .insert_some(builder.shooter.map(ProjectileOf))
         .insert((
-            Transform::from_translation(lob.current().ground_position.extend(0.)),
             Cannonball,
-            lob,
+            builder.lob,
             builder.damage,
             children![
                 (
@@ -96,12 +95,13 @@ fn on_builder_add_spawn_cannonball(
 fn cannonball_hit_system(
     mut commands: Commands,
     mut damage_messages: MessageWriter<DamageMessage>,
+    clock: Res<GameClock>,
     wisps_grid: Res<WispsGrid>,
-    cannonballs: Query<(Entity, &Lob, &AttackDamage), With<Cannonball>>,
+    cannonballs: Query<(Entity, &Lob, &AttackDamage), (With<Cannonball>, With<LobInFlight>)>,
     wisps: Query<(), With<Wisp>>,
 ) {
     for (entity, lob, attack_damage) in cannonballs.iter() {
-        if !lob.is_landed() { continue; }
+        if !lob.is_landed(clock.now()) { continue; }
 
         let coords = GridCoords::from_world_vec2(lob.target());
         for direction in ALL_DIRECTIONS.iter().chain(&[(0, 0)]) {

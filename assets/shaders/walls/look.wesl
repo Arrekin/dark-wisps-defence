@@ -1,4 +1,4 @@
-import package::shaders::common::core::CELL_SIZE;
+import package::shaders::common::core::CELL_HALF;
 import package::shaders::common::gradient_noise::gradient_fbm_2d;
 import package::shaders::common::map_light::MAP_SUN_GROUND_DIRECTION;
 
@@ -45,8 +45,8 @@ const LIGHT_PROBE: f32 = 2.0;
 // Signed distance in world pixels to one isolated cell's box, positive inside.
 // Used where a single cell is drawn without the canvas's neighbor-derived field.
 fn single_cell_distance(world: vec2<f32>) -> f32 {
-    let from_centre = abs(world - vec2<f32>(CELL_SIZE * 0.5));
-    return CELL_SIZE * 0.5 - max(from_centre.x, from_centre.y);
+    let from_centre = abs(world - vec2<f32>(CELL_HALF));
+    return CELL_HALF - max(from_centre.x, from_centre.y);
 }
 
 // Body variation is exposed separately for the canvas noise diagnostic.

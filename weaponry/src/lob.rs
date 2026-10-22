@@ -5,6 +5,10 @@
 //!
 //! Launchers use `LobProfile` to create flights. Launch angle and distance determine the peak
 //! height, with a soft cap that flattens long shots. Gravity determines flight duration.
+//!
+//! Flight progress is calculated from the current game time and a stored launch timestamp.
+//! A lob can spawn before launch; `LobAwaitingLaunch` and `LobInFlight` distinguish waiting
+//! projectiles from launched ones.
 
 use bevy::prelude::*;
 
@@ -22,13 +26,13 @@ pub struct LobProfile {
     pub max_apex: f32,
 }
 impl LobProfile {
-    /// The flight from `origin` to `target`.
-    pub fn lob(&self, origin: Vec2, target: Vec2) -> Lob {
+    /// The flight from `origin` to `target`, launching at game time `launch_at`.
+    pub fn lob(&self, origin: Vec2, target: Vec2, launch_at: f64) -> Lob {
         let distance = origin.distance(target).max(1.);
         let uncapped_apex = distance * self.launch_angle.tan() / 4.;
         let apex = uncapped_apex / (1. + (uncapped_apex / self.max_apex).powf(APEX_CAP_HARDNESS)).powf(1. / APEX_CAP_HARDNESS);
         let duration = (8. * apex / self.gravity).sqrt();
-        Lob { origin, target, duration, apex, elapsed: 0. }
+        Lob { origin, target, duration, apex, launch_at }
     }
 }
 
@@ -36,9 +40,9 @@ impl LobProfile {
 #[derive(Component, Default)]
 pub struct LobPreview;
 
-/// The flight of one lobbed projectile.
+/// A projectile's flight. The entity's `Transform` tracks its position on the ground.
 #[derive(Component, Clone, Copy, Debug)]
-#[require(Visibility)]
+#[require(Transform, Visibility)]
 pub struct Lob {
     origin: Vec2,
     target: Vec2,
@@ -46,33 +50,39 @@ pub struct Lob {
     duration: f32,
     /// Peak height above ground, in world units.
     apex: f32,
-    /// Seconds since launch.
-    elapsed: f32,
+    /// Absolute game-clock time of the launch, in seconds.
+    launch_at: f64,
 }
 impl Lob {
-    /// Rebuilds a flight in progress from its saved state.
-    pub fn restore(origin: Vec2, target: Vec2, duration: f32, apex: f32, elapsed: f32) -> Self {
-        Self { origin, target, duration, apex, elapsed }
+    /// Rebuilds a flight from its saved state.
+    pub fn restore(origin: Vec2, target: Vec2, duration: f32, apex: f32, launch_at: f64) -> Self {
+        Self { origin, target, duration, apex, launch_at }
     }
 
     pub fn origin(&self) -> Vec2 { self.origin }
     pub fn target(&self) -> Vec2 { self.target }
     pub fn duration(&self) -> f32 { self.duration }
     pub fn apex(&self) -> f32 { self.apex }
-    pub fn elapsed(&self) -> f32 { self.elapsed }
+    pub fn launch_at(&self) -> f64 { self.launch_at }
 
-    pub fn advance(&mut self, seconds: f32) {
-        self.elapsed = (self.elapsed + seconds).min(self.duration);
+    /// Whether `now` is before the scheduled launch time.
+    pub fn is_awaiting_launch(&self, now: f64) -> bool {
+        self.launch_at > now
     }
 
-    pub fn is_landed(&self) -> bool {
-        self.elapsed >= self.duration
+    /// Seconds of flight at game time `now`: 0 before launch, `duration` after landing.
+    pub fn elapsed(&self, now: f64) -> f32 {
+        ((now - self.launch_at) as f32).clamp(0., self.duration)
     }
 
-    /// Fraction of flight time elapsed: 0 at launch, 1 at landing.
-    pub fn progress(&self) -> f32 {
+    pub fn is_landed(&self, now: f64) -> bool {
+        self.elapsed(now) >= self.duration
+    }
+
+    /// Fraction of flight time elapsed at game time `now`: 0 at launch, 1 at landing.
+    pub fn progress(&self, now: f64) -> f32 {
         if self.duration <= 0. { return 1.; }
-        (self.elapsed / self.duration).clamp(0., 1.)
+        self.elapsed(now) / self.duration
     }
 
     /// Unit direction of travel over the ground.
@@ -88,19 +98,28 @@ impl Lob {
         }
     }
 
-    pub fn current(&self) -> LobSample {
-        self.sample(self.progress())
+    /// The flight's state at game time `now`.
+    pub fn current(&self, now: f64) -> LobSample {
+        self.sample(self.progress(now))
     }
 
-    /// Current speed relative to the launch speed, counting both ground and vertical motion.
-    /// 1 at launch and landing, lowest at the apex.
-    pub fn speed_ratio(&self) -> f32 {
+    /// Speed at game time `now` relative to the launch speed, counting both ground and vertical
+    /// motion. 1 at launch and landing, lowest at the apex.
+    pub fn speed_ratio(&self, now: f64) -> f32 {
         let distance = self.origin.distance(self.target);
         let launch = distance.hypot(4. * self.apex);
         if launch <= 0. { return 1.; }
-        distance.hypot(4. * self.apex * (1. - 2. * self.progress())) / launch
+        distance.hypot(4. * self.apex * (1. - 2. * self.progress(now))) / launch
     }
 }
+
+/// A projectile waiting for its launch time, hidden at its origin.
+#[derive(Component, Default)]
+pub struct LobAwaitingLaunch;
+
+/// A launched projectile, visible and moving along its flight.
+#[derive(Component, Default)]
+pub struct LobInFlight;
 
 #[derive(Clone, Copy, Debug)]
 pub struct LobSample {

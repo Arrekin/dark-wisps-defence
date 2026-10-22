@@ -207,6 +207,11 @@ CREATE TABLE IF NOT EXISTS tower_crucibles (
     FOREIGN KEY(id) REFERENCES entities(id)
 );
 
+CREATE TABLE IF NOT EXISTS tower_napalm_batteries (
+    id INTEGER PRIMARY KEY,
+    FOREIGN KEY(id) REFERENCES entities(id)
+);
+
 -- How far each shooting tower is into its reload, in seconds.
 CREATE TABLE IF NOT EXISTS tower_shooting_timers (
     entity_id INTEGER PRIMARY KEY,
@@ -289,6 +294,7 @@ CREATE TABLE IF NOT EXISTS forge_queue (
 -- Projectiles
 -- ========================
 
+-- `launch_at` is the launch time in absolute game-clock seconds.
 CREATE TABLE IF NOT EXISTS lobs (
     entity_id INTEGER PRIMARY KEY,
     origin_x REAL NOT NULL,
@@ -297,7 +303,7 @@ CREATE TABLE IF NOT EXISTS lobs (
     target_y REAL NOT NULL,
     duration REAL NOT NULL,
     apex REAL NOT NULL,
-    elapsed REAL NOT NULL,
+    launch_at REAL NOT NULL,
     FOREIGN KEY(entity_id) REFERENCES entities(id)
 );
 
@@ -310,6 +316,11 @@ CREATE TABLE IF NOT EXISTS cannonballs (
 CREATE TABLE IF NOT EXISTS fireballs (
     id INTEGER PRIMARY KEY,
     damage REAL NOT NULL,
+    FOREIGN KEY(id) REFERENCES entities(id)
+);
+
+CREATE TABLE IF NOT EXISTS napalm_bombs (
+    id INTEGER PRIMARY KEY,
     FOREIGN KEY(id) REFERENCES entities(id)
 );
 
@@ -334,6 +345,11 @@ CREATE TABLE IF NOT EXISTS ripples (
     id INTEGER PRIMARY KEY,
     max_radius REAL NOT NULL,
     current_radius REAL NOT NULL,
+    FOREIGN KEY(id) REFERENCES entities(id)
+);
+
+CREATE TABLE IF NOT EXISTS napalms (
+    id INTEGER PRIMARY KEY,
     FOREIGN KEY(id) REFERENCES entities(id)
 );
 

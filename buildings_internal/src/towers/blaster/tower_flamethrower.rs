@@ -27,7 +27,7 @@ use alteration::{
     modifiers::prelude::*,
 };
 use buildings::prelude::*;
-use game_core::{math::angle_difference, prelude::*};
+use game_core::prelude::*;
 use grids::{
     placement::{annotate_non_empty, PlacementModes, PlaceRequest},
     wisps::WispsGrid,
@@ -296,10 +296,7 @@ fn update_flame_stream_firing(
 
         let aim = match *target {
             TowerWispTarget::Wisp(target_wisp) => match wisps.get(target_wisp) {
-                Ok(wisp) => {
-                    let direction_to_target = wisp.translation.xy() - transform.translation.xy();
-                    Aim::Target(angle_difference(direction_to_target.to_angle(), top_rotation.current_angle).abs())
-                }
+                Ok(wisp) => Aim::Target(top_rotation.angle_to(wisp.translation.xy() - transform.translation.xy()).abs()),
                 Err(_) => Aim::Pending,
             },
             TowerWispTarget::SearchForNewTarget => Aim::Pending,

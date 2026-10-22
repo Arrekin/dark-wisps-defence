@@ -1,7 +1,7 @@
 use bevy::{ecs::system::SystemParam, prelude::*};
 
 use almanach::prelude::Almanach;
-use game_core::prelude::*;
+use game_core::{math::angle_difference, prelude::*};
 use grids::placement::{
     validator_all_empty, GridObjectPlacer, GridsCollectionParam, PlacementValidity,
 };
@@ -158,6 +158,19 @@ pub(crate) struct TowerTopRotation {
     /// Radians per second.
     pub speed: f32,
     pub current_angle: f32,
+}
+impl TowerTopRotation {
+    /// Signed shortest rotation from the current facing to `direction`, in radians.
+    pub fn angle_to(&self, direction: Vec2) -> f32 {
+        angle_difference(direction.to_angle(), self.current_angle)
+    }
+    /// Angle within which the top counts as facing a direction, in radians.
+    const FACING_TOLERANCE: f32 = std::f32::consts::PI / 72.;
+
+    /// Whether the top faces `direction` within [`Self::FACING_TOLERANCE`].
+    pub fn is_facing(&self, direction: Vec2) -> bool {
+        self.angle_to(direction).abs() <= Self::FACING_TOLERANCE
+    }
 }
 
 #[derive(EntityEvent)]

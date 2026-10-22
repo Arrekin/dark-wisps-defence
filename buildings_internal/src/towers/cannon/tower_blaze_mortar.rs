@@ -21,6 +21,7 @@ use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
 use logging::prelude::*;
 use persistence::prelude::*;
 use resources::prelude::*;
+use session::GameClock;
 use shards::prelude::*;
 use states::prelude::*;
 use weaponry::{lob::{LobPreview, LobProfile}, prelude::*};
@@ -214,6 +215,7 @@ fn load_tower_blaze_mortars(ctx: &mut LoadContext) -> LoadResult {
 
 fn shooting_system(
     mut commands: Commands,
+    clock: Res<GameClock>,
     mut tower_blaze_mortars: Query<(Entity, &Transform, &LobProfile, &mut TowerShootingTimer, &mut TowerWispTarget, &AttackDamage), (With<TowerBlazeMortar>, With<IsOperational>)>,
     wisps: Query<WispHeading, With<Wisp>>,
 ) {
@@ -227,7 +229,7 @@ fn shooting_system(
             continue;
         };
 
-        let lob = lob_profile.lob(transform.translation.xy(), wisp_heading.next_cell_center());
+        let lob = lob_profile.lob(transform.translation.xy(), wisp_heading.next_cell_center(), clock.now());
         commands.spawn(BuilderFireball::new(lob, *attack_damage).with_shooter(tower));
         timer.0.reset();
     }

@@ -56,6 +56,11 @@ pub enum SharedGpuBinding {
     FieldCellOffsets = 108,
     /// Candidate field slots concatenated in cell order, read through `shaders::fields::fields`.
     FieldCellEntries = 109,
+    /// Start offsets into `GroundCoverCellEntries`, one `u32` per cell plus a final end offset.
+    /// Read through `shaders::grids::ground_cover`.
+    GroundCoverCellOffsets = 112,
+    /// Ground cover entries concatenated in cell order, read through `shaders::grids::ground_cover`.
+    GroundCoverCellEntries = 113,
 }
 impl SharedGpuBinding {
     pub fn index(self) -> u32 {

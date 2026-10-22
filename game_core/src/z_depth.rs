@@ -39,6 +39,7 @@ pub enum ZDepth {
     OverlayEmissions,
     DarkOre,
     Obstacle,
+    GroundCover,
     GroundDecal,
     FireballScorch,
     FlameScorch,
@@ -85,6 +86,7 @@ impl ZDepth {
             | Self::OverlayEmissions
             | Self::DarkOre
             | Self::Obstacle
+            | Self::GroundCover
             | Self::GroundDecal
             | Self::FireballScorch
             | Self::FlameScorch

@@ -11,12 +11,26 @@ use game_core::prelude::{Moment, MomentKind, SSS};
 /// Timed effects store absolute expiry timestamps relative to this clock.
 #[derive(Resource, Default, SSS, Clone, Serialize)]
 pub struct GameClock {
+    /// Amount of game time passed since the session started, in seconds.
+    /// Read it where the code measures a span. Use [`Self::now`] where it needs a point in time.
     pub elapsed: f64,
 }
 impl GameClock {
     /// Seconds after which the wrapped clock starts again at zero. Mirrors `GAME_TIME_WRAP_PERIOD`
     /// in `assets/shaders/common/game_time.wesl`.
     const WRAP_PERIOD: f64 = 3600.;
+
+    /// The current moment on the game timeline, in seconds.
+    /// Holds the same value as `elapsed` but reads as a point in time, not a span.
+    /// Use it to stamp or compare timestamps.
+    pub fn now(&self) -> f64 {
+        self.elapsed
+    }
+
+    /// The game time `seconds` from now.
+    pub fn from_now(&self, seconds: impl Into<f64>) -> f64 {
+        self.elapsed + seconds.into()
+    }
 
     /// Shader clock in seconds, wrapped to one hour before conversion to f32 to limit precision loss.
     /// Use [`Self::wrapped_since`] to measure durations shorter than the wrap period.
@@ -50,7 +64,7 @@ pub struct TimeBound {
 impl TimeBound {
     /// Creates a lifetime starting now and lasting `duration` seconds.
     pub fn lasting(clock: &GameClock, duration: impl Into<f64>) -> Self {
-        Self::new(clock.elapsed, clock.elapsed + duration.into())
+        Self::new(clock.now(), clock.from_now(duration))
     }
 
     /// Creates a lifetime between two absolute [`GameClock`] timestamps.
@@ -65,7 +79,7 @@ impl TimeBound {
 
     /// Seconds since the start, clamped to `0..=duration`.
     pub fn age(&self, clock: &GameClock) -> f64 {
-        (clock.elapsed - self.starts_at).clamp(0., self.duration())
+        (clock.now() - self.starts_at).clamp(0., self.duration())
     }
 
     /// Elapsed fraction of the lifetime, clamped to `0..=1`. Returns `1` if the duration is zero.
