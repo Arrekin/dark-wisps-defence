@@ -10,7 +10,7 @@ use bevy::{prelude::*, reflect::TypePath, render::render_resource::ShaderType};
 use alteration::{
     effects::{
         brittle::BuilderBrittleEffect,
-        prelude::{EffectSourceOf, EffectTarget, ExpiresAt},
+        prelude::{EffectSourceOf, EffectTarget},
     },
     modifiers::prelude::MovementSpeed,
 };
@@ -18,7 +18,7 @@ use game_core::prelude::{CELL_SIZE, GridCoords, Property};
 use grids::wisps::WispsGrid;
 use logging::prelude::*;
 use persistence::{prelude::*, rusqlite};
-use session::GameClock;
+use session::{GameClock, TimeBound};
 use states::prelude::{GameState, MapLoadingStage};
 use visuals::lane::{LaneParts, LanePlugin, LaneVisual};
 use weaponry::prelude::*;
@@ -125,7 +125,7 @@ fn ripple_propagate_system(
 
 fn ripple_hit_system(
     mut commands: Commands,
-    game_clock: Res<GameClock>,
+    clock: Res<GameClock>,
     wisps_grid: Res<WispsGrid>,
     ripples: Query<(Entity, &Ripple, &Transform, Option<&EffectSourceOf>)>,
     wisps: Query<&Transform, With<Wisp>>,
@@ -151,7 +151,7 @@ fn ripple_hit_system(
                     commands.spawn(
                         BuilderBrittleEffect::new(*wisp, BRITTLE_DAMAGE_MULTIPLIER)
                             .with_source(ripple_entity)
-                            .with_expiry(ExpiresAt(game_clock.elapsed + BRITTLE_DURATION_SECONDS))
+                            .with_time_bound(TimeBound::lasting(&clock, BRITTLE_DURATION_SECONDS))
                     );
                 }
             }

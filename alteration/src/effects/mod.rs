@@ -10,7 +10,7 @@ use crate::modifiers::ModifierType;
 pub mod prelude {
     pub use super::{
         BaselineEffect, EffectInstances, EffectSource, EffectSourceOf, EffectTarget,
-        ExpiresAt, FieldEffect, ModifierContributions,
+        FieldEffect, ModifierContributions,
     };
     pub use super::visual::{
         EFFECT_VISUAL_SLOTS,
@@ -51,9 +51,9 @@ pub struct EffectSource(pub Entity);
 #[relationship_target(relationship = EffectSource)]
 pub struct EffectSourceOf(Vec<Entity>);
 
-/////////////////////
+////////////////////////////
 // MODIFIER CONTRIBUTIONS //
-/////////////////////
+////////////////////////////
 
 /// The set of stat contributions an effect instance provides to its target.
 #[derive(Component)]
@@ -68,11 +68,3 @@ pub struct BaselineEffect;
 /// Marker on every effect entity spawned by a force field.
 #[derive(Component)]
 pub struct FieldEffect;
-
-/////////////////
-// EXPIRY      //
-/////////////////
-
-/// Absolute game-time at which the effect instance is despawned.
-#[derive(Component, Clone, Copy, PartialEq)]
-pub struct ExpiresAt(pub f64);

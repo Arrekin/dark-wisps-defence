@@ -125,7 +125,7 @@ pub enum EdgeSide {
 
 #[derive(Copy, Clone, Debug, PartialEq, AsRefStr)]
 pub enum SpawnTempo {
-    /// Spawn `count` wisps every `seconds` (optional jitter). If `count` omitted -> 1.
+    /// Spawns `bulk_count` wisps per batch, with an interval of `seconds` ± `jitter` seconds.
     Continuous { seconds: f32, jitter: f32, bulk_count: i32 },
 }
 
@@ -140,7 +140,7 @@ impl Default for SpawnTempo {
 #[derive(Component, Copy, Clone, Default)]
 pub struct SummoningRuntime {
     pub produced: i32,
-    pub next_spawn_time: f32,
+    pub next_spawn_time: f64,
 }
 
 // --------------- ACTIVATION EVENT ---------------

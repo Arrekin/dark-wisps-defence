@@ -12,6 +12,7 @@ use bevy::{
 
 use game_core::prelude::{GridCoords, GridImprint};
 use logging::prelude::*;
+use session::TimeBound;
 
 use crate::{
     common::{Migrations, with_db_connection},
@@ -72,6 +73,10 @@ impl SaveContext<'_> {
 
     pub fn save_grid_coords(&self, entity_id: u32, coords: GridCoords) -> rusqlite::Result<usize> {
         self.tx.prepare_cached("INSERT INTO grid_coords (entity_id, x, y) VALUES (?1, ?2, ?3)")?.execute((entity_id, coords.x, coords.y))
+    }
+
+    pub fn save_time_bound(&self, entity_id: u32, time_bound: TimeBound) -> rusqlite::Result<usize> {
+        self.tx.prepare_cached("INSERT OR REPLACE INTO time_bounds (entity_id, starts_at, ends_at) VALUES (?1, ?2, ?3)")?.execute((entity_id, time_bound.starts_at, time_bound.ends_at))
     }
 
     pub fn save_grid_imprint(&self, entity_id: u32, imprint: GridImprint) -> rusqlite::Result<usize> {

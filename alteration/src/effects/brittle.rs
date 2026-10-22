@@ -1,8 +1,9 @@
 use bevy::prelude::*;
 
 use game_core::prelude::SSS;
+use session::TimeBound;
 
-use super::{EffectSource, ExpiresAt};
+use super::EffectSource;
 use super::visual::{EffectVisualContribution, BRITTLE_BIT, BRITTLE_SLOT};
 
 /// Marker for the Brittle debuff. Applied to wisps hit by an emitter tower ripple.
@@ -16,11 +17,11 @@ pub struct BuilderBrittleEffect {
     pub target_entity: Entity,
     pub source_entity: Option<EffectSource>,
     pub damage_multiplier: f32,
-    pub expires_at: Option<ExpiresAt>,
+    pub time_bound: Option<TimeBound>,
 }
 impl BuilderBrittleEffect {
     pub fn new(target_entity: Entity, damage_multiplier: f32) -> Self {
-        Self { target_entity, source_entity: None, damage_multiplier, expires_at: None }
+        Self { target_entity, source_entity: None, damage_multiplier, time_bound: None }
     }
 
     pub fn with_source(mut self, source_entity: impl Into<Option<Entity>>) -> Self {
@@ -28,8 +29,8 @@ impl BuilderBrittleEffect {
         self
     }
 
-    pub fn with_expiry(mut self, expires_at: impl Into<Option<ExpiresAt>>) -> Self {
-        self.expires_at = expires_at.into();
+    pub fn with_time_bound(mut self, time_bound: impl Into<Option<TimeBound>>) -> Self {
+        self.time_bound = time_bound.into();
         self
     }
 }

@@ -14,12 +14,10 @@
 use bevy::{prelude::*, reflect::TypePath, render::render_resource::{BlendState, ShaderType}};
 
 use game_core::prelude::ZDepth;
-use session::GameClock;
-use states::prelude::GameState;
+use session::{GameClock, TimeBound};
 use visuals::{
     lane::{LaneParts, LanePlugin, LaneVisual},
     shader::seed_from_entity,
-    transient_visual::{TransientVisual, despawn_played_out},
 };
 use weaponry::prelude::*;
 
@@ -32,11 +30,6 @@ impl Plugin for InfernoDomePlugin {
                 LanePlugin::<InfernoDomeGround>::default(),
                 LanePlugin::<InfernoDomeDisplacement>::default(),
             ))
-            .add_systems(Update, (
-                despawn_played_out::<InfernoDomeFire>,
-                despawn_played_out::<InfernoDomeGround>,
-                despawn_played_out_inferno_domes,
-            ).run_if(in_state(GameState::Running)))
             .add_observer(on_add_inferno_dome_spawn_parts);
     }
 }
@@ -84,10 +77,6 @@ impl LaneVisual for InfernoDomeFire {
         BlendState::PREMULTIPLIED_ALPHA_BLENDING
     }
 }
-impl TransientVisual for InfernoDomeFire {
-    fn start_time(&self) -> f32 { self.start_time }
-    fn duration(&self) -> f32 { FIRE_DURATION }
-}
 
 /// Ground flash and scorch quad. Child of `InfernoDome`. Field order and types mirror `Instance` in
 /// `assets/shaders/weaponry/inferno_dome_ground.wesl`.
@@ -109,10 +98,6 @@ impl LaneVisual for InfernoDomeGround {
     fn blend() -> BlendState {
         BlendState::PREMULTIPLIED_ALPHA_BLENDING
     }
-}
-impl TransientVisual for InfernoDomeGround {
-    fn start_time(&self) -> f32 { self.start_time }
-    fn duration(&self) -> f32 { GROUND_DURATION }
 }
 
 /// Lens bulge and heat shimmer applied before the air band. Spawned as a child of `InfernoDome`.
@@ -140,35 +125,30 @@ impl LaneVisual for InfernoDomeDisplacement {
 fn on_add_inferno_dome_spawn_parts(
     trigger: On<Add<InfernoDome>>,
     mut commands: Commands,
+    clock: Res<GameClock>,
     domes: Query<&InfernoDome>,
 ) {
     let entity = trigger.entity;
     let Ok(dome) = domes.get(entity) else { return; };
+    let start_time = clock.wrapped();
     let seed = seed_from_entity(entity);
     let fire_half_size = dome.radius + FIRE_MESH_MARGIN;
     let ground_half_size = dome.radius + GROUND_MESH_MARGIN;
-    commands.entity(entity).insert(children![
-        (
-            InfernoDomeFire { start_time: dome.start_time, radius: dome.radius, seed, half_size: fire_half_size },
-            Transform::from_scale(Vec3::new(2. * fire_half_size, 2. * fire_half_size, 1.)),
-        ),
-        (
-            InfernoDomeGround { start_time: dome.start_time, radius: dome.radius, seed, half_size: ground_half_size },
-            Transform::from_scale(Vec3::new(2. * ground_half_size, 2. * ground_half_size, 1.)),
-        ),
-        InfernoDomeDisplacement { start_time: dome.start_time, radius: dome.radius, half_size: dome.radius + SHIMMER_MARGIN },
-    ]);
-}
-
-/// Despawns each dome once its longest part has played out.
-fn despawn_played_out_inferno_domes(
-    mut commands: Commands,
-    clock: Res<GameClock>,
-    domes: Query<(Entity, &InfernoDome)>,
-) {
-    for (entity, dome) in domes.iter() {
-        if clock.wrapped_since(dome.start_time) >= FIRE_DURATION.max(GROUND_DURATION).max(SHIMMER_DURATION) {
-            commands.entity(entity).despawn();
-        }
-    }
+    // The dome lasts as long as its longest part. The displacement child despawns with it.
+    commands.entity(entity).insert((
+        TimeBound::lasting(&clock, FIRE_DURATION.max(GROUND_DURATION).max(SHIMMER_DURATION)),
+        children![
+            (
+                InfernoDomeFire { start_time, radius: dome.radius, seed, half_size: fire_half_size },
+                TimeBound::lasting(&clock, FIRE_DURATION),
+                Transform::from_scale(Vec3::new(2. * fire_half_size, 2. * fire_half_size, 1.)),
+            ),
+            (
+                InfernoDomeGround { start_time, radius: dome.radius, seed, half_size: ground_half_size },
+                TimeBound::lasting(&clock, GROUND_DURATION),
+                Transform::from_scale(Vec3::new(2. * ground_half_size, 2. * ground_half_size, 1.)),
+            ),
+            InfernoDomeDisplacement { start_time, radius: dome.radius, half_size: dome.radius + SHIMMER_MARGIN },
+        ],
+    ));
 }

@@ -166,6 +166,7 @@ fn load_my_entities(ctx: &mut LoadContext) -> LoadResult {
 - `grid_coords` — grid-based positions
 - `world_positions` — pixel-precise positions (smooth movement resume)
 - `integrity_points` — integrity-point values
+- `time_bounds` — `TimeBound` lifetimes in absolute game time; no row means no saved lifetime
 
 ### Marker Tables
 

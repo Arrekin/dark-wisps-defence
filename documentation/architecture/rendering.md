@@ -171,10 +171,10 @@ game is paused; Bevy's shader clock continues. A gameplay-timed blast should age
 while an ambient animation may intentionally continue during a pause.
 
 Temporary visuals store a start time and duration so the shader can derive their age without
-per-frame age updates from the CPU. Cleanup uses the same clock to despawn the entity.
+per-frame age updates from the CPU. A `TimeBound` on the same clock despawns the entity.
 Shader game time wraps to preserve floating-point precision over long sessions, so durations
-measured this way must be shorter than the wrap period. The clock and transient-visual APIs
-define that contract.
+measured this way must be shorter than the wrap period. The `GameClock` API defines
+that contract.
 
 ## Performance tradeoffs
 

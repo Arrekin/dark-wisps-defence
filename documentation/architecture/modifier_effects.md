@@ -20,12 +20,12 @@ Lifecycle is controlled by optional, composable additional components:
 
 | Component | Purpose |
 |-----------|---------|
-| `ExpiresAt(f64)` | Despawn at this absolute `GameClock` time |
+| `TimeBound` | Despawn when `GameClock` reaches `ends_at` |
 | `EffectSource(Entity)` | Link to the source so its domain can find and clean up the effects it spawned |
 | Custom markers | Any condition, managed by a dedicated system |
 
-These compose freely. A temporary aura uses `EffectSource` + `ExpiresAt`. A fire-and-forget
-debuff uses only `ExpiresAt`. An indefinite aura uses `EffectSource` and source-specific cleanup.
+These compose freely. A temporary aura uses `EffectSource` + `TimeBound`. A fire-and-forget
+debuff uses only `TimeBound`. An indefinite aura uses `EffectSource` and source-specific cleanup.
 
 ### Layer 2: ModifierBank
 
@@ -86,19 +86,19 @@ wisps, they are defined in the wisp builder.
 Baseline effects:
 - Target the entity itself via `EffectTarget(self_entity)`
 - Carry a `BaselineEffect` marker component
-- Have no `ExpiresAt` or `EffectSource` — they are permanent
+- Have no `TimeBound` or `EffectSource` — they are permanent
 - Are never saved; they are reconstructed when the entity spawns or loads
 
 ## Game Clock and Expiry
 
-Timed effects reference absolute game time, not countdowns. The `GameClock` resource tracks
-elapsed game-time seconds (advances only while `GameState::Running`).
+Timed effects use `TimeBound` from `session` to store their lifetime in absolute `GameClock`
+seconds. The clock advances only while `GameState::Running`.
 
-An `EffectsExpiryQueue` (min-heap) holds `(expires_at, entity)` pairs. Each frame the head
-is checked; expired entries trigger entity despawn. Most frames this is O(1).
+`session_internal` queues `(ends_at, entity)` pairs in a min-heap and processes due entries
+in `PostUpdate`. When nothing is due, checking the queue takes O(1).
 
-Entities removed early (e.g., target despawned) are handled by the tombstone pattern — the
-queue entry is ignored when popped if the entity no longer exists.
+Removing or replacing a `TimeBound` leaves its old queue entry in place. When that entry is
+due, it despawns the entity only if the entity still has a `TimeBound` with the queued end time.
 
 ## Lifecycle Flow
 
@@ -107,12 +107,12 @@ queue entry is ignored when popped if the entity no longer exists.
 spawn effect instance with (EffectTarget, ModifierContributions, ...)
   → On<Insert<ModifierContributions>> fires
   → observer updates ModifierBank, re-aggregates, materializes derived components
-  → On<Insert<ExpiresAt>> fires (if timed) → pushed to ExpiryQueue
+  → On<Insert<TimeBound>> fires (if timed) → pushed to the expiry queue
 ```
 
 **Effect expiring:**
 ```
-ExpiryQueue pops entry → despawn effect instance
+expiry queue pops entry → despawn effect instance
   → On<Remove<ModifierContributions>> fires
   → observer removes from bank, re-aggregates, materializes
 ```

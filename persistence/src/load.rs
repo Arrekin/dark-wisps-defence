@@ -28,10 +28,12 @@ use bevy::{
     tasks::IoTaskPool,
 };
 use crossbeam_channel::{Receiver, Sender, unbounded};
+use rusqlite::OptionalExtension;
 use serde::Serialize;
 
 use game_core::prelude::*;
 use logging::prelude::*;
+use session::TimeBound;
 use states::{AdminMode, prelude::*};
 
 use crate::{
@@ -238,6 +240,13 @@ impl LoadContext<'_> {
 
     pub fn grid_coords(&self, old_id: u32) -> LoadResult<GridCoords> {
         self.query_row_cached("grid_coords", "SELECT x, y FROM grid_coords WHERE entity_id = ?1", [old_id], |row| Ok(GridCoords { x: row.get(0)?, y: row.get(1)? }))
+    }
+
+    /// Loads the saved lifetime, or returns `None` if no `time_bounds` row exists.
+    pub fn time_bound(&self, old_id: u32) -> LoadResult<Option<TimeBound>> {
+        self.conn.prepare_cached("SELECT starts_at, ends_at FROM time_bounds WHERE entity_id = ?1")
+            .and_then(|mut statement| statement.query_row([old_id], |row| Ok(TimeBound::new(row.get(0)?, row.get(1)?))).optional())
+            .map_err(LoadError::table_read("time_bounds"))
     }
 
     pub fn grid_imprint(&self, old_id: u32) -> LoadResult<GridImprint> {

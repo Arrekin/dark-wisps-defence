@@ -20,7 +20,6 @@ use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
 use logging::prelude::*;
 use persistence::prelude::*;
 use resources::prelude::*;
-use session::GameClock;
 use shards::prelude::*;
 use states::prelude::*;
 use weaponry::prelude::*;
@@ -208,7 +207,6 @@ fn load_tower_infernos(ctx: &mut LoadContext) -> LoadResult {
 
 fn shooting_system(
     mut commands: Commands,
-    clock: Res<GameClock>,
     mut tower_infernos: Query<(&Transform, &AttackRange, &mut TowerShootingTimer, &mut TowerWispTarget), (With<TowerInferno>, With<IsOperational>)>,
     wisps: Query<(), With<Wisp>>,
 ) {
@@ -222,7 +220,7 @@ fn shooting_system(
             continue;
         }
 
-        commands.spawn((InfernoDome::new(attack_range.get() * CELL_SIZE, clock.wrapped()), Transform::from_translation(transform.translation.with_z(0.))));
+        commands.spawn((InfernoDome::new(attack_range.get() * CELL_SIZE), Transform::from_translation(transform.translation.with_z(0.))));
         timer.0.reset();
     }
 }

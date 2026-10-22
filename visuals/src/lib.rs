@@ -11,7 +11,6 @@ pub mod paint_lane;
 pub mod render_schedule;
 pub mod shader;
 pub mod shared_gpu;
-pub mod transient_visual;
 pub mod wisp_attack;
 
 pub mod prelude {

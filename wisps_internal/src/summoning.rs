@@ -65,7 +65,7 @@ fn collect_summonings(
         state: SummoningState,
         activated_by: Option<u32>,
         produced: i32,
-        next_spawn_time: f32,
+        next_spawn_time: f64,
     }
 
     #[debug_dev("Saving {} summonings", snapshots.len())]
@@ -176,7 +176,7 @@ fn load_summonings(ctx: &mut LoadContext) -> LoadResult {
             let limit_count: Option<i32> = row.get(5)?;
             let area_kind: String = row.get(6)?;
             let produced: i32 = row.get(7)?;
-            let next_spawn_time: f32 = row.get(8)?;
+            let next_spawn_time: f64 = row.get(8)?;
 
             let tempo = match tempo_kind.as_str() {
                 "Continuous" => ctx.conn.query_row(
@@ -274,7 +274,7 @@ fn tick_active_summoning_system(
     clock: Res<GameClock>,
     mut summonings: Query<(Entity, &Summoning, &mut SummoningRuntime), With<SummoningActive>>,
 ) {
-    let now = clock.elapsed as f32;
+    let now = clock.elapsed;
     let mut rng = nanorand::tls_rng();
 
     for (entity, summoning, mut runtime) in summonings.iter_mut() {
@@ -292,7 +292,7 @@ fn tick_active_summoning_system(
                 }
                 runtime.produced = runtime.produced.saturating_add(to_spawn);
                 let jitter_offset = if jitter > 0.0 { (rng.generate::<f32>() * 2.0 - 1.0) * jitter } else { 0.0 };
-                runtime.next_spawn_time = now + (seconds + jitter_offset);
+                runtime.next_spawn_time = now + f64::from(seconds + jitter_offset);
             }
         }
 

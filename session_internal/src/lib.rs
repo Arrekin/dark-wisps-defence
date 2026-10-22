@@ -3,6 +3,7 @@ use bevy::app::{App, Plugin};
 pub(crate) mod game_clock;
 pub(crate) mod moments;
 pub(crate) mod stats;
+pub(crate) mod time_bound;
 
 pub struct SessionPlugin;
 impl Plugin for SessionPlugin {
@@ -11,6 +12,7 @@ impl Plugin for SessionPlugin {
             game_clock::GameClockPlugin,
             stats::StatsPlugin,
             moments::SessionMomentsPlugin,
+            time_bound::TimeBoundPlugin,
         ));
     }
 }

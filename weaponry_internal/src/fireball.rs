@@ -27,12 +27,11 @@ use game_core::prelude::{CELL_SIZE, DamageMessage, GridCoords, GridImprint, MapB
 use grids::wisps::WispsGrid;
 use logging::prelude::*;
 use persistence::{prelude::*, rusqlite};
-use session::GameClock;
+use session::{GameClock, TimeBound};
 use states::prelude::{GameState, MapLoadingStage};
 use visuals::{
     lane::{LanePlugin, LaneVisual},
     shader::{ADDITIVE_BLENDING, seed_from_entity},
-    transient_visual::{TransientVisual, despawn_played_out},
 };
 use weaponry::{lob::Lob, prelude::*};
 use wisps::prelude::Wisp;
@@ -50,7 +49,6 @@ impl Plugin for FireballPlugin {
             ))
             .add_systems(Update, (
                 fireball_hit_system.after(advance_lobs).run_if(in_state(GameState::Running)),
-                despawn_played_out::<FireballImpact>.run_if(in_state(GameState::Running)),
                 update_fireball_visuals.after(advance_lobs),
             ))
             .add_observer(on_builder_add_spawn_fireball)
@@ -143,7 +141,7 @@ enum ImpactLayer {
     Scorch = 1,
 }
 
-/// One impact layer on a temporary entity, despawned when its duration expires.
+/// One impact layer on a temporary entity, despawned when its `TimeBound` expires.
 /// Field order and types mirror `Instance` in
 /// `assets/shaders/weaponry/fireball_impact.wesl`.
 #[derive(Component, ShaderType, TypePath, Clone)]
@@ -175,22 +173,18 @@ impl LaneVisual for FireballImpact {
     }
 }
 impl FireballImpact {
-    fn new(layer: ImpactLayer, duration: f32, start_time: f32, seed: f32, landing_coords: GridCoords) -> Self {
+    fn new(layer: ImpactLayer, time_bound: TimeBound, seed: f32, landing_coords: GridCoords) -> Self {
         Self {
-            start_time,
+            start_time: GameClock::wrap(time_bound.starts_at),
             seed,
             layer: layer as u32,
-            duration,
+            duration: time_bound.duration() as f32,
             reach: IMPACT_REACH as u32,
             main_half_size: MAIN_BLAST_REACH as f32 + 0.5,
             ring_half_size: RING_REACH as f32 + 0.5,
             landing_cell: landing_coords.into(),
         }
     }
-}
-impl TransientVisual for FireballImpact {
-    fn start_time(&self) -> f32 { self.start_time }
-    fn duration(&self) -> f32 { self.duration }
 }
 
 #[log_tags(Tag::GameSave)]
@@ -277,10 +271,11 @@ fn fireball_hit_system(
         if !lob.is_landed() { continue; }
 
         let landing_coords = GridCoords::from_world_vec2(lob.target());
-        let (start_time, seed) = (clock.wrapped(), seed_from_entity(entity));
+        let seed = seed_from_entity(entity);
+        let (blast, scorch) = (TimeBound::lasting(&clock, BLAST_DURATION), TimeBound::lasting(&clock, SCORCH_DURATION));
         let transform = Transform::from_translation(landing_coords.to_world_position_centered(GridImprint::default()).extend(0.));
-        commands.spawn((FireballImpact::new(ImpactLayer::Blast, BLAST_DURATION, start_time, seed, landing_coords), transform, ZDepth::FireballBlast));
-        commands.spawn((FireballImpact::new(ImpactLayer::Scorch, SCORCH_DURATION, start_time, seed, landing_coords), transform, ZDepth::FireballScorch));
+        commands.spawn((FireballImpact::new(ImpactLayer::Blast, blast, seed, landing_coords), blast, transform, ZDepth::FireballBlast));
+        commands.spawn((FireballImpact::new(ImpactLayer::Scorch, scorch, seed, landing_coords), scorch, transform, ZDepth::FireballScorch));
         for dx in -RING_REACH..=RING_REACH {
             for dy in -RING_REACH..=RING_REACH {
                 let blast_zone_coords = landing_coords.shifted((dx, dy));

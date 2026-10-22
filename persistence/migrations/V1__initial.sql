@@ -91,6 +91,14 @@ CREATE TABLE IF NOT EXISTS world_positions (
     FOREIGN KEY(entity_id) REFERENCES entities(id)
 );
 
+-- Lifetime of a time-bound entity, in absolute game-clock seconds.
+CREATE TABLE IF NOT EXISTS time_bounds (
+    entity_id INTEGER PRIMARY KEY,
+    starts_at REAL NOT NULL,
+    ends_at REAL NOT NULL,
+    FOREIGN KEY(entity_id) REFERENCES entities(id)
+);
+
 -- ========================
 -- Buildings (shared)
 -- ========================
@@ -343,7 +351,6 @@ CREATE TABLE IF NOT EXISTS brittle_effects (
     id INTEGER PRIMARY KEY,
     target_id INTEGER NOT NULL,
     source_id INTEGER,
-    expires_at REAL,
     damage_multiplier REAL NOT NULL DEFAULT 1.0,
     FOREIGN KEY(id) REFERENCES entities(id)
 );

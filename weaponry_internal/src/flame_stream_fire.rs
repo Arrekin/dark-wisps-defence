@@ -14,12 +14,11 @@
 use bevy::{prelude::*, reflect::TypePath, render::render_resource::{BlendState, ShaderType}};
 
 use game_core::prelude::{GridCoords, GridImprint, MapBound, ZDepth};
-use session::GameClock;
+use session::{GameClock, TimeBound};
 use states::prelude::GameState;
 use visuals::{
     lane::{LanePlugin, LaneVisual},
     shader::{ADDITIVE_BLENDING, seed_from_entity},
-    transient_visual::{TransientVisual, despawn_played_out},
 };
 use weaponry::{flame_stream::FlameStreamSystems, prelude::*};
 
@@ -36,10 +35,7 @@ impl Plugin for FlameStreamFirePlugin {
             ))
             .add_systems(Update, (
                 (update_flames, update_pilot_flames).after(FlameStreamSystems),
-                (
-                    update_impact_fires.after(FlameStreamSystems),
-                    despawn_played_out::<FlameScorch>,
-                ).run_if(in_state(GameState::Running)),
+                update_impact_fires.after(FlameStreamSystems).run_if(in_state(GameState::Running)),
             ))
             .add_observer(on_add_flame_stream_spawn_fire);
     }
@@ -222,10 +218,6 @@ impl LaneVisual for FlameScorch {
         BlendState::PREMULTIPLIED_ALPHA_BLENDING
     }
 }
-impl TransientVisual for FlameScorch {
-    fn start_time(&self) -> f32 { self.start_time }
-    fn duration(&self) -> f32 { self.duration }
-}
 
 /// Nozzle pilot flame shown while the stream is armed. Child of `FlameStream`. Field order and
 /// types mirror `Instance` in `assets/shaders/weaponry/flame_stream_pilot.wesl`.
@@ -358,14 +350,16 @@ fn update_impact_fires(
         visibility.set_if_neq(if impact_fire.intensity > 0. { Visibility::Inherited } else { Visibility::Hidden });
 
         if let Some(burnt) = burnt {
+            let time_bound = TimeBound::lasting(&clock, SCORCH_DURATION);
             commands.spawn((
                 FlameScorch {
-                    start_time: clock.wrapped(),
-                    duration: SCORCH_DURATION,
+                    start_time: GameClock::wrap(time_bound.starts_at),
+                    duration: time_bound.duration() as f32,
                     strength: burnt.strength,
                     seed: (burnt.coords.x * 31 + burnt.coords.y) as f32 % 97.,
                     half_size: SCORCH_MESH_HALF_SIZE,
                 },
+                time_bound,
                 Transform::from_translation(burnt.coords.to_world_position_centered(GridImprint::default()).extend(0.)),
             ));
         }

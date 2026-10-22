@@ -168,6 +168,7 @@ version = "0.2.0"
 dependencies = [
  "bevy",
  "game_core",
+ "session",
  "strum",
 ]
 
@@ -5068,6 +5069,7 @@ dependencies = [
  "resources",
  "rusqlite",
  "serde",
+ "session",
  "states",
 ]
 
@@ -6666,7 +6668,6 @@ dependencies = [
  "bevy",
  "bytemuck",
  "game_core",
- "session",
  "strum",
 ]
 
