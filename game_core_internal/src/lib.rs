@@ -19,6 +19,7 @@ impl Plugin for GameCorePlugin {
                 upload_gpu_map_info.run_if(resource_changed::<MapInfo>),
             ))
             .add_observer(on_insert_zdepth_set_local_z)
+            .add_observer(on_insert_grid_coords_snap_transform)
             // Technical-state global observers: fold primitive component
             // events into one shared `TechnicalStateChanged` event. They fire
             // for every entity; the event is a no-op unless the target entity
@@ -71,6 +72,17 @@ fn on_insert_zdepth_set_local_z(
     let entity = trigger.entity;
     let Ok((mut transform, z_depth)) = transforms.get_mut(entity) else { return; };
     transform.translation.z = z_depth.world_z(entity);
+}
+
+fn on_insert_grid_coords_snap_transform(
+    trigger: On<Insert<GridCoords>>,
+    mut transforms: Query<(&mut Transform, &GridCoords, &GridImprint), With<AutoGridSnap>>,
+) {
+    let entity = trigger.entity;
+    let Ok((mut transform, grid_coords, grid_imprint)) = transforms.get_mut(entity) else { return; };
+    let world_centered = grid_coords.to_world_position_centered(grid_imprint);
+    transform.translation.x = world_centered.x;
+    transform.translation.y = world_centered.y;
 }
 
 fn on_add_display_icon_switcher_load_display_icon(

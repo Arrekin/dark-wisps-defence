@@ -86,6 +86,12 @@ impl MapInfo {
     }
 }
 
+/// Snaps the entity's `Transform` to the world position of its `GridCoords` and `GridImprint`.
+/// The snap happens when `GridCoords` is inserted. Mutating `GridCoords` in place does not snap.
+#[derive(Component, Default)]
+#[require(Transform)]
+pub struct AutoGridSnap;
+
 // This component should be replaced in full. Mutate in place only if you are sure.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Component, Hash)]
 pub struct GridCoords {

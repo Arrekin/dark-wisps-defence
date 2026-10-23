@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use game_core::prelude::{GridCoords, GridImprint, MapBound};
+use game_core::prelude::{AutoGridSnap, GridCoords, GridImprint, MapBound};
 use grids::{prelude::ObstacleGridObject, EmissionsGridSpreadAffector};
 
 pub mod wall_style;
@@ -46,7 +46,7 @@ pub struct BuilderQuantumFieldSideMenuTooltip(pub Entity);
 
 /// Progressive obstacle requiring drone scanning to solve.
 #[derive(Component, Default)]
-#[require(MapBound, ObstacleGridObject = ObstacleGridObject::QuantumField)]
+#[require(AutoGridSnap, MapBound, ObstacleGridObject = ObstacleGridObject::QuantumField)]
 pub struct QuantumField;
 
 /// Accumulates expedition-drone scan progress while a beam is active over the entity.

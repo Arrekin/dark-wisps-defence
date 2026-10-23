@@ -66,13 +66,8 @@ pub struct EmissionsGridSpreadAffector;
 #[derive(SystemSet, Clone, Copy, Eq, PartialEq, Hash, Debug)]
 pub struct EnergySupplySystems;
 
-// Marker: the entity's `Transform` is auto-synced to its `GridCoords` + `GridImprint` world position.
-#[derive(Component, Default)]
-pub struct AutoGridTransformSync;
-
 pub mod prelude {
     pub use super::{
-        AutoGridTransformSync,
         EnergySupplySystems,
         GridPath,
         GridVersion,

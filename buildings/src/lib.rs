@@ -3,8 +3,8 @@ use std::time::Duration;
 use bevy::prelude::*;
 
 use alteration::modifiers::prelude::{AttackDamage, AttackRange, AttackSpeed, MaxIntegrityPoints, ModifierBank};
-use game_core::prelude::{BuildingType, MapBound, TowerType, ZDepth};
-use grids::{AutoGridTransformSync, prelude::{GridVersion, ObstacleGridObject}};
+use game_core::prelude::{AutoGridSnap, BuildingType, MapBound, TowerType, ZDepth};
+use grids::prelude::{GridVersion, ObstacleGridObject};
 
 #[derive(Component, Default)]
 pub struct Tower;
@@ -17,7 +17,7 @@ pub struct BuilderBuildingSideMenuTooltip {
 }
 
 #[derive(Component, Clone, Debug, Default)]
-#[require(AutoGridTransformSync, ZDepth::Building, MaxIntegrityPoints, MapBound, ObstacleGridObject = ObstacleGridObject::Building, ModifierBank)]
+#[require(AutoGridSnap, ZDepth::Building, MaxIntegrityPoints, MapBound, ObstacleGridObject = ObstacleGridObject::Building, ModifierBank)]
 pub struct Building;
 
 #[derive(Component)]

@@ -21,7 +21,7 @@ pub struct WispElectricType;
 #[require(
     WispState, WispChargeAttack, GridPath, ModifierBank, MapBound,
     MovementSpeed, AttackRange, MaxIntegrityPoints, IncomingDamageMultiplier,
-    FieldAffectable, EffectVisualState, Locomotion
+    FieldAffectable, EffectVisualState, Locomotion, GridImprint = WISP_GRID_IMPRINT
 )]
 pub struct Wisp;
 

@@ -9,7 +9,6 @@ pub(crate) mod ground_cover;
 pub(crate) mod ground_cover_canvas;
 pub(crate) mod wisps;
 pub(crate) mod emissions;
-pub(crate) mod transform_sync;
 pub(crate) mod placement;
 
 pub struct GridsPlugin;
@@ -23,7 +22,6 @@ impl Plugin for GridsPlugin {
             ground_cover_canvas::GroundCoverCanvasPlugin,
             wisps::WispsGridPlugin,
             tower_ranges::TowerRangesPlugin,
-            transform_sync::GridTransformSyncPlugin,
             placement::GridObjectPlacerPlugin,
         ));
     }

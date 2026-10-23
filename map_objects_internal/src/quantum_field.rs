@@ -194,7 +194,6 @@ impl BuilderQuantumField {
             .remove::<BuilderQuantumField>()
             .insert((
                 Name::new("Quantum Field"),
-                Transform::from_translation(builder.grid_position.to_world_position_centered(builder.grid_imprint).extend(0.)),
                 builder.grid_position,
                 builder.grid_imprint,
                 quantum_field,

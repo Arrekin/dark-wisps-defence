@@ -1,6 +1,6 @@
 use bevy::{ecs::system::SystemParam, prelude::*};
 
-use game_core::prelude::{GridCoords, GridImprint, MapObject, ZDepth};
+use game_core::prelude::{AutoGridSnap, GridCoords, GridImprint, MapObject, ZDepth};
 
 use crate::{energy_supply::EnergySupplyGrid, obstacles::{ObstacleGrid, ReservedCoords}, wisps::WispsGrid};
 
@@ -138,7 +138,7 @@ pub struct ActivePlacement {
 pub struct PlacementStyle(pub u32);
 
 #[derive(Component, Default)]
-#[require(GridImprint, GridCoords, PlacementStyle, ZDepth::GridPlacer, crate::AutoGridTransformSync)]
+#[require(GridImprint, GridCoords, PlacementStyle, ZDepth::GridPlacer, AutoGridSnap)]
 pub struct GridObjectPlacer {
     pub active_placement: Option<ActivePlacement>,
 }
