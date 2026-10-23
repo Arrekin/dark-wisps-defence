@@ -6,7 +6,7 @@ use crate::visited::{TrackingGrid, VisitedGrid};
 
 thread_local! {
     pub static TRACKING_GRID: RefCell<TrackingGrid> = RefCell::new(TrackingGrid::new_with_size(Bounds::default()));
-    pub static VISITED_GRID: RefCell<VisitedGrid> = RefCell::new(VisitedGrid::new_with_size(Bounds::default()));
+    pub static VISITED_GRID: RefCell<VisitedGrid> = RefCell::new(VisitedGrid::default());
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]

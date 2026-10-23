@@ -338,7 +338,7 @@ impl<'a> OverlayBufferCreator<'a> {
         let grid_bounds = self.energy_supply_grid.bounds;
 
         VISITED_GRID.with_borrow_mut(|visited_grid| {
-            visited_grid.resize_and_reset(grid_bounds);
+            visited_grid.resize_and_clear(grid_bounds);
             let mut queue = VecDeque::new();
 
             // Flood from every imprint cell, so the distance is even around buildings.
@@ -384,7 +384,7 @@ impl<'a> OverlayBufferCreator<'a> {
             // as the new building being placed may be a bridge between a stranded suppliers and the main power grid
             // Note as this flood is not distance-restricted, as the stranded suppliers may form a chain over entire map and putting new one can connect all of them.
             if has_power {
-                visited_grid.reset();
+                visited_grid.clear();
                 queue.clear();
 
                 start_coords.iter().for_each(|coords| {

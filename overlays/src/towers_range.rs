@@ -285,7 +285,7 @@ impl<'a> OverlayBufferCreator<'a> {
         let grid_bounds = self.grid.bounds;
 
         VISITED_GRID.with_borrow_mut(|visited_grid| {
-            visited_grid.resize_and_reset(grid_bounds);
+            visited_grid.resize_and_clear(grid_bounds);
             let mut queue = VecDeque::new();
 
             // Flood from every imprint cell, so the distance is even around buildings.

@@ -22,7 +22,7 @@ pub fn flood_emissions<'a>(
     should_field_be_flooded: fn(&Field) -> bool,
 ) {
     VISITED_GRID.with_borrow_mut(|visited_grid| {
-        visited_grid.resize_and_reset(obstacles_grid.bounds);
+        visited_grid.resize_and_clear(obstacles_grid.bounds);
         let mut queue = VecDeque::new();
         let max_range = emissions_details.into_iter().map(|details| details.range).max().unwrap();
         start_coords.into_iter().for_each(|coords| {
@@ -85,7 +85,7 @@ pub fn flood_energy_supply(
     supplier: Entity,
 ) {
     VISITED_GRID.with_borrow_mut(|visited_grid| {
-        visited_grid.resize_and_reset(energy_supply_grid.bounds);
+        visited_grid.resize_and_clear(energy_supply_grid.bounds);
         let mut queue = VecDeque::new();
         start_coords.into_iter().for_each(|coords| {
             match mode {
@@ -123,7 +123,7 @@ pub fn flood_power_coverage(
 ){
     energy_supply_grid.reset_all_power_indicators();
     VISITED_GRID.with_borrow_mut(|visited_grid| {
-        visited_grid.resize_and_reset(energy_supply_grid.bounds);
+        visited_grid.resize_and_clear(energy_supply_grid.bounds);
         let mut queue = VecDeque::new();
         start_coords.into_iter().for_each(|coords| {
             queue.push_back(coords);
@@ -156,7 +156,7 @@ pub fn flood_tower_range(
     tower_entity: Entity,
 ) {
     VISITED_GRID.with_borrow_mut(|visited_grid| {
-        visited_grid.resize_and_reset(tower_ranges_grid.bounds);
+        visited_grid.resize_and_clear(tower_ranges_grid.bounds);
         let mut queue = VecDeque::new();
         start_coords.into_iter().for_each(|coords| {
             match mode {

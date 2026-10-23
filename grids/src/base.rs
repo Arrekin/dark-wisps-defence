@@ -22,12 +22,16 @@ impl<FieldType, GridVersionType> BaseGrid<FieldType, GridVersionType> where Fiel
             version: GridVersionType::default(),
         }
     }
-    pub fn resize_and_reset(&mut self, bounds: impl Into<Bounds>) {
+    /// Resizes only when the bounds change. Added cells start at their default.
+    pub fn resize(&mut self, bounds: impl Into<Bounds>) {
         let bounds = bounds.into();
         if self.bounds != bounds {
             self.bounds = bounds;
             self.grid.resize(bounds.area(), Default::default());
         }
+    }
+    pub fn resize_and_reset(&mut self, bounds: impl Into<Bounds>) {
+        self.resize(bounds);
         self.reset();
     }
     pub fn reset(&mut self) {
