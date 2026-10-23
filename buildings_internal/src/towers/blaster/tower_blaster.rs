@@ -220,18 +220,13 @@ fn load_tower_blasters(ctx: &mut LoadContext) -> LoadResult {
 
 fn shooting_system(
     mut commands: Commands,
-    mut tower_blasters: Query<(&GridImprint, &Transform, &mut TowerShootingTimer, &mut TowerWispTarget, &TowerTopRotation, &AttackDamage), (With<TowerBlaster>, With<IsOperational>)>,
-    wisps: Query<&Transform, With<Wisp>>,
+    mut tower_blasters: Query<(&GridImprint, &Transform, &mut TowerShootingTimer, &TowerWispTarget, &TowerTopRotation, &AttackDamage), (With<TowerBlaster>, With<IsOperational>)>,
+    wisps: Query<(Entity, &Transform), With<Wisp>>,
 ) {
-    for (grid_imprint, transform, mut timer, mut target, top_rotation, attack_damage) in tower_blasters.iter_mut() {
-        let TowerWispTarget::Wisp(target_wisp) = *target else { continue; };
+    for (grid_imprint, transform, mut timer, target, top_rotation, attack_damage) in tower_blasters.iter_mut() {
         if !timer.0.is_finished() { continue; }
-
-        let Ok(wisp_position) = wisps.get(target_wisp).map(|target| target.translation.xy()) else {
-            // Target wisp does not exist anymore
-            *target = TowerWispTarget::SearchForNewTarget;
-            continue;
-        };
+        let Some(Ok((target_wisp, wisp_transform))) = target.wisp().map(|wisp| wisps.get(wisp)) else { continue; };
+        let wisp_position = wisp_transform.translation.xy();
 
         if !top_rotation.is_facing(wisp_position - transform.translation.xy()) { continue; }
 

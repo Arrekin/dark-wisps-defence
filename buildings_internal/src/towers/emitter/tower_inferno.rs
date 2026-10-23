@@ -207,18 +207,12 @@ fn load_tower_infernos(ctx: &mut LoadContext) -> LoadResult {
 
 fn shooting_system(
     mut commands: Commands,
-    mut tower_infernos: Query<(&Transform, &AttackRange, &mut TowerShootingTimer, &mut TowerWispTarget), (With<TowerInferno>, With<IsOperational>)>,
+    mut tower_infernos: Query<(&Transform, &AttackRange, &mut TowerShootingTimer, &TowerWispTarget), (With<TowerInferno>, With<IsOperational>)>,
     wisps: Query<(), With<Wisp>>,
 ) {
-    for (transform, attack_range, mut timer, mut target) in tower_infernos.iter_mut() {
-        let TowerWispTarget::Wisp(target_wisp) = *target else { continue; };
+    for (transform, attack_range, mut timer, target) in tower_infernos.iter_mut() {
         if !timer.0.is_finished() { continue; }
-
-        if !wisps.contains(target_wisp) {
-            // Reacquire a target if the wisp is gone.
-            *target = TowerWispTarget::SearchForNewTarget;
-            continue;
-        }
+        if !target.wisp().is_some_and(|wisp| wisps.contains(wisp)) { continue; }
 
         commands.spawn((InfernoDome::new(attack_range.get() * CELL_SIZE), Transform::from_translation(transform.translation.with_z(0.))));
         timer.0.reset();

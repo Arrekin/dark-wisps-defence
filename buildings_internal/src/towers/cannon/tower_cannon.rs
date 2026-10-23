@@ -211,18 +211,12 @@ fn load_tower_cannons(ctx: &mut LoadContext) -> LoadResult {
 fn shooting_system(
     mut commands: Commands,
     clock: Res<GameClock>,
-    mut tower_cannons: Query<(Entity, &Transform, &LobProfile, &mut TowerShootingTimer, &mut TowerWispTarget, &AttackDamage), (With<TowerCannon>, With<IsOperational>)>,
+    mut tower_cannons: Query<(Entity, &Transform, &LobProfile, &mut TowerShootingTimer, &TowerWispTarget, &AttackDamage), (With<TowerCannon>, With<IsOperational>)>,
     wisps: Query<WispHeading, With<Wisp>>,
 ) {
-    for (tower, transform, lob_profile, mut timer, mut target, attack_damage) in tower_cannons.iter_mut() {
-        let TowerWispTarget::Wisp(target_wisp) = *target else { continue; };
+    for (tower, transform, lob_profile, mut timer, target, attack_damage) in tower_cannons.iter_mut() {
         if !timer.0.is_finished() { continue; }
-
-        let Ok(wisp_heading) = wisps.get(target_wisp) else {
-            // Target wisp does not exist anymore
-            *target = TowerWispTarget::SearchForNewTarget;
-            continue;
-        };
+        let Some(Ok(wisp_heading)) = target.wisp().map(|wisp| wisps.get(wisp)) else { continue; };
 
         let lob = lob_profile.lob(transform.translation.xy(), wisp_heading.next_cell_center(), clock.now());
         commands.spawn(BuilderCannonball::new(lob, *attack_damage).with_shooter(tower));

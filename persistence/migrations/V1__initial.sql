@@ -336,7 +336,7 @@ CREATE TABLE IF NOT EXISTS laser_darts (
 CREATE TABLE IF NOT EXISTS rockets (
     id INTEGER PRIMARY KEY,
     target_wisp_id INTEGER,
-    rotation_z REAL NOT NULL,
+    heading REAL NOT NULL,
     damage REAL NOT NULL,
     FOREIGN KEY(id) REFERENCES entities(id)
 );

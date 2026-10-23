@@ -127,8 +127,8 @@ fn rotational_aiming_system(
     wisps: Query<&Transform, With<Wisp>>,
 ) {
     for (mut rotation, target, tower_transform) in towers.iter_mut() {
-        let TowerWispTarget::Wisp(target_wisp) = target else { continue; };
-        let Ok(wisp_position) = wisps.get(*target_wisp).map(|target| target.translation.xy()) else { continue; };
+        let Some(Ok(wisp_transform)) = target.wisp().map(|wisp| wisps.get(wisp)) else { continue; };
+        let wisp_position = wisp_transform.translation.xy();
 
         let angle_delta = rotation.angle_to(wisp_position - tower_transform.translation.xy());
 

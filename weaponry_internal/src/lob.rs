@@ -313,8 +313,7 @@ fn update_lob_preview_targets(
     for (target, fired_projectiles, mut preview_target) in previews.iter_mut() {
         let in_flight_target = fired_projectiles.into_iter().flat_map(FiredProjectiles::newest_first).find_map(|projectile| lobs.get(projectile).ok()).map(Lob::target);
         let shot_point = in_flight_target.or_else(|| {
-            let TowerWispTarget::Wisp(target_wisp) = *target else { return None; };
-            wisps.get(target_wisp).ok().map(|wisp_heading| wisp_heading.next_cell_center())
+            target.wisp().and_then(|wisp| wisps.get(wisp).ok()).map(|wisp_heading| wisp_heading.next_cell_center())
         });
         match shot_point {
             Some(shot_point) => preview_target.ease_toward(shot_point, settle),

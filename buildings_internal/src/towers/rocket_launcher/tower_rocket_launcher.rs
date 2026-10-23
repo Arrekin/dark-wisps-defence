@@ -221,18 +221,13 @@ fn load_tower_rocket_launchers(ctx: &mut LoadContext) -> LoadResult {
 
 fn shooting_system(
     mut commands: Commands,
-    mut tower_rocket_launchers: Query<(&GridImprint, &Transform, &mut TowerShootingTimer, &mut TowerWispTarget, &TowerTopRotation, &AttackDamage), (With<TowerRocketLauncher>, With<IsOperational>)>,
-    wisps: Query<&Transform, With<Wisp>>,
+    mut tower_rocket_launchers: Query<(&GridImprint, &Transform, &mut TowerShootingTimer, &TowerWispTarget, &TowerTopRotation, &AttackDamage), (With<TowerRocketLauncher>, With<IsOperational>)>,
+    wisps: Query<(Entity, &Transform), With<Wisp>>,
 ) {
-    for (grid_imprint, transform, mut timer, mut target, top_rotation, attack_damage) in tower_rocket_launchers.iter_mut() {
-        let TowerWispTarget::Wisp(target_wisp) = *target else { continue; };
+    for (grid_imprint, transform, mut timer, target, top_rotation, attack_damage) in tower_rocket_launchers.iter_mut() {
         if !timer.0.is_finished() { continue; }
-
-        let Ok(wisp_position) = wisps.get(target_wisp).map(|target| target.translation.xy()) else {
-            // Target wisp does not exist anymore
-            *target = TowerWispTarget::SearchForNewTarget;
-            continue;
-        };
+        let Some(Ok((target_wisp, wisp_transform))) = target.wisp().map(|wisp| wisps.get(wisp)) else { continue; };
+        let wisp_position = wisp_transform.translation.xy();
 
         if !top_rotation.is_facing(wisp_position - transform.translation.xy()) { continue; }
 
@@ -241,8 +236,7 @@ fn shooting_system(
         let offset = Vec2::from_angle(top_rotation.current_angle) * tower_world_width * 0.4;
         let spawn_position = transform.translation.xy() + offset;
 
-        let rocket_angle = Quat::from_rotation_z(top_rotation.current_angle);
-        commands.spawn(BuilderRocket::new(spawn_position, rocket_angle, target_wisp, *attack_damage));
+        commands.spawn(BuilderRocket::new(spawn_position, top_rotation.current_angle, *attack_damage).with_target_wisp(target_wisp));
         timer.0.reset();
     }
 }

@@ -198,18 +198,12 @@ fn load_tower_emitters(ctx: &mut LoadContext) -> LoadResult {
 
 fn shooting_system(
     mut commands: Commands,
-    mut tower_emitters: Query<(&Transform, &AttackRange, &mut TowerShootingTimer, &mut TowerWispTarget), (With<TowerEmitter>, With<IsOperational>)>,
+    mut tower_emitters: Query<(&Transform, &AttackRange, &mut TowerShootingTimer, &TowerWispTarget), (With<TowerEmitter>, With<IsOperational>)>,
     wisps: Query<(), With<Wisp>>,
 ) {
-    for (transform, range, mut timer, mut target) in tower_emitters.iter_mut() {
-        let TowerWispTarget::Wisp(target_wisp) = *target else { continue; };
+    for (transform, range, mut timer, target) in tower_emitters.iter_mut() {
         if !timer.0.is_finished() { continue; }
-
-        if !wisps.contains(target_wisp) {
-            // Target wisp does not exist anymore
-            *target = TowerWispTarget::SearchForNewTarget;
-            continue;
-        }
+        if !target.wisp().is_some_and(|wisp| wisps.contains(wisp)) { continue; }
 
         commands.spawn(BuilderRipple::new(transform.translation.xy(), range.get() * CELL_SIZE));
         timer.0.reset();

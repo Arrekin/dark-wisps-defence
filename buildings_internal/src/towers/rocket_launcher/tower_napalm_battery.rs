@@ -260,18 +260,12 @@ fn shooting_system(
     mut commands: Commands,
     clock: Res<GameClock>,
     map_info: Res<MapInfo>,
-    mut tower_napalm_batteries: Query<(Entity, &Transform, &LobProfile, &mut TowerShootingTimer, &mut TowerWispTarget, &TowerTopRotation), (With<TowerNapalmBattery>, With<IsOperational>)>,
+    mut tower_napalm_batteries: Query<(Entity, &Transform, &LobProfile, &mut TowerShootingTimer, &TowerWispTarget, &TowerTopRotation), (With<TowerNapalmBattery>, With<IsOperational>)>,
     wisps: Query<(&Transform, WispHeading), With<Wisp>>,
 ) {
-    for (tower, transform, lob_profile, mut timer, mut target, top_rotation) in tower_napalm_batteries.iter_mut() {
-        let TowerWispTarget::Wisp(target_wisp) = *target else { continue; };
+    for (tower, transform, lob_profile, mut timer, target, top_rotation) in tower_napalm_batteries.iter_mut() {
         if !timer.0.is_finished() { continue; }
-
-        let Ok((wisp_transform, wisp_heading)) = wisps.get(target_wisp) else {
-            // Target wisp does not exist anymore
-            *target = TowerWispTarget::SearchForNewTarget;
-            continue;
-        };
+        let Some(Ok((wisp_transform, wisp_heading))) = target.wisp().map(|wisp| wisps.get(wisp)) else { continue; };
 
         let tower_center = transform.translation.xy();
         if !top_rotation.is_facing(wisp_transform.translation.xy() - tower_center) { continue; }

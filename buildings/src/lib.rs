@@ -110,6 +110,14 @@ pub enum TowerWispTarget {
     /// The tower wants no target for now. Targeting skips it until the tower sets `SearchForNewTarget`.
     Suspended,
 }
+impl TowerWispTarget {
+    pub fn wisp(&self) -> Option<Entity> {
+        match self {
+            TowerWispTarget::Wisp(wisp) => Some(*wisp),
+            _ => None,
+        }
+    }
+}
 
 pub mod prelude {
     pub use super::{
