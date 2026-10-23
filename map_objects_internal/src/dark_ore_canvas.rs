@@ -10,7 +10,7 @@ use bevy::{
 };
 
 use almanach::Almanach;
-use game_core::prelude::{GridCoords, MapInfo, ZDepth};
+use game_core::{prelude::{GridCoords, MapInfo, ZDepth}, request_flag::RequestFlag};
 use map_objects::prelude::DarkOre;
 use states::prelude::MapLoadingStage;
 use visuals::{canvas::MapCanvasBundle, shared_gpu::{SharedGpuBinding, SharedGpuWriter}, specialize_with_shared_gpu};
@@ -20,11 +20,11 @@ impl Plugin for DarkOreCanvasPlugin {
     fn build(&self, app: &mut App) {
         app
             .add_plugins(Material2dPlugin::<DarkOreCanvasMaterial>::default())
-            .init_resource::<DarkOreFillGpuUploadRequested>()
+            .init_resource::<RequestFlag<DarkOreFillGpuUpload>>()
             .add_systems(OnEnter(MapLoadingStage::LoadResources), DarkOreCanvas::create)
             .add_systems(PostUpdate, (
                 request_dark_ore_fill_gpu_upload_on_dark_ore_changed,
-                upload_gpu_dark_ore_fill.run_if(resource_changed::<MapInfo>.or_else(DarkOreFillGpuUploadRequested::is_requested)),
+                upload_gpu_dark_ore_fill.run_if(RequestFlag::<DarkOreFillGpuUpload>::is_requested),
             ).chain())
             .add_observer(on_remove_dark_ore_request_dark_ore_fill_gpu_upload);
     }
@@ -52,8 +52,10 @@ impl DarkOreCanvas {
         mut commands: Commands,
         map_info: Res<MapInfo>,
         mut materials: ResMut<Assets<DarkOreCanvasMaterial>>,
+        mut upload_requested: ResMut<RequestFlag<DarkOreFillGpuUpload>>,
     ) {
         commands.despawn_all::<With<DarkOreCanvas>>();
+        upload_requested.request();
 
         let material = materials.add(DarkOreCanvasMaterial {});
         commands.spawn((
@@ -63,25 +65,11 @@ impl DarkOreCanvas {
     }
 }
 
-/// Marks dark ore fill data for upload, coalescing multiple requests within a frame.
-#[derive(Resource, Default)]
-struct DarkOreFillGpuUploadRequested(bool);
-impl DarkOreFillGpuUploadRequested {
-    fn request(&mut self) {
-        self.0 = true;
-    }
-
-    fn clear(&mut self) {
-        self.0 = false;
-    }
-
-    fn is_requested(requested: Res<Self>) -> bool {
-        requested.0
-    }
-}
+/// Upload of dark ore fill data.
+struct DarkOreFillGpuUpload;
 
 fn request_dark_ore_fill_gpu_upload_on_dark_ore_changed(
-    mut upload_requested: ResMut<DarkOreFillGpuUploadRequested>,
+    mut upload_requested: ResMut<RequestFlag<DarkOreFillGpuUpload>>,
     dark_ores: Query<&DarkOre, Changed<DarkOre>>,
 ) {
     if !dark_ores.is_empty() {
@@ -91,14 +79,14 @@ fn request_dark_ore_fill_gpu_upload_on_dark_ore_changed(
 
 fn on_remove_dark_ore_request_dark_ore_fill_gpu_upload(
     _trigger: On<Remove<DarkOre>>,
-    mut upload_requested: ResMut<DarkOreFillGpuUploadRequested>,
+    mut upload_requested: ResMut<RequestFlag<DarkOreFillGpuUpload>>,
 ) {
     upload_requested.request();
 }
 
 fn upload_gpu_dark_ore_fill(
     mut shared_gpu: SharedGpuWriter,
-    mut upload_requested: ResMut<DarkOreFillGpuUploadRequested>,
+    mut upload_requested: ResMut<RequestFlag<DarkOreFillGpuUpload>>,
     almanach: Res<Almanach>,
     map_info: Res<MapInfo>,
     dark_ores: Query<(&GridCoords, &DarkOre)>,

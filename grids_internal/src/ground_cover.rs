@@ -10,7 +10,7 @@
 use bevy::prelude::*;
 use bytemuck::{Pod, Zeroable};
 
-use game_core::prelude::{GridCoords, GridImprint, MapInfo};
+use game_core::{prelude::{GridCoords, GridImprint, MapInfo}, request_flag::RequestFlag};
 use grids::ground_cover::{GroundCover, GroundCoverEntry, GroundCoverGrid};
 use session::{GameClock, TimeBound};
 use states::prelude::MapLoadingStage;
@@ -23,9 +23,9 @@ impl Plugin for GroundCoverPlugin {
     fn build(&self, app: &mut App) {
         app
             .init_resource::<GroundCoverGrid>()
-            .init_resource::<GroundCoverGpuUploadRequested>()
-            .add_systems(OnExit(MapLoadingStage::LoadMapInfo), |mut commands: Commands, map_info: Res<MapInfo>| { commands.insert_resource(GroundCoverGrid::new_with_size(map_info.grid_bounds)); })
-            .add_systems(PostUpdate, upload_gpu_ground_cover.run_if(resource_changed::<GroundCoverGrid>.or_else(GroundCoverGpuUploadRequested::is_requested)))
+            .init_resource::<RequestFlag<GroundCoverGpuUpload>>()
+            .add_systems(OnExit(MapLoadingStage::LoadMapInfo), create_ground_cover_grid)
+            .add_systems(PostUpdate, upload_gpu_ground_cover.run_if(RequestFlag::<GroundCoverGpuUpload>::is_requested))
             .add_observer(on_insert_ground_cover_imprint_on_grid)
             .add_observer(on_discard_ground_cover_deprint_from_grid)
             .add_observer(on_insert_time_bound_request_ground_cover_gpu_upload);
@@ -49,46 +49,45 @@ struct GpuGroundCoverEntry {
     _padding: u32,
 }
 
-/// Requests one GPU upload per frame when ground cover lifetimes change.
-#[derive(Resource, Default)]
-struct GroundCoverGpuUploadRequested(bool);
-impl GroundCoverGpuUploadRequested {
-    fn request(&mut self) {
-        self.0 = true;
-    }
+/// Full upload of the ground cover grid.
+struct GroundCoverGpuUpload;
 
-    fn clear(&mut self) {
-        self.0 = false;
-    }
-
-    fn is_requested(requested: Res<Self>) -> bool {
-        requested.0
-    }
+fn create_ground_cover_grid(
+    mut commands: Commands,
+    map_info: Res<MapInfo>,
+    mut upload_requested: ResMut<RequestFlag<GroundCoverGpuUpload>>,
+) {
+    commands.insert_resource(GroundCoverGrid::new_with_size(map_info.grid_bounds));
+    upload_requested.request();
 }
 
 fn on_insert_ground_cover_imprint_on_grid(
     trigger: On<Insert<GroundCover>>,
     mut ground_cover_grid: ResMut<GroundCoverGrid>,
+    mut upload_requested: ResMut<RequestFlag<GroundCoverGpuUpload>>,
     ground_covers: Query<(&GroundCover, &GridCoords, &GridImprint)>,
 ) {
     let entity = trigger.entity;
     let Ok((ground_cover, grid_coords, grid_imprint)) = ground_covers.get(entity) else { return; };
     ground_cover_grid.imprint(*grid_coords, *grid_imprint, GroundCoverEntry { entity, kind: ground_cover.0 });
+    upload_requested.request();
 }
 
 fn on_discard_ground_cover_deprint_from_grid(
     trigger: On<Discard<GroundCover>>,
     mut ground_cover_grid: ResMut<GroundCoverGrid>,
+    mut upload_requested: ResMut<RequestFlag<GroundCoverGpuUpload>>,
     ground_covers: Query<(&GridCoords, &GridImprint), With<GroundCover>>,
 ) {
     let entity = trigger.entity;
     let Ok((grid_coords, grid_imprint)) = ground_covers.get(entity) else { return; };
     ground_cover_grid.deprint(*grid_coords, *grid_imprint, entity);
+    upload_requested.request();
 }
 
 fn on_insert_time_bound_request_ground_cover_gpu_upload(
     trigger: On<Insert<TimeBound>>,
-    mut upload_requested: ResMut<GroundCoverGpuUploadRequested>,
+    mut upload_requested: ResMut<RequestFlag<GroundCoverGpuUpload>>,
     ground_covers: Query<(), With<GroundCover>>,
 ) {
     if !ground_covers.contains(trigger.entity) { return; }
@@ -101,7 +100,7 @@ fn on_insert_time_bound_request_ground_cover_gpu_upload(
 /// on the GPU until the next upload.
 fn upload_gpu_ground_cover(
     mut shared_gpu: SharedGpuWriter,
-    mut upload_requested: ResMut<GroundCoverGpuUploadRequested>,
+    mut upload_requested: ResMut<RequestFlag<GroundCoverGpuUpload>>,
     ground_cover_grid: Res<GroundCoverGrid>,
     time_bounds: Query<&TimeBound, With<GroundCover>>,
     canvas: Option<Single<&mut Visibility, With<GroundCoverCanvas>>>,

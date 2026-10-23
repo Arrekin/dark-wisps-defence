@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
 use alteration::modifiers::prelude::EnergySupplyRange;
-use game_core::prelude::{DisabledByPlayer, GridCoords, GridImprint, MapInfo};
+use game_core::{prelude::{DisabledByPlayer, GridCoords, GridImprint, MapInfo}, request_flag::RequestFlag};
 use grids::{
     energy_supply::{EnergySupplyGrid, FloodEnergySupplyMode, GeneratorEnergy, SupplierChange, SupplierChangedMessage, SupplierEnergy},
     search::flooding::{flood_energy_supply, flood_power_coverage},
@@ -14,21 +14,21 @@ impl Plugin for EnergySupplyPlugin {
     fn build(&self, app: &mut App) {
         app
             .init_resource::<EnergySupplyGrid>()
-            .init_resource::<EnergySupplyRecalculatePower>()
+            .init_resource::<RequestFlag<PowerCoverageRecalculation>>()
             .add_message::<SupplierChangedMessage>()
             .add_systems(OnExit(MapLoadingStage::LoadMapInfo), |mut commands: Commands, map_info: Res<MapInfo>| { commands.insert_resource(EnergySupplyGrid::new_with_size(map_info.grid_bounds)); })
             .add_systems(PostUpdate, (
                 (
                     apply_supplier_changes,
-                    recalculate_power_coverage.run_if(resource_changed::<EnergySupplyRecalculatePower>),
+                    recalculate_power_coverage.run_if(RequestFlag::<PowerCoverageRecalculation>::is_requested),
                 ).chain().in_set(EnergySupplySystems),
             ))
             .add_observer(on_add_supplier_energy_register_supplier);
     }
 }
 
-#[derive(Resource, Default)]
-struct EnergySupplyRecalculatePower(bool);
+/// Recalculation of power coverage from the generators.
+struct PowerCoverageRecalculation;
 
 fn on_add_supplier_energy_register_supplier(
     trigger: On<Add<SupplierEnergy>>,
@@ -65,7 +65,7 @@ fn emit_supplier_changed<P, const MODE: SupplierChange>(
 
 fn apply_supplier_changes(
     mut energy_supply_grid: ResMut<EnergySupplyGrid>,
-    mut need_recalculate_power: ResMut<EnergySupplyRecalculatePower>,
+    mut need_recalculate_power: ResMut<RequestFlag<PowerCoverageRecalculation>>,
     mut supplier_changed_messages: MessageReader<SupplierChangedMessage>,
     suppliers: Query<Has<DisabledByPlayer>, With<SupplierEnergy>>,
 ) {
@@ -91,17 +91,16 @@ fn apply_supplier_changes(
             message.range,
             message.supplier,
         );
-        need_recalculate_power.0 = true;
+        need_recalculate_power.request();
     }
 }
 
 fn recalculate_power_coverage(
     mut energy_supply_grid: ResMut<EnergySupplyGrid>,
-    mut need_recalculate_power: ResMut<EnergySupplyRecalculatePower>,
+    mut need_recalculate_power: ResMut<RequestFlag<PowerCoverageRecalculation>>,
     generators_energy: Query<&GridCoords, With<GeneratorEnergy>>,
 ) {
-    if !need_recalculate_power.0 { return; }
-    need_recalculate_power.0 = false;
+    need_recalculate_power.clear();
 
     flood_power_coverage(&mut energy_supply_grid, generators_energy.iter().copied());
 }

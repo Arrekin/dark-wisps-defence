@@ -9,7 +9,7 @@ use bevy::{
     sprite_render::{AlphaMode2d, Material2d, Material2dPlugin, MeshMaterial2d},
 };
 
-use game_core::prelude::{GridCoords, MapInfo, ZDepth};
+use game_core::{prelude::{GridCoords, MapInfo, ZDepth}, request_flag::RequestFlag};
 use map_objects::{prelude::Wall, wall_style::{WallCanvasDebug, WallStyleKey, WallStyles}};
 use states::prelude::MapLoadingStage;
 use visuals::{canvas::MapCanvasBundle, shared_gpu::{SharedGpuBinding, SharedGpuWriter}, specialize_with_shared_gpu};
@@ -19,12 +19,12 @@ impl Plugin for WallCanvasPlugin {
     fn build(&self, app: &mut App) {
         app
             .add_plugins(Material2dPlugin::<WallCanvasMaterial>::default())
-            .init_resource::<WallStyleCellsGpuUploadRequested>()
+            .init_resource::<RequestFlag<WallStyleCellsGpuUpload>>()
             .init_resource::<WallCanvasDebug>()
             .add_systems(OnEnter(MapLoadingStage::Init), |mut commands: Commands| { commands.insert_resource(WallStyles::presets()); })
             .add_systems(OnEnter(MapLoadingStage::LoadResources), WallCanvas::create)
             .add_systems(PostUpdate, (
-                upload_gpu_wall_style_cells.run_if(resource_changed::<MapInfo>.or_else(WallStyleCellsGpuUploadRequested::is_requested)),
+                upload_gpu_wall_style_cells.run_if(RequestFlag::<WallStyleCellsGpuUpload>::is_requested),
                 upload_gpu_wall_styles.run_if(resource_changed::<WallStyles>),
                 apply_wall_canvas_debug.run_if(resource_changed::<WallCanvasDebug>),
             ))
@@ -65,8 +65,10 @@ impl WallCanvas {
         map_info: Res<MapInfo>,
         debug: Res<WallCanvasDebug>,
         mut materials: ResMut<Assets<WallCanvasMaterial>>,
+        mut upload_requested: ResMut<RequestFlag<WallStyleCellsGpuUpload>>,
     ) {
         commands.despawn_all::<With<WallCanvas>>();
+        upload_requested.request();
 
         let material = materials.add(WallCanvasMaterial {
             settings: WallCanvasSettings { debug_mode: debug.shader_index() },
@@ -78,40 +80,26 @@ impl WallCanvas {
     }
 }
 
-/// Marks wall style indices for upload, coalescing multiple requests within a frame.
-#[derive(Resource, Default)]
-struct WallStyleCellsGpuUploadRequested(bool);
-impl WallStyleCellsGpuUploadRequested {
-    fn request(&mut self) {
-        self.0 = true;
-    }
-
-    fn clear(&mut self) {
-        self.0 = false;
-    }
-
-    fn is_requested(requested: Res<Self>) -> bool {
-        requested.0
-    }
-}
+/// Upload of wall style indices.
+struct WallStyleCellsGpuUpload;
 
 fn on_insert_wall_style_key_request_wall_style_cells_gpu_upload(
     _trigger: On<Insert<WallStyleKey>>,
-    mut upload_requested: ResMut<WallStyleCellsGpuUploadRequested>,
+    mut upload_requested: ResMut<RequestFlag<WallStyleCellsGpuUpload>>,
 ) {
     upload_requested.request();
 }
 
 fn on_remove_wall_style_key_request_wall_style_cells_gpu_upload(
     _trigger: On<Remove<WallStyleKey>>,
-    mut upload_requested: ResMut<WallStyleCellsGpuUploadRequested>,
+    mut upload_requested: ResMut<RequestFlag<WallStyleCellsGpuUpload>>,
 ) {
     upload_requested.request();
 }
 
 fn upload_gpu_wall_style_cells(
     mut shared_gpu: SharedGpuWriter,
-    mut upload_requested: ResMut<WallStyleCellsGpuUploadRequested>,
+    mut upload_requested: ResMut<RequestFlag<WallStyleCellsGpuUpload>>,
     map_info: Res<MapInfo>,
     walls: Query<(&GridCoords, &WallStyleKey), With<Wall>>,
 ) {
