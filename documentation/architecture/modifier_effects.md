@@ -54,7 +54,7 @@ Immutable stat components populated by the bank's materialization step:
 ```
 MaxIntegrityPoints(f32) MovementSpeed(f32)      AttackSpeed(f32)
 AttackDamage(f32)       AttackRange(f32)        EnergySupplyRange(f32)
-IncomingDamageMultiplier(f32)
+IncomingDamageMultiplier(f32) TurnSpeed(f32)
 ```
 
 Because these are `#[component(immutable)]`, Bevy treats any value change as a remove +

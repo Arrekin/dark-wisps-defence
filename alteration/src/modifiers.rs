@@ -10,7 +10,7 @@ pub mod prelude {
     pub use super::{
         AttackDamage, AttackRange, AttackSpeed,
         EnergySupplyRange, IncomingDamageMultiplier,
-        MaxIntegrityPoints, ModifierBank, ModifierType, MovementSpeed,
+        MaxIntegrityPoints, ModifierBank, ModifierType, MovementSpeed, TurnSpeed,
     };
 }
 
@@ -27,6 +27,7 @@ pub enum ModifierType {
     MovementSpeed,
     EnergySupplyRange,
     IncomingDamageMultiplier,
+    TurnSpeed,
 }
 impl ModifierType {
     fn aggregate(&self, values: impl Iterator<Item = f32>) -> f32 {
@@ -36,7 +37,8 @@ impl ModifierType {
             | Self::AttackDamage
             | Self::MaxIntegrityPoints
             | Self::MovementSpeed
-            | Self::EnergySupplyRange => values.fold(0.0, |acc, v| acc + v),
+            | Self::EnergySupplyRange
+            | Self::TurnSpeed => values.fold(0.0, |acc, v| acc + v),
             Self::IncomingDamageMultiplier => values.fold(1.0, f32::max),
         }
     }
@@ -50,6 +52,7 @@ impl ModifierType {
             Self::MovementSpeed => { entity_commands.insert(MovementSpeed::new(value)); }
             Self::EnergySupplyRange => { entity_commands.insert(EnergySupplyRange::new(value)); }
             Self::IncomingDamageMultiplier => { entity_commands.insert(IncomingDamageMultiplier::new(value)); }
+            Self::TurnSpeed => { entity_commands.insert(TurnSpeed::new(value)); }
         }
     }
 }
@@ -84,6 +87,10 @@ pub struct IncomingDamageMultiplier(f32);
 impl Default for IncomingDamageMultiplier {
     fn default() -> Self { Self::new(1.0) }
 }
+/// Radians per second.
+#[derive(Component, Default, Clone, Copy, Property)]
+#[component(immutable)]
+pub struct TurnSpeed(f32);
 
 /////////////////////
 // MODIFIER BANK  ///

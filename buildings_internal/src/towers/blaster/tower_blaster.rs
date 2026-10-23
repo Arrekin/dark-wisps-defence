@@ -62,6 +62,7 @@ impl BuilderTowerBlaster {
                 (ModifierType::AttackRange, 15.),
                 (ModifierType::AttackSpeed, 5.),
                 (ModifierType::AttackDamage, 1.),
+                (ModifierType::TurnSpeed, 10.),
             ]),
             sockets: vec![
                 ("attack_speed".into(), ShardSocket::new(ShardType::Speed, "Attack speed", ModifierType::AttackSpeed, [1., 2., 3.])),
@@ -108,6 +109,7 @@ impl BuilderTowerBlaster {
 
         let building_info = almanach.get_building_info(BuildingType::Tower(TowerType::Blaster));
         let grid_imprint = building_info.grid_imprint;
+        let world_size = grid_imprint.world_size();
 
         commands.entity(entity)
             .remove::<BuilderTowerBlaster>()
@@ -123,7 +125,7 @@ impl BuilderTowerBlaster {
                 },
                 builder.grid_position,
                 grid_imprint,
-                TowerTopRotation { speed: 10.0, current_angle: builder.top_angle },
+                TowerTopRotation { current_angle: builder.top_angle },
                 NeedsPower,
                 related![Indicators[
                     IndicatorType::NoPower,
@@ -132,21 +134,19 @@ impl BuilderTowerBlaster {
                 related![EffectInstances[
                     (ModifierContributions(building_info.baseline.clone()), BaselineEffect),
                 ]],
+                related![TowerTop[(
+                    Sprite {
+                        image: building_info.top_sprite.clone().expect("Blaster Tower defines a top sprite"),
+                        custom_size: Some(Vec2::new(world_size.x * 1.52 * 0.5, world_size.y * 0.5)),
+                        ..default()
+                    },
+                    Transform::from_translation(builder.grid_position.to_world_position_centered(grid_imprint).extend(0.)),
+                )]],
                 children![
                     IndicatorDisplay::default(),
                 ],
             ))
             .observe(on_technical_state_changed_recompute_operational);
-        let world_size = grid_imprint.world_size();
-        let tower_top = commands.spawn((
-            Sprite {
-                image: building_info.top_sprite.clone().expect("Blaster Tower defines a top sprite"),
-                custom_size: Some(Vec2::new(world_size.x * 1.52 * 0.5, world_size.y * 0.5)),
-                ..default()
-            },
-            MarkerTowerRotationalTop(entity),
-        )).id();
-        commands.entity(entity).add_child(tower_top);
         for (content_id, socket) in &building_info.sockets {
             commands.trigger(ShardSocketUpsert::new(entity, content_id.clone(), socket.clone()));
         }

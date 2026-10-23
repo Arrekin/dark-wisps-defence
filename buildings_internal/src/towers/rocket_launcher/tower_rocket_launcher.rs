@@ -64,6 +64,7 @@ impl BuilderTowerRocketLauncher {
                 (ModifierType::AttackRange, 30.),
                 (ModifierType::AttackSpeed, 0.33),
                 (ModifierType::AttackDamage, 50.),
+                (ModifierType::TurnSpeed, 1.),
             ]),
             sockets: vec![
                 ("attack_speed".into(), ShardSocket::new(ShardType::Speed, "Attack speed", ModifierType::AttackSpeed, [0.1, 0.2, 0.3])),
@@ -108,6 +109,7 @@ impl BuilderTowerRocketLauncher {
 
         let building_info = almanach.get_building_info(BuildingType::Tower(TowerType::RocketLauncher));
         let grid_imprint = building_info.grid_imprint;
+        let world_size = grid_imprint.world_size();
 
         commands.entity(entity)
             .remove::<BuilderTowerRocketLauncher>()
@@ -123,7 +125,7 @@ impl BuilderTowerRocketLauncher {
                 },
                 builder.grid_position,
                 grid_imprint,
-                TowerTopRotation { speed: 1.0, current_angle: builder.top_angle },
+                TowerTopRotation { current_angle: builder.top_angle },
                 NeedsPower,
                 related![Indicators[
                     IndicatorType::NoPower,
@@ -132,22 +134,20 @@ impl BuilderTowerRocketLauncher {
                 related![EffectInstances[
                     (ModifierContributions(building_info.baseline.clone()), BaselineEffect),
                 ]],
+                related![TowerTop[(
+                    Sprite {
+                        image: building_info.top_sprite.clone().expect("Rocket Launcher Tower defines a top sprite"),
+                        custom_size: Some(Vec2::new(world_size.x * 1.52 * 0.5, world_size.y * 0.5)),
+                        ..default()
+                    },
+                    Anchor(Vec2::new(-0.20, 0.0)),
+                    Transform::from_translation(builder.grid_position.to_world_position_centered(grid_imprint).extend(0.)),
+                )]],
                 children![
                     IndicatorDisplay::default(),
                 ],
             ))
             .observe(on_technical_state_changed_recompute_operational);
-        let world_size = grid_imprint.world_size();
-        let tower_top = commands.spawn((
-            Sprite {
-                image: building_info.top_sprite.clone().expect("Rocket Launcher Tower defines a top sprite"),
-                custom_size: Some(Vec2::new(world_size.x * 1.52 * 0.5, world_size.y * 0.5)),
-                ..default()
-            },
-            Anchor(Vec2::new(-0.20, 0.0)),
-            MarkerTowerRotationalTop(entity),
-        )).id();
-        commands.entity(entity).add_child(tower_top);
         for (content_id, socket) in &building_info.sockets {
             commands.trigger(ShardSocketUpsert::new(entity, content_id.clone(), socket.clone()));
         }

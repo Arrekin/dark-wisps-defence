@@ -148,15 +148,24 @@ pub(crate) fn on_technical_state_changed_recompute_operational(
 #[derive(SystemSet, Clone, Copy, Eq, PartialEq, Hash, Debug)]
 pub(crate) struct TowerAimingSystems;
 
-/// Marks a tower's rotating top sprite; holds the tower it belongs to.
+/// Rotating top sprite of a tower. Displays the tower's `TowerTopRotation`.
 #[derive(Component)]
+#[relationship(relationship_target = TowerTop)]
 #[require(ZDepth::TowerTop)]
-pub(crate) struct MarkerTowerRotationalTop(pub Entity);
+pub(crate) struct TowerTopOf(pub Entity);
+
+#[derive(Component)]
+#[relationship_target(relationship = TowerTopOf, linked_spawn)]
+pub(crate) struct TowerTop(Entity);
+impl TowerTop {
+    pub fn top(&self) -> Entity {
+        self.0
+    }
+}
 
 #[derive(Component)]
 pub(crate) struct TowerTopRotation {
-    /// Radians per second.
-    pub speed: f32,
+    /// Radians.
     pub current_angle: f32,
 }
 impl TowerTopRotation {

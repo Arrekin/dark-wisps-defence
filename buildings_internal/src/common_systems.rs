@@ -29,8 +29,8 @@ impl Plugin for CommonSystemsPlugin {
             .add_systems(Update, (
                 targeting_system,
                 rotational_aiming_system,
-                rotate_tower_top_system,
             ).chain().in_set(TowerAimingSystems).run_if(in_state(GameState::Running)))
+            .add_systems(Update, rotate_tower_top_system.after(TowerAimingSystems))
             .add_observer(on_building_destroy_request_do_so)
             .add_observer(on_insert_attack_speed_sync_shooting_timer)
             .add_observer(on_remove_is_operational_reset_shooting_timer)
@@ -108,26 +108,29 @@ fn damage_control_system(
 }
 
 fn rotate_tower_top_system(
-    mut tower_tops: Query<(&MarkerTowerRotationalTop, &mut Transform)>,
-    towers: Query<&TowerTopRotation, With<Tower>>,
+    towers: Query<(&TowerTopRotation, &TowerTop), (With<Tower>, Changed<TowerTopRotation>)>,
+    mut tower_tops: Query<&mut Transform, With<TowerTopOf>>,
 ) {
-    for (tower_top, mut tower_top_transform) in tower_tops.iter_mut() {
-        let Ok(tower_top_rotation) = towers.get(tower_top.0) else { continue };
+    for (tower_top_rotation, tower_top) in towers.iter() {
+        let Ok(mut tower_top_transform) = tower_tops.get_mut(tower_top.top()) else { continue };
         tower_top_transform.rotation = Quat::from_rotation_z(tower_top_rotation.current_angle);
     }
 }
 
 fn rotational_aiming_system(
     time: Res<Time>,
-    mut towers: Query<(&mut TowerTopRotation, &TowerWispTarget, &Transform), With<IsOperational>>,
+    mut towers: Query<(&mut TowerTopRotation, &TurnSpeed, &TowerWispTarget, &Transform), With<IsOperational>>,
     wisps: Query<&Transform, With<Wisp>>,
 ) {
-    for (mut rotation, target, tower_transform) in towers.iter_mut() {
+    for (mut rotation, turn_speed, target, tower_transform) in towers.iter_mut() {
         let Some(Ok(wisp_transform)) = target.wisp().map(|wisp| wisps.get(wisp)) else { continue; };
         let angle_delta = rotation.angle_to(wisp_transform.translation.xy() - tower_transform.translation.xy());
 
-        let rotation_delta = rotation.speed * time.delta_secs();
-        rotation.current_angle += angle_delta.clamp(-rotation_delta, rotation_delta);
+        let rotation_delta = turn_speed.get() * time.delta_secs();
+        let turn = angle_delta.clamp(-rotation_delta, rotation_delta);
+        // Writing only an actual turn keeps `Changed<TowerTopRotation>` quiet for towers on target.
+        if turn == 0. { continue; }
+        rotation.current_angle += turn;
     }
 }
 
