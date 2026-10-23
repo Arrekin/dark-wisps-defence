@@ -40,8 +40,7 @@ impl Plugin for TowerRocketLauncherPlugin {
 #[derive(Component, SSS)]
 pub(crate) struct BuilderTowerRocketLauncher {
     pub grid_position: GridCoords,
-    /// Saved integrity points. `None` ⇒ defer to baseline (fresh spawn);
-    /// `Some` ⇒ override with saved value (restore).
+    /// Custom integrity points, or `None` to use the fresh-spawn baseline.
     pub integrity_points: Option<IntegrityPoints>,
     /// Set when the player disabled this building. `None` on fresh spawn.
     pub disabled_by_player: Option<DisabledByPlayer>,
@@ -227,9 +226,7 @@ fn shooting_system(
     for (grid_imprint, transform, mut timer, target, top_rotation, attack_damage) in tower_rocket_launchers.iter_mut() {
         if !timer.0.is_finished() { continue; }
         let Some(Ok((target_wisp, wisp_transform))) = target.wisp().map(|wisp| wisps.get(wisp)) else { continue; };
-        let wisp_position = wisp_transform.translation.xy();
-
-        if !top_rotation.is_facing(wisp_position - transform.translation.xy()) { continue; }
+        if !top_rotation.is_facing(wisp_transform.translation.xy() - transform.translation.xy()) { continue; }
 
         // Calculate transform offset in the direction we are aiming
         let tower_world_width = grid_imprint.world_size().x;

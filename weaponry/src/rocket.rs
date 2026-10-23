@@ -15,7 +15,7 @@ pub struct Rocket {
 #[require(ZDepth::ProjectileUnder)]
 pub struct RocketExhaust;
 
-// Rocket follows Wisp, and if the wisp no longer exists, looks for another target
+/// Rocket follows Wisp, and if the wisp no longer exists, looks for another target
 #[derive(Component)]
 pub struct RocketTarget(pub Option<Entity>);
 

@@ -9,7 +9,7 @@ use super::components::Projectile;
 #[require(ZDepth::Projectile)]
 pub struct LaserDart;
 
-// LaserDart follows Wisp, and if the wisp no longer exists, follows to the target vector
+/// LaserDart follows Wisp, and if the wisp no longer exists, follows to the target vector
 #[derive(Component, Default)]
 #[require(AttackDamage, Projectile)]
 pub struct LaserDartTarget {

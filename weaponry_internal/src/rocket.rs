@@ -138,18 +138,15 @@ fn rocket_move_system(
 ) {
     let mut wisps_iter = wisps.iter();
     for (mut rocket, mut transform, mut target) in rockets.iter_mut() {
-        let target_position = match target.0.and_then(|wisp| wisps.get(wisp).ok()) {
-            Some((_, wisp_transform)) => Some(wisp_transform.translation.xy()),
-            None => {
-                let next_wisp = wisps_iter.next();
-                target.0 = next_wisp.map(|(wisp_entity, _)| wisp_entity);
-                next_wisp.map(|(_, wisp_transform)| wisp_transform.translation.xy())
-            }
-        };
+        let target_wisp = target.0.and_then(|wisp| wisps.get(wisp).ok()).or_else(|| {
+            let next_wisp = wisps_iter.next();
+            target.0 = next_wisp.map(|(wisp, _)| wisp);
+            next_wisp
+        });
 
         // Turn toward the target. Without one the rocket flies straight on.
-        if let Some(target_position) = target_position {
-            let angle_delta = angle_difference((target_position - transform.translation.xy()).to_angle(), rocket.heading);
+        if let Some((_, wisp_transform)) = target_wisp {
+            let angle_delta = angle_difference((wisp_transform.translation.xy() - transform.translation.xy()).to_angle(), rocket.heading);
             let max_turn = ROCKET_TURN_SPEED * time.delta_secs();
             rocket.heading += angle_delta.clamp(-max_turn, max_turn);
         }
@@ -173,7 +170,7 @@ fn rocket_hit_system(
             continue;
         }
 
-        let Some(Ok(wisp_transform)) = target.0.map(|wisp| wisps_transforms.get(wisp)) else { continue };
+        let Some(Ok(wisp_transform)) = target.0.map(|wisp| wisps_transforms.get(wisp)) else { continue; };
         if rocket_transform.translation.xy().distance(wisp_transform.translation.xy()) > ROCKET_HIT_DISTANCE { continue; }
 
         for direction in ALL_DIRECTIONS.iter().chain(&[(0, 0)]) {
@@ -199,7 +196,7 @@ fn exhaust_blinking_system(
     time: Res<Time>,
     mut exhausts: Query<&mut Sprite, With<RocketExhaust>>,
 ) {
-    let alpha = if time.elapsed_secs() % 1. < 0.85 { 1. } else { 0.0 };
+    let alpha = if time.elapsed_secs() % 1. < 0.85 { 1. } else { 0. };
     for mut sprite in exhausts.iter_mut() {
         sprite.color.set_alpha(alpha);
     }

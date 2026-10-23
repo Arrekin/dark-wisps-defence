@@ -61,7 +61,7 @@ impl Plugin for ForgePlugin {
 #[derive(Component, SSS)]
 pub(crate) struct BuilderForge {
     pub grid_position: GridCoords,
-    /// Restored integrity points, or `None` to use the building baseline.
+    /// Custom integrity points, or `None` to use the fresh-spawn baseline.
     pub integrity_points: Option<IntegrityPoints>,
     /// Set when the player disabled this building. `None` on fresh spawn.
     pub disabled_by_player: Option<DisabledByPlayer>,

@@ -99,8 +99,7 @@ const DRONE_COST: ResourceAmount = ResourceAmount { resource_type: ResourceType:
 #[derive(Component, SSS)]
 pub(crate) struct BuilderExplorationCenter {
     pub grid_position: GridCoords,
-    /// Saved integrity points. `None` ⇒ defer to baseline (fresh spawn);
-    /// `Some` ⇒ override with saved value (restore).
+    /// Custom integrity points, or `None` to use the fresh-spawn baseline.
     pub integrity_points: Option<IntegrityPoints>,
     /// Set when the player disabled this building. `None` on fresh spawn.
     pub disabled_by_player: Option<DisabledByPlayer>,

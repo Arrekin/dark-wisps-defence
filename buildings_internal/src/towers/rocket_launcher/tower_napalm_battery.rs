@@ -77,7 +77,7 @@ const fn salvo_area_offsets() -> [(i32, i32); SALVO_AREA_SIDE * SALVO_AREA_SIDE]
 #[derive(Component, SSS)]
 pub(crate) struct BuilderTowerNapalmBattery {
     pub grid_position: GridCoords,
-    /// Integrity override for loading. `None` uses the fresh-spawn baseline.
+    /// Custom integrity points, or `None` to use the fresh-spawn baseline.
     pub integrity_points: Option<IntegrityPoints>,
     /// Set when the player disabled this building. `None` on fresh spawn.
     pub disabled_by_player: Option<DisabledByPlayer>,

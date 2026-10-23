@@ -42,8 +42,7 @@ fn on_insert_attack_speed_sync_shooting_timer(
     trigger: On<Insert<AttackSpeed>>,
     mut timers: Query<(&mut TowerShootingTimer, &AttackSpeed)>,
 ) {
-    let entity = trigger.entity;
-    let Ok((mut timer, attack_speed)) = timers.get_mut(entity) else { return; };
+    let Ok((mut timer, attack_speed)) = timers.get_mut(trigger.entity) else { return; };
     if attack_speed.get() == 0. { return; }
     timer.0.set_duration(Duration::from_secs_f32(1. / attack_speed.get()));
 }
@@ -79,17 +78,16 @@ fn targeting_system(
             TowerWispTarget::SearchForNewTarget => {}
             TowerWispTarget::Suspended => continue,
         }
-        if let Some((_, target_wisp)) = target_find_closest_wisp(
+        *target = match target_find_closest_wisp(
             &obstacle_grid,
             &wisps_grid,
             grid_imprint.iter(*coords),
             range.get() as usize,
             true,
         ) {
-            *target = TowerWispTarget::Wisp(target_wisp);
-        } else {
-            *target = TowerWispTarget::NoValidTargets(wisps_grid.version);
-        }
+            Some((_, target_wisp)) => TowerWispTarget::Wisp(target_wisp),
+            None => TowerWispTarget::NoValidTargets(wisps_grid.version),
+        };
     }
 }
 
@@ -128,9 +126,7 @@ fn rotational_aiming_system(
 ) {
     for (mut rotation, target, tower_transform) in towers.iter_mut() {
         let Some(Ok(wisp_transform)) = target.wisp().map(|wisp| wisps.get(wisp)) else { continue; };
-        let wisp_position = wisp_transform.translation.xy();
-
-        let angle_delta = rotation.angle_to(wisp_position - tower_transform.translation.xy());
+        let angle_delta = rotation.angle_to(wisp_transform.translation.xy() - tower_transform.translation.xy());
 
         let rotation_delta = rotation.speed * time.delta_secs();
         rotation.current_angle += angle_delta.clamp(-rotation_delta, rotation_delta);
