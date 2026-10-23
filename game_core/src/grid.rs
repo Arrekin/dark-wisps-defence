@@ -195,6 +195,22 @@ impl GridImprint {
             }
         }
     }
+    /// Manhattan distance from `coords` to the nearest cell of the imprint at `origin`. Zero when covered.
+    pub fn distance_to(&self, origin: GridCoords, coords: GridCoords) -> i32 {
+        let span_distance = |value: i32, start: i32, length: i32| (start - value).max(value - (start + length - 1)).max(0);
+        match self {
+            GridImprint::Rectangle { width, height } => {
+                span_distance(coords.x, origin.x, *width) + span_distance(coords.y, origin.y, *height)
+            }
+            GridImprint::Plus { extents } => {
+                let e = *extents;
+                let side = 2 * e + 1;
+                let to_vertical_bar = (coords.x - (origin.x + e)).abs() + span_distance(coords.y, origin.y, side);
+                let to_horizontal_bar = (coords.y - (origin.y + e)).abs() + span_distance(coords.x, origin.x, side);
+                to_vertical_bar.min(to_horizontal_bar)
+            }
+        }
+    }
     pub fn world_size(&self) -> Vec2 {
         match self {
             GridImprint::Rectangle { width, height } => world_size_of_cells(*width, *height),

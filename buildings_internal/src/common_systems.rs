@@ -65,10 +65,8 @@ fn targeting_system(
     for (coords, grid_imprint, range, mut target) in towers.iter_mut() {
         match *target {
             TowerWispTarget::Wisp(wisp_entity) => {
-                if let Ok(wisp_coords) = wisps.get(wisp_entity) {
-                    // Check if wisp is still in range. For now we use Manhattan distance to check. This may not be correct for all tower types.
-                    if coords.manhattan_distance(wisp_coords) <= range.get() as i32 { continue; }
-                }
+                if let Ok(wisp_coords) = wisps.get(wisp_entity)
+                    && grid_imprint.distance_to(*coords, *wisp_coords) <= range.get() as i32 { continue; }
             }
             TowerWispTarget::NoValidTargets(grid_version) => {
                 if grid_version == wisps_grid.version {
