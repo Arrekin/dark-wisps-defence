@@ -4,7 +4,7 @@ use bevy::{
 };
 use nanorand::Rng;
 
-use almanach::{BuildingInfo, ObjectPresentation, prelude::*};
+use almanach::{BuildingInfo, prelude::*};
 use alteration::{
     effects::prelude::*,
     modifiers::prelude::*,
@@ -22,7 +22,7 @@ use persistence::prelude::*;
 use resources::prelude::*;
 use states::prelude::*;
 
-use crate::{common::*, tooltip::building_tooltip};
+use crate::common::*;
 
 fn mining_complex_validator(_: MapObject, origin: GridCoords, imprint: GridImprint, map_data: &GridsCollectionParam) -> PlacementValidity {
     if !imprint.is_in_bounds(origin, map_data.obstacle_grid.bounds) {
@@ -105,9 +105,6 @@ impl BuilderMiningComplex {
             validate: mining_complex_validator,
             annotate: mining_complex_annotator,
             placement: PlacementModes::default(),
-            presentation: ObjectPresentation {
-                tooltip: Some(building_tooltip),
-            },
         }
     }
 

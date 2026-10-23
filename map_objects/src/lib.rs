@@ -7,9 +7,6 @@ pub mod wall_style;
 
 pub mod prelude {
     pub use super::{
-        BuilderDarkOreSideMenuTooltip,
-        BuilderQuantumFieldSideMenuTooltip,
-        BuilderWallSideMenuTooltip,
         DarkOre, DarkOreAreaScanner, DarkOreInRange,
         ExpeditionZone,
         HasOreInScannerRange,
@@ -27,22 +24,10 @@ pub struct DarkOre {
     pub amount: i32,
 }
 
-/// Spawns a dark-ore tooltip anchored to the contained tile entity.
-#[derive(Component, Clone, Copy, Debug)]
-pub struct BuilderDarkOreSideMenuTooltip(pub Entity);
-
 /// Drawn by the wall canvas from `GridCoords`, so the entity itself carries no transform or render layer.
 #[derive(Component)]
 #[require(MapBound, ObstacleGridObject = ObstacleGridObject::Wall, EmissionsGridSpreadAffector)]
 pub struct Wall;
-
-/// Spawns a wall tooltip anchored to the contained tile entity.
-#[derive(Component, Clone, Copy, Debug)]
-pub struct BuilderWallSideMenuTooltip(pub Entity);
-
-/// Spawns a quantum-field tooltip anchored to the contained tile entity.
-#[derive(Component, Clone, Copy, Debug)]
-pub struct BuilderQuantumFieldSideMenuTooltip(pub Entity);
 
 /// Progressive obstacle requiring drone scanning to solve.
 #[derive(Component, Default)]

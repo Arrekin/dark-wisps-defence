@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
-use almanach::{Almanach, AlmanachAppExt, ObjectPresentation, WallInfo};
-use game_core::prelude::{GridCoords, GridImprint, MapObject, SSS};
+use almanach::{Almanach, AlmanachAppExt, WallInfo};
+use game_core::prelude::{GridCoords, GridImprint, MapObject, MapObjectTooltipRequest, SSS};
 use grids::{
     obstacles::GridStructureType,
     placement::{
@@ -12,7 +12,7 @@ use grids::{
 use hud::prelude::BuilderSideMenuItemTooltip;
 use logging::prelude::*;
 use map_objects::{
-    prelude::{BuilderWallSideMenuTooltip, Wall},
+    prelude::Wall,
     wall_style::{WallStyleKey, WallStyles},
 };
 use persistence::{prelude::*, rusqlite};
@@ -27,7 +27,7 @@ impl Plugin for WallPlugin {
             .add_observer(BuilderWall::on_builder_add_spawn_wall)
             .add_observer(on_wall_place_request_do_so)
             .add_observer(on_wall_remove_request_do_so)
-            .add_observer(on_builder_add_spawn_wall_tooltip)
+            .add_observer(on_map_object_tooltip_request_spawn_wall_tooltip)
             .register_walls(BuilderWall::almanach_info());
     }
 }
@@ -66,9 +66,6 @@ impl BuilderWall {
             validate: validator_all_empty,
             annotate: annotate_non_empty,
             placement: PlacementModes::on_press(),
-            presentation: ObjectPresentation {
-                tooltip: Some(wall_tooltip),
-            },
         }
     }
 
@@ -180,27 +177,18 @@ fn on_wall_remove_request_do_so(
     }
 }
 
-/// Queues tooltip construction for a wall placement tile.
-pub(crate) fn wall_tooltip(commands: &mut Commands, anchor: Entity, _map_object: MapObject) {
-    commands.spawn(BuilderWallSideMenuTooltip(anchor));
-}
-
-fn on_builder_add_spawn_wall_tooltip(
-    trigger: On<Add<BuilderWallSideMenuTooltip>>,
+fn on_map_object_tooltip_request_spawn_wall_tooltip(
+    trigger: On<MapObjectTooltipRequest>,
     mut commands: Commands,
     almanach: Res<Almanach>,
-    builders: Query<&BuilderWallSideMenuTooltip>,
 ) {
-    let entity = trigger.entity;
-    let Ok(builder) = builders.get(entity) else { return; };
+    let MapObjectTooltipRequest { entity, object: MapObject::Wall } = *trigger else { return };
 
     let info = &almanach.walls;
-    commands.entity(entity)
-        .remove::<BuilderWallSideMenuTooltip>()
-        .insert(
-            BuilderSideMenuItemTooltip::new(builder.0)
-                .with_name(info.name.clone())
-                .with_description(info.description.clone())
-                .with_fact(info.grid_imprint.label()),
-        );
+    commands.spawn(
+        BuilderSideMenuItemTooltip::new(entity)
+            .with_name(info.name.clone())
+            .with_description(info.description.clone())
+            .with_fact(info.grid_imprint.label()),
+    );
 }

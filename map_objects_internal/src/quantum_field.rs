@@ -24,8 +24,8 @@ use bevy::{
     ui_widgets::Button,
 };
 
-use almanach::{Almanach, ObjectPresentation, QuantumFieldInfo, prelude::AlmanachAppExt};
-use game_core::prelude::{GridCoords, GridImprint, MapObject, SSS};
+use almanach::{Almanach, QuantumFieldInfo, prelude::AlmanachAppExt};
+use game_core::prelude::{GridCoords, GridImprint, MapObject, MapObjectTooltipRequest, SSS};
 use grids::placement::{
     BeginPlacing, CellHighlight, GridObjectPlacer, GridPlacerOverridePropertyRequest, GridsCollectionParam,
     PlacementModes, PlacementValidity, PlaceRequest, RemoveRequest, StopPlacing,
@@ -62,7 +62,7 @@ impl Plugin for QuantumFieldPlugin {
             .add_observer(on_focused_map_object_insert_update_quantum_field_panel)
             .add_observer(on_quantum_field_place_request_do_so)
             .add_observer(on_quantum_field_remove_request_do_so)
-            .add_observer(on_builder_add_spawn_quantum_field_tooltip)
+            .add_observer(on_map_object_tooltip_request_spawn_quantum_field_tooltip)
             .add_systems(CollectSave, collect_quantum_fields)
             .register_loader(MapLoadingStage::SpawnMapElements, "quantum_fields", load_quantum_fields)
             .register_quantum_field(QuantumFieldInfo {
@@ -74,9 +74,6 @@ impl Plugin for QuantumFieldPlugin {
                 validate: quantum_field_validator,
                 annotate: quantum_field_annotator,
                 placement: PlacementModes::default(),
-                presentation: ObjectPresentation {
-                    tooltip: Some(quantum_field_tooltip),
-                },
             });
     }
 }
@@ -758,31 +755,22 @@ fn initialize_quantum_field_panel_content_system(
         });
 }
 
-/// Queues tooltip construction for a quantum-field placement tile.
-pub(crate) fn quantum_field_tooltip(commands: &mut Commands, anchor: Entity, _map_object: MapObject) {
-    commands.spawn(BuilderQuantumFieldSideMenuTooltip(anchor));
-}
-
-fn on_builder_add_spawn_quantum_field_tooltip(
-    trigger: On<Add<BuilderQuantumFieldSideMenuTooltip>>,
+fn on_map_object_tooltip_request_spawn_quantum_field_tooltip(
+    trigger: On<MapObjectTooltipRequest>,
     mut commands: Commands,
     almanach: Res<Almanach>,
-    builders: Query<&BuilderQuantumFieldSideMenuTooltip>,
 ) {
-    let entity = trigger.entity;
-    let Ok(builder) = builders.get(entity) else { return; };
+    let MapObjectTooltipRequest { entity, object: MapObject::QuantumField } = *trigger else { return };
 
     let info = &almanach.quantum_fields;
     // A field is placed at a size the player picks, so its footprint is a range.
     let smallest = GridImprint::Rectangle { width: info.min_size, height: info.min_size };
     let largest = GridImprint::Rectangle { width: info.max_size, height: info.max_size };
 
-    commands.entity(entity)
-        .remove::<BuilderQuantumFieldSideMenuTooltip>()
-        .insert(
-            BuilderSideMenuItemTooltip::new(builder.0)
-                .with_name(info.name.clone())
-                .with_description(info.description.clone())
-                .with_fact(format!("{} to {}", smallest.label(), largest.label())),
-        );
+    commands.spawn(
+        BuilderSideMenuItemTooltip::new(entity)
+            .with_name(info.name.clone())
+            .with_description(info.description.clone())
+            .with_fact(format!("{} to {}", smallest.label(), largest.label())),
+    );
 }

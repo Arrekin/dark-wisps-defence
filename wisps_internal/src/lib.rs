@@ -7,7 +7,7 @@ pub(crate) mod tooltip;
 
 use bevy::prelude::*;
 
-use almanach::{ObjectPresentation, WispInfo, prelude::*};
+use almanach::{WispInfo, prelude::*};
 use game_core::motion::MotionSystems;
 use grids::placement::{annotate_non_empty, PlacementModes};
 use persistence::prelude::{AppGameLoadSaveExtension, CollectSave};
@@ -63,9 +63,6 @@ impl Plugin for WispsPlugin {
                 validate: spawning::wisp_validator,
                 annotate: annotate_non_empty,
                 placement: PlacementModes::on_press(),
-                presentation: ObjectPresentation {
-                    tooltip: Some(tooltip::wisp_tooltip),
-                },
             });
     }
 }

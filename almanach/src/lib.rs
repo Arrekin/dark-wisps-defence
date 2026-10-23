@@ -116,16 +116,6 @@ pub enum AccessPattern {
     Admin,
 }
 
-/// Callback that spawns a tile tooltip anchored to the supplied entity.
-pub type ObjectTooltipFn = fn(&mut Commands, Entity, MapObject);
-
-/// Optional side-menu behavior for a map object.
-#[derive(Clone)]
-pub struct ObjectPresentation {
-    /// No tooltip is spawned when this is `None`.
-    pub tooltip: Option<ObjectTooltipFn>,
-}
-
 #[derive(Resource)]
 pub struct Almanach {
     buildings: HashMap<BuildingType, BuildingInfo>,
@@ -215,17 +205,6 @@ impl Almanach {
             MapObject::Wisp(_) => (&self.wisps).into(),
         }
     }
-
-    /// Returns the side-menu presentation registered for a map object.
-    pub fn presentation_for(&self, map_object: MapObject) -> &ObjectPresentation {
-        match map_object {
-            MapObject::Building(building_type) => &self.get_building_info(building_type).presentation,
-            MapObject::Wall => &self.walls.presentation,
-            MapObject::DarkOre => &self.dark_ore.presentation,
-            MapObject::QuantumField => &self.quantum_fields.presentation,
-            MapObject::Wisp(_) => &self.wisps.presentation,
-        }
-    }
 }
 
 // ============================================================================
@@ -246,7 +225,6 @@ pub struct BuildingInfo {
     pub sprite: Handle<Image>,
     pub top_sprite: Option<Handle<Image>>,
     pub placement: PlacementModes,
-    pub presentation: ObjectPresentation,
 }
 
 impl From<&BuildingInfo> for ObjectPlacementInfo {
@@ -272,7 +250,6 @@ pub struct WallInfo {
     pub validate: PlacementValidatorFn,
     pub annotate: PlacementAnnotatorFn,
     pub placement: PlacementModes,
-    pub presentation: ObjectPresentation,
 }
 
 impl From<&WallInfo> for ObjectPlacementInfo {
@@ -299,7 +276,6 @@ pub struct DarkOreInfo {
     pub validate: PlacementValidatorFn,
     pub annotate: PlacementAnnotatorFn,
     pub placement: PlacementModes,
-    pub presentation: ObjectPresentation,
 }
 
 impl From<&DarkOreInfo> for ObjectPlacementInfo {
@@ -327,7 +303,6 @@ pub struct QuantumFieldInfo {
     pub validate: PlacementValidatorFn,
     pub annotate: PlacementAnnotatorFn,
     pub placement: PlacementModes,
-    pub presentation: ObjectPresentation,
 }
 
 impl From<&QuantumFieldInfo> for ObjectPlacementInfo {
@@ -359,7 +334,6 @@ pub struct WispInfo {
     pub validate: PlacementValidatorFn,
     pub annotate: PlacementAnnotatorFn,
     pub placement: PlacementModes,
-    pub presentation: ObjectPresentation,
 }
 
 impl From<&WispInfo> for ObjectPlacementInfo {

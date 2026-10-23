@@ -3,7 +3,7 @@ use bevy::{
     prelude::*,
 };
 
-use almanach::{BuildingInfo, ObjectPresentation, prelude::*};
+use almanach::{BuildingInfo, prelude::*};
 use alteration::{
     effects::prelude::*,
     modifiers::prelude::*,
@@ -20,7 +20,7 @@ use states::prelude::*;
 use weaponry::prelude::*;
 use wisps::prelude::*;
 
-use crate::{common::*, tooltip::building_tooltip};
+use crate::common::*;
 
 pub(crate) struct TowerBlasterPlugin;
 impl Plugin for TowerBlasterPlugin {
@@ -72,9 +72,6 @@ impl BuilderTowerBlaster {
             validate: building_validator,
             annotate: annotate_non_empty,
             placement: PlacementModes::default(),
-            presentation: ObjectPresentation {
-                tooltip: Some(building_tooltip),
-            },
         }
     }
 

@@ -3,7 +3,7 @@ use bevy::{
     prelude::*,
 };
 
-use almanach::{BuildingInfo, ObjectPresentation, prelude::*};
+use almanach::{BuildingInfo, prelude::*};
 use alteration::{
     effects::prelude::*,
     modifiers::prelude::*,
@@ -20,7 +20,7 @@ use persistence::{creating_new_map, prelude::*};
 use states::prelude::*;
 use viewport::MainCamera;
 
-use crate::{common::*, tooltip::building_tooltip};
+use crate::common::*;
 
 pub(crate) struct MainBasePlugin;
 impl Plugin for MainBasePlugin {
@@ -84,9 +84,6 @@ impl BuilderMainBase {
             validate: building_validator,
             annotate: annotate_non_empty,
             placement: PlacementModes::default(),
-            presentation: ObjectPresentation {
-                tooltip: Some(building_tooltip),
-            },
         }
     }
 

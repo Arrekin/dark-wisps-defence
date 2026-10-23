@@ -9,7 +9,7 @@ use bevy::{
     ui_widgets::Button,
 };
 
-use almanach::{BuildingInfo, ObjectPresentation, prelude::*};
+use almanach::{BuildingInfo, prelude::*};
 use alteration::{
     effects::prelude::*,
     modifiers::prelude::*,
@@ -31,7 +31,6 @@ use widgets::{
 use crate::{
     common::*,
     info_panel::BuildingInfoPanelEnabledTrigger,
-    tooltip::building_tooltip,
 };
 
 pub(crate) struct ForgePlugin;
@@ -80,9 +79,6 @@ impl BuilderForge {
             validate: building_validator,
             annotate: annotate_non_empty,
             placement: PlacementModes::default(),
-            presentation: ObjectPresentation {
-                tooltip: Some(building_tooltip),
-            },
         }
     }
 

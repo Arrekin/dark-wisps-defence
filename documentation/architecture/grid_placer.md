@@ -135,6 +135,6 @@ flowchart LR
 3. Observe `PlaceRequest` and, if supported, `RemoveRequest`; match the variant and validate before acting.
 4. Handle `ObjectFaceRequest` for the ghost and any other supported surfaces.
 5. If needed, add controls for `BeginPlacing` / `StopPlacing` and send imprint or style overrides.
-6. Add side-menu presentation through `Almanach::presentation_for` and the appropriate menu offering, if the object is offered there.
+6. Handle `MapObjectTooltipRequest` and add the appropriate menu offering, if the object is offered in the side menu.
 
 Placement types: `grids/src/placement.rs`. Placer implementation: `grids_internal/src/placement.rs`.

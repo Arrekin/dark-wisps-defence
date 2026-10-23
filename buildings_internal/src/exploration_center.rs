@@ -26,7 +26,7 @@ use bevy::{
     ui_widgets::Button,
 };
 
-use almanach::{BuildingInfo, ObjectPresentation, prelude::*};
+use almanach::{BuildingInfo, prelude::*};
 use alteration::{
     effects::prelude::*,
     modifiers::prelude::*,
@@ -57,7 +57,6 @@ use widgets::prelude::{BuilderFillBar, FillAxis, FillBar, HoverBackground, Toolt
 use crate::{
     common::*,
     info_panel::BuildingInfoPanelEnabledTrigger,
-    tooltip::building_tooltip,
 };
 
 pub(crate) struct ExplorationCenterPlugin;
@@ -118,9 +117,6 @@ impl BuilderExplorationCenter {
             validate: building_validator,
             annotate: annotate_non_empty,
             placement: PlacementModes::default(),
-            presentation: ObjectPresentation {
-                tooltip: Some(building_tooltip),
-            },
         }
     }
 

@@ -1,8 +1,7 @@
-//! Side-menu tile frames, placement interaction, and registered object presentation.
+//! Side-menu tile frames, placement interaction, and object presentation.
 
 use bevy::{prelude::*, ui::FocusPolicy, ui_widgets::Button};
 
-use almanach::prelude::*;
 use game_core::prelude::*;
 use grids::placement::GridObjectPlacerRequest;
 use widgets::prelude::{BuilderVoidPanel, VoidPanelBorderSurge};
@@ -80,11 +79,10 @@ pub(crate) fn on_add_placement_tile_watch_click(
     commands.entity(trigger.entity).observe(on_click_placement_tile_request_placement);
 }
 
-/// Applies the object's registered face and optional tooltip to a placement tile.
+/// Requests the object's face and tooltip for a placement tile.
 pub(crate) fn on_add_tile_children_apply_presentation(
     trigger: On<Add<TileChildren>>,
     mut commands: Commands,
-    almanach: Res<Almanach>,
     tiles: Query<(&PlacementTile, &TileChildren)>,
 ) {
     let tile_entity = trigger.entity;
@@ -92,11 +90,7 @@ pub(crate) fn on_add_tile_children_apply_presentation(
     let map_object = placement_tile.0;
 
     commands.trigger(ObjectFaceRequest::ui(children.face, map_object));
-
-    let presentation = almanach.presentation_for(map_object);
-    if let Some(build_tooltip) = presentation.tooltip {
-        build_tooltip(&mut commands, tile_entity, map_object);
-    }
+    commands.trigger(MapObjectTooltipRequest { entity: tile_entity, object: map_object });
 }
 
 /// Stops propagation because a click on the parent section cancels its active placement.

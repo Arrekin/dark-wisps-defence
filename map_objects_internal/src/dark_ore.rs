@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
-use almanach::{Almanach, DarkOreInfo, ObjectPresentation, prelude::AlmanachAppExt};
-use game_core::prelude::{GridCoords, GridImprint, MapObject, SSS};
+use almanach::{Almanach, DarkOreInfo, prelude::AlmanachAppExt};
+use game_core::prelude::{GridCoords, GridImprint, MapObject, MapObjectTooltipRequest, SSS};
 use grids::{
     placement::{
         annotate_non_empty, GridObjectPlacer, GridsCollectionParam, PlacementModes, PlacementValidity, PlaceRequest,
@@ -26,7 +26,7 @@ impl Plugin for DarkOrePlugin {
             .add_observer(dark_ore_area_scanner::on_add_dark_ore_sync_scanners)
             .add_observer(on_dark_ore_place_request_do_so)
             .add_observer(on_dark_ore_remove_request_do_so)
-            .add_observer(on_builder_add_spawn_dark_ore_tooltip)
+            .add_observer(on_map_object_tooltip_request_spawn_dark_ore_tooltip)
             .add_systems(CollectSave, collect_dark_ores)
             .register_loader(MapLoadingStage::SpawnMapElements, "dark_ores", load_dark_ores)
             .register_dark_ore(BuilderDarkOre::almanach_info());
@@ -50,9 +50,6 @@ impl BuilderDarkOre {
             validate: validator_all_empty,
             annotate: annotate_non_empty,
             placement: PlacementModes::on_press(),
-            presentation: ObjectPresentation {
-                tooltip: Some(dark_ore_tooltip),
-            },
         }
     }
 
@@ -242,27 +239,18 @@ pub(crate) mod dark_ore_area_scanner {
     }
 }
 
-/// Queues tooltip construction for a dark-ore placement tile.
-pub(crate) fn dark_ore_tooltip(commands: &mut Commands, anchor: Entity, _map_object: MapObject) {
-    commands.spawn(BuilderDarkOreSideMenuTooltip(anchor));
-}
-
-fn on_builder_add_spawn_dark_ore_tooltip(
-    trigger: On<Add<BuilderDarkOreSideMenuTooltip>>,
+fn on_map_object_tooltip_request_spawn_dark_ore_tooltip(
+    trigger: On<MapObjectTooltipRequest>,
     mut commands: Commands,
     almanach: Res<Almanach>,
-    builders: Query<&BuilderDarkOreSideMenuTooltip>,
 ) {
-    let entity = trigger.entity;
-    let Ok(builder) = builders.get(entity) else { return; };
+    let MapObjectTooltipRequest { entity, object: MapObject::DarkOre } = *trigger else { return };
 
     let info = &almanach.dark_ore;
-    commands.entity(entity)
-        .remove::<BuilderDarkOreSideMenuTooltip>()
-        .insert(
-            BuilderSideMenuItemTooltip::new(builder.0)
-                .with_name(info.name.clone())
-                .with_description(info.description.clone())
-                .with_fact(info.grid_imprint.label()),
-        );
+    commands.spawn(
+        BuilderSideMenuItemTooltip::new(entity)
+            .with_name(info.name.clone())
+            .with_description(info.description.clone())
+            .with_fact(info.grid_imprint.label()),
+    );
 }

@@ -3,7 +3,7 @@ use bevy::{ecs::query::QueryData, prelude::*};
 use alteration::effects::prelude::EffectVisualState;
 use alteration::modifiers::prelude::{AttackRange, IncomingDamageMultiplier, MaxIntegrityPoints, ModifierBank, MovementSpeed};
 use fields::prelude::FieldAffectable;
-use game_core::{motion::Locomotion, prelude::{GridCoords, GridImprint, MapBound, WispType}};
+use game_core::{motion::Locomotion, prelude::{GridCoords, GridImprint, MapBound}};
 use grids::prelude::{GridPath, GridVersion};
 
 pub mod summoning;
@@ -61,13 +61,6 @@ impl WispHeadingItem<'_, '_> {
     }
 }
 
-/// Spawns a side-menu tooltip for `wisp_type`, anchored to `anchor`.
-#[derive(Component, Clone, Copy, Debug)]
-pub struct BuilderWispSideMenuTooltip {
-    pub anchor: Entity,
-    pub wisp_type: WispType,
-}
-
 /// Fired when a wisp dies (integrity reaches zero). The wisp entity is
 /// despawned in the same command queue batch — observers must not read it.
 #[derive(EntityEvent, Clone, Copy)]
@@ -77,7 +70,6 @@ pub mod prelude {
     pub use super::{
         WISP_GRID_IMPRINT,
         WispHeading,
-        BuilderWispSideMenuTooltip,
         Wisp,
         WispChargeAttack,
         WispDied,

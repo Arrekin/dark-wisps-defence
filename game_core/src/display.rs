@@ -72,3 +72,12 @@ impl ObjectFaceRequest {
         Self { entity, object, surface: FaceSurface::World, alpha: GHOST_ALPHA }
     }
 }
+
+/// Requests a map object's domain to spawn a side-menu tooltip anchored to `entity`.
+///
+/// Domains match `object`. No tooltip is spawned for an object no domain answers.
+#[derive(EntityEvent, Clone, Copy, Debug)]
+pub struct MapObjectTooltipRequest {
+    pub entity: Entity,
+    pub object: MapObject,
+}
