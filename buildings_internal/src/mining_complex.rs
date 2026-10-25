@@ -24,47 +24,6 @@ use states::prelude::*;
 
 use crate::common::*;
 
-fn mining_complex_validator(_: MapObject, origin: GridCoords, imprint: GridImprint, map_data: &GridsCollectionParam) -> PlacementValidity {
-    if !imprint.is_in_bounds(origin, map_data.obstacle_grid.bounds) {
-        return PlacementValidity::Invalid;
-    }
-    if map_data.reserved_coords.any_reserved(origin, imprint) {
-        return PlacementValidity::Invalid;
-    }
-    let mut has_ore = false;
-    for coords in imprint.iter(origin) {
-        let field = &map_data.obstacle_grid[coords];
-        if field.has_structure() || field.is_within_quantum_field() {
-            return PlacementValidity::Invalid;
-        }
-        if field.has_dark_ore() { has_ore = true; }
-    }
-    if !has_ore {
-        return PlacementValidity::Invalid;
-    }
-    if !map_data.energy_supply_grid.is_imprint_powered(origin, imprint) {
-        return PlacementValidity::ValidUnpowered;
-    }
-    PlacementValidity::Valid
-}
-
-fn mining_complex_annotator(_: MapObject, origin: GridCoords, imprint: GridImprint, validity: PlacementValidity, map_data: &GridsCollectionParam) -> Vec<(GridCoords, CellHighlight)> {
-    match validity {
-        PlacementValidity::Invalid => imprint.iter(origin)
-            .filter(|coords| {
-                !coords.are_in_bounds(map_data.obstacle_grid.bounds)
-                    || map_data.obstacle_grid[*coords].has_structure()
-                    || map_data.obstacle_grid[*coords].is_within_quantum_field()
-            })
-            .map(|coords| (coords, CellHighlight::Negative))
-            .collect(),
-        _ => imprint.iter_in_bounds(origin, map_data.obstacle_grid.bounds)
-            .filter(|coords| map_data.obstacle_grid[*coords].has_dark_ore())
-            .map(|coords| (coords, CellHighlight::Positive))
-            .collect(),
-    }
-}
-
 pub(crate) struct MiningComplexPlugin;
 impl Plugin for MiningComplexPlugin {
     fn build(&self, app: &mut App) {
@@ -79,6 +38,42 @@ impl Plugin for MiningComplexPlugin {
     }
 }
 
+fn mining_complex_validator(_: MapObject, area: GridArea, grids: &GridsCollectionParam) -> PlacementValidity {
+    if !area.fits_in(grids.obstacle_grid.bounds) {
+        return PlacementValidity::Invalid;
+    }
+    if grids.reserved_coords.any_reserved(area) {
+        return PlacementValidity::Invalid;
+    }
+    let mut has_ore = false;
+    for coords in area {
+        let cell = &grids.obstacle_grid[coords];
+        if cell.has_structure() || cell.is_within_quantum_field() {
+            return PlacementValidity::Invalid;
+        }
+        if cell.has_dark_ore() { has_ore = true; }
+    }
+    if !has_ore {
+        return PlacementValidity::Invalid;
+    }
+    if !grids.energy_supply_grid.is_area_powered(area) {
+        return PlacementValidity::ValidUnpowered;
+    }
+    PlacementValidity::Valid
+}
+
+fn mining_complex_annotator(_: MapObject, area: GridArea, validity: PlacementValidity, grids: &GridsCollectionParam) -> Vec<(GridCoords, CellHighlight)> {
+    match validity {
+        PlacementValidity::Invalid => area.iter()
+            .filter(|coords| grids.obstacle_grid.get(*coords).is_none_or(|cell| cell.has_structure() || cell.is_within_quantum_field()))
+            .map(|coords| (coords, CellHighlight::Negative))
+            .collect(),
+        _ => area.iter_in_bounds(grids.obstacle_grid.bounds)
+            .filter(|coords| grids.obstacle_grid[*coords].has_dark_ore())
+            .map(|coords| (coords, CellHighlight::Positive))
+            .collect(),
+    }
+}
 
 #[derive(Component)]
 pub(crate) struct MiningComplexDeliveryTimer(pub Timer);
@@ -98,7 +93,7 @@ impl BuilderMiningComplex {
             description: "Extracts dark ore from deposits in range.".to_string(),
             sprite: asset_server.load("buildings/mining_complex.png"),
             top_sprite: None,
-            grid_imprint: GridImprint::Rectangle { width: 3, height: 3 },
+            grid_imprint: GridImprint::square(3),
             cost: vec![ResourceAmount::new(ResourceType::DarkOre, 100)],
             baseline: HashMap::from([(ModifierType::MaxIntegrityPoints, 100.)]),
             sockets: vec![],
@@ -130,7 +125,7 @@ impl BuilderMiningComplex {
         let Ok(builder) = builders.get(entity) else { return; };
 
         let building_info = almanach.get_building_info(BuildingType::MiningComplex);
-        let grid_imprint = building_info.grid_imprint;
+        let area = GridArea::new(builder.grid_position, building_info.grid_imprint);
 
         commands.entity(entity)
             .remove::<BuilderMiningComplex>()
@@ -138,15 +133,10 @@ impl BuilderMiningComplex {
             .insert_some(builder.disabled_by_player)
             .insert((
                 MiningComplex,
-                Sprite {
-                    image: building_info.sprite.clone(),
-                    custom_size: Some(grid_imprint.world_size()),
-                    ..default()
-                },
-                builder.grid_position,
-                grid_imprint,
+                building_info.world_sprite(),
+                area,
                 NeedsPower,
-                DarkOreAreaScanner{range_imprint: grid_imprint},
+                DarkOreAreaScanner { range: area },
                 MiningComplexDeliveryTimer(Timer::from_seconds(1.0, TimerMode::Repeating)),
                 related![Indicators[
                     IndicatorType::NoPower,
@@ -177,7 +167,7 @@ fn on_mining_complex_place_request_do_so(
 
 #[log_tags(Tag::GameSave)]
 fn collect_mining_complexes(
-    mining_complexes: Query<(Entity, &GridCoords, &IntegrityPoints, Has<DisabledByPlayer>), With<MiningComplex>>,
+    mining_complexes: Query<(Entity, &GridArea, &IntegrityPoints, Has<DisabledByPlayer>), With<MiningComplex>>,
     mut save: SaveWriter,
 ) {
     if mining_complexes.is_empty() { return; }
@@ -185,11 +175,11 @@ fn collect_mining_complexes(
     #[debug_dev("Saving {} mining complexes", rows.len())]
     let rows: Vec<(u32, GridCoords, f32, bool)> = mining_complexes
         .iter()
-        .map(|(entity, coords, integrity_points, disabled_by_player)| {
+        .map(|(entity, area, integrity_points, disabled_by_player)| {
             (
                 entity.index_u32(),
-                *coords,
-                integrity_points.get_current(),
+                area.origin,
+                integrity_points.current,
                 disabled_by_player,
             )
         })

@@ -4,16 +4,16 @@ use bevy::prelude::*;
 
 use game_core::prelude::{Bounds, GridCoords};
 
-use crate::{FieldTrait, GridVersionTrait};
+use crate::{CellTrait, GridVersionTrait};
 
 #[derive(Resource, Default)]
-pub struct BaseGrid<FieldType, GridVersionType> where FieldType: FieldTrait, GridVersionType: GridVersionTrait {
+pub struct BaseGrid<CellType, GridVersionType> where CellType: CellTrait, GridVersionType: GridVersionTrait {
     pub bounds: Bounds,
-    pub grid: Vec<FieldType>,
+    pub grid: Vec<CellType>,
     pub version: GridVersionType, // Used to determine whether the grid has changed
 }
 
-impl<FieldType, GridVersionType> BaseGrid<FieldType, GridVersionType> where FieldType: FieldTrait, GridVersionType: GridVersionTrait {
+impl<CellType, GridVersionType> BaseGrid<CellType, GridVersionType> where CellType: CellTrait, GridVersionType: GridVersionTrait {
     pub fn new_with_size(bounds: impl Into<Bounds>) -> Self {
         let bounds = bounds.into();
         Self {
@@ -40,18 +40,22 @@ impl<FieldType, GridVersionType> BaseGrid<FieldType, GridVersionType> where Fiel
     pub fn index(&self, coords: GridCoords) -> usize {
         self.bounds.index(coords)
     }
+    /// The cell at `coords`, or `None` outside the grid.
+    pub fn get(&self, coords: GridCoords) -> Option<&CellType> {
+        self.bounds.index_checked(coords).map(|index| &self.grid[index])
+    }
 }
 
 
-impl<FieldType, GridVersionType> Index<GridCoords> for BaseGrid<FieldType, GridVersionType> where FieldType: FieldTrait, GridVersionType: GridVersionTrait {
-    type Output = FieldType;
+impl<CellType, GridVersionType> Index<GridCoords> for BaseGrid<CellType, GridVersionType> where CellType: CellTrait, GridVersionType: GridVersionTrait {
+    type Output = CellType;
 
     fn index(&self, coords: GridCoords) -> &Self::Output {
         let index = self.index(coords);
         &self.grid[index]
     }
 }
-impl<FieldType, GridVersionType>  IndexMut<GridCoords> for BaseGrid<FieldType, GridVersionType> where FieldType: FieldTrait, GridVersionType: GridVersionTrait {
+impl<CellType, GridVersionType>  IndexMut<GridCoords> for BaseGrid<CellType, GridVersionType> where CellType: CellTrait, GridVersionType: GridVersionTrait {
     fn index_mut(&mut self, coords: GridCoords) -> &mut Self::Output {
         let index = self.index(coords);
         &mut self.grid[index]

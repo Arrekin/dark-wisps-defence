@@ -10,7 +10,7 @@
 
 use bevy::{prelude::*, reflect::TypePath, render::render_resource::{BlendState, ShaderType}};
 
-use game_core::prelude::{GridImprint, ZDepth};
+use game_core::prelude::{GridArea, ZDepth};
 use units::expedition_drone::{ExpeditionDrone, ScanSpot, ScanningBeam};
 use visuals::{
     lane::{LaneParts, LanePlugin, LaneVisual},
@@ -67,7 +67,7 @@ impl LaneVisual for QuantumFieldAnomaly {
 }
 
 fn update_quantum_field_anomalies(
-    mut fields: Query<(Entity, &QuantumFieldLayers, &Transform, &GridImprint, &mut QuantumFieldAnomaly)>,
+    mut fields: Query<(Entity, &QuantumFieldLayers, &GridArea, &mut QuantumFieldAnomaly)>,
     beams: Query<&ScanningBeam>,
     drones: Query<&ExpeditionDrone>,
     spots: Query<&Transform, With<ScanSpot>>,
@@ -78,10 +78,9 @@ fn update_quantum_field_anomalies(
         .map(|transform| transform.translation.xy())
         .collect();
 
-    for (field, layers, transform, imprint, mut anomaly) in fields.iter_mut() {
-        let center = transform.translation.xy();
-        let half_extent = imprint.world_size() * 0.5;
-        let field_rect = Rect::from_center_half_size(center, half_extent);
+    for (field, layers, area, mut anomaly) in fields.iter_mut() {
+        let field_rect = area.world_rect();
+        let (center, half_extent) = (field_rect.center(), field_rect.half_size());
         let mut collapse_points = [Vec2::ZERO; MAX_COLLAPSE_POINTS];
         let mut collapse_count = 0;
         for spot in scan_spots.iter().filter(|spot| field_rect.contains(**spot)).take(MAX_COLLAPSE_POINTS) {

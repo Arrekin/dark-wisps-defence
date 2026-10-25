@@ -54,7 +54,7 @@ impl BuilderTowerEmitter {
             description: "Pulses a shockwave through everything close by. No aiming, short reach. Applies the brittle effect.".to_string(),
             sprite: asset_server.load("buildings/tower_emitter.png"),
             top_sprite: None,
-            grid_imprint: GridImprint::Rectangle { width: 2, height: 2 },
+            grid_imprint: GridImprint::square(2),
             cost: vec![ResourceAmount::new(ResourceType::DarkOre, 450)],
             baseline: HashMap::from([
                 (ModifierType::MaxIntegrityPoints, 100.),
@@ -97,7 +97,6 @@ impl BuilderTowerEmitter {
         let Ok(builder) = builders.get(entity) else { return; };
 
         let building_info = almanach.get_building_info(BuildingType::Tower(TowerType::Emitter));
-        let grid_imprint = building_info.grid_imprint;
 
         commands.entity(entity)
             .remove::<BuilderTowerEmitter>()
@@ -106,13 +105,8 @@ impl BuilderTowerEmitter {
             .insert_some(builder.shooting_timer.clone())
             .insert((
                 TowerEmitter,
-                Sprite {
-                    image: building_info.sprite.clone(),
-                    custom_size: Some(grid_imprint.world_size()),
-                    ..default()
-                },
-                builder.grid_position,
-                grid_imprint,
+                building_info.world_sprite(),
+                GridArea::new(builder.grid_position, building_info.grid_imprint),
                 NeedsPower,
                 related![Indicators[
                     IndicatorType::NoPower,
@@ -145,7 +139,7 @@ fn on_tower_emitter_place_request_do_so(
 
 #[log_tags(Tag::GameSave)]
 fn collect_tower_emitters(
-    towers: Query<(Entity, &GridCoords, &IntegrityPoints, Has<DisabledByPlayer>, &TowerShootingTimer), With<TowerEmitter>>,
+    towers: Query<(Entity, &GridArea, &IntegrityPoints, Has<DisabledByPlayer>, &TowerShootingTimer), With<TowerEmitter>>,
     mut save: SaveWriter,
 ) {
     if towers.is_empty() { return; }
@@ -153,11 +147,11 @@ fn collect_tower_emitters(
     #[debug_dev("Saving {} tower emitters", rows.len())]
     let rows: Vec<(u32, GridCoords, f32, bool, f32)> = towers
         .iter()
-        .map(|(entity, coords, integrity_points, disabled_by_player, shooting_timer)| {
+        .map(|(entity, area, integrity_points, disabled_by_player, shooting_timer)| {
             (
                 entity.index_u32(),
-                *coords,
-                integrity_points.get_current(),
+                area.origin,
+                integrity_points.current,
                 disabled_by_player,
                 shooting_timer.0.elapsed_secs(),
             )

@@ -7,7 +7,7 @@
 //! ## Aim
 //!
 //! Stream geometry follows `TowerTopRotation::current_angle` (not the target vector) from the turret
-//! nozzle (`NOZZLE_OFFSET * width`) out to `attack_range` cells beyond the tower footprint.
+//! nozzle (`NOZZLE_OFFSET * width`) out to `attack_range` cells beyond the tower imprint.
 //!
 //! ## Firing & Target Suspension
 //!
@@ -96,7 +96,7 @@ impl BuilderTowerFlamethrower {
             description: "A continuous stream of fire. Short range, but it engulfs the first wisp in its path and everything sharing its tile.".to_string(),
             sprite: asset_server.load("buildings/tower_blaster.png"),
             top_sprite: Some(asset_server.load("buildings/tower_blaster_top.png")),
-            grid_imprint: GridImprint::Rectangle { width: 2, height: 2 },
+            grid_imprint: GridImprint::square(2),
             cost: vec![ResourceAmount::new(ResourceType::DarkOre, 150)],
             baseline: HashMap::from([
                 (ModifierType::MaxIntegrityPoints, 100.),
@@ -146,8 +146,8 @@ impl BuilderTowerFlamethrower {
         let Ok(builder) = builders.get(entity) else { return; };
 
         let building_info = almanach.get_building_info(BuildingType::Tower(TowerType::Flamethrower));
-        let grid_imprint = building_info.grid_imprint;
-        let world_size = grid_imprint.world_size();
+        let area = GridArea::new(builder.grid_position, building_info.grid_imprint);
+        let world_size = area.imprint.world_size();
 
         commands.entity(entity)
             .remove::<BuilderTowerFlamethrower>()
@@ -156,13 +156,8 @@ impl BuilderTowerFlamethrower {
             .insert_some(builder.shooting_timer.clone())
             .insert((
                 TowerFlamethrower,
-                Sprite {
-                    image: building_info.sprite.clone(),
-                    custom_size: Some(grid_imprint.world_size()),
-                    ..default()
-                },
-                builder.grid_position,
-                grid_imprint,
+                building_info.world_sprite(),
+                area,
                 TowerTopRotation { current_angle: builder.top_angle },
                 NeedsPower,
                 related![Indicators[
@@ -179,7 +174,7 @@ impl BuilderTowerFlamethrower {
                         custom_size: Some(Vec2::new(world_size.x * 1.52 * 0.5, world_size.y * 0.5)),
                         ..default()
                     },
-                    Transform::from_translation(builder.grid_position.to_world_position_centered(grid_imprint).extend(0.)),
+                    Transform::from_translation(area.world_center().extend(0.)),
                 )]],
                 children![
                     IndicatorDisplay::default(),
@@ -205,7 +200,7 @@ fn on_tower_flamethrower_place_request_do_so(
 
 #[log_tags(Tag::GameSave)]
 fn collect_tower_flamethrowers(
-    towers: Query<(Entity, &GridCoords, &IntegrityPoints, Has<DisabledByPlayer>, &TowerShootingTimer, &TowerTopRotation), With<TowerFlamethrower>>,
+    towers: Query<(Entity, &GridArea, &IntegrityPoints, Has<DisabledByPlayer>, &TowerShootingTimer, &TowerTopRotation), With<TowerFlamethrower>>,
     mut save: SaveWriter,
 ) {
     if towers.is_empty() { return; }
@@ -213,11 +208,11 @@ fn collect_tower_flamethrowers(
     #[debug_dev("Saving {} tower flamethrowers", rows.len())]
     let rows: Vec<(u32, GridCoords, f32, bool, f32, f32)> = towers
         .iter()
-        .map(|(entity, coords, integrity_points, disabled_by_player, shooting_timer, top_rotation)| {
+        .map(|(entity, area, integrity_points, disabled_by_player, shooting_timer, top_rotation)| {
             (
                 entity.index_u32(),
-                *coords,
-                integrity_points.get_current(),
+                area.origin,
+                integrity_points.current,
                 disabled_by_player,
                 shooting_timer.0.elapsed_secs(),
                 top_rotation.current_angle,
@@ -269,12 +264,12 @@ enum Aim {
 /// placed or modified towers update immediately.
 fn aim_flame_streams(
     mut streams: Query<&mut FlameStream>,
-    towers: Query<(&Transform, &TowerTopRotation, &GridImprint, &AttackRange, &GeneratedFlameStream), With<TowerFlamethrower>>,
+    towers: Query<(&Transform, &TowerTopRotation, &GridArea, &AttackRange, &GeneratedFlameStream), With<TowerFlamethrower>>,
 ) {
-    for (transform, top_rotation, grid_imprint, attack_range, generated_stream) in towers.iter() {
+    for (transform, top_rotation, area, attack_range, generated_stream) in towers.iter() {
         let Ok(mut stream) = streams.get_mut(generated_stream.stream()) else { continue; };
         let direction = Vec2::from_angle(top_rotation.current_angle);
-        let tower_width = grid_imprint.world_size().x;
+        let tower_width = area.imprint.world_size().x;
         let nozzle_offset = tower_width * NOZZLE_OFFSET;
         stream.nozzle = transform.translation.xy() + direction * nozzle_offset;
         stream.direction = direction;

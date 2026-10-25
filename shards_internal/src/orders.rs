@@ -37,7 +37,7 @@ use strum::EnumCount;
 
 use almanach::prelude::*;
 use buildings::Forge;
-use game_core::prelude::{ContentId, GridCoords, IsOperational, Shard, ShardTier};
+use game_core::prelude::{ContentId, GridArea, GridCoords, IsOperational, Shard, ShardTier};
 use logging::prelude::*;
 use persistence::{creating_new_map, prelude::*, rusqlite};
 use resources::{prelude::{ResourceType, Stock}, stock::ShardStockAcquired};
@@ -396,7 +396,7 @@ fn assign_orders_to_free_forges(
     mut commands: Commands,
     mut stock: ResMut<Stock>,
     global_queue: Single<Option<&ForgingQueue>, With<GlobalForgingQueue>>,
-    free_forges: Query<(Entity, &GridCoords, Option<&ForgingQueue>, &WorksGlobalQueue), (With<Forge>, With<IsOperational>, Without<ForgeCurrentOrder>)>,
+    free_forges: Query<(Entity, &GridArea, Option<&ForgingQueue>, &WorksGlobalQueue), (With<Forge>, With<IsOperational>, Without<ForgeCurrentOrder>)>,
     waiting_orders: Query<&ShardOrder, (Without<ForgedBy>, Without<OrderNeedsResolution>)>,
     order_tree: OrderTreeParam,
 ) {
@@ -421,7 +421,8 @@ fn assign_orders_to_free_forges(
         true
     };
 
-    for (forge, &coords, own_queue, &WorksGlobalQueue(works_global)) in free_forges.iter() {
+    for (forge, area, own_queue, &WorksGlobalQueue(works_global)) in free_forges.iter() {
+        let coords = area.origin;
         let mut own_orders = own_queue.map(|queue| OrderWalk::new(queue, &order_tree)).into_iter().flatten();
         if own_orders.any(|order| try_take(forge, coords, order)) { continue; }
         if !works_global { continue; }
@@ -438,18 +439,18 @@ fn assign_orders_to_free_forges(
 fn advance_orders_in_progress(
     mut commands: Commands,
     time: Res<Time>,
-    operational_forges: Query<&GridCoords, (With<Forge>, With<IsOperational>)>,
+    operational_forges: Query<&GridArea, (With<Forge>, With<IsOperational>)>,
     mut orders: Query<(Entity, &ShardOrder, &ForgedBy, &mut ForgingProgress)>,
     order_tree: OrderTreeParam,
 ) {
     for (order, &ShardOrder(shard), &ForgedBy(forge), mut progress) in orders.iter_mut() {
-        let Ok(coords) = operational_forges.get(forge) else { continue; };
+        let Ok(area) = operational_forges.get(forge) else { continue; };
         if !progress.advance(time.delta()) { continue; }
 
         commands.entity(order).remove::<ForgedBy>();
         #[error_dev("Order {order} finished {shard} but has no socket, shard lost")]
         let Some(socket) = order_tree.socket(order) else { continue; };
-        #[info_player("Forge at {coords} finished {shard}")]
+        #[info_player("Forge at {} finished {shard}", area.origin)]
         commands.trigger(ShardSocketOperation::socket(socket, shard));
     }
 }
@@ -578,4 +579,3 @@ fn load_shard_orders(ctx: &mut LoadContext) -> LoadResult {
         },
     )
 }
-

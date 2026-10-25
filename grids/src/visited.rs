@@ -39,12 +39,10 @@ impl VisitedGrid {
         }
     }
     pub fn set_visited(&mut self, coords: GridCoords) {
-        let index = self.index(coords);
-        self.grid[index] = self.version.stamp();
+        self[coords] = self.version.stamp();
     }
     pub fn is_visited(&self, coords: GridCoords) -> bool {
-        let index = self.index(coords);
-        self.grid[index] == self.version.stamp()
+        self[coords] == self.version.stamp()
     }
 }
 
@@ -61,12 +59,10 @@ pub enum Tracking {
 pub type TrackingGrid = BaseGrid<Tracking, GridVersion>;
 impl TrackingGrid {
     pub fn set_tracked(&mut self, coords: GridCoords, from: GridCoords) {
-        let index = self.index(coords);
-        self.grid[index] = Tracking::Tracked {from};
+        self[coords] = Tracking::Tracked {from};
     }
     pub fn is_tracked(&self, coords: GridCoords) -> bool {
-        let index = self.index(coords);
-        self.grid[index] != Tracking::Unvisited
+        self[coords] != Tracking::Unvisited
     }
     // Creates a path between given points.
     // The path is created in reverse(backtracking "from" into "to") as during BFS we are saving from which field we came.
@@ -74,8 +70,8 @@ impl TrackingGrid {
         let mut path = vec![from_coords];
         let mut curr_coords = from_coords;
         loop {
-            curr_coords = match self.grid[self.index(curr_coords)] {
-                Tracking::Unvisited => panic!("Encountered unvisited field during compilation of path"),
+            curr_coords = match self[curr_coords] {
+                Tracking::Unvisited => panic!("Encountered unvisited cell during compilation of path"),
                 Tracking::Tracked {from} => from,
             };
             if curr_coords != to_coords {

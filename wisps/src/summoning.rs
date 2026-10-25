@@ -2,8 +2,7 @@ use bevy::prelude::*;
 use nanorand::Rng;
 use strum::{AsRefStr, EnumIter, EnumString};
 
-use game_core::prelude::{Bounds, FromEntity, GridCoords, MapBound, Moment, MomentKind, MomentOfInterest, SSS, WispType};
-use grids::prelude::ObstacleGrid;
+use game_core::prelude::{Bounds, FromEntity, GridArea, GridCoords, MapBound, Moment, MomentKind, MomentOfInterest, SSS, WispType};
 
 #[derive(Component, Clone, Debug)]
 #[require(MapBound, SummoningRuntime)]
@@ -60,7 +59,7 @@ impl Summoning {
 #[derive(Clone, Debug, Default, PartialEq, EnumIter, AsRefStr)]
 pub enum SpawnArea {
     Coords { coords: Vec<GridCoords> },
-    Rect { origin: GridCoords, width: i32, height: i32 },
+    Rect { area: GridArea },
     Edge { side: EdgeSide },
     #[default]
     EdgesAll,
@@ -69,21 +68,20 @@ pub enum SpawnArea {
 impl SpawnArea {
     pub fn get_random_coord(
         &self,
-        obstacle_grid: &ObstacleGrid,
+        bounds: Bounds,
         rng: &mut nanorand::tls::TlsWyRand,
     ) -> GridCoords {
         match self {
             SpawnArea::Coords { coords } => {
-                let idx = rng.generate_range(0..coords.len());
-                coords[idx]
+                let index = rng.generate_range(0..coords.len());
+                coords[index]
             }
-            SpawnArea::Rect { origin, width, height } => {
-                let x = origin.x + rng.generate_range(0..*width);
-                let y = origin.y + rng.generate_range(0..*height);
-                GridCoords { x, y }
+            SpawnArea::Rect { area } => {
+                let Bounds { width, height } = area.imprint.into();
+                area.origin.shifted((rng.generate_range(0..width), rng.generate_range(0..height)))
             }
             SpawnArea::Edge { side } => {
-                let Bounds { width, height } = obstacle_grid.bounds;
+                let Bounds { width, height } = bounds;
                 match side {
                     EdgeSide::Top => GridCoords { x: rng.generate_range(0..width), y: height - 1 },
                     EdgeSide::Bottom => GridCoords { x: rng.generate_range(0..width), y: 0 },
@@ -92,22 +90,22 @@ impl SpawnArea {
                 }
             }
             SpawnArea::EdgesAll => {
-                let Bounds { width, height } = obstacle_grid.bounds;
+                let Bounds { width, height } = bounds;
                 // Perimeter cells, indexed by walking the border in one pass:
                 // bottom row, then right column, then top row, then left column.
                 // Corners belong to the rows, so each column contributes
                 // `height - 2` cells and the total is `2 * (width + height - 2)`.
                 let edge_count = 2 * (width + height - 2);
-                let edge_idx = rng.generate_range(0..edge_count);
+                let edge_index = rng.generate_range(0..edge_count);
 
-                if edge_idx < width {
-                    GridCoords { x: edge_idx, y: 0 }
-                } else if edge_idx < width + height - 2 {
-                    GridCoords { x: width - 1, y: edge_idx - width + 1 }
-                } else if edge_idx < 2 * width + height - 2 {
-                    GridCoords { x: width - 1 - (edge_idx - width - height + 2), y: height - 1 }
+                if edge_index < width {
+                    GridCoords { x: edge_index, y: 0 }
+                } else if edge_index < width + height - 2 {
+                    GridCoords { x: width - 1, y: edge_index - width + 1 }
+                } else if edge_index < 2 * width + height - 2 {
+                    GridCoords { x: width - 1 - (edge_index - width - height + 2), y: height - 1 }
                 } else {
-                    GridCoords { x: 0, y: height - 2 - (edge_idx - 2 * width - height + 2) }
+                    GridCoords { x: 0, y: height - 2 - (edge_index - 2 * width - height + 2) }
                 }
             }
         }

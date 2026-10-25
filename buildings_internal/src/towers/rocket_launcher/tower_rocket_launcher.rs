@@ -37,6 +37,10 @@ impl Plugin for TowerRocketLauncherPlugin {
     }
 }
 
+// Aim
+/// Distance from the tower center to the muzzle, relative to the tower's world width.
+const MUZZLE_OFFSET: f32 = 0.4;
+
 #[derive(Component, SSS)]
 pub(crate) struct BuilderTowerRocketLauncher {
     pub grid_position: GridCoords,
@@ -57,7 +61,7 @@ impl BuilderTowerRocketLauncher {
             description: "Long-range rockets, reaching well beyond the other towers.".to_string(),
             sprite: asset_server.load("buildings/tower_rocket_launcher.png"),
             top_sprite: Some(asset_server.load("buildings/tower_rocket_launcher_top.png")),
-            grid_imprint: GridImprint::Rectangle { width: 3, height: 3 },
+            grid_imprint: GridImprint::square(3),
             cost: vec![ResourceAmount::new(ResourceType::DarkOre, 350)],
             baseline: HashMap::from([
                 (ModifierType::MaxIntegrityPoints, 100.),
@@ -105,8 +109,8 @@ impl BuilderTowerRocketLauncher {
         let Ok(builder) = builders.get(entity) else { return; };
 
         let building_info = almanach.get_building_info(BuildingType::Tower(TowerType::RocketLauncher));
-        let grid_imprint = building_info.grid_imprint;
-        let world_size = grid_imprint.world_size();
+        let area = GridArea::new(builder.grid_position, building_info.grid_imprint);
+        let world_size = area.imprint.world_size();
 
         commands.entity(entity)
             .remove::<BuilderTowerRocketLauncher>()
@@ -115,13 +119,8 @@ impl BuilderTowerRocketLauncher {
             .insert_some(builder.shooting_timer.clone())
             .insert((
                 TowerRocketLauncher,
-                Sprite {
-                    image: building_info.sprite.clone(),
-                    custom_size: Some(grid_imprint.world_size()),
-                    ..default()
-                },
-                builder.grid_position,
-                grid_imprint,
+                building_info.world_sprite(),
+                area,
                 TowerTopRotation { current_angle: builder.top_angle },
                 NeedsPower,
                 related![Indicators[
@@ -138,7 +137,7 @@ impl BuilderTowerRocketLauncher {
                         ..default()
                     },
                     Anchor(Vec2::new(-0.20, 0.0)),
-                    Transform::from_translation(builder.grid_position.to_world_position_centered(grid_imprint).extend(0.)),
+                    Transform::from_translation(area.world_center().extend(0.)),
                 )]],
                 children![
                     IndicatorDisplay::default(),
@@ -164,7 +163,7 @@ fn on_tower_rocket_launcher_place_request_do_so(
 
 #[log_tags(Tag::GameSave)]
 fn collect_tower_rocket_launchers(
-    towers: Query<(Entity, &GridCoords, &IntegrityPoints, Has<DisabledByPlayer>, &TowerShootingTimer, &TowerTopRotation), With<TowerRocketLauncher>>,
+    towers: Query<(Entity, &GridArea, &IntegrityPoints, Has<DisabledByPlayer>, &TowerShootingTimer, &TowerTopRotation), With<TowerRocketLauncher>>,
     mut save: SaveWriter,
 ) {
     if towers.is_empty() { return; }
@@ -172,11 +171,11 @@ fn collect_tower_rocket_launchers(
     #[debug_dev("Saving {} tower rocket launchers", rows.len())]
     let rows: Vec<(u32, GridCoords, f32, bool, f32, f32)> = towers
         .iter()
-        .map(|(entity, coords, integrity_points, disabled_by_player, shooting_timer, top_rotation)| {
+        .map(|(entity, area, integrity_points, disabled_by_player, shooting_timer, top_rotation)| {
             (
                 entity.index_u32(),
-                *coords,
-                integrity_points.get_current(),
+                area.origin,
+                integrity_points.current,
                 disabled_by_player,
                 shooting_timer.0.elapsed_secs(),
                 top_rotation.current_angle,
@@ -217,17 +216,16 @@ fn load_tower_rocket_launchers(ctx: &mut LoadContext) -> LoadResult {
 
 fn shooting_system(
     mut commands: Commands,
-    mut tower_rocket_launchers: Query<(&GridImprint, &Transform, &mut TowerShootingTimer, &TowerWispTarget, &TowerTopRotation, &AttackDamage), (With<TowerRocketLauncher>, With<IsOperational>)>,
+    mut tower_rocket_launchers: Query<(&GridArea, &Transform, &mut TowerShootingTimer, &TowerWispTarget, &TowerTopRotation, &AttackDamage), (With<TowerRocketLauncher>, With<IsOperational>)>,
     wisps: Query<(Entity, &Transform), With<Wisp>>,
 ) {
-    for (grid_imprint, transform, mut timer, target, top_rotation, attack_damage) in tower_rocket_launchers.iter_mut() {
+    for (area, transform, mut timer, target, top_rotation, attack_damage) in tower_rocket_launchers.iter_mut() {
         if !timer.0.is_finished() { continue; }
         let Some(Ok((target_wisp, wisp_transform))) = target.wisp().map(|wisp| wisps.get(wisp)) else { continue; };
         if !top_rotation.is_facing(wisp_transform.translation.xy() - transform.translation.xy()) { continue; }
 
-        // Calculate transform offset in the direction we are aiming
-        let tower_world_width = grid_imprint.world_size().x;
-        let offset = Vec2::from_angle(top_rotation.current_angle) * tower_world_width * 0.4;
+        let tower_world_width = area.imprint.world_size().x;
+        let offset = Vec2::from_angle(top_rotation.current_angle) * tower_world_width * MUZZLE_OFFSET;
         let spawn_position = transform.translation.xy() + offset;
 
         commands.spawn(BuilderRocket::new(spawn_position, top_rotation.current_angle, *attack_damage).with_target_wisp(target_wisp));

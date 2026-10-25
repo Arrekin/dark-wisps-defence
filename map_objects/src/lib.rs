@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use game_core::prelude::{AutoGridSnap, GridCoords, GridImprint, MapBound};
+use game_core::prelude::{AutoGridSnap, GridArea, MapBound};
 use grids::{prelude::ObstacleGridObject, EmissionsGridSpreadAffector};
 
 pub mod wall_style;
@@ -10,21 +10,20 @@ pub mod prelude {
         DarkOre, DarkOreAreaScanner, DarkOreInRange,
         ExpeditionZone,
         HasOreInScannerRange,
-        NoOreInScannerRange,
         QuantumField,
         QuantumFieldSolved,
         Wall,
     };
 }
 
-/// Drawn by the dark ore canvas from `GridCoords`.
+/// Drawn by the dark ore canvas from `GridArea`.
 #[derive(Component)]
 #[require(MapBound, ObstacleGridObject = ObstacleGridObject::DarkOre)]
 pub struct DarkOre {
     pub amount: i32,
 }
 
-/// Drawn by the wall canvas from `GridCoords`, so the entity itself carries no transform or render layer.
+/// Drawn by the wall canvas from `GridArea`, so the entity itself carries no transform or render layer.
 #[derive(Component)]
 #[require(MapBound, ObstacleGridObject = ObstacleGridObject::Wall, EmissionsGridSpreadAffector)]
 pub struct Wall;
@@ -53,17 +52,17 @@ impl ExpeditionZone {
 #[derive(Component)]
 pub struct QuantumFieldSolved;
 
+/// Present while the scanner's `DarkOreInRange` is not empty.
 #[derive(Component, Default)]
 pub struct HasOreInScannerRange;
-#[derive(Component, Default)]
-pub struct NoOreInScannerRange;
 
 #[derive(Component, Default)]
 pub struct DarkOreInRange(pub Vec<Entity>);
 
 #[derive(Component, Clone)]
 #[component(immutable)]
-#[require(GridCoords, DarkOreInRange, NoOreInScannerRange)]
+#[require(DarkOreInRange)]
 pub struct DarkOreAreaScanner {
-    pub range_imprint: GridImprint,
+    /// Cells scanned for dark ore, on the map.
+    pub range: GridArea,
 }

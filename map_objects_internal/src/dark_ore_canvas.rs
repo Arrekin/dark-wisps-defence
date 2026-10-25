@@ -10,7 +10,7 @@ use bevy::{
 };
 
 use almanach::Almanach;
-use game_core::{prelude::{GridCoords, MapInfo, ZDepth}, request_flag::RequestFlag};
+use game_core::{prelude::{GridArea, MapInfo, ZDepth}, request_flag::RequestFlag};
 use map_objects::prelude::DarkOre;
 use states::prelude::MapLoadingStage;
 use visuals::{canvas::MapCanvasBundle, shared_gpu::{SharedGpuBinding, SharedGpuWriter}, specialize_with_shared_gpu};
@@ -89,15 +89,15 @@ fn upload_gpu_dark_ore_fill(
     mut upload_requested: ResMut<RequestFlag<DarkOreFillGpuUpload>>,
     almanach: Res<Almanach>,
     map_info: Res<MapInfo>,
-    dark_ores: Query<(&GridCoords, &DarkOre)>,
+    dark_ores: Query<(&GridArea, &DarkOre)>,
 ) {
     upload_requested.clear();
 
     let max_field_saturation = almanach.dark_ore.max_field_saturation as f32;
     let map_bounds = map_info.grid_bounds;
     let mut fill = vec![0f32; map_bounds.area()];
-    for (coords, dark_ore) in dark_ores.iter() {
-        let Some(index) = map_bounds.index_checked(*coords) else { continue; };
+    for (area, dark_ore) in dark_ores.iter() {
+        let Some(index) = map_bounds.index_checked(area.origin) else { continue; };
         fill[index] = (dark_ore.amount as f32 / max_field_saturation).clamp(0.0, 1.0);
     }
     shared_gpu.write(SharedGpuBinding::DarkOreFill, fill);

@@ -109,9 +109,9 @@ fn napalm_bomb_hit_system(
     for (entity, lob) in napalm_bombs.iter() {
         if !lob.is_landed(clock.now()) { continue; }
 
-        let landing_coords = GridCoords::from_world_vec2(lob.target());
+        let landing_coords = GridCoords::from_world_position(lob.target());
         // TODO: Add a napalm impact visual.
-        if landing_coords.are_in_bounds(wisps_grid.bounds) {
+        if wisps_grid.bounds.contains(landing_coords) {
             for wisp in &wisps_grid[landing_coords] {
                 if !wisps.contains(*wisp) { continue; } // Grid entries may not yet be visible to the query.
                 damage_messages.write(DamageMessage { target: *wisp, amount: NAPALM_BOMB_IMPACT_DAMAGE });

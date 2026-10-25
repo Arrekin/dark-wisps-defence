@@ -6,7 +6,7 @@ use bevy::{
 use alteration::modifiers::prelude::AttackDamage;
 use game_core::{
     math::angle_difference,
-    prelude::{ALL_DIRECTIONS, DamageMessage, GridCoords, Property},
+    prelude::{DamageMessage, GridArea, GridCoords, GridImprint, Property},
 };
 use grids::wisps::WispsGrid;
 use logging::prelude::*;
@@ -16,7 +16,6 @@ use visuals::prelude::BuilderExplosion;
 use weaponry::prelude::*;
 use wisps::prelude::Wisp;
 
-/// Plugin for the Rocket projectile
 pub(crate) struct RocketPlugin;
 impl Plugin for RocketPlugin {
     fn build(&self, app: &mut App) {
@@ -34,14 +33,17 @@ impl Plugin for RocketPlugin {
     }
 }
 
-pub(crate) const ROCKET_BASE_IMAGE: &str = "projectiles/rocket.png";
-pub(crate) const ROCKET_EXHAUST_IMAGE: &str = "projectiles/rocket_exhaust.png";
+const ROCKET_BASE_IMAGE: &str = "projectiles/rocket.png";
+const ROCKET_EXHAUST_IMAGE: &str = "projectiles/rocket_exhaust.png";
 
 // Flight tuning
 const ROCKET_SPEED: f32 = 400.0;
 /// Radians per second.
 const ROCKET_TURN_SPEED: f32 = 1.5;
 const ROCKET_HIT_DISTANCE: f32 = 6.0;
+
+// Blast area, in cells from the hit cell
+const BLAST_REACH: i32 = 1;
 
 #[log_tags(Tag::GameSave)]
 fn collect_rockets(
@@ -165,7 +167,7 @@ fn rocket_hit_system(
 ) {
     for (entity, rocket_transform, target, attack_damage) in rockets.iter() {
         let rocket_coords = GridCoords::from_transform(rocket_transform);
-        if !rocket_coords.are_in_bounds(wisps_grid.bounds) {
+        if !wisps_grid.bounds.contains(rocket_coords) {
             commands.entity(entity).despawn();
             continue;
         }
@@ -173,19 +175,13 @@ fn rocket_hit_system(
         let Some(Ok(wisp_transform)) = target.0.map(|wisp| wisps_transforms.get(wisp)) else { continue; };
         if rocket_transform.translation.xy().distance(wisp_transform.translation.xy()) > ROCKET_HIT_DISTANCE { continue; }
 
-        for direction in ALL_DIRECTIONS.iter().chain(&[(0, 0)]) {
-            let blast_zone_coords = rocket_coords.shifted(*direction);
-            if !blast_zone_coords.are_in_bounds(wisps_grid.bounds) { continue; }
-
+        let blast_zone = GridArea::centered_on(rocket_coords, GridImprint::square_of_reach(BLAST_REACH));
+        for blast_zone_coords in blast_zone.iter_in_bounds(wisps_grid.bounds) {
             commands.spawn(BuilderExplosion(blast_zone_coords));
 
-            let wisps_in_coords = &wisps_grid[blast_zone_coords];
-            for wisp in wisps_in_coords {
-                if !wisps_transforms.contains(*wisp) { continue; } // May not find wisp if the wisp spawned at the same frame.
-                damage_messages.write(DamageMessage {
-                    target: *wisp,
-                    amount: attack_damage.get(),
-                });
+            for wisp in &wisps_grid[blast_zone_coords] {
+                if !wisps_transforms.contains(*wisp) { continue; } // Grid entries may not yet be visible to the query.
+                damage_messages.write(DamageMessage { target: *wisp, amount: attack_damage.get() });
             }
         }
         commands.entity(entity).despawn();

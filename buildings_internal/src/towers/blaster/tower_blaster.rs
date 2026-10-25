@@ -36,6 +36,10 @@ impl Plugin for TowerBlasterPlugin {
     }
 }
 
+// Aim
+/// Distance from the tower center to the muzzle, relative to the tower's world width.
+const MUZZLE_OFFSET: f32 = 0.4;
+
 #[derive(Component, SSS)]
 pub(crate) struct BuilderTowerBlaster {
     pub grid_position: GridCoords,
@@ -55,7 +59,7 @@ impl BuilderTowerBlaster {
             description: "Rapid laser darts. Little damage per hit, but it almost never stops firing.".to_string(),
             sprite: asset_server.load("buildings/tower_blaster.png"),
             top_sprite: Some(asset_server.load("buildings/tower_blaster_top.png")),
-            grid_imprint: GridImprint::Rectangle { width: 2, height: 2 },
+            grid_imprint: GridImprint::square(2),
             cost: vec![ResourceAmount::new(ResourceType::DarkOre, 150)],
             baseline: HashMap::from([
                 (ModifierType::MaxIntegrityPoints, 100.),
@@ -105,8 +109,8 @@ impl BuilderTowerBlaster {
         let Ok(builder) = builders.get(entity) else { return; };
 
         let building_info = almanach.get_building_info(BuildingType::Tower(TowerType::Blaster));
-        let grid_imprint = building_info.grid_imprint;
-        let world_size = grid_imprint.world_size();
+        let area = GridArea::new(builder.grid_position, building_info.grid_imprint);
+        let world_size = area.imprint.world_size();
 
         commands.entity(entity)
             .remove::<BuilderTowerBlaster>()
@@ -115,13 +119,8 @@ impl BuilderTowerBlaster {
             .insert_some(builder.shooting_timer.clone())
             .insert((
                 TowerBlaster,
-                Sprite {
-                    image: building_info.sprite.clone(),
-                    custom_size: Some(grid_imprint.world_size()),
-                    ..default()
-                },
-                builder.grid_position,
-                grid_imprint,
+                building_info.world_sprite(),
+                area,
                 TowerTopRotation { current_angle: builder.top_angle },
                 NeedsPower,
                 related![Indicators[
@@ -137,7 +136,7 @@ impl BuilderTowerBlaster {
                         custom_size: Some(Vec2::new(world_size.x * 1.52 * 0.5, world_size.y * 0.5)),
                         ..default()
                     },
-                    Transform::from_translation(builder.grid_position.to_world_position_centered(grid_imprint).extend(0.)),
+                    Transform::from_translation(area.world_center().extend(0.)),
                 )]],
                 children![
                     IndicatorDisplay::default(),
@@ -163,7 +162,7 @@ fn on_tower_blaster_place_request_do_so(
 
 #[log_tags(Tag::GameSave)]
 fn collect_tower_blasters(
-    towers: Query<(Entity, &GridCoords, &IntegrityPoints, Has<DisabledByPlayer>, &TowerShootingTimer, &TowerTopRotation), With<TowerBlaster>>,
+    towers: Query<(Entity, &GridArea, &IntegrityPoints, Has<DisabledByPlayer>, &TowerShootingTimer, &TowerTopRotation), With<TowerBlaster>>,
     mut save: SaveWriter,
 ) {
     if towers.is_empty() { return; }
@@ -171,11 +170,11 @@ fn collect_tower_blasters(
     #[debug_dev("Saving {} tower blasters", rows.len())]
     let rows: Vec<(u32, GridCoords, f32, bool, f32, f32)> = towers
         .iter()
-        .map(|(entity, coords, integrity_points, disabled_by_player, shooting_timer, top_rotation)| {
+        .map(|(entity, area, integrity_points, disabled_by_player, shooting_timer, top_rotation)| {
             (
                 entity.index_u32(),
-                *coords,
-                integrity_points.get_current(),
+                area.origin,
+                integrity_points.current,
                 disabled_by_player,
                 shooting_timer.0.elapsed_secs(),
                 top_rotation.current_angle,
@@ -216,19 +215,18 @@ fn load_tower_blasters(ctx: &mut LoadContext) -> LoadResult {
 
 fn shooting_system(
     mut commands: Commands,
-    mut tower_blasters: Query<(&GridImprint, &Transform, &mut TowerShootingTimer, &TowerWispTarget, &TowerTopRotation, &AttackDamage), (With<TowerBlaster>, With<IsOperational>)>,
+    mut tower_blasters: Query<(&GridArea, &Transform, &mut TowerShootingTimer, &TowerWispTarget, &TowerTopRotation, &AttackDamage), (With<TowerBlaster>, With<IsOperational>)>,
     wisps: Query<(Entity, &Transform), With<Wisp>>,
 ) {
-    for (grid_imprint, transform, mut timer, target, top_rotation, attack_damage) in tower_blasters.iter_mut() {
+    for (area, transform, mut timer, target, top_rotation, attack_damage) in tower_blasters.iter_mut() {
         if !timer.0.is_finished() { continue; }
         let Some(Ok((target_wisp, wisp_transform))) = target.wisp().map(|wisp| wisps.get(wisp)) else { continue; };
         let wisp_position = wisp_transform.translation.xy();
 
         if !top_rotation.is_facing(wisp_position - transform.translation.xy()) { continue; }
 
-        // Calculate transform offset in the direction we are aiming
-        let tower_world_width = grid_imprint.world_size().x;
-        let offset = Vec2::from_angle(top_rotation.current_angle) * tower_world_width * 0.4;
+        let tower_world_width = area.imprint.world_size().x;
+        let offset = Vec2::from_angle(top_rotation.current_angle) * tower_world_width * MUZZLE_OFFSET;
         let spawn_position = transform.translation.xy() + offset;
 
         commands.spawn(

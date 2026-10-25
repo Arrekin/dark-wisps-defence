@@ -107,8 +107,8 @@ fn update_building_info_panel(
 ) {
     let integrity_points = focused_building.into_inner();
     let mut healthbar = healthbar.into_inner();
-    healthbar.value = integrity_points.get_current();
-    healthbar.max_value = integrity_points.get_max();
+    healthbar.value = integrity_points.current;
+    healthbar.max_value = integrity_points.max;
     let integrity_points_percentage = integrity_points.get_percent();
     healthbar.color = Color::srgba(1. - integrity_points_percentage, integrity_points_percentage, 0., 1.);
 }

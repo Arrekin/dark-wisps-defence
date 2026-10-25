@@ -10,7 +10,7 @@
 
 use bevy::prelude::*;
 
-use game_core::prelude::{DamageMessage, GridCoords, SSS};
+use game_core::prelude::{DamageMessage, GridArea, GridCoords, SSS};
 use grids::{ground_cover::{GroundCover, GroundCoverKind}, wisps::WispsGrid};
 use logging::prelude::*;
 use persistence::prelude::*;
@@ -53,7 +53,7 @@ impl BuilderNapalm {
 
 #[log_tags(Tag::GameSave)]
 fn collect_napalms(
-    napalms: Query<(Entity, &GridCoords, &TimeBound), With<Napalm>>,
+    napalms: Query<(Entity, &GridArea, &TimeBound), With<Napalm>>,
     mut save: SaveWriter,
 ) {
     if napalms.is_empty() { return; }
@@ -61,7 +61,7 @@ fn collect_napalms(
     #[debug_dev("Saving {} napalms", rows.len())]
     let rows: Vec<(u32, GridCoords, TimeBound)> = napalms
         .iter()
-        .map(|(entity, grid_coords, time_bound)| (entity.index_u32(), *grid_coords, *time_bound))
+        .map(|(entity, area, time_bound)| (entity.index_u32(), area.origin, *time_bound))
         .collect();
     save.submit(move |ctx| {
         for (id, grid_coords, time_bound) in rows {
@@ -95,7 +95,7 @@ fn on_builder_add_spawn_napalm(
         .insert((
             Napalm,
             GroundCover(GroundCoverKind::Napalm),
-            builder.grid_coords,
+            GridArea::cell(builder.grid_coords),
             builder.time_bound,
         ));
 }
@@ -104,13 +104,13 @@ fn napalm_damage_system(
     mut damage_messages: MessageWriter<DamageMessage>,
     time: Res<Time>,
     wisps_grid: Res<WispsGrid>,
-    napalms: Query<&GridCoords, With<Napalm>>,
+    napalms: Query<&GridArea, With<Napalm>>,
     wisps: Query<(), With<Wisp>>,
 ) {
     let damage = NAPALM_DAMAGE_PER_SECOND * time.delta_secs();
-    for grid_coords in napalms.iter() {
-        if !grid_coords.are_in_bounds(wisps_grid.bounds) { continue; }
-        for wisp in &wisps_grid[*grid_coords] {
+    for area in napalms.iter() {
+        let Some(wisps_here) = wisps_grid.get(area.origin) else { continue; };
+        for wisp in wisps_here {
             if !wisps.contains(*wisp) { continue; } // Grid entries may not yet be visible to the query.
             damage_messages.write(DamageMessage { target: *wisp, amount: damage });
         }
@@ -121,12 +121,12 @@ fn on_remove_napalm_spawn_char(
     trigger: On<Remove<Napalm>>,
     mut commands: Commands,
     clock: Res<GameClock>,
-    napalms: Query<&GridCoords, With<Napalm>>,
+    napalms: Query<&GridArea, With<Napalm>>,
 ) {
-    let Ok(grid_coords) = napalms.get(trigger.entity) else { return; };
+    let Ok(area) = napalms.get(trigger.entity) else { return; };
     commands.spawn((
         GroundCover(GroundCoverKind::Char),
-        *grid_coords,
+        *area,
         TimeBound::lasting(&clock, CHAR_DURATION),
     ));
 }

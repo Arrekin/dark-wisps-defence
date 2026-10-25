@@ -72,7 +72,7 @@ impl BuilderForge {
             description: "Forges shards from resources.".to_string(),
             sprite: asset_server.load("buildings/forge.png"),
             top_sprite: None,
-            grid_imprint: GridImprint::Rectangle { width: 3, height: 3 },
+            grid_imprint: GridImprint::square(3),
             cost: vec![ResourceAmount::new(ResourceType::DarkOre, 100)],
             baseline: HashMap::from([(ModifierType::MaxIntegrityPoints, 100.)]),
             sockets: vec![],
@@ -98,7 +98,6 @@ impl BuilderForge {
         let Ok(builder) = builders.get(entity) else { return; };
 
         let building_info = almanach.get_building_info(BuildingType::Forge);
-        let grid_imprint = building_info.grid_imprint;
 
         commands.entity(entity)
             .remove::<BuilderForge>()
@@ -107,13 +106,8 @@ impl BuilderForge {
             .insert((
                 Forge,
                 WorksGlobalQueue::default(),
-                Sprite {
-                    image: building_info.sprite.clone(),
-                    custom_size: Some(grid_imprint.world_size()),
-                    ..default()
-                },
-                builder.grid_position,
-                grid_imprint,
+                building_info.world_sprite(),
+                GridArea::new(builder.grid_position, building_info.grid_imprint),
                 NeedsPower,
                 related![Indicators[
                     IndicatorType::NoPower,
@@ -143,7 +137,7 @@ fn on_forge_place_request_do_so(
 
 #[log_tags(Tag::GameSave)]
 fn collect_forges(
-    forges: Query<(Entity, &GridCoords, &IntegrityPoints, Has<DisabledByPlayer>), With<Forge>>,
+    forges: Query<(Entity, &GridArea, &IntegrityPoints, Has<DisabledByPlayer>), With<Forge>>,
     mut save: SaveWriter,
 ) {
     if forges.is_empty() { return; }
@@ -151,8 +145,8 @@ fn collect_forges(
     #[debug_dev("Saving {} forges", rows.len())]
     let rows: Vec<(u32, GridCoords, f32, bool)> = forges
         .iter()
-        .map(|(entity, coords, integrity_points, disabled_by_player)| {
-            (entity.index_u32(), *coords, integrity_points.get_current(), disabled_by_player)
+        .map(|(entity, area, integrity_points, disabled_by_player)| {
+            (entity.index_u32(), area.origin, integrity_points.current, disabled_by_player)
         })
         .collect();
     save.submit(move |ctx| {
@@ -409,11 +403,11 @@ impl GlobalQueueToggleButton {
     #[log_tags(Tag::Forge)]
     fn on_click_toggle_global_queue(
         _trigger: On<PointerClick>,
-        focused_forge: Single<(&GridCoords, &mut WorksGlobalQueue), (With<Forge>, With<FocusedMapObject>)>,
+        focused_forge: Single<(&GridArea, &mut WorksGlobalQueue), (With<Forge>, With<FocusedMapObject>)>,
     ) {
-        let (coords, mut works_global) = focused_forge.into_inner();
+        let (area, mut works_global) = focused_forge.into_inner();
         works_global.toggle();
-        info_player!("Forge at {coords}: {}", works_global.label());
+        info_player!("Forge at {}: {}", area.origin, works_global.label());
     }
 }
 

@@ -60,7 +60,7 @@ use bevy::{prelude::*, reflect::TypePath, render::render_resource::ShaderType};
 use buildings::prelude::ExplorationCenter;
 use game_core::{
     math::angle_difference,
-    prelude::{GridCoords, GridImprint, IsOperational},
+    prelude::{GridArea, IsOperational},
 };
 use logging::prelude::*;
 use map_objects::prelude::ExpeditionZone;
@@ -171,12 +171,10 @@ fn on_deployment_request_drone_do_so(
 
     let home_position = home_transform.translation.xy();
 
-    transform.translation.x = home_position.x;
-    transform.translation.y = home_position.y;
+    transform.translation = home_position.extend(transform.translation.z);
 
     // Point toward target
-    let to_target = target_transform.translation.xy() - home_position;
-    drone.heading = to_target.y.atan2(to_target.x);
+    drone.heading = (target_transform.translation.xy() - home_position).to_angle();
     transform.rotation = Quat::from_rotation_z(drone.heading);
 
     commands.entity(event.drone).insert(DroneState::Deploying);
@@ -281,12 +279,9 @@ fn travel_system(
         }
 
         // Fly toward destination
-        let desired_heading = to_destination.y.atan2(to_destination.x);
-        let heading_delta = angle_difference(desired_heading, drone.heading);
-        let max_turn = DRONE_TURN_RATE * time.delta_secs();
-        drone.heading += heading_delta.clamp(-max_turn, max_turn);
+        drone.turn_toward(to_destination.to_angle(), DRONE_TURN_RATE * time.delta_secs());
 
-        let forward = Vec2::new(drone.heading.cos(), drone.heading.sin());
+        let forward = Vec2::from_angle(drone.heading);
         let move_distance = (DRONE_SPEED * time.delta_secs()).min(distance);
         transform.translation += (forward * move_distance).extend(0.0);
         transform.rotation = Quat::from_rotation_z(drone.heading);
@@ -334,8 +329,7 @@ fn patrol_system(
         let drone_position = transform.translation.xy();
 
         // Check angle to target center
-        let to_target = center - drone_position;
-        let angle_to_target = to_target.y.atan2(to_target.x);
+        let angle_to_target = (center - drone_position).to_angle();
         let target_angle_delta = angle_difference(angle_to_target, drone.heading);
         let target_in_front = target_angle_delta.abs() < SCAN_ANGLE_LIMIT;
 
@@ -353,14 +347,12 @@ fn patrol_system(
             if distance_to_waypoint < WAYPOINT_REACH_DIST {
                 drone.set_new_waypoint(center, &mut rng);
             }
-            to_waypoint.y.atan2(to_waypoint.x)
+            to_waypoint.to_angle()
         };
 
-        let heading_delta = angle_difference(desired_heading, drone.heading);
-        let max_turn = DRONE_TURN_RATE * time.delta_secs();
-        drone.heading += heading_delta.clamp(-max_turn, max_turn);
+        drone.turn_toward(desired_heading, DRONE_TURN_RATE * time.delta_secs());
 
-        let forward = Vec2::new(drone.heading.cos(), drone.heading.sin());
+        let forward = Vec2::from_angle(drone.heading);
         transform.translation += (forward * DRONE_SPEED * time.delta_secs()).extend(0.0);
         transform.rotation = Quat::from_rotation_z(drone.heading);
     }
@@ -413,11 +405,10 @@ fn scanning_beam_update(
 
         let beam_vec = target_point - beam_start;
         let beam_length = beam_vec.length();
-        let beam_angle = beam_vec.y.atan2(beam_vec.x);
+        let beam_angle = beam_vec.to_angle();
 
         let beam_center = (beam_start + target_point) / 2.0;
-        beam_transform.translation.x = beam_center.x;
-        beam_transform.translation.y = beam_center.y;
+        beam_transform.translation = beam_center.extend(beam_transform.translation.z);
         beam_transform.rotation = Quat::from_rotation_z(beam_angle);
 
         beam_transform.scale = Vec3::new(beam_length, SPOT_RADIUS * 2.0, 1.0);
@@ -432,7 +423,7 @@ fn scanning_beam_update(
 fn scan_spot_update(
     time: Res<Time>,
     drones: Query<(&Transform, &ExpeditionDrone), Without<ScanSpot>>,
-    targets: Query<(&GridCoords, &GridImprint), Without<ExpeditionDrone>>,
+    targets: Query<&GridArea, Without<ExpeditionDrone>>,
     beams: Query<&ScanningBeam>,
     mut spots: Query<(&mut Transform, &mut Visibility, &mut ScanSpot), Without<ExpeditionDrone>>,
 ) {
@@ -447,21 +438,19 @@ fn scan_spot_update(
         spot_visibility.set_if_neq(Visibility::Inherited);
 
         let Some(target_entity) = drone.mission_target else { continue; };
-        let Ok((target_coords, target_imprint)) = targets.get(target_entity) else { continue; };
+        let Ok(target_area) = targets.get(target_entity) else { continue; };
 
         let drone_position = drone_transform.translation.xy();
 
         // Snap spot to target if too far (e.g. after switching targets)
         let spot_world_position = {
             let spot_world_position = spot_transform.translation.xy();
-            let target_world_center = target_coords.to_world_position_centered(target_imprint);
-            let distance_to_target_center = (spot_world_position - target_world_center).length();
-            let max_target_distance = target_imprint.world_size().length() * SCAN_SPOT_SNAP_FACTOR;
+            let distance_to_target_center = (spot_world_position - target_area.world_center()).length();
+            let max_target_distance = target_area.imprint.world_size().length() * SCAN_SPOT_SNAP_FACTOR;
             if distance_to_target_center > max_target_distance {
-                let new_position = target_coords.to_world_position() + target_imprint.random_local_offset();
+                let new_position = target_area.random_world_point();
                 spot.destination = new_position;
-                spot_transform.translation.x = new_position.x;
-                spot_transform.translation.y = new_position.y;
+                spot_transform.translation = new_position.extend(spot_transform.translation.z);
                 new_position
             } else {
                 spot_world_position
@@ -473,7 +462,7 @@ fn scan_spot_update(
         let distance_to_destination = to_destination.length();
 
         if distance_to_destination < SCAN_SPOT_REACH_DISTANCE {
-            spot.destination = target_coords.to_world_position() + target_imprint.random_local_offset();
+            spot.destination = target_area.random_world_point();
         } else {
             let move_amount = SCAN_POINT_SPEED * time.delta_secs();
             let new_world_position = if move_amount >= distance_to_destination {
@@ -481,14 +470,13 @@ fn scan_spot_update(
             } else {
                 spot_world_position + to_destination.normalize() * move_amount
             };
-            spot_transform.translation.x = new_world_position.x;
-            spot_transform.translation.y = new_world_position.y;
+            spot_transform.translation = new_world_position.extend(spot_transform.translation.z);
         }
 
         // Elongate spot based on distance to drone (perspective effect)
         let to_drone = drone_position - spot_transform.translation.xy();
         let distance = to_drone.length();
-        let angle_to_drone = to_drone.y.atan2(to_drone.x);
+        let angle_to_drone = to_drone.to_angle();
         spot_transform.rotation = Quat::from_rotation_z(angle_to_drone);
         let elongation = 1.0 + distance * SPOT_ELONGATION_FACTOR;
         spot_transform.scale = Vec3::new(SPOT_RADIUS * elongation, SPOT_RADIUS, 1.0);
@@ -540,7 +528,7 @@ fn collect_expedition_drones(
                 entity.index_u32(),
                 home_base.0.index_u32(),
                 *drone_state,
-                drone.mission_target.map(|e| e.index_u32()),
+                drone.mission_target.map(|target| target.index_u32()),
                 drone.heading,
                 drone.waypoint,
                 fuel.current,

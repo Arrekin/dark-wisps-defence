@@ -25,10 +25,13 @@ use bevy::{
 };
 
 use almanach::{Almanach, QuantumFieldInfo, prelude::AlmanachAppExt};
-use game_core::prelude::{GridCoords, GridImprint, MapObject, MapObjectTooltipRequest, SSS};
-use grids::placement::{
-    BeginPlacing, CellHighlight, GridObjectPlacer, GridPlacerOverridePropertyRequest, GridsCollectionParam,
-    PlacementModes, PlacementValidity, PlaceRequest, RemoveRequest, StopPlacing,
+use game_core::prelude::{GridArea, GridCoords, GridImprint, MapObject, MapObjectTooltipRequest, SSS};
+use grids::{
+    placement::{
+        BeginPlacing, CellHighlight, GridObjectPlacer, GridPlacerOverridePropertyRequest, GridsCollectionParam,
+        PlacementModes, PlacementValidity, PlaceRequest, RemoveRequest, StopPlacing,
+    },
+    prelude::ObstacleCell,
 };
 use hud::prelude::{BuilderSideMenuItemTooltip, DisplayPanelMainContentRoot, FocusedMapObject};
 use logging::prelude::*;
@@ -134,8 +137,7 @@ pub(crate) struct QuantumFieldLayer {
 
 #[derive(Component, SSS)]
 pub(crate) struct BuilderQuantumField {
-    pub grid_position: GridCoords,
-    pub grid_imprint: GridImprint,
+    pub area: GridArea,
     /// Saved layer progress. `None` ⇒ fresh spawn (layer 0, 0.0 progress);
     /// `Some` ⇒ restore from save.
     pub current_layer: Option<usize>,
@@ -143,8 +145,8 @@ pub(crate) struct BuilderQuantumField {
 }
 
 impl BuilderQuantumField {
-    pub fn new(grid_position: GridCoords, grid_imprint: GridImprint) -> Self {
-        Self { grid_position, grid_imprint, current_layer: None, current_layer_progress: None }
+    pub fn new(area: GridArea) -> Self {
+        Self { area, current_layer: None, current_layer_progress: None }
     }
     pub fn with_current_layer(mut self, current_layer: usize) -> Self {
         self.current_layer = Some(current_layer);
@@ -191,8 +193,7 @@ impl BuilderQuantumField {
             .remove::<BuilderQuantumField>()
             .insert((
                 Name::new("Quantum Field"),
-                builder.grid_position,
-                builder.grid_imprint,
+                builder.area,
                 quantum_field,
                 ExpeditionZone::default(),
                 QuantumFieldAnomaly::default(),
@@ -202,33 +203,31 @@ impl BuilderQuantumField {
 
 #[log_tags(Tag::GameSave)]
 fn collect_quantum_fields(
-    quantum_fields: Query<(Entity, &GridCoords, &GridImprint, &QuantumFieldLayers)>,
+    quantum_fields: Query<(Entity, &GridArea, &QuantumFieldLayers)>,
     mut save: SaveWriter,
 ) {
     if quantum_fields.is_empty() { return; }
 
     #[debug_dev("Saving {} quantum fields", rows.len())]
-    let rows: Vec<(u32, GridCoords, GridImprint, usize, f32)> = quantum_fields
+    let rows: Vec<(u32, GridArea, usize, f32)> = quantum_fields
         .iter()
-        .map(|(entity, coords, imprint, quantum_field)| {
+        .map(|(entity, area, quantum_field)| {
             (
                 entity.index_u32(),
-                *coords,
-                *imprint,
+                *area,
                 quantum_field.current_layer,
                 quantum_field.current_layer_progress,
             )
         })
         .collect();
     save.submit(move |ctx| {
-        for (id, coords, grid_imprint, current_layer, current_layer_progress) in rows {
+        for (id, area, current_layer, current_layer_progress) in rows {
             ctx.register_entity(id)?;
             ctx.tx.execute(
                 "INSERT OR REPLACE INTO quantum_fields (id, current_layer, current_layer_progress) VALUES (?1, ?2, ?3)",
                 rusqlite::params![id, current_layer, current_layer_progress],
             )?;
-            ctx.save_grid_coords(id, coords)?;
-            ctx.save_grid_imprint(id, grid_imprint)?;
+            ctx.save_grid_area(id, area)?;
         }
         Ok(())
     });
@@ -238,9 +237,7 @@ fn load_quantum_fields(ctx: &mut LoadContext) -> LoadResult {
     ctx.for_each_entity("SELECT id, current_layer, current_layer_progress FROM quantum_fields", |ctx, old_id, entity, row| {
         let current_layer: usize = row.get(1)?;
         let current_layer_progress: f32 = row.get(2)?;
-        let grid_position = ctx.grid_coords(old_id)?;
-        let grid_imprint = ctx.grid_imprint(old_id)?;
-        let builder = BuilderQuantumField::new(grid_position, grid_imprint)
+        let builder = BuilderQuantumField::new(ctx.grid_area(old_id)?)
             .with_current_layer(current_layer)
             .with_current_layer_progress(current_layer_progress);
         ctx.insert(entity, builder);
@@ -250,17 +247,16 @@ fn load_quantum_fields(ctx: &mut LoadContext) -> LoadResult {
 
 fn quantum_field_validator(
     _: MapObject,
-    origin: GridCoords,
-    imprint: GridImprint,
+    area: GridArea,
     grids: &GridsCollectionParam,
 ) -> PlacementValidity {
-    if !origin.are_in_bounds(grids.obstacle_grid.bounds) {
+    if !area.fits_in(grids.obstacle_grid.bounds) {
         return PlacementValidity::Invalid;
     }
-    if grids.reserved_coords.any_reserved(origin, imprint) {
+    if grids.reserved_coords.any_reserved(area) {
         return PlacementValidity::Invalid;
     }
-    if !grids.obstacle_grid.query_imprint_all(origin, imprint, |field| !field.is_within_quantum_field()) {
+    if !grids.obstacle_grid.query_area_all(area, |cell| !cell.is_within_quantum_field()) {
         return PlacementValidity::Invalid;
     }
     PlacementValidity::Valid
@@ -268,19 +264,15 @@ fn quantum_field_validator(
 
 fn quantum_field_annotator(
     _: MapObject,
-    origin: GridCoords,
-    imprint: GridImprint,
+    area: GridArea,
     validity: PlacementValidity,
     grids: &GridsCollectionParam,
 ) -> Vec<(GridCoords, CellHighlight)> {
     if validity != PlacementValidity::Invalid {
         return vec![];
     }
-    imprint.iter(origin)
-        .filter(|coords| {
-            !coords.are_in_bounds(grids.obstacle_grid.bounds)
-                || grids.obstacle_grid[*coords].is_within_quantum_field()
-        })
+    area.iter()
+        .filter(|coords| grids.obstacle_grid.get(*coords).is_none_or(ObstacleCell::is_within_quantum_field))
         .map(|coords| (coords, CellHighlight::Negative))
         .collect()
 }
@@ -291,15 +283,15 @@ fn on_quantum_field_place_request_do_so(
     mut commands: Commands,
     almanach: Res<Almanach>,
     mut grids: GridsCollectionParam,
-    placer: Single<(&GridCoords, &GridImprint), With<GridObjectPlacer>>,
+    placer: Single<&GridArea, With<GridObjectPlacer>>,
 ) {
     let PlaceRequest(MapObject::QuantumField) = *trigger else { return };
-    let (coords, grid_imprint) = placer.into_inner();
-    let validity = (almanach.quantum_fields.validate)(MapObject::QuantumField, *coords, *grid_imprint, &grids);
+    let area = *placer.into_inner();
+    let validity = (almanach.quantum_fields.validate)(MapObject::QuantumField, area, &grids);
     if validity == PlacementValidity::Invalid { return; }
-    #[debug_dev("Quantum field placed at {coords}")]
-    commands.spawn(BuilderQuantumField::new(*coords, *grid_imprint));
-    grids.reserved_coords.reserve(*coords, *grid_imprint);
+    #[debug_dev("Quantum field placed at {}", area.origin)]
+    commands.spawn(BuilderQuantumField::new(area));
+    grids.reserved_coords.reserve(area);
 }
 
 #[log_tags(Tag::MapObjects)]
@@ -307,12 +299,12 @@ fn on_quantum_field_remove_request_do_so(
     trigger: On<RemoveRequest>,
     mut commands: Commands,
     grids: GridsCollectionParam,
-    placer: Single<&GridCoords, With<GridObjectPlacer>>,
+    placer: Single<&GridArea, With<GridObjectPlacer>>,
 ) {
     let RemoveRequest(MapObject::QuantumField) = *trigger else { return };
-    let coords = placer.into_inner();
+    let coords = placer.origin;
     #[debug_dev("Quantum field removed at {coords}")]
-    if let Some(entity) = grids.obstacle_grid[*coords].quantum_field {
+    if let Some(entity) = grids.obstacle_grid.get(coords).and_then(|cell| cell.quantum_field) {
         commands.entity(entity).despawn();
     }
 }
@@ -343,11 +335,12 @@ impl QuantumFieldImprintSelector {
     pub fn new(min: i32, max: i32, default: i32) -> Self {
         Self { current: default, min, max }
     }
+    #[expect(dead_code)]
     pub fn get_size(&self) -> i32 {
         self.current
     }
-    pub fn get(&self) -> GridImprint {
-        GridImprint::Rectangle { width: self.current, height: self.current }
+    pub fn imprint(&self) -> GridImprint {
+        GridImprint::square(self.current)
     }
     pub fn increase(&mut self) -> Result<(), String> {
         if self.current < self.max {
@@ -374,17 +367,17 @@ pub(crate) struct GridPlacerUiForQuantumField {
 }
 impl GridPlacerUiForQuantumField {
     pub fn imprint_label(&self) -> String {
-        let size = self.imprint_selector.get_size();
-        format!("Quantum Field {}x{}", size, size)
+        format!("Quantum Field {}", self.imprint_selector.imprint().label())
     }
 
     fn on_add_construct_grid_placer_ui(
         trigger: On<Add<GridPlacerUiForQuantumField>>,
         mut commands: Commands,
-        grid_placer_ui_for_quantum_field: Single<&GridPlacerUiForQuantumField>,
+        grid_placer_uis: Query<&GridPlacerUiForQuantumField>,
     ) {
         let entity = trigger.entity;
-        let ui_text = grid_placer_ui_for_quantum_field.into_inner().imprint_label();
+        let Ok(grid_placer_ui) = grid_placer_uis.get(entity) else { return; };
+        let ui_text = grid_placer_ui.imprint_label();
         commands.entity(entity).insert((
             Node {
                 position_type: PositionType::Absolute,
@@ -397,7 +390,7 @@ impl GridPlacerUiForQuantumField {
             },
             children![
                 ArrowButton::Decrease,
-                Text::new(ui_text),
+                (Text::new(ui_text), QuantumFieldSizeLabel),
                 ArrowButton::Increase,
             ],
         ));
@@ -416,7 +409,7 @@ impl GridPlacerUiForQuantumField {
             quantum_field_info.default_size,
         );
         commands.spawn(GridPlacerUiForQuantumField { imprint_selector });
-        commands.trigger(GridPlacerOverridePropertyRequest::OverrideImprint(imprint_selector.get()));
+        commands.trigger(GridPlacerOverridePropertyRequest::OverrideImprint(imprint_selector.imprint()));
     }
 
     fn on_stop_placing_despawn_grid_placer_ui(
@@ -427,6 +420,9 @@ impl GridPlacerUiForQuantumField {
         commands.entity(existing_ui.into_inner()).despawn();
     }
 }
+
+#[derive(Component)]
+struct QuantumFieldSizeLabel;
 
 #[derive(Component)]
 #[require(Button, Pickable)]
@@ -471,24 +467,22 @@ impl ArrowButton {
     fn on_click_adjust_quantum_field_size(
         trigger: On<PointerClick>,
         mut commands: Commands,
-        ui: Single<(&Children, &mut GridPlacerUiForQuantumField)>,
+        grid_placer_ui: Single<&mut GridPlacerUiForQuantumField>,
+        size_label: Single<&mut Text, With<QuantumFieldSizeLabel>>,
         arrows: Query<&ArrowButton>,
-        mut texts: Query<&mut Text>,
     ) {
         let entity = trigger.entity;
-        let (ui_children, mut grid_placer_ui) = ui.into_inner();
+        let mut grid_placer_ui = grid_placer_ui.into_inner();
 
         let Ok(arrow_button) = arrows.get(entity) else { return; };
-        let _ = match arrow_button {
+        let Ok(()) = match arrow_button {
             ArrowButton::Decrease => grid_placer_ui.imprint_selector.decrease(),
             ArrowButton::Increase => grid_placer_ui.imprint_selector.increase(),
-        }.inspect_err(|error| info_player!("Quantum field size unchanged: {error}"));
+        }.inspect_err(|error| info_player!("Quantum field size unchanged: {error}")) else { return; };
 
-        if let Ok(mut text) = texts.get_mut(ui_children[1]) {
-            text.0 = grid_placer_ui.imprint_label();
-        }
+        size_label.into_inner().0 = grid_placer_ui.imprint_label();
 
-        let imprint = grid_placer_ui.imprint_selector.get();
+        let imprint = grid_placer_ui.imprint_selector.imprint();
         commands.trigger(GridPlacerOverridePropertyRequest::OverrideImprint(imprint));
     }
 }
@@ -763,9 +757,9 @@ fn on_map_object_tooltip_request_spawn_quantum_field_tooltip(
     let MapObjectTooltipRequest { entity, object: MapObject::QuantumField } = *trigger else { return };
 
     let info = &almanach.quantum_fields;
-    // A field is placed at a size the player picks, so its footprint is a range.
-    let smallest = GridImprint::Rectangle { width: info.min_size, height: info.min_size };
-    let largest = GridImprint::Rectangle { width: info.max_size, height: info.max_size };
+    // A field is placed at a size the player picks, so its imprint is a range.
+    let smallest = GridImprint::square(info.min_size);
+    let largest = GridImprint::square(info.max_size);
 
     commands.spawn(
         BuilderSideMenuItemTooltip::new(entity)

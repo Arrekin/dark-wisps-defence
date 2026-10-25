@@ -1,6 +1,6 @@
 //! Keeps `GroundCoverGrid` in sync with ground cover entities. Replacing `GroundCover` removes
 //! the old entries before adding the new kind. Ground cover must stay on its original cells:
-//! changes to `GridCoords` or `GridImprint` do not update the index.
+//! changes to `GridArea` do not update the index.
 //!
 //! Shaders read one entry list indexed by per-cell offsets. Each entry contains its kind and
 //! wrapped lifetime timestamps, and appears once per covered cell. Grid changes and lifetime
@@ -10,7 +10,7 @@
 use bevy::prelude::*;
 use bytemuck::{Pod, Zeroable};
 
-use game_core::{prelude::{GridCoords, GridImprint, MapInfo}, request_flag::RequestFlag};
+use game_core::{prelude::{GridArea, MapInfo}, request_flag::RequestFlag};
 use grids::ground_cover::{GroundCover, GroundCoverEntry, GroundCoverGrid};
 use session::{GameClock, TimeBound};
 use states::prelude::MapLoadingStage;
@@ -65,11 +65,11 @@ fn on_insert_ground_cover_imprint_on_grid(
     trigger: On<Insert<GroundCover>>,
     mut ground_cover_grid: ResMut<GroundCoverGrid>,
     mut upload_requested: ResMut<RequestFlag<GroundCoverGpuUpload>>,
-    ground_covers: Query<(&GroundCover, &GridCoords, &GridImprint)>,
+    ground_covers: Query<(&GroundCover, &GridArea)>,
 ) {
     let entity = trigger.entity;
-    let Ok((ground_cover, grid_coords, grid_imprint)) = ground_covers.get(entity) else { return; };
-    ground_cover_grid.imprint(*grid_coords, *grid_imprint, GroundCoverEntry { entity, kind: ground_cover.0 });
+    let Ok((ground_cover, area)) = ground_covers.get(entity) else { return; };
+    ground_cover_grid.imprint(*area, GroundCoverEntry { entity, kind: ground_cover.0 });
     upload_requested.request();
 }
 
@@ -77,11 +77,11 @@ fn on_discard_ground_cover_deprint_from_grid(
     trigger: On<Discard<GroundCover>>,
     mut ground_cover_grid: ResMut<GroundCoverGrid>,
     mut upload_requested: ResMut<RequestFlag<GroundCoverGpuUpload>>,
-    ground_covers: Query<(&GridCoords, &GridImprint), With<GroundCover>>,
+    ground_covers: Query<&GridArea, With<GroundCover>>,
 ) {
     let entity = trigger.entity;
-    let Ok((grid_coords, grid_imprint)) = ground_covers.get(entity) else { return; };
-    ground_cover_grid.deprint(*grid_coords, *grid_imprint, entity);
+    let Ok(area) = ground_covers.get(entity) else { return; };
+    ground_cover_grid.deprint(*area, entity);
     upload_requested.request();
 }
 

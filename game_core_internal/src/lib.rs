@@ -19,7 +19,7 @@ impl Plugin for GameCorePlugin {
                 upload_gpu_map_info.run_if(resource_changed::<MapInfo>),
             ))
             .add_observer(on_insert_zdepth_set_local_z)
-            .add_observer(on_insert_grid_coords_snap_transform)
+            .add_observer(on_insert_grid_area_snap_transform)
             // Technical-state global observers: fold primitive component
             // events into one shared `TechnicalStateChanged` event. They fire
             // for every entity; the event is a no-op unless the target entity
@@ -74,15 +74,13 @@ fn on_insert_zdepth_set_local_z(
     transform.translation.z = z_depth.world_z(entity);
 }
 
-fn on_insert_grid_coords_snap_transform(
-    trigger: On<Insert<GridCoords>>,
-    mut transforms: Query<(&mut Transform, &GridCoords, &GridImprint), With<AutoGridSnap>>,
+fn on_insert_grid_area_snap_transform(
+    trigger: On<Insert<GridArea>>,
+    mut transforms: Query<(&mut Transform, &GridArea), With<AutoGridSnap>>,
 ) {
     let entity = trigger.entity;
-    let Ok((mut transform, grid_coords, grid_imprint)) = transforms.get_mut(entity) else { return; };
-    let world_centered = grid_coords.to_world_position_centered(grid_imprint);
-    transform.translation.x = world_centered.x;
-    transform.translation.y = world_centered.y;
+    let Ok((mut transform, area)) = transforms.get_mut(entity) else { return; };
+    transform.translation = area.world_center().extend(transform.translation.z);
 }
 
 fn on_add_display_icon_switcher_load_display_icon(
@@ -157,29 +155,29 @@ fn on_add_needs_power_init_power_state(
     trigger: On<Add<NeedsPower>>,
     mut commands: Commands,
     energy_supply_grid: Res<EnergySupplyGrid>,
-    consumers: Query<(&GridCoords, &GridImprint), With<NeedsPower>>,
+    consumers: Query<&GridArea, With<NeedsPower>>,
 ) {
     let entity = trigger.entity;
-    let Ok((grid_coords, grid_imprint)) = consumers.get(entity) else { return; };
+    let Ok(area) = consumers.get(entity) else { return; };
 
-    let has_power = energy_supply_grid.is_imprint_powered(*grid_coords, *grid_imprint);
+    let has_power = energy_supply_grid.is_area_powered(*area);
     if has_power {
         commands.entity(entity).insert(IsPowered);
     }
-    commands.entity(entity).observe(on_insert_needs_power_coords_refresh_power_state);
+    commands.entity(entity).observe(on_insert_needs_power_area_refresh_power_state);
 }
 
-/// Refreshes the power state when the consumer's coords or imprint change.
-fn on_insert_needs_power_coords_refresh_power_state(
-    trigger: On<Insert<(GridCoords, GridImprint)>>,
+/// Refreshes the power state when the consumer's area changes.
+fn on_insert_needs_power_area_refresh_power_state(
+    trigger: On<Insert<GridArea>>,
     mut commands: Commands,
     energy_supply_grid: Res<EnergySupplyGrid>,
-    consumers: Query<(&GridCoords, &GridImprint, Has<IsPowered>), With<NeedsPower>>,
+    consumers: Query<(&GridArea, Has<IsPowered>), With<NeedsPower>>,
 ) {
     let entity = trigger.entity;
-    let Ok((grid_coords, grid_imprint, has_is_powered)) = consumers.get(entity) else { return; };
+    let Ok((area, has_is_powered)) = consumers.get(entity) else { return; };
 
-    let has_power = energy_supply_grid.is_imprint_powered(*grid_coords, *grid_imprint);
+    let has_power = energy_supply_grid.is_area_powered(*area);
     if has_power != has_is_powered {
         if has_power {
             commands.entity(entity).insert(IsPowered);
@@ -193,14 +191,14 @@ fn on_insert_needs_power_coords_refresh_power_state(
 fn update_power_state(
     mut commands: Commands,
     energy_supply_grid: Res<EnergySupplyGrid>,
-    power_entities: Query<(Entity, &GridCoords, &GridImprint, Has<IsPowered>), With<NeedsPower>>,
+    power_entities: Query<(Entity, &GridArea, Has<IsPowered>), With<NeedsPower>>,
     mut current_energy_supply_grid_version: Local<GridVersion>,
 ) {
     if *current_energy_supply_grid_version == energy_supply_grid.version { return; }
     *current_energy_supply_grid_version = energy_supply_grid.version;
 
-    for (entity, grid_coords, grid_imprint, has_is_powered) in power_entities.iter() {
-        let has_power = energy_supply_grid.is_imprint_powered(*grid_coords, *grid_imprint);
+    for (entity, area, has_is_powered) in power_entities.iter() {
+        let has_power = energy_supply_grid.is_area_powered(*area);
         if has_power != has_is_powered {
             if has_power {
                 commands.entity(entity).insert(IsPowered);

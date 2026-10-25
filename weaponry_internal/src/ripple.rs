@@ -14,7 +14,7 @@ use alteration::{
     },
     modifiers::prelude::MovementSpeed,
 };
-use game_core::prelude::{CELL_SIZE, GridCoords, Property};
+use game_core::prelude::{GridArea, Property};
 use grids::wisps::WispsGrid;
 use logging::prelude::*;
 use persistence::{prelude::*, rusqlite};
@@ -132,28 +132,20 @@ fn ripple_hit_system(
     effect_targets: Query<&EffectTarget>,
 ) {
     for (ripple_entity, ripple, ripple_transform, sourced_effects) in ripples.iter() {
-        // Check all fields covered by the ripple for wisp collisions
-        let starting_grid_coords = GridCoords::from_transform(ripple_transform);
-        let bounds_range = (ripple.current_radius / CELL_SIZE) as i32;
-        // Make bounds +/-1 since the ripple starts from in-between the grid fields
-        let lower_bound_x = (starting_grid_coords.x - bounds_range - 1).max(0);
-        let lower_bound_y = (starting_grid_coords.y - bounds_range - 1).max(0);
-        let upper_bound_x = (starting_grid_coords.x + bounds_range + 1).min(wisps_grid.bounds.width - 1);
-        let upper_bound_y = (starting_grid_coords.y + bounds_range + 1).min(wisps_grid.bounds.height - 1);
-        for x in lower_bound_x..=upper_bound_x {
-            for y in lower_bound_y..=upper_bound_y {
-                for wisp in &wisps_grid[GridCoords { x, y }] {
-                    if already_hit_this_target(sourced_effects, *wisp, &effect_targets) { continue; }
-                    let Ok(wisp_transform) = wisps.get(*wisp) else { continue; };
-                    let distance = wisp_transform.translation.distance(ripple_transform.translation);
-                    // Hit only wisps within 1 world unit of the leading edge
-                    if distance > ripple.current_radius || distance < ripple.current_radius - 1. { continue; }
-                    commands.spawn(
-                        BuilderBrittleEffect::new(*wisp, BRITTLE_DAMAGE_MULTIPLIER)
-                            .with_source(ripple_entity)
-                            .with_time_bound(TimeBound::lasting(&clock, BRITTLE_DURATION_SECONDS))
-                    );
-                }
+        // Check all cells covered by the ripple for wisp collisions
+        let covered_area = GridArea::covering(Rect::from_center_half_size(ripple_transform.translation.xy(), Vec2::splat(ripple.current_radius)));
+        for coords in covered_area.iter_in_bounds(wisps_grid.bounds) {
+            for wisp in &wisps_grid[coords] {
+                if already_hit_this_target(sourced_effects, *wisp, &effect_targets) { continue; }
+                let Ok(wisp_transform) = wisps.get(*wisp) else { continue; };
+                let distance = wisp_transform.translation.distance(ripple_transform.translation);
+                // Hit only wisps within 1 world unit of the leading edge
+                if distance > ripple.current_radius || distance < ripple.current_radius - 1. { continue; }
+                commands.spawn(
+                    BuilderBrittleEffect::new(*wisp, BRITTLE_DAMAGE_MULTIPLIER)
+                        .with_source(ripple_entity)
+                        .with_time_bound(TimeBound::lasting(&clock, BRITTLE_DURATION_SECONDS))
+                );
             }
         }
     }

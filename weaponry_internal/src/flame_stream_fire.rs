@@ -13,7 +13,7 @@
 
 use bevy::{prelude::*, reflect::TypePath, render::render_resource::{BlendState, ShaderType}};
 
-use game_core::prelude::{GridCoords, GridImprint, MapBound, ZDepth};
+use game_core::prelude::{GridArea, GridCoords, MapBound, ZDepth};
 use session::{GameClock, TimeBound};
 use states::prelude::GameState;
 use visuals::{
@@ -337,7 +337,7 @@ fn update_impact_fires(
 
         let burnt = match &stream.hit {
             Some(hit) => {
-                let tile_center = hit.coords.to_world_position_centered(GridImprint::default());
+                let tile_center = GridArea::cell(hit.coords).world_center();
                 transform.set_if_neq(Transform { translation: tile_center.extend(transform.translation.z), ..*transform });
                 next.hit_point = stream.nozzle + stream.direction * hit.distance - tile_center;
                 next.direction = stream.direction;
@@ -360,7 +360,7 @@ fn update_impact_fires(
                     half_size: SCORCH_MESH_HALF_SIZE,
                 },
                 time_bound,
-                Transform::from_translation(burnt.coords.to_world_position_centered(GridImprint::default()).extend(0.)),
+                Transform::from_translation(GridArea::cell(burnt.coords).world_center().extend(0.)),
             ));
         }
     }

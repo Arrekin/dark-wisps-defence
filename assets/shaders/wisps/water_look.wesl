@@ -26,7 +26,7 @@ struct WispWaterLook {
 };
 
 // Mesh padding factor. Mirrors `WispWaterVisual::QUAD_SCALE` in wisps_internal/src/looks.rs:
-// the mesh is built this many times the grid footprint, and we scale UV by it to keep
+// the mesh is built this many times the grid imprint, and we scale UV by it to keep
 // the droplet's real size while leaving margin for it to wobble/lunge. Keep equal.
 const QUAD_SCALE: f32 = 2.4;
 

@@ -80,7 +80,6 @@ pub(crate) fn drive_wisp_water_look(
 /// Writes only when vigor or a heading coordinate changes by more than `DRIVE_EPSILON`,
 /// avoiding redundant component changes while the shaders continue animating.
 pub(crate) fn drive_wisp_motion_look<V: WispMotionVisual>(mut wisps: Query<(&Locomotion, &mut V)>) {
-
     for (locomotion, mut visual) in wisps.iter_mut() {
         let (vigor, heading) = wisp_motion(locomotion);
         let applied = visual.motion_look();
@@ -96,13 +95,13 @@ pub(crate) fn drive_wisp_motion_look<V: WispMotionVisual>(mut wisps: Query<(&Loc
 pub(crate) fn move_wisps(
     time: Res<Time>,
     mut wisps_grid: ResMut<WispsGrid>,
-    mut wisps: Query<(Entity, &WispState, &IntegrityPoints, &MovementSpeed, &mut Transform, &mut GridPath, &mut GridCoords), With<Wisp>>,
+    mut wisps: Query<(Entity, &WispState, &IntegrityPoints, &MovementSpeed, &mut Transform, &mut GridPath, &mut GridArea), With<Wisp>>,
 ) {
-    for (entity, wisp_state, integrity_points, speed, mut transform, mut grid_path, mut grid_coords) in wisps.iter_mut() {
+    for (entity, wisp_state, integrity_points, speed, mut transform, mut grid_path, mut area) in wisps.iter_mut() {
         if !matches!(*wisp_state, WispState::MovingToTarget) || integrity_points.is_dead() { continue; }
         let Some(next_target) = grid_path.next_in_path() else { continue; };
         let current_world_position = transform.translation.truncate();
-        let interim_target_world_coords = next_target.to_world_position_centered(GridImprint::default());
+        let interim_target_world_coords = GridArea::cell(next_target).world_center();
         let direction = interim_target_world_coords - current_world_position;
         let wisp_speed = speed.get();
         transform.translation += (direction.signum() * time.delta_secs() * wisp_speed).extend(0.);
@@ -110,11 +109,11 @@ pub(crate) fn move_wisps(
         if (transform.translation.truncate().distance(interim_target_world_coords)) < 1. {
             grid_path.remove_first();
         }
-        // Update grid coords
+        // Update grid area
         let new_coords = GridCoords::from_transform(&transform);
-        if new_coords != *grid_coords {
-            wisps_grid.wisp_move(*grid_coords, new_coords, entity);
-            *grid_coords = new_coords;
+        if new_coords != area.origin {
+            wisps_grid.wisp_move(area.origin, new_coords, entity);
+            area.origin = new_coords;
         }
     }
 }
@@ -123,15 +122,15 @@ pub(crate) fn target_wisps(
     emissions_grid: Res<EmissionsGrid>,
     obstacle_grid: Res<ObstacleGrid>,
     energy_supply_grid: Res<EnergySupplyGrid>,
-    mut wisps: Query<(&mut WispState, &mut GridPath, &GridCoords), With<Wisp>>,
+    mut wisps: Query<(&mut WispState, &mut GridPath, &GridArea), With<Wisp>>,
 ) {
-    wisps.par_iter_mut().for_each(|(mut wisp_state, mut grid_path, grid_coords)| {
+    wisps.par_iter_mut().for_each(|(mut wisp_state, mut grid_path, area)| {
         // Retarget is needed when grid has changed or there is no target yet.
         let is_path_outdated = matches!(*wisp_state, WispState::MovingToTarget) && grid_path.grid_version != obstacle_grid.version;
         let need_retarget = is_path_outdated || matches!(*wisp_state, WispState::NeedTarget | WispState::JustSpawned) || matches!(*wisp_state, WispState::Stranded(ref grid_version) if obstacle_grid.version != *grid_version);
         if !need_retarget { return; }
 
-        if let Some(path) = path_find_energy_beckon(&obstacle_grid, &emissions_grid, &energy_supply_grid, *grid_coords) {
+        if let Some(path) = path_find_energy_beckon(&obstacle_grid, &emissions_grid, &energy_supply_grid, area.origin) {
             *wisp_state = WispState::MovingToTarget;
             grid_path.grid_version = obstacle_grid.version;
             grid_path.path = path.into();
@@ -145,11 +144,11 @@ pub(crate) fn remove_dead_wisps(
     mut commands: Commands,
     mut stock: ResMut<Stock>,
     mut wisps_grid: ResMut<WispsGrid>,
-    wisps: Query<(Entity, &IntegrityPoints, &GridCoords, &DeathLoot), With<Wisp>>,
+    wisps: Query<(Entity, &IntegrityPoints, &GridArea, &DeathLoot), With<Wisp>>,
 ) {
-    for (wisp_entity, integrity_points, coords, death_loot) in wisps.iter() {
+    for (wisp_entity, integrity_points, area, death_loot) in wisps.iter() {
         if integrity_points.is_dead() {
-            wisps_grid.wisp_remove(*coords, wisp_entity);
+            wisps_grid.wisp_remove(area.origin, wisp_entity);
             commands.entity(wisp_entity).despawn();
             commands.trigger(WispDied(wisp_entity));
             for entry in death_loot.0.iter() {
@@ -164,16 +163,16 @@ pub(crate) fn wisp_charge_attack(
     mut damage_messages: MessageWriter<DamageMessage>,
     obstacle_grid: Res<ObstacleGrid>,
     time: Res<Time>,
-    mut wisps: Query<(&mut WispState, &MovementSpeed, &AttackRange, &GridPath, &mut Transform, &mut WispChargeAttack, &GridCoords), With<Wisp>>,
+    mut wisps: Query<(&mut WispState, &MovementSpeed, &AttackRange, &GridPath, &mut Transform, &mut WispChargeAttack, &GridArea), With<Wisp>>,
 ) {
-    for (mut wisp_state, speed, attack_range, grid_path, mut transform, mut attack, grid_coords) in wisps.iter_mut() {
+    for (mut wisp_state, speed, attack_range, grid_path, mut transform, mut attack, area) in wisps.iter_mut() {
         // First check if moving wisps should switch to attack mode
         if matches!(*wisp_state, WispState::MovingToTarget) {
             // If wisps is at distance 1 to its target, it's always in range
             if grid_path.distance() == 1 {
                 *wisp_state = WispState::Attacking;
             } else if let Some(coords_in_range) = grid_path.at_distance(attack_range.get() as usize) {
-                // Otherwise, check if the field in the current range is a building
+                // Otherwise, check if the cell in the current range is a building
                 if obstacle_grid[coords_in_range].has_building() {
                     *wisp_state = WispState::Attacking;
                 }
@@ -193,61 +192,33 @@ pub(crate) fn wisp_charge_attack(
         };
         // --- Charge Attack ---
         // Then execute the attack
-        match *attack {
-            WispChargeAttack::Charge => {
-                // Charge means normal movement, just sped up
-                let current_world_position = transform.translation.truncate();
-                let interim_target_world_coords = target_coords.to_world_position_centered(GridImprint::default());
-                let direction = interim_target_world_coords - current_world_position;
-                let distance = direction.length();
-
-                if distance < 1. {
+        let (destination, speed_multiplier) = match *attack {
+            // Charge means normal movement, just sped up
+            WispChargeAttack::Charge => (GridArea::cell(target_coords).world_center(), CHARGE_SPEED_MULTIPLIER),
+            // Backoff means to go back half the normal speed to repeat the charge
+            WispChargeAttack::Backoff => (area.world_center(), BACKOFF_SPEED_MULTIPLIER),
+        };
+        let position = transform.translation.xy();
+        if position.distance(destination) < 1. {
+            match *attack {
+                WispChargeAttack::Charge => {
                     // Already close enough, trigger attack
                     *attack = WispChargeAttack::Backoff;
-                    commands.spawn(BuilderWispAttackEffect(transform.translation.xy()));
+                    commands.spawn(BuilderWispAttackEffect(position));
 
                     // Deal damage to the building
                     damage_messages.write(DamageMessage {
                         target: target_entity,
                         amount: 1.,
                     });
-                } else {
-                    let wisp_speed = time.delta_secs() * speed.get() * CHARGE_SPEED_MULTIPLIER; // Speed up during charge
-                    if wisp_speed >= distance {
-                        // Would overshoot, just move to target position
-                        transform.translation = interim_target_world_coords.extend(transform.translation.z);
-                    } else {
-                        // Normal movement
-                        let normalized_direction = direction / distance;
-                        let movement = normalized_direction * wisp_speed;
-                        transform.translation += movement.extend(0.);
-                    }
                 }
-            },
-            WispChargeAttack::Backoff => {
-                // Backoff means to go back half the normal speed to repeat the charge
-                let current_world_position = transform.translation.truncate();
-                let interim_target_world_coords = grid_coords.to_world_position_centered(GridImprint::default());
-                let direction = interim_target_world_coords - current_world_position;
-                let distance = direction.length();
-
-                if distance < 1. {
-                    // Already close enough, start charging again
-                    *attack = WispChargeAttack::Charge;
-                } else {
-                    let wisp_speed = time.delta_secs() * speed.get() * BACKOFF_SPEED_MULTIPLIER;
-                    if wisp_speed >= distance {
-                        // Would overshoot, just move to target position
-                        transform.translation = interim_target_world_coords.extend(transform.translation.z);
-                    } else {
-                        // Normal movement
-                        let normalized_direction = direction / distance;
-                        let movement = normalized_direction * wisp_speed;
-                        transform.translation += movement.extend(0.);
-                    }
-                }
-            },
+                // Already close enough, start charging again
+                WispChargeAttack::Backoff => *attack = WispChargeAttack::Charge,
+            }
+            continue;
         }
+        let step = time.delta_secs() * speed.get() * speed_multiplier;
+        transform.translation = position.move_towards(destination, step).extend(transform.translation.z);
     }
 }
 
@@ -261,12 +232,12 @@ pub(crate) fn collide_wisps(
     mut damage_messages: MessageWriter<DamageMessage>,
     obstacle_grid: Res<ObstacleGrid>,
     mut wisps_grid: ResMut<WispsGrid>,
-    wisps: Query<(Entity, &WispState, &GridPath, &IntegrityPoints, &Transform, &GridCoords), (With<Wisp>, Without<Building>)>,
+    wisps: Query<(Entity, &WispState, &GridPath, &IntegrityPoints, &Transform, &GridArea), (With<Wisp>, Without<Building>)>,
 ) {
-    for (wisp_entity, wisp_state, grid_path, integrity_points, transform, coords) in wisps.iter() {
+    for (wisp_entity, wisp_state, grid_path, integrity_points, transform, area) in wisps.iter() {
         if !matches!(wisp_state, WispState::MovingToTarget) || integrity_points.is_dead() { continue; }
         if !grid_path.is_empty() { continue; }
-        let building_entity = match &obstacle_grid[*coords].structure {
+        let building_entity = match &obstacle_grid[area.origin].structure {
             GridStructureType::Building(entity, _) => *entity,
             _ => panic!("Expected a building"),
         };
@@ -274,7 +245,7 @@ pub(crate) fn collide_wisps(
             target: building_entity,
             amount: 1.,
         });
-        wisps_grid.wisp_remove(*coords, wisp_entity);
+        wisps_grid.wisp_remove(area.origin, wisp_entity);
         commands.entity(wisp_entity).despawn();
         commands.spawn(BuilderWispAttackEffect(transform.translation.xy()));
     }

@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use game_core::prelude::{GridCoords, GridImprint};
+use game_core::prelude::{GridArea, GridCoords};
 
 use crate::{GridVersion, base::BaseGrid};
 
@@ -10,8 +10,7 @@ pub struct EmitterEnergy(pub FloodEmissionsDetails);
 #[derive(Message, Debug)]
 pub struct EmitterChangedMessage {
     pub emitter_entity: Entity,
-    pub imprint: GridImprint,
-    pub grid_coords: GridCoords,
+    pub area: GridArea,
     pub emissions_details: Vec<FloodEmissionsDetails>,
 }
 
@@ -36,8 +35,9 @@ pub type EmissionsGrid = BaseGrid<Emissions, EmissionsGridVersion>;
 
 impl EmissionsGrid {
     pub fn add_energy(&mut self, coords: GridCoords, energy: f32) {
-        self[coords].energy += energy;
-        if self[coords].energy.abs() < 0.0001 { self[coords].energy = 0.; }
+        let emissions = &mut self[coords];
+        emissions.energy += energy;
+        if emissions.energy.abs() < 0.0001 { emissions.energy = 0.; }
         self.version.energy = self.version.energy.wrapping_add(1);
     }
     pub fn reset_energy_emissions(&mut self) {
@@ -49,12 +49,13 @@ impl EmissionsGrid {
 }
 
 /// Defines how to calculate the emissions as a function of distance
-/// `Constant` - value is constant regardless of distance
-/// `Linear` - value decreasing linearly with distance
 #[derive(Clone, Debug)]
 pub enum FloodEmissionsEvaluator {
+    /// The same value at every distance.
     Constant(f32),
+    /// `growth × distance`.
     Linear{growth: f32},
+    /// `start_value × e^(−decay × distance)`.
     ExponentialDecay{start_value: f32, decay: f32},
 }
 
@@ -82,10 +83,4 @@ impl FloodEmissionsDetails {
 pub enum FloodEmissionsMode {
     Increase,
     Decrease,
-}
-
-#[derive(Copy, Clone, Debug)]
-pub enum FloodTowerRangeMode {
-    Add,
-    Remove,
 }

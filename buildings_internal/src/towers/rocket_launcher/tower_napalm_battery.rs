@@ -94,7 +94,7 @@ impl BuilderTowerNapalmBattery {
             description: "Lobs salvos of napalm bombs that set the ground around the target ablaze.".to_string(),
             sprite: asset_server.load("buildings/tower_rocket_launcher.png"),
             top_sprite: Some(asset_server.load("buildings/tower_rocket_launcher_top.png")),
-            grid_imprint: GridImprint::Rectangle { width: 3, height: 3 },
+            grid_imprint: GridImprint::square(3),
             cost: vec![ResourceAmount::new(ResourceType::DarkOre, 350)],
             baseline: HashMap::from([
                 (ModifierType::MaxIntegrityPoints, 100.),
@@ -141,8 +141,8 @@ impl BuilderTowerNapalmBattery {
         let Ok(builder) = builders.get(entity) else { return; };
 
         let building_info = almanach.get_building_info(BuildingType::Tower(TowerType::NapalmBattery));
-        let grid_imprint = building_info.grid_imprint;
-        let world_size = grid_imprint.world_size();
+        let area = GridArea::new(builder.grid_position, building_info.grid_imprint);
+        let world_size = area.imprint.world_size();
 
         commands.entity(entity)
             .remove::<BuilderTowerNapalmBattery>()
@@ -153,13 +153,8 @@ impl BuilderTowerNapalmBattery {
                 TowerNapalmBattery,
                 NAPALM_BATTERY_LOB,
                 LobPreview,
-                Sprite {
-                    image: building_info.sprite.clone(),
-                    custom_size: Some(grid_imprint.world_size()),
-                    ..default()
-                },
-                builder.grid_position,
-                grid_imprint,
+                building_info.world_sprite(),
+                area,
                 TowerTopRotation { current_angle: builder.top_angle },
                 NeedsPower,
                 related![Indicators[
@@ -176,7 +171,7 @@ impl BuilderTowerNapalmBattery {
                         ..default()
                     },
                     Anchor(Vec2::new(-0.20, 0.0)),
-                    Transform::from_translation(builder.grid_position.to_world_position_centered(grid_imprint).extend(0.)),
+                    Transform::from_translation(area.world_center().extend(0.)),
                 )]],
                 children![
                     IndicatorDisplay::default(),
@@ -202,7 +197,7 @@ fn on_tower_napalm_battery_place_request_do_so(
 
 #[log_tags(Tag::GameSave)]
 fn collect_tower_napalm_batteries(
-    towers: Query<(Entity, &GridCoords, &IntegrityPoints, Has<DisabledByPlayer>, &TowerShootingTimer, &TowerTopRotation), With<TowerNapalmBattery>>,
+    towers: Query<(Entity, &GridArea, &IntegrityPoints, Has<DisabledByPlayer>, &TowerShootingTimer, &TowerTopRotation), With<TowerNapalmBattery>>,
     mut save: SaveWriter,
 ) {
     if towers.is_empty() { return; }
@@ -210,11 +205,11 @@ fn collect_tower_napalm_batteries(
     #[debug_dev("Saving {} tower napalm batteries", rows.len())]
     let rows: Vec<(u32, GridCoords, f32, bool, f32, f32)> = towers
         .iter()
-        .map(|(entity, coords, integrity_points, disabled_by_player, shooting_timer, top_rotation)| {
+        .map(|(entity, area, integrity_points, disabled_by_player, shooting_timer, top_rotation)| {
             (
                 entity.index_u32(),
-                *coords,
-                integrity_points.get_current(),
+                area.origin,
+                integrity_points.current,
                 disabled_by_player,
                 shooting_timer.0.elapsed_secs(),
                 top_rotation.current_angle,
@@ -277,9 +272,9 @@ fn shooting_system(
             let swap_index = rng.generate_range(index..offsets.len());
             offsets.swap(index, swap_index);
             let landing_coords = aim_coords.shifted(offsets[index]);
-            if !landing_coords.are_in_bounds(map_info.grid_bounds) { continue; }
+            if !map_info.grid_bounds.contains(landing_coords) { continue; }
 
-            let landing_point = landing_coords.to_world_position_centered(GridImprint::default());
+            let landing_point = GridArea::cell(landing_coords).world_center();
             let lob = lob_profile.lob(tower_center, landing_point, clock.from_now(launched as f32 * SALVO_LAUNCH_GAP));
             commands.spawn(BuilderNapalmBomb::new(lob).with_shooter(tower));
             launched += 1;

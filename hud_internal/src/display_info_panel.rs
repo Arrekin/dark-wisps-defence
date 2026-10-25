@@ -66,13 +66,13 @@ fn show_on_click_system(
     currently_focused: Option<Single<Entity, With<FocusedMapObject>>>,
     info_panel_camera: Single<Entity, With<DisplayInfoPanelCamera>>,
 ) {
-    if mouse_info.is_over_ui || !mouse.just_pressed(MouseButton::Left) || !mouse_info.grid_coords.are_in_bounds(obstacle_grid.bounds) { return; }
+    if mouse_info.is_over_ui || !mouse.just_pressed(MouseButton::Left) { return; }
 
-    let field = &obstacle_grid[mouse_info.grid_coords];
-    let focused_element = match &field.structure {
+    let Some(cell) = obstacle_grid.get(mouse_info.grid_coords) else { return; };
+    let focused_element = match &cell.structure {
         GridStructureType::Building(entity, _) => *entity,
         _ => {
-            let Some(entity) = field.quantum_field else { return };
+            let Some(entity) = cell.quantum_field else { return };
             entity
         }
     };
@@ -85,7 +85,7 @@ fn show_on_click_system(
         commands.entity(old_focused.into_inner()).remove::<FocusedMapObject>();
     }
     commands.entity(focused_element).insert(FocusedMapObject);
-    (*next_ui_interaction_state).set_if_different(UiInteraction::DisplayInfoPanel);
+    next_ui_interaction_state.set_if_different(UiInteraction::DisplayInfoPanel);
 }
 
 fn on_despawn_focused_map_object_return_to_free_interaction(

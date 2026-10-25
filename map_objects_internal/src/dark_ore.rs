@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
 use almanach::{Almanach, DarkOreInfo, prelude::AlmanachAppExt};
-use game_core::prelude::{GridCoords, GridImprint, MapObject, MapObjectTooltipRequest, SSS};
+use game_core::prelude::{GridArea, GridCoords, GridImprint, MapObject, MapObjectTooltipRequest, SSS};
 use grids::{
     placement::{
         annotate_non_empty, GridObjectPlacer, GridsCollectionParam, PlacementModes, PlacementValidity, PlaceRequest,
@@ -21,7 +21,7 @@ impl Plugin for DarkOrePlugin {
         app
             .add_systems(Update, despawn_depleted_dark_ores)
             .add_observer(BuilderDarkOre::on_builder_add_spawn_dark_ore)
-            .add_observer(dark_ore_area_scanner::on_add_dark_ore_area_scanner_init)
+            .add_observer(dark_ore_area_scanner::on_insert_dark_ore_area_scanner_rescan)
             .add_observer(dark_ore_area_scanner::on_remove_dark_ore_sync_scanners.run_if(in_state(InGame)))
             .add_observer(dark_ore_area_scanner::on_add_dark_ore_sync_scanners)
             .add_observer(on_dark_ore_place_request_do_so)
@@ -33,7 +33,7 @@ impl Plugin for DarkOrePlugin {
     }
 }
 
-pub(crate) const DARK_ORE_GRID_IMPRINT: GridImprint = GridImprint::Rectangle { width: 1, height: 1 };
+const DARK_ORE_GRID_IMPRINT: GridImprint = GridImprint::square(1);
 
 #[derive(Component, SSS)]
 pub(crate) struct BuilderDarkOre {
@@ -68,16 +68,15 @@ impl BuilderDarkOre {
         commands.entity(entity)
             .remove::<BuilderDarkOre>()
             .insert((
-                builder.grid_position,
+                GridArea::new(builder.grid_position, DARK_ORE_GRID_IMPRINT),
                 DarkOre { amount: builder.amount as i32 },
-                DARK_ORE_GRID_IMPRINT,
             ));
     }
 }
 
 #[log_tags(Tag::GameSave)]
 fn collect_dark_ores(
-    dark_ores: Query<(Entity, &GridCoords, &DarkOre)>,
+    dark_ores: Query<(Entity, &GridArea, &DarkOre)>,
     mut save: SaveWriter,
 ) {
     if dark_ores.is_empty() { return; }
@@ -85,10 +84,10 @@ fn collect_dark_ores(
     #[debug_dev("Saving {} dark ores", rows.len())]
     let rows: Vec<(u32, GridCoords, u32)> = dark_ores
         .iter()
-        .map(|(entity, coords, dark_ore)| {
+        .map(|(entity, area, dark_ore)| {
             (
                 entity.index_u32(),
-                *coords,
+                area.origin,
                 dark_ore.amount as u32,
             )
         })
@@ -118,11 +117,11 @@ fn load_dark_ores(ctx: &mut LoadContext) -> LoadResult {
 #[log_tags(Tag::Resources)]
 fn despawn_depleted_dark_ores(
     mut commands: Commands,
-    dark_ores: Query<(Entity, &DarkOre, &GridCoords), Changed<DarkOre>>,
+    dark_ores: Query<(Entity, &DarkOre, &GridArea), Changed<DarkOre>>,
 ) {
-    for (entity, dark_ore, coords) in dark_ores.iter() {
+    for (entity, dark_ore, area) in dark_ores.iter() {
         if dark_ore.amount <= 0 {
-            #[debug_dev("Dark ore at {coords} depleted")]
+            #[debug_dev("Dark ore at {} depleted", area.origin)]
             commands.entity(entity).despawn();
         }
     }
@@ -134,15 +133,15 @@ fn on_dark_ore_place_request_do_so(
     mut commands: Commands,
     almanach: Res<Almanach>,
     mut grids: GridsCollectionParam,
-    placer: Single<(&GridCoords, &GridImprint), With<GridObjectPlacer>>,
+    placer: Single<&GridArea, With<GridObjectPlacer>>,
 ) {
     let PlaceRequest(MapObject::DarkOre) = *trigger else { return };
-    let (coords, grid_imprint) = placer.into_inner();
-    let validity = (almanach.dark_ore.validate)(MapObject::DarkOre, *coords, *grid_imprint, &grids);
+    let area = *placer.into_inner();
+    let validity = (almanach.dark_ore.validate)(MapObject::DarkOre, area, &grids);
     if validity == PlacementValidity::Invalid { return; }
-    #[debug_dev("Dark ore placed at {coords}")]
-    commands.spawn(BuilderDarkOre::new(*coords, almanach.dark_ore.max_field_saturation));
-    grids.reserved_coords.reserve(*coords, *grid_imprint);
+    #[debug_dev("Dark ore placed at {}", area.origin)]
+    commands.spawn(BuilderDarkOre::new(area.origin, almanach.dark_ore.max_field_saturation));
+    grids.reserved_coords.reserve(area);
 }
 
 #[log_tags(Tag::MapObjects)]
@@ -150,12 +149,12 @@ fn on_dark_ore_remove_request_do_so(
     trigger: On<RemoveRequest>,
     mut commands: Commands,
     grids: GridsCollectionParam,
-    placer: Single<&GridCoords, With<GridObjectPlacer>>,
+    placer: Single<&GridArea, With<GridObjectPlacer>>,
 ) {
     let RemoveRequest(MapObject::DarkOre) = *trigger else { return };
-    let coords = placer.into_inner();
+    let coords = placer.origin;
     #[debug_dev("Dark ore removed at {coords}")]
-    if let Some(entity) = grids.obstacle_grid[*coords].dark_ore {
+    if let Some(entity) = grids.obstacle_grid.get(coords).and_then(|cell| cell.dark_ore) {
         commands.entity(entity).despawn();
     }
 }
@@ -163,32 +162,20 @@ fn on_dark_ore_remove_request_do_so(
 pub(crate) mod dark_ore_area_scanner {
     use super::*;
 
-    pub fn on_add_dark_ore_area_scanner_init(
-        trigger: On<Add<DarkOreAreaScanner>>,
-        mut commands: Commands,
-        scanners: Query<&DarkOreAreaScanner>,
-    ) {
-        let entity = trigger.entity;
-        let Ok(scanner) = scanners.get(entity) else { return; };
-        commands.entity(entity)
-            .observe(on_insert_scanner_or_coords_rescan)
-            .insert(scanner.clone()); // Reinsert self to trigger initial scan; TODO: improve once Bevy introduces compound triggers
-    }
-
-    /// Local observer: rescans when the scanning entity moves or its scanner range changes.
-    fn on_insert_scanner_or_coords_rescan(
-        trigger: On<Insert<(DarkOreAreaScanner, GridCoords)>>,
+    /// Rescans when a scanner spawns or its range changes.
+    pub fn on_insert_dark_ore_area_scanner_rescan(
+        trigger: On<Insert<DarkOreAreaScanner>>,
         mut commands: Commands,
         obstacle_grid: Res<ObstacleGrid>,
-        mut scanners: Query<(&DarkOreAreaScanner, &GridCoords, &mut DarkOreInRange)>,
+        mut scanners: Query<(&DarkOreAreaScanner, &mut DarkOreInRange)>,
     ) {
         let entity = trigger.entity;
-        let Ok((scanner, grid_coords, mut dark_ore_in_range)) = scanners.get_mut(entity) else { return; };
-        let ore_entities_in_range = obstacle_grid.query_imprint_element(*grid_coords, scanner.range_imprint, |field| field.dark_ore);
+        let Ok((scanner, mut dark_ore_in_range)) = scanners.get_mut(entity) else { return; };
+        let ore_entities_in_range = obstacle_grid.query_area_element(scanner.range, |cell| cell.dark_ore);
         if ore_entities_in_range.is_empty() {
-            commands.entity(entity).insert(NoOreInScannerRange).remove::<HasOreInScannerRange>();
+            commands.entity(entity).remove::<HasOreInScannerRange>();
         } else {
-            commands.entity(entity).insert(HasOreInScannerRange).remove::<NoOreInScannerRange>();
+            commands.entity(entity).insert(HasOreInScannerRange);
         }
         dark_ore_in_range.0 = ore_entities_in_range;
     }
@@ -197,21 +184,19 @@ pub(crate) mod dark_ore_area_scanner {
     pub fn on_remove_dark_ore_sync_scanners(
         trigger: On<Remove<DarkOre>>,
         mut commands: Commands,
-        dark_ores: Query<&GridCoords, With<DarkOre>>,
-        mut scanners: Query<(Entity, &DarkOreAreaScanner, &mut DarkOreInRange, &GridCoords)>,
+        dark_ores: Query<&GridArea, With<DarkOre>>,
+        mut scanners: Query<(Entity, &DarkOreAreaScanner, &mut DarkOreInRange)>,
     ) {
         let entity = trigger.entity;
-        let Ok(dark_ore_grid_coords) = dark_ores.get(entity) else { return; };
-        for (scanner_entity, scanner, mut dark_ore_in_range, scanner_grid_coords) in scanners.iter_mut() {
-            // TODO: This won't work when we want to implement Mining Complex range expansion, as the GridCoords won't match ScannerImprint coords
-            // Ie, the expected mining range coords will shift in relation to the MiningComplex own's coords as they start in bottom left corner.
-            if scanner.range_imprint.covers_coords(*scanner_grid_coords, *dark_ore_grid_coords)
+        let Ok(dark_ore_area) = dark_ores.get(entity) else { return; };
+        for (scanner_entity, scanner, mut dark_ore_in_range) in scanners.iter_mut() {
+            if scanner.range.contains(dark_ore_area.origin)
                 && let Some(index) = dark_ore_in_range.0.iter().position(|&ore| ore == entity)
             {
                 dark_ore_in_range.0.swap_remove(index);
-            }
-            if dark_ore_in_range.0.is_empty() {
-                commands.entity(scanner_entity).insert(NoOreInScannerRange).remove::<HasOreInScannerRange>();
+                if dark_ore_in_range.0.is_empty() {
+                    commands.entity(scanner_entity).remove::<HasOreInScannerRange>();
+                }
             }
         }
     }
@@ -219,20 +204,20 @@ pub(crate) mod dark_ore_area_scanner {
     pub fn on_add_dark_ore_sync_scanners(
         trigger: On<Add<DarkOre>>,
         mut commands: Commands,
-        dark_ores: Query<&GridCoords, With<DarkOre>>,
-        mut scanners: Query<(Entity, &DarkOreAreaScanner, &mut DarkOreInRange, &GridCoords)>,
+        dark_ores: Query<&GridArea, With<DarkOre>>,
+        mut scanners: Query<(Entity, &DarkOreAreaScanner, &mut DarkOreInRange)>,
     ) {
         let entity = trigger.entity;
-        let Ok(dark_ore_grid_coords) = dark_ores.get(entity) else { return; };
+        let Ok(dark_ore_area) = dark_ores.get(entity) else { return; };
 
-        for (scanner_entity, scanner, mut dark_ore_in_range, scanner_grid_coords) in scanners.iter_mut() {
-            if scanner.range_imprint.covers_coords(*scanner_grid_coords, *dark_ore_grid_coords)
+        for (scanner_entity, scanner, mut dark_ore_in_range) in scanners.iter_mut() {
+            if scanner.range.contains(dark_ore_area.origin)
                 && !dark_ore_in_range.0.contains(&entity)
             {
                 let was_empty = dark_ore_in_range.0.is_empty();
                 dark_ore_in_range.0.push(entity);
                 if was_empty {
-                    commands.entity(scanner_entity).insert(HasOreInScannerRange).remove::<NoOreInScannerRange>();
+                    commands.entity(scanner_entity).insert(HasOreInScannerRange);
                 }
             }
         }

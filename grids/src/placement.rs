@@ -1,10 +1,10 @@
 use bevy::{ecs::system::SystemParam, prelude::*};
 
-use game_core::prelude::{AutoGridSnap, GridCoords, GridImprint, MapObject, ZDepth};
+use game_core::prelude::{AutoGridSnap, GridArea, GridCoords, GridImprint, MapObject, ZDepth};
 
-use crate::{energy_supply::EnergySupplyGrid, obstacles::{ObstacleGrid, ReservedCoords}, wisps::WispsGrid};
+use crate::{energy_supply::EnergySupplyGrid, obstacles::{ObstacleCell, ObstacleGrid, ReservedCoords}, wisps::WispsGrid};
 
-/// Event emitted when the grid placer's state changes (coords, imprint, etc).
+/// Event emitted when the grid placer's state changes (area, style, etc).
 /// Other systems can observe this to react to placer updates.
 #[derive(Event, Clone, Copy, Debug)]
 pub struct GridPlacerChanged;
@@ -16,7 +16,7 @@ pub struct GridPlacerChanged;
 #[derive(Event, Clone, Copy, Debug)]
 pub struct BeginPlacing(pub MapObject);
 
-/// Non-generic event emitted when the placer deactivates or switches to a different object type.
+/// Event emitted when the placer deactivates or switches to a different object type.
 /// Domain UIs (e.g., QuantumField size selector) observe this to hide/cleanup.
 #[derive(Event, Clone, Copy, Debug)]
 pub struct StopPlacing;
@@ -109,12 +109,12 @@ pub enum PlacementMode {
 
 /// Determines whether the current position is a valid placement site.
 /// Returns only validity — cell highlights are the annotator's responsibility.
-pub type PlacementValidatorFn = fn(MapObject, GridCoords, GridImprint, &GridsCollectionParam) -> PlacementValidity;
+pub type PlacementValidatorFn = fn(MapObject, GridArea, &GridsCollectionParam) -> PlacementValidity;
 
 /// Produces per-cell highlights for the placement ghost.
 /// Receives the validity result so it can decide which highlights are appropriate
 /// (e.g. negative cells only when invalid, positive cells only when valid).
-pub type PlacementAnnotatorFn = fn(MapObject, GridCoords, GridImprint, PlacementValidity, &GridsCollectionParam) -> Vec<(GridCoords, CellHighlight)>;
+pub type PlacementAnnotatorFn = fn(MapObject, GridArea, PlacementValidity, &GridsCollectionParam) -> Vec<(GridCoords, CellHighlight)>;
 
 /// Generic placement info extracted from Almanach. The placer stores this without needing to
 /// know about specific structure types.
@@ -138,14 +138,14 @@ pub struct ActivePlacement {
 pub struct PlacementStyle(pub u32);
 
 #[derive(Component, Default)]
-#[require(GridImprint, GridCoords, PlacementStyle, ZDepth::GridPlacer, AutoGridSnap)]
+#[require(GridArea, PlacementStyle, ZDepth::GridPlacer, AutoGridSnap)]
 pub struct GridObjectPlacer {
     pub active_placement: Option<ActivePlacement>,
 }
 
 impl GridObjectPlacer {
     pub fn map_object(&self) -> Option<MapObject> {
-        self.active_placement.as_ref().map(|a| a.map_object)
+        self.active_placement.as_ref().map(|active_placement| active_placement.map_object)
     }
 }
 
@@ -164,17 +164,16 @@ impl GridObjectPlacerRequest {
 /// Generic validator: checks bounds, reserved coords, and that all cells are empty.
 pub fn validator_all_empty(
     _: MapObject,
-    origin: GridCoords,
-    imprint: GridImprint,
+    area: GridArea,
     grids: &GridsCollectionParam,
 ) -> PlacementValidity {
-    if !imprint.is_in_bounds(origin, grids.obstacle_grid.bounds) {
+    if !area.fits_in(grids.obstacle_grid.bounds) {
         return PlacementValidity::Invalid;
     }
-    if grids.reserved_coords.any_reserved(origin, imprint) {
+    if grids.reserved_coords.any_reserved(area) {
         return PlacementValidity::Invalid;
     }
-    if !grids.obstacle_grid.query_imprint_all(origin, imprint, |f| f.is_empty()) {
+    if !grids.obstacle_grid.query_area_all(area, ObstacleCell::is_empty) {
         return PlacementValidity::Invalid;
     }
     PlacementValidity::Valid
@@ -184,19 +183,15 @@ pub fn validator_all_empty(
 /// Suitable for any object whose only placement constraint is that all cells must be empty.
 pub fn annotate_non_empty(
     _: MapObject,
-    origin: GridCoords,
-    imprint: GridImprint,
+    area: GridArea,
     validity: PlacementValidity,
-    map_data: &GridsCollectionParam,
+    grids: &GridsCollectionParam,
 ) -> Vec<(GridCoords, CellHighlight)> {
     if validity != PlacementValidity::Invalid {
         return vec![];
     }
-    imprint.iter(origin)
-        .filter(|coords| {
-            !coords.are_in_bounds(map_data.obstacle_grid.bounds)
-                || !map_data.obstacle_grid[*coords].is_empty()
-        })
+    area.iter()
+        .filter(|coords| !grids.obstacle_grid.get(*coords).is_some_and(ObstacleCell::is_empty))
         .map(|coords| (coords, CellHighlight::Negative))
         .collect()
 }

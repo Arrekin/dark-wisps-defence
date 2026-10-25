@@ -102,19 +102,15 @@ impl BuilderTowerField {
 
         let building_info = almanach.get_building_info(BuildingType::Tower(TowerType::Field));
 
+        let area = GridArea::new(builder.grid_position, building_info.grid_imprint);
         commands.entity(entity)
             .remove::<BuilderTowerField>()
             .insert_some(builder.integrity_points)
             .insert_some(builder.disabled_by_player)
             .insert((
                 TowerField,
-                Sprite {
-                    image: building_info.sprite.clone(),
-                    custom_size: Some(building_info.grid_imprint.world_size()),
-                    ..default()
-                },
-                builder.grid_position,
-                building_info.grid_imprint,
+                building_info.world_sprite(),
+                area,
                 NeedsPower,
                 related![Indicators[
                     IndicatorType::NoPower,
@@ -131,8 +127,7 @@ impl BuilderTowerField {
             .observe(on_technical_state_changed_recompute_operational)
             .observe(Self::on_add_is_operational_unfold_force_field)
             .observe(Self::on_remove_is_operational_fold_force_field);
-        let field_position = builder.grid_position.to_world_position_centered(building_info.grid_imprint);
-        commands.spawn(BuilderForceField::new(entity, field_position))
+        commands.spawn(BuilderForceField::new(entity, area.world_center()))
             .observe(Self::on_field_entered_apply_effect)
             .observe(Self::on_field_exited_remove_effect);
         for (content_id, socket) in &building_info.sockets {
@@ -211,7 +206,7 @@ fn on_tower_field_place_request_do_so(
 
 #[log_tags(Tag::GameSave)]
 fn collect_tower_fields(
-    towers: Query<(Entity, &GridCoords, &IntegrityPoints, Has<DisabledByPlayer>), With<TowerField>>,
+    towers: Query<(Entity, &GridArea, &IntegrityPoints, Has<DisabledByPlayer>), With<TowerField>>,
     mut save: SaveWriter,
 ) {
     if towers.is_empty() { return; }
@@ -219,11 +214,11 @@ fn collect_tower_fields(
     #[debug_dev("Saving {} tower fields", rows.len())]
     let rows: Vec<(u32, GridCoords, f32, bool)> = towers
         .iter()
-        .map(|(entity, coords, integrity_points, disabled_by_player)| {
+        .map(|(entity, area, integrity_points, disabled_by_player)| {
             (
                 entity.index_u32(),
-                *coords,
-                integrity_points.get_current(),
+                area.origin,
+                integrity_points.current,
                 disabled_by_player,
             )
         })

@@ -259,7 +259,7 @@ fn update_mouse_info_system(
 
     if let Some(screen_position) = window.into_inner().cursor_position() {
         let world_position = camera.viewport_to_world_2d(camera_transform, screen_position).unwrap();
-        let grid_coords = GridCoords::from_world_vec2(world_position);
+        let grid_coords = GridCoords::from_world_position(world_position);
         mouse_info.screen_position = screen_position;
         mouse_info.world_position = world_position;
         mouse_info.grid_coords = grid_coords;

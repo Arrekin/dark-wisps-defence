@@ -49,7 +49,5 @@ fn on_insert_max_integrity_points_clamp_integrity_points(
     mut integrity_points_components: Query<(&mut IntegrityPoints, &MaxIntegrityPoints)>,
 ) {
     let Ok((mut integrity_points, max_integrity_points)) = integrity_points_components.get_mut(trigger.entity) else { return; };
-    let max = max_integrity_points.get();
-    integrity_points.max = max;
-    integrity_points.current = integrity_points.current.min(max);
+    integrity_points.set_max(max_integrity_points.get());
 }

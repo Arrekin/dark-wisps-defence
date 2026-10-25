@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use game_core::prelude::{GridCoords, GridImprint, IsOperational, MapInfo};
+use game_core::prelude::{GridArea, IsOperational, MapInfo};
 use grids::{
     EmissionsGridSpreadAffector,
     GridVersion,
@@ -32,36 +32,34 @@ fn on_add_emitter_energy_register_emitter(
 ) {
     let entity = trigger.entity;
     commands.entity(entity)
-        .observe(on_insert_emitter_coords_or_operational_emit_added_message)
-        .observe(on_discard_emitter_coords_or_operational_emit_removed_message);
+        .observe(on_insert_emitter_area_or_operational_emit_added_message)
+        .observe(on_discard_emitter_area_or_operational_emit_removed_message);
 }
 
-fn on_insert_emitter_coords_or_operational_emit_added_message(
-    trigger: On<Insert<(GridCoords, GridImprint, IsOperational)>>,
+fn on_insert_emitter_area_or_operational_emit_added_message(
+    trigger: On<Insert<(GridArea, IsOperational)>>,
     mut emitter_changed_messages: MessageWriter<EmitterChangedMessage>,
-    emitters: Query<(&GridCoords, &GridImprint, &EmitterEnergy), With<IsOperational>>,
+    emitters: Query<(&GridArea, &EmitterEnergy), With<IsOperational>>,
 ) {
     let entity = trigger.entity;
-    let Ok((grid_coords, grid_imprint, emitter)) = emitters.get(entity) else { return; };
+    let Ok((area, emitter)) = emitters.get(entity) else { return; };
     emitter_changed_messages.write(EmitterChangedMessage {
         emitter_entity: entity,
-        imprint: *grid_imprint,
-        grid_coords: *grid_coords,
+        area: *area,
         emissions_details: vec![emitter.0.clone()],
     });
 }
 
-fn on_discard_emitter_coords_or_operational_emit_removed_message(
-    trigger: On<Discard<(GridCoords, GridImprint, IsOperational)>>,
+fn on_discard_emitter_area_or_operational_emit_removed_message(
+    trigger: On<Discard<(GridArea, IsOperational)>>,
     mut emitter_changed_messages: MessageWriter<EmitterChangedMessage>,
-    emitters: Query<(&GridCoords, &GridImprint, &EmitterEnergy), With<IsOperational>>,
+    emitters: Query<(&GridArea, &EmitterEnergy), With<IsOperational>>,
 ) {
     let entity = trigger.entity;
-    let Ok((grid_coords, grid_imprint, emitter)) = emitters.get(entity) else { return; };
+    let Ok((area, emitter)) = emitters.get(entity) else { return; };
     emitter_changed_messages.write(EmitterChangedMessage {
         emitter_entity: entity,
-        imprint: *grid_imprint,
-        grid_coords: *grid_coords,
+        area: *area,
         emissions_details: vec![emitter.0.cloned_with_reversed_mode()],
     });
 }
@@ -85,18 +83,18 @@ fn update_emissions_grid(
     mut emissions_grid: ResMut<EmissionsGrid>,
     mut emitter_changed_messages: MessageReader<EmitterChangedMessage>,
     obstacle_grid: Res<ObstacleGrid>,
-    emitters: Query<(&EmitterEnergy, &GridImprint, &GridCoords), With<IsOperational>>,
+    emitters: Query<(&EmitterEnergy, &GridArea), With<IsOperational>>,
 ) {
     if recalculate_all.0 {
         recalculate_all.0 = false;
         emissions_grid.reset_energy_emissions();
-        for (emitter, grid_imprint, coords) in emitters.iter() {
+        for (emitter, area) in emitters.iter() {
             flood_emissions(
                 &mut emissions_grid,
                 &obstacle_grid,
-                grid_imprint.iter(*coords),
+                area.iter(),
                 [&emitter.0],
-                |field| !field.has_wall(),
+                |cell| !cell.has_wall(),
             );
         }
         emitter_changed_messages.clear();
@@ -105,9 +103,9 @@ fn update_emissions_grid(
             flood_emissions(
                 &mut emissions_grid,
                 &obstacle_grid,
-                message.imprint.iter(message.grid_coords),
+                message.area.iter(),
                 &message.emissions_details,
-                |field| !field.has_wall(),
+                |cell| !cell.has_wall(),
             );
         }
     }

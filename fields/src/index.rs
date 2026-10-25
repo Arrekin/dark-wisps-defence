@@ -4,8 +4,8 @@
 //! Each field keeps a stable slot until removal. Cells list these slots; [`IndexedField::claim`]
 //! decides ownership among the candidates.
 //!
-//! A field's imprint is the grid rectangle enclosing its radius plus [`FIELD_INDEX_MARGIN`].
-//! Cell lists change when the imprint changes, including when the radius reaches zero.
+//! A field's area is the grid rectangle enclosing its radius plus [`FIELD_INDEX_MARGIN`].
+//! Cell lists change when the area changes, including when the radius reaches zero.
 //!
 //! ## Example lookup
 //!
@@ -29,12 +29,12 @@
 
 use bevy::prelude::*;
 
-use game_core::prelude::{Bounds, CELL_SIZE, GridCoords, GridImprint};
+use game_core::prelude::{Bounds, CELL_SIZE, GridArea, GridCoords};
 use grids::{base::BaseGrid, GridVersion};
 
 use crate::field::{Field, FieldType};
 
-/// Extra radius in world pixels used to build a field's imprint.
+/// Extra radius in world pixels used to build a field's area.
 /// This lets shaders find neighbouring fields when drawing seams.
 pub const FIELD_INDEX_MARGIN: f32 = CELL_SIZE;
 
@@ -50,19 +50,16 @@ pub struct IndexedField {
     pub center: Vec2,
     pub current_radius: f32,
     pub strength: f32,
-    /// Origin cell and grid coverage. `None` when the radius is zero or negative.
-    imprint: Option<(GridCoords, GridImprint)>,
+    /// Grid coverage. `None` when the radius is zero or negative.
+    area: Option<GridArea>,
 }
 impl IndexedField {
     /// Copies the field data and computes its grid coverage, including [`FIELD_INDEX_MARGIN`].
     fn new(entity: Entity, field_type: FieldType, center: Vec2, field: &Field) -> Self {
-        let imprint = (field.current_radius > 0.).then(|| {
-            let reach = field.current_radius + FIELD_INDEX_MARGIN;
-            let origin = GridCoords::from_world_vec2(center - Vec2::splat(reach));
-            let end = GridCoords::from_world_vec2(center + Vec2::splat(reach));
-            (origin, GridImprint::Rectangle { width: end.x - origin.x + 1, height: end.y - origin.y + 1 })
+        let area = (field.current_radius > 0.).then(|| {
+            GridArea::covering(Rect::from_center_half_size(center, Vec2::splat(field.current_radius + FIELD_INDEX_MARGIN)))
         });
-        Self { entity, field_type, center, current_radius: field.current_radius, strength: field.strength, imprint }
+        Self { entity, field_type, center, current_radius: field.current_radius, strength: field.strength, area }
     }
 
     /// Returns `(distance / (radius * strength))²` for a point inside the field.
@@ -100,14 +97,14 @@ impl FieldIndex {
         &self.cells
     }
 
-    /// Gives `entity` a slot and lists it in the cells its imprint covers.
+    /// Gives `entity` a slot and lists it in the cells its area covers.
     pub fn insert(&mut self, entity: Entity, field_type: FieldType, center: Vec2, field: &Field) -> FieldSlot {
         let slot = FieldSlot(self.free_slots.pop().unwrap_or_else(|| { self.slots.push(None); self.slots.len() - 1 }));
         self.write(slot, Some(IndexedField::new(entity, field_type, center, field)));
         slot
     }
 
-    /// Updates the field data. Rebuilds its cell memberships only if the imprint changed.
+    /// Updates the field data. Updates its cell memberships only if the area changed.
     pub fn update(&mut self, slot: FieldSlot, field_type: FieldType, center: Vec2, field: &Field) {
         let Some(indexed_field) = self.slots[slot.0] else { return; };
         self.write(slot, Some(IndexedField::new(indexed_field.entity, field_type, center, field)));
@@ -124,9 +121,7 @@ impl FieldIndex {
     /// Returns the containing field with the lowest claim, or `None` outside all fields or the map.
     /// Only candidates in the point's cell are checked. Equal claims favour the first candidate.
     pub fn owner_at(&self, world_position: Vec2) -> Option<Entity> {
-        let coords = GridCoords::from_world_vec2(world_position);
-        if !coords.are_in_bounds(self.cells.bounds) { return None; }
-        self.cells[coords].iter()
+        self.cells.get(GridCoords::from_world_position(world_position))?.iter()
             .filter_map(|&slot| {
                 let candidate = self.slots[slot].as_ref()?;
                 Some((candidate.entity, candidate.claim(world_position)?))
@@ -135,29 +130,46 @@ impl FieldIndex {
             .map(|(entity, _)| entity)
     }
 
-    /// Replaces the slot's data and updates its cell memberships if the imprint changed.
+    /// Replaces the slot's data and updates its cell memberships if the area changed.
     fn write(&mut self, slot: FieldSlot, new: Option<IndexedField>) {
-        let old_imprint = self.slots[slot.0].and_then(|indexed_field| indexed_field.imprint);
-        self.relist(slot, old_imprint, new.and_then(|indexed_field| indexed_field.imprint));
+        let old_area = self.slots[slot.0].and_then(|indexed_field| indexed_field.area);
+        self.relist(slot, old_area, new.and_then(|indexed_field| indexed_field.area));
         self.slots[slot.0] = new;
     }
 
-    /// Rebuilds the slot's cell memberships and advances the grid version when the imprints differ.
-    fn relist(&mut self, slot: FieldSlot, old: Option<(GridCoords, GridImprint)>, new: Option<(GridCoords, GridImprint)>) {
+    /// Moves the slot's cell memberships from `old` to `new` and advances the grid version when the
+    /// areas differ. Cells both areas cover keep their entry.
+    fn relist(&mut self, slot: FieldSlot, old: Option<GridArea>, new: Option<GridArea>) {
         if old == new { return; }
-        if let Some((origin, imprint)) = old {
-            for coords in imprint.iter_in_bounds(origin, self.cells.bounds) {
-                let cell = &mut self.cells[coords];
-                if let Some(position) = cell.iter().position(|&listed| listed == slot.0) {
-                    cell.swap_remove(position);
-                }
+        match (old, new) {
+            (Some(old), Some(new)) => {
+                let (left, entered) = GridArea::diff(old, new);
+                self.unlist(slot, left);
+                self.enlist(slot, entered);
             }
-        }
-        if let Some((origin, imprint)) = new {
-            for coords in imprint.iter_in_bounds(origin, self.cells.bounds) {
-                self.cells[coords].push(slot.0);
-            }
+            (Some(old), None) => self.unlist(slot, old.iter()),
+            (None, Some(new)) => self.enlist(slot, new.iter()),
+            (None, None) => {}
         }
         self.cells.version = self.cells.version.wrapping_add(1);
+    }
+
+    /// Removes the slot from every in-bounds cell of `cells`.
+    fn unlist(&mut self, slot: FieldSlot, cells: impl Iterator<Item = GridCoords>) {
+        let bounds = self.cells.bounds;
+        for coords in cells.filter(|coords| bounds.contains(*coords)) {
+            let cell = &mut self.cells[coords];
+            if let Some(position) = cell.iter().position(|&listed| listed == slot.0) {
+                cell.swap_remove(position);
+            }
+        }
+    }
+
+    /// Adds the slot to every in-bounds cell of `cells`.
+    fn enlist(&mut self, slot: FieldSlot, cells: impl Iterator<Item = GridCoords>) {
+        let bounds = self.cells.bounds;
+        for coords in cells.filter(|coords| bounds.contains(*coords)) {
+            self.cells[coords].push(slot.0);
+        }
     }
 }

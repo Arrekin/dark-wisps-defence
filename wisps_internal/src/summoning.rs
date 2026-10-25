@@ -137,10 +137,11 @@ fn save_area(ctx: &SaveContext, id: u32, area: &SpawnArea) -> rusqlite::Result<(
                 )?;
             }
         }
-        SpawnArea::Rect { origin, width, height } => {
+        SpawnArea::Rect { area } => {
+            let Bounds { width, height } = area.imprint.into();
             ctx.tx.execute(
                 "INSERT OR REPLACE INTO summoning_area_rect (summoning_id, origin_x, origin_y, width, height) VALUES (?1, ?2, ?3, ?4, ?5)",
-                rusqlite::params![id, origin.x, origin.y, width, height],
+                rusqlite::params![id, area.origin.x, area.origin.y, width, height],
             )?;
         }
         SpawnArea::Edge { side } => {
@@ -202,9 +203,10 @@ fn load_summonings(ctx: &mut LoadContext) -> LoadResult {
                     "SELECT origin_x, origin_y, width, height FROM summoning_area_rect WHERE summoning_id = ?1",
                     [old_id],
                     |row| Ok(SpawnArea::Rect {
-                        origin: GridCoords { x: row.get(0)?, y: row.get(1)? },
-                        width: row.get(2)?,
-                        height: row.get(3)?,
+                        area: GridArea::new(
+                            GridCoords { x: row.get(0)?, y: row.get(1)? },
+                            GridImprint::Rectangle { width: row.get(2)?, height: row.get(3)? },
+                        ),
                     }),
                 ).map_err(LoadError::table_read("summoning_area_rect"))?,
                 "Edge" => {
@@ -286,7 +288,7 @@ fn tick_active_summoning_system(
                 let remaining = summoning.limit_count.map(|limit| limit.saturating_sub(runtime.produced)).unwrap_or(i32::MAX);
                 let to_spawn: i32 = bulk_count.min(remaining).max(0);
                 for _ in 0..(to_spawn as usize) {
-                    let grid_coords = summoning.area.get_random_coord(&obstacle_grid, &mut rng);
+                    let grid_coords = summoning.area.get_random_coord(obstacle_grid.bounds, &mut rng);
                     let wisp_type = summoning.get_random_wisp_type(&mut rng);
                     commands.spawn(BuilderWisp::new(wisp_type, grid_coords));
                 }

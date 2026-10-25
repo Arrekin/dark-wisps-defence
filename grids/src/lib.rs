@@ -19,8 +19,8 @@ pub mod search;
 
 pub type GridVersion = u32;
 
-pub trait FieldTrait: Default + Clone + Debug {}
-impl<T: Default + Clone + Debug> FieldTrait for T {}
+pub trait CellTrait: Default + Clone + Debug {}
+impl<T: Default + Clone + Debug> CellTrait for T {}
 
 pub trait GridVersionTrait: Default {}
 impl<T: Default> GridVersionTrait for T {}
@@ -73,5 +73,5 @@ pub mod prelude {
         GridVersion,
         ObstacleGridObject,
     };
-    pub use super::obstacles::{Field, ObstacleGrid, ReservedCoords};
+    pub use super::obstacles::{ObstacleCell, ObstacleGrid, ReservedCoords};
 }

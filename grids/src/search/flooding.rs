@@ -1,15 +1,15 @@
 use std::collections::VecDeque;
 
-use alteration::modifiers::prelude::EnergySupplyRange;
 use bevy::prelude::Entity;
 
+use alteration::modifiers::prelude::EnergySupplyRange;
 use game_core::prelude::{GridCoords, Property};
 
 use crate::{
-    emissions::{EmissionsGrid, EmissionsType, FloodEmissionsDetails, FloodEmissionsEvaluator, FloodEmissionsMode, FloodTowerRangeMode},
+    emissions::{EmissionsGrid, EmissionsType, FloodEmissionsDetails, FloodEmissionsEvaluator, FloodEmissionsMode},
     energy_supply::{EnergySupplyGrid, FloodEnergySupplyMode},
     prelude::*,
-    tower_ranges::TowerRangesGrid,
+    tower_ranges::{FloodTowerRangeMode, TowerRangesGrid},
 };
 
 use super::common::VISITED_GRID;
@@ -19,7 +19,7 @@ pub fn flood_emissions<'a>(
     obstacles_grid: &ObstacleGrid,
     start_coords: impl IntoIterator<Item = GridCoords>,
     emissions_details: impl IntoIterator<Item = &'a FloodEmissionsDetails> + Copy,
-    should_field_be_flooded: fn(&Field) -> bool,
+    should_cell_be_flooded: fn(&ObstacleCell) -> bool,
 ) {
     VISITED_GRID.with_borrow_mut(|visited_grid| {
         visited_grid.resize_and_clear(obstacles_grid.bounds);
@@ -34,7 +34,7 @@ pub fn flood_emissions<'a>(
         });
         while let Some((distance, coords)) = queue.pop_front() {
             for new_coords in obstacles_grid.bounds.cardinal_neighbors(coords) {
-                if visited_grid.is_visited(new_coords) || !should_field_be_flooded(&obstacles_grid[new_coords])
+                if visited_grid.is_visited(new_coords) || !should_cell_be_flooded(&obstacles_grid[new_coords])
                 {
                     continue;
                 }
@@ -115,7 +115,6 @@ pub fn flood_energy_supply(
     });
 }
 
-
 /// Start with the list of generators coords and flood over all connected cells with energy supply
 pub fn flood_power_coverage(
     energy_supply_grid: &mut EnergySupplyGrid,
@@ -145,7 +144,6 @@ pub fn flood_power_coverage(
         }
     });
 }
-
 
 /// Covers every cell within `range` of any start cell.
 pub fn flood_tower_range(

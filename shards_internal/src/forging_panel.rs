@@ -25,7 +25,7 @@ use strum::IntoEnumIterator;
 
 use almanach::prelude::*;
 use buildings::Forge;
-use game_core::prelude::{GridCoords, IsOperational, Shard, ShardTier};
+use game_core::prelude::{GridArea, GridCoords, IsOperational, Shard, ShardTier};
 use logging::prelude::*;
 use resources::prelude::Stock;
 use shards::{
@@ -241,7 +241,7 @@ fn rebuild_panel(
     shards_to_order_band: Single<Entity, With<ShardsToOrderBand>>,
     forges_band: Single<Entity, With<ForgesBand>>,
     queued_band: Single<Entity, With<QueuedBand>>,
-    forges: Query<(Entity, &GridCoords), With<Forge>>,
+    forges: Query<(Entity, &GridArea), With<Forge>>,
     queues: Query<&ForgingQueue>,
     orders: Query<&ShardOrder>,
 ) {
@@ -252,7 +252,7 @@ fn rebuild_panel(
     }
     let selected_forge = selection.forge();
     let shown_queue = selected_forge.unwrap_or(*global_queue);
-    let mut sorted_forges: Vec<(Entity, GridCoords)> = forges.iter().map(|(forge, &coords)| (forge, coords)).collect();
+    let mut sorted_forges: Vec<(Entity, GridCoords)> = forges.iter().map(|(forge, area)| (forge, area.origin)).collect();
     sorted_forges.sort_by_key(|&(_, coords)| (coords.y, coords.x));
 
     // Reuse the entry layout for the current selection and the dropdown options.
@@ -479,12 +479,12 @@ fn on_activate_show_entry_queue(
 fn on_click_toggle_global_queue(
     trigger: On<PointerClick>,
     toggles: Query<&GlobalQueueToggle>,
-    mut forges: Query<(&GridCoords, &mut WorksGlobalQueue)>,
+    mut forges: Query<(&GridArea, &mut WorksGlobalQueue)>,
 ) {
     let Ok(&GlobalQueueToggle { forge }) = toggles.get(trigger.entity) else { return; };
-    let Ok((coords, mut works_global)) = forges.get_mut(forge) else { return; };
+    let Ok((area, mut works_global)) = forges.get_mut(forge) else { return; };
     works_global.toggle();
-    info_player!("Forge at {coords}: {}", works_global.label());
+    info_player!("Forge at {}: {}", area.origin, works_global.label());
 }
 
 /// Shows each Forge's status and global-queue setting in its entries.
@@ -651,8 +651,9 @@ fn update_forge_tiles(
         }
         let source_color = job.and_then(|(_, root, _, _)| order_tree.queue_links.get(root).ok()).map_or(Color::NONE, |queue| queue.source_color(tile.forge));
         border.set_if_neq(BorderColor::all(source_color));
-        if let Ok(mut fill) = fills.get_mut(tile.fill) {
-            fill.fill_fraction = job.map_or(0., |(_, _, _, progress)| progress.fraction());
+        let fill_fraction = job.map_or(0., |(_, _, _, progress)| progress.fraction());
+        if let Ok(mut fill) = fills.get_mut(tile.fill) && fill.fill_fraction != fill_fraction {
+            fill.fill_fraction = fill_fraction;
         }
     }
 }

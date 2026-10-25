@@ -38,7 +38,7 @@ const LAYER_SCORCH: u32 = 1u;
 const CORE_FILL: f32 = 1.15;      // fireball radius, relative to the main blast half-size
 const CORE_GROW: f32 = 18.0;
 const CORE_LIFE: f32 = 0.7;       // seconds
-const SQUARENESS: f32 = 3.0;      // 2 = round, higher fills the square footprint
+const SQUARENESS: f32 = 3.0;      // 2 = round, higher fills the square area
 const NOISE_SCALE: f32 = 2.2;
 const BILLOW_SPEED: f32 = 1.5;
 const BIAS: f32 = 1.0;

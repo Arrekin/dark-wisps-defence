@@ -99,19 +99,15 @@ impl BuilderTowerCrucible {
 
         let building_info = almanach.get_building_info(BuildingType::Tower(TowerType::Crucible));
 
+        let area = GridArea::new(builder.grid_position, building_info.grid_imprint);
         commands.entity(entity)
             .remove::<BuilderTowerCrucible>()
             .insert_some(builder.integrity_points)
             .insert_some(builder.disabled_by_player)
             .insert((
                 TowerCrucible,
-                Sprite {
-                    image: building_info.sprite.clone(),
-                    custom_size: Some(building_info.grid_imprint.world_size()),
-                    ..default()
-                },
-                builder.grid_position,
-                building_info.grid_imprint,
+                building_info.world_sprite(),
+                area,
                 NeedsPower,
                 related![Indicators[
                     IndicatorType::NoPower,
@@ -128,8 +124,7 @@ impl BuilderTowerCrucible {
             .observe(on_technical_state_changed_recompute_operational)
             .observe(Self::on_add_is_operational_unfold_crucible_field)
             .observe(Self::on_remove_is_operational_fold_crucible_field);
-        let field_position = builder.grid_position.to_world_position_centered(building_info.grid_imprint);
-        commands.spawn(BuilderCrucibleField::new(entity, field_position));
+        commands.spawn(BuilderCrucibleField::new(entity, area.world_center()));
         for (content_id, socket) in &building_info.sockets {
             commands.trigger(ShardSocketUpsert::new(entity, content_id.clone(), socket.clone()));
         }
@@ -183,7 +178,7 @@ fn on_tower_crucible_place_request_do_so(
 
 #[log_tags(Tag::GameSave)]
 fn collect_tower_crucibles(
-    towers: Query<(Entity, &GridCoords, &IntegrityPoints, Has<DisabledByPlayer>), With<TowerCrucible>>,
+    towers: Query<(Entity, &GridArea, &IntegrityPoints, Has<DisabledByPlayer>), With<TowerCrucible>>,
     mut save: SaveWriter,
 ) {
     if towers.is_empty() { return; }
@@ -191,11 +186,11 @@ fn collect_tower_crucibles(
     #[debug_dev("Saving {} tower crucibles", rows.len())]
     let rows: Vec<(u32, GridCoords, f32, bool)> = towers
         .iter()
-        .map(|(entity, coords, integrity_points, disabled_by_player)| {
+        .map(|(entity, area, integrity_points, disabled_by_player)| {
             (
                 entity.index_u32(),
-                *coords,
-                integrity_points.get_current(),
+                area.origin,
+                integrity_points.current,
                 disabled_by_player,
             )
         })

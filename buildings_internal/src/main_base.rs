@@ -14,7 +14,6 @@ use grids::{
     emissions::{EmissionsType, EmitterEnergy, FloodEmissionsDetails, FloodEmissionsEvaluator, FloodEmissionsMode},
     energy_supply::{GeneratorEnergy, SupplierEnergy},
     placement::{annotate_non_empty, PlacementModes, PlaceRequest},
-    prelude::ObstacleGridObject,
 };
 use persistence::{creating_new_map, prelude::*};
 use states::prelude::*;
@@ -38,12 +37,13 @@ impl Plugin for MainBasePlugin {
 }
 
 /// Spawn one `BuilderMainBase` at map center on a new map.
-fn seed_main_base(mut commands: Commands, map_info: Res<MapInfo>) {
+fn seed_main_base(mut commands: Commands, almanach: Res<Almanach>, map_info: Res<MapInfo>) {
     let center = GridCoords {
         x: map_info.grid_bounds.width / 2,
         y: map_info.grid_bounds.height / 2,
     };
-    commands.spawn(BuilderMainBase::new(center));
+    let imprint = almanach.get_building_info(BuildingType::MainBase).grid_imprint;
+    commands.spawn(BuilderMainBase::new(GridArea::centered_on(center, imprint).origin));
 }
 
 /// Runs at the end of every map build. Centers the main camera on the `MainBase`,
@@ -58,8 +58,7 @@ fn center_camera_on_main_base(
         None => map_info.world_size() / 2.0,
     };
     let translation = &mut camera.into_inner().translation;
-    translation.x = center.x;
-    translation.y = center.y;
+    *translation = center.extend(translation.z);
 }
 
 #[derive(Component, SSS)]
@@ -74,7 +73,7 @@ impl BuilderMainBase {
             description: "Home. Generates energy for the surrounding area.".to_string(),
             sprite: asset_server.load("buildings/main_base.png"),
             top_sprite: None,
-            grid_imprint: GridImprint::Rectangle { width: 6, height: 6 },
+            grid_imprint: GridImprint::square(6),
             cost: vec![],
             baseline: HashMap::from([
                 (ModifierType::MaxIntegrityPoints, 10000.),
@@ -105,20 +104,14 @@ impl BuilderMainBase {
         let Ok(builder) = builders.get(entity) else { return; };
 
         let building_info = almanach.get_building_info(BuildingType::MainBase);
-        let grid_imprint = building_info.grid_imprint;
 
         commands.entity(entity)
             .remove::<BuilderMainBase>()
             .insert_some(builder.integrity_points)
             .insert((
-                Sprite {
-                    image: building_info.sprite.clone(),
-                    custom_size: Some(grid_imprint.world_size()),
-                    ..default()
-                },
+                building_info.world_sprite(),
                 MainBase,
-                builder.grid_position,
-                grid_imprint,
+                GridArea::new(builder.grid_position, building_info.grid_imprint),
                 EmitterEnergy(FloodEmissionsDetails {
                     emissions_type: EmissionsType::Energy,
                     range: usize::MAX,
@@ -136,31 +129,31 @@ impl BuilderMainBase {
     }
 }
 
+/// Moves the main base to the placer's area.
+/// Known limitation: validation counts the base's current cells as occupied, so a move that overlaps
+/// its old position is refused.
 fn on_main_base_place_request_do_so(
     trigger: On<PlaceRequest>,
     mut commands: Commands,
     mut placement: BuildingPlacementManager,
-    main_base: Single<Entity, With<MainBase>>,
+    main_base: Single<(Entity, &GridArea), With<MainBase>>,
 ) {
     let PlaceRequest(MapObject::Building(BuildingType::MainBase)) = *trigger else { return };
     let Some(coords) = placement.claim_free(BuildingType::MainBase) else { return };
-    // Remove/Insert ObstacleGridObject to trigger grid reprint
-    commands.entity(*main_base)
-        .remove::<ObstacleGridObject>()
-        .insert(coords)
-        .insert(ObstacleGridObject::Building);
+    let (main_base, area) = main_base.into_inner();
+    commands.entity(main_base).insert(GridArea::new(coords, area.imprint));
 }
 
 fn collect_main_bases(
-    main_base: Single<(Entity, &GridCoords, &IntegrityPoints), With<MainBase>>,
+    main_base: Single<(Entity, &GridArea, &IntegrityPoints), With<MainBase>>,
     mut save: SaveWriter,
 ) {
-    let (entity, &coords, integrity_points) = main_base.into_inner();
+    let (entity, &area, integrity_points) = main_base.into_inner();
     let id = entity.index_u32();
-    let integrity_points = integrity_points.get_current();
+    let integrity_points = integrity_points.current;
     save.submit(move |ctx| {
         ctx.save_marker("main_bases", id)?;
-        ctx.save_grid_coords(id, coords)?;
+        ctx.save_grid_coords(id, area.origin)?;
         ctx.save_integrity_points(id, integrity_points)?;
         Ok(())
     });

@@ -14,7 +14,7 @@ use std::ops::RangeInclusive;
 
 use bevy::prelude::*;
 
-use game_core::prelude::{CELL_SIZE, GridCoords, GridImprint};
+use game_core::prelude::{CELL_SIZE, GridArea, GridCoords, GridImprint};
 use grids::wisps::WispsGrid;
 use states::prelude::GameState;
 use weaponry::{
@@ -74,9 +74,9 @@ fn hit_distance(stream: &FlameStream, position: Vec2) -> Option<f32> {
 /// Finds the wisp with the smallest axial distance covered by `fuel` inside the stream cone.
 fn nearest_hit(stream: &FlameStream, fuel: RangeInclusive<f32>, wisps_grid: &WispsGrid, wisps: &Query<&Transform, With<Wisp>>) -> Option<FlameHit> {
     let mut nearest: Option<FlameHit> = None;
-    for (column_distance, origin, imprint) in columns(stream) {
+    for (column_distance, slice) in columns(stream) {
         if nearest.as_ref().is_some_and(|hit| column_distance > hit.distance) { break; }
-        for coords in imprint.iter_in_bounds(origin, wisps_grid.bounds) {
+        for coords in slice.iter_in_bounds(wisps_grid.bounds) {
             for &wisp in &wisps_grid[coords] {
                 let Ok(wisp_transform) = wisps.get(wisp) else { continue; };
                 let Some(hit_distance) = hit_distance(stream, wisp_transform.translation.xy()) else { continue; };
@@ -91,16 +91,16 @@ fn nearest_hit(stream: &FlameStream, fuel: RangeInclusive<f32>, wisps_grid: &Wis
 }
 
 /// Grid slices perpendicular to the stream's dominant axis, ordered from nozzle to tip.
-/// Yields `(min_axial_distance, slice_origin, slice_imprint)` so callers can stop once
+/// Yields `(min_axial_distance, slice)` so callers can stop once
 /// `min_axial_distance` exceeds the best hit found so far.
-fn columns(stream: &FlameStream) -> impl Iterator<Item = (f32, GridCoords, GridImprint)> {
+fn columns(stream: &FlameStream) -> impl Iterator<Item = (f32, GridArea)> {
     let nozzle = stream.nozzle;
     let direction = stream.direction;
     let length = stream.length;
     let along = if direction.x.abs() >= direction.y.abs() { 0 } else { 1 };
     let across = 1 - along;
     let max_reach = stream.half_width_at(length) + WISP_HIT_RADIUS;
-    // Max axial distance difference between a off-center wisp and the centerline at the same `along` coordinate.
+    // Max axial distance difference between an off-center wisp and the centerline at the same `along` coordinate.
     let max_lead = max_reach * (direction[across] / direction[along]).abs();
     let cell_of = move |world: f32| (world / CELL_SIZE).floor() as i32;
     let distance_of = move |world: f32| (world - nozzle[along]) / direction[along];
@@ -116,11 +116,11 @@ fn columns(stream: &FlameStream) -> impl Iterator<Item = (f32, GridCoords, GridI
         let ends = [near, far].map(|distance| nozzle[across] + direction[across] * distance);
         let low = cell_of(ends[0].min(ends[1]) - reach);
         let high = cell_of(ends[0].max(ends[1]) + reach);
-        let (origin, imprint) = if along == 0 {
-            (GridCoords { x: column, y: low }, GridImprint::Rectangle { width: 1, height: high - low + 1 })
+        let slice = if along == 0 {
+            GridArea::new(GridCoords { x: column, y: low }, GridImprint::Rectangle { width: 1, height: high - low + 1 })
         } else {
-            (GridCoords { x: low, y: column }, GridImprint::Rectangle { width: high - low + 1, height: 1 })
+            GridArea::new(GridCoords { x: low, y: column }, GridImprint::Rectangle { width: high - low + 1, height: 1 })
         };
-        (near, origin, imprint)
+        (near, slice)
     })
 }

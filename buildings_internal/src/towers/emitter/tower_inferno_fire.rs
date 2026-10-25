@@ -151,11 +151,11 @@ fn update_ember_rings(
 
 fn update_hazes(
     mut hazes: Query<(&ChildOf, &mut InfernoHaze)>,
-    towers: Query<(&GridImprint, &TowerShootingTimer), With<TowerInferno>>,
+    towers: Query<(&GridArea, &TowerShootingTimer), With<TowerInferno>>,
 ) {
     for (child_of, mut haze) in hazes.iter_mut() {
-        let Ok((grid_imprint, timer)) = towers.get(child_of.parent()) else { continue; };
-        let reach = grid_imprint.world_size().max_element() * 0.5 + HAZE_MARGIN;
+        let Ok((area, timer)) = towers.get(child_of.parent()) else { continue; };
+        let reach = area.imprint.world_size().max_element() * 0.5 + HAZE_MARGIN;
         haze.set_if_neq(InfernoHaze { reach, charge: timer.0.fraction() });
     }
 }

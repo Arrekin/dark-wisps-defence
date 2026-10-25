@@ -1,7 +1,7 @@
 //! # Fireball
 //!
 //! Blaze Mortar projectile. On landing, it deals full damage to wisps in a 3x3 area centered on
-//! the landing cell and reduced damage in the surrounding one-cell ring, for a 5x5 footprint.
+//! the landing cell and reduced damage in the surrounding one-cell ring, for a 5x5 area.
 //! The damage zones do not overlap.
 //!
 //! ## Rendering
@@ -23,7 +23,7 @@ use bevy::{
 };
 
 use alteration::modifiers::prelude::AttackDamage;
-use game_core::prelude::{CELL_SIZE, DamageMessage, GridCoords, GridImprint, MapBound, OptionalCommands, Property, ZDepth};
+use game_core::prelude::{CELL_SIZE, DamageMessage, GridArea, GridCoords, GridImprint, MapBound, OptionalCommands, Property, ZDepth};
 use grids::wisps::WispsGrid;
 use logging::prelude::*;
 use persistence::{prelude::*, rusqlite};
@@ -57,7 +57,7 @@ impl Plugin for FireballPlugin {
     }
 }
 
-// Blast footprint, in cells from the landing cell
+// Blast area, in cells from the landing cell
 const MAIN_BLAST_REACH: i32 = 1;
 const RING_REACH: i32 = 2;
 /// Share of the fireball's damage dealt to cells in the ring.
@@ -269,23 +269,19 @@ fn fireball_hit_system(
     for (entity, lob, attack_damage) in fireballs.iter() {
         if !lob.is_landed(clock.now()) { continue; }
 
-        let landing_coords = GridCoords::from_world_vec2(lob.target());
+        let landing_coords = GridCoords::from_world_position(lob.target());
         let seed = seed_from_entity(entity);
         let (blast, scorch) = (TimeBound::lasting(&clock, BLAST_DURATION), TimeBound::lasting(&clock, SCORCH_DURATION));
-        let transform = Transform::from_translation(landing_coords.to_world_position_centered(GridImprint::default()).extend(0.));
+        let transform = Transform::from_translation(GridArea::cell(landing_coords).world_center().extend(0.));
         commands.spawn((FireballImpact::new(ImpactLayer::Blast, blast, seed, landing_coords), blast, transform, ZDepth::FireballBlast));
         commands.spawn((FireballImpact::new(ImpactLayer::Scorch, scorch, seed, landing_coords), scorch, transform, ZDepth::FireballScorch));
-        for dx in -RING_REACH..=RING_REACH {
-            for dy in -RING_REACH..=RING_REACH {
-                let blast_zone_coords = landing_coords.shifted((dx, dy));
-                if !blast_zone_coords.are_in_bounds(wisps_grid.bounds) { continue; }
-
-                let in_main_blast = dx.abs().max(dy.abs()) <= MAIN_BLAST_REACH;
-                let damage = if in_main_blast { attack_damage.get() } else { attack_damage.get() * RING_DAMAGE_SHARE };
-                for wisp in &wisps_grid[blast_zone_coords] {
-                    if !wisps.contains(*wisp) { continue; } // Grid entries may not yet be visible to the query.
-                    damage_messages.write(DamageMessage { target: *wisp, amount: damage });
-                }
+        let main_blast = GridArea::centered_on(landing_coords, GridImprint::square_of_reach(MAIN_BLAST_REACH));
+        let blast_zone = GridArea::centered_on(landing_coords, GridImprint::square_of_reach(RING_REACH));
+        for blast_zone_coords in blast_zone.iter_in_bounds(wisps_grid.bounds) {
+            let damage = if main_blast.contains(blast_zone_coords) { attack_damage.get() } else { attack_damage.get() * RING_DAMAGE_SHARE };
+            for wisp in &wisps_grid[blast_zone_coords] {
+                if !wisps.contains(*wisp) { continue; } // Grid entries may not yet be visible to the query.
+                damage_messages.write(DamageMessage { target: *wisp, amount: damage });
             }
         }
         commands.entity(entity).despawn();

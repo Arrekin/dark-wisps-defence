@@ -41,11 +41,11 @@ Example of how to handle it:
 // Match to confirm it is your domain
 let PlaceRequest(MapObject::Wall) = *trigger else { return };
 // Access placer data
-let (coords, imprint, style) = placer.into_inner();
+let (area, style) = placer.into_inner();
 // Perform all domain validations
-if (almanach.walls.validate)(MapObject::Wall, *coords, *imprint, &grids) == PlacementValidity::Invalid { return; }
+if (almanach.walls.validate)(MapObject::Wall, *area, &grids) == PlacementValidity::Invalid { return; }
 // Finally, perform the placement or removal in your domain
-commands.spawn(BuilderWall::new(*coords, *style));
+commands.spawn(BuilderWall::new(area.origin, *style));
 ```
 
 ### `BeginPlacing` / `StopPlacing`
@@ -72,6 +72,7 @@ Available overrides:
 ### `ObjectFaceRequest`
 
 The placer emits it when it needs to repaint the ghost. The domain must observe it if it wants to provide a custom ghost look. This is a generic repaint event; see `ObjectFaceRequest`.
+
 ### `GridPlacerChanged`
 
 Emitted whenever the state of the placer changes, including on a grid-cell change when following the mouse.
@@ -98,14 +99,14 @@ flowchart TB
 
 ```mermaid
 flowchart TB
-    cursor["Update placer GridCoords"] --> changed["GridPlacerChanged"] --> validate["Validator returns validity"] --> annotate["Annotator returns cell highlights"] --> pack["build_cell_data()"] --> overlay["Update validity overlay"]
+    cursor["Update placer GridArea"] --> changed["GridPlacerChanged"] --> validate["Validator returns validity"] --> annotate["Annotator returns cell highlights"] --> pack["build_cell_data()"] --> overlay["Update validity overlay"]
 ```
 
 **Imprint or style override**
 
 ```mermaid
 flowchart TB
-    override["On GridPlacerOverridePropertyRequest"] --> update["Set GridImprint or PlacementStyle"]
+    override["On GridPlacerOverridePropertyRequest"] --> update["Set GridArea imprint or PlacementStyle"]
     update --> ghost["Rebuild ghost via ObjectFaceRequest::ghost()"]
     update --> changed["GridPlacerChanged → update validity overlay as above"]
 ```

@@ -5,7 +5,7 @@ use bevy::{
 
 use game_core::prelude::{DisabledByPlayer, IsPowered, NeedsPower};
 use hud::prelude::*;
-use map_objects::prelude::{HasOreInScannerRange, NoOreInScannerRange};
+use map_objects::prelude::{DarkOreAreaScanner, HasOreInScannerRange};
 
 pub(crate) struct IndicatorsPlugin;
 impl Plugin for IndicatorsPlugin {
@@ -27,7 +27,7 @@ fn on_insert_indicator_type_configure(
     // `Has<Disabled>` lets the query match indicators, which start disabled.
     mut indicators: Query<(&IndicatorType, &mut IndicatorSpriteHandle, &IndicatorOf, Has<Disabled>)>,
     parents_with_no_power: Query<(), (With<NeedsPower>, Without<IsPowered>)>,
-    parents_with_no_ore: Query<(), With<NoOreInScannerRange>>,
+    parents_with_no_ore: Query<(), (With<DarkOreAreaScanner>, Without<HasOreInScannerRange>)>,
     parents_disabled_by_player: Query<(), With<DisabledByPlayer>>,
 ) {
     let entity = trigger.entity;
@@ -52,7 +52,7 @@ fn on_insert_indicator_type_configure(
         IndicatorType::OreDepleted => {
             commands.entity(parent)
                 .observe(hide_indicator_on::<Insert<HasOreInScannerRange>>(entity))
-                .observe(show_indicator_on::<Insert<NoOreInScannerRange>>(entity));
+                .observe(show_indicator_on::<Remove<HasOreInScannerRange>>(entity));
             if parents_with_no_ore.contains(parent) {
                 commands.entity(entity).remove::<Disabled>();
             }
@@ -108,11 +108,11 @@ fn cycle_indicators_system(
     for (mut display, mut sprite, mut visibility, child_of) in displays.iter_mut() {
         let Ok(indicators) = parents.get(child_of.parent()) else {
             // No active indicators, hide display
-            *visibility = Visibility::Hidden;
+            visibility.set_if_neq(Visibility::Hidden);
             continue;
         };
         let indicator_count: usize = indicators.entities().len();
-        *visibility = Visibility::Inherited;
+        visibility.set_if_neq(Visibility::Inherited);
 
         // Update cycle time
         display.cycle_time += time.delta_secs();
@@ -124,7 +124,7 @@ fn cycle_indicators_system(
         // Get active indicator and update sprite
         let Ok(sprite_handle) = sprite_handles.get(indicators.entities()[display.active_index]) else {
             // Indicator Disabled, cycle
-            *visibility = Visibility::Hidden;
+            visibility.set_if_neq(Visibility::Hidden);
             display.active_index = (display.active_index + 1) % indicator_count;
             continue;
         };

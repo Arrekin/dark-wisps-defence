@@ -7,7 +7,7 @@ use bevy::{
 };
 
 use almanach::prelude::Almanach;
-use game_core::prelude::{Bounds, BuildingType, CELL_SIZE, GridCoords, GridImprint, MapObject, ObjectFaceRequest, TowerType, ZDepth};
+use game_core::prelude::{Bounds, BuildingType, CELL_SIZE, GridArea, GridCoords, MapObject, ObjectFaceRequest, TowerType, ZDepth};
 use grids::placement::*;
 use states::prelude::UiInteraction;
 use viewport::MouseInfo;
@@ -49,8 +49,8 @@ struct GridPlacerUniform {
 }
 impl GridPlacerUniform {
     /// Updates the grid dimensions and clears all packed cell states.
-    fn reset_to_imprint(&mut self, imprint: GridImprint) {
-        self.bounds = Bounds::from(imprint).into();
+    fn reset_to_bounds(&mut self, bounds: Bounds) {
+        self.bounds = bounds.into();
         self.cell_data = UVec4::ZERO;
     }
     fn bounds_match(&self, bounds: Bounds) -> bool {
@@ -73,16 +73,14 @@ impl Material2d for GridPlacerMaterial {
     }
 }
 
-/// Packs the imprint shape and its annotations two bits per cell, up to 64 cells. The values are
+/// Packs the area's shape and its annotations two bits per cell, up to 64 cells. The values are
 /// the `CELL_*` constants in `assets/shaders/grids/grid_placer.wesl`.
-fn build_cell_data(imprint: GridImprint, origin: GridCoords, annotations: &[(GridCoords, CellHighlight)]) -> UVec4 {
-    let imprint_bounds = Bounds::from(imprint);
+fn build_cell_data(area: GridArea, annotations: &[(GridCoords, CellHighlight)]) -> UVec4 {
     let mut words = [0u32; 4];
-    for (cell_index, local_coords) in imprint_bounds.iter().enumerate() {
+    for (cell_index, cell_coords) in area.bounding_box().iter().enumerate() {
         if cell_index >= 64 { break; }
 
-        let cell_coords = origin.shifted(local_coords.into());
-        let state: u32 = if imprint.covers_coords(origin, cell_coords) {
+        let state: u32 = if area.contains(cell_coords) {
             match annotations.iter().find(|(coords, _)| *coords == cell_coords) {
                 Some((_, CellHighlight::Negative)) => 2,
                 Some((_, CellHighlight::Positive)) => 3,
@@ -104,11 +102,11 @@ fn build_cell_data(imprint: GridImprint, origin: GridCoords, annotations: &[(Gri
 fn follow_mouse_system(
     mut commands: Commands,
     mouse_info: Res<MouseInfo>,
-    placer: Single<(Entity, &GridCoords), With<GridObjectPlacer>>,
+    placer: Single<(Entity, &GridArea), With<GridObjectPlacer>>,
 ) {
-    let (placer_entity, placer_coords) = placer.into_inner();
-    if *placer_coords != mouse_info.grid_coords {
-        commands.entity(placer_entity).insert(mouse_info.grid_coords);
+    let (placer_entity, placer_area) = placer.into_inner();
+    if placer_area.origin != mouse_info.grid_coords {
+        commands.entity(placer_entity).insert(GridArea::new(mouse_info.grid_coords, placer_area.imprint));
         commands.trigger(GridPlacerChanged);
     }
 }
@@ -116,12 +114,12 @@ fn follow_mouse_system(
 fn on_grid_placer_override_property_request_do_so(
     trigger: On<GridPlacerOverridePropertyRequest>,
     mut commands: Commands,
-    placer: Single<(&mut GridImprint, &mut PlacementStyle), With<GridObjectPlacer>>,
+    placer: Single<(Entity, &GridArea, &mut PlacementStyle), With<GridObjectPlacer>>,
 ) {
-    let (mut grid_imprint, mut placement_style) = placer.into_inner();
+    let (placer_entity, placer_area, mut placement_style) = placer.into_inner();
     match *trigger.event() {
         GridPlacerOverridePropertyRequest::OverrideImprint(imprint) => {
-            *grid_imprint = imprint;
+            commands.entity(placer_entity).insert(GridArea::new(placer_area.origin, imprint));
         }
         GridPlacerOverridePropertyRequest::OverrideStyle(style) => {
             placement_style.0 = style;
@@ -143,16 +141,16 @@ struct PlacementGhostStale;
 fn on_placement_ghost_stale_respawn_ghost(
     _trigger: On<PlacementGhostStale>,
     mut commands: Commands,
-    placer: Single<(Entity, &GridObjectPlacer, &GridImprint, &PlacementStyle)>,
+    placer: Single<(Entity, &GridObjectPlacer, &GridArea, &PlacementStyle)>,
 ) {
-    let (placer_entity, grid_object_placer, grid_imprint, placement_style) = placer.into_inner();
+    let (placer_entity, grid_object_placer, placer_area, placement_style) = placer.into_inner();
     let mut placer_commands = commands.entity(placer_entity);
     placer_commands.despawn_children();
 
-    let Some(map_object) = grid_object_placer.map_object() else { return };
+    let Some(map_object) = grid_object_placer.map_object() else { return; };
     placer_commands.with_children(|placer| {
         placer
-            .spawn((ZDepth::GridPlacerGhost, *grid_imprint, *placement_style))
+            .spawn((ZDepth::GridPlacerGhost, placer_area.imprint, *placement_style))
             .trigger(|ghost| ObjectFaceRequest::ghost(ghost, map_object));
     });
 }
@@ -163,23 +161,23 @@ fn on_grid_placer_changed_revalidate_placement(
     mut materials: ResMut<Assets<GridPlacerMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
     grids: GridsCollectionParam,
-    placer: Single<(Entity, &GridObjectPlacer, &GridImprint, &GridCoords, &MeshMaterial2d<GridPlacerMaterial>)>,
+    placer: Single<(Entity, &GridObjectPlacer, &GridArea, &MeshMaterial2d<GridPlacerMaterial>)>,
 ) {
-    let (placer_entity, grid_object_placer, grid_imprint, grid_coords, material_handle) = placer.into_inner();
+    let (placer_entity, grid_object_placer, placer_area, material_handle) = placer.into_inner();
     let Some(active_placement) = &grid_object_placer.active_placement else { return; };
     let Some(mut material) = materials.get_mut(material_handle) else { return; };
 
-    let imprint_bounds = Bounds::from(*grid_imprint);
+    let imprint_bounds = Bounds::from(placer_area.imprint);
     if !material.uniform.bounds_match(imprint_bounds) {
-        commands.entity(placer_entity).insert(Mesh2d(meshes.add(Rectangle::from_size(grid_imprint.world_size()))));
-        material.uniform.reset_to_imprint(*grid_imprint);
+        commands.entity(placer_entity).insert(Mesh2d(meshes.add(Rectangle::from_size(placer_area.imprint.world_size()))));
+        material.uniform.reset_to_bounds(imprint_bounds);
     }
 
-    let validity = (active_placement.placement_info.validate)(active_placement.map_object, *grid_coords, *grid_imprint, &grids);
-    let annotations = (active_placement.placement_info.annotate)(active_placement.map_object, *grid_coords, *grid_imprint, validity, &grids);
+    let validity = (active_placement.placement_info.validate)(active_placement.map_object, *placer_area, &grids);
+    let annotations = (active_placement.placement_info.annotate)(active_placement.map_object, *placer_area, validity, &grids);
 
     material.uniform.validity = validity.shader_index();
-    material.uniform.cell_data = build_cell_data(*grid_imprint, *grid_coords, &annotations);
+    material.uniform.cell_data = build_cell_data(*placer_area, &annotations);
 }
 
 fn spawn_placer(
@@ -244,17 +242,17 @@ fn begin_placement(
     almanach: Res<Almanach>,
     mut placer_request: ResMut<GridObjectPlacerRequest>,
     mut ui_interaction_state: ResMut<NextState<UiInteraction>>,
-    placer: Single<(&mut GridObjectPlacer, &mut GridImprint, &mut PlacementStyle)>,
+    placer: Single<(Entity, &mut GridObjectPlacer, &GridArea, &mut PlacementStyle)>,
 ) {
     let Some(map_object) = placer_request.take() else { return; };
-    let (mut grid_object_placer, mut grid_imprint, mut placement_style) = placer.into_inner();
+    let (placer_entity, mut grid_object_placer, placer_area, mut placement_style) = placer.into_inner();
 
     if grid_object_placer.active_placement.is_some() {
         commands.trigger(StopPlacing);
     }
 
     let placement_info = almanach.get_placement_info_for(map_object);
-    *grid_imprint = placement_info.imprint;
+    commands.entity(placer_entity).insert(GridArea::new(placer_area.origin, placement_info.imprint));
     *placement_style = PlacementStyle::default();
 
     grid_object_placer.active_placement = Some(ActivePlacement { map_object, placement_info });
@@ -263,7 +261,7 @@ fn begin_placement(
     commands.trigger(BeginPlacing(map_object));
     commands.trigger(GridPlacerChanged);
 
-    (*ui_interaction_state).set_if_different(UiInteraction::PlaceGridObject);
+    ui_interaction_state.set_if_different(UiInteraction::PlaceGridObject);
 }
 
 fn handle_placement_click(
@@ -274,7 +272,7 @@ fn handle_placement_click(
 ) {
     if mouse_info.is_over_ui { return; }
 
-    let Some(ref active_placement) = placer.active_placement else { return };
+    let Some(active_placement) = &placer.active_placement else { return; };
     let map_object = active_placement.map_object;
 
     let should_place = match active_placement.placement_info.placement.place {

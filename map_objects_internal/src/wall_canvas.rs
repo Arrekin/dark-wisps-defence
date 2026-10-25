@@ -9,7 +9,7 @@ use bevy::{
     sprite_render::{AlphaMode2d, Material2d, Material2dPlugin, MeshMaterial2d},
 };
 
-use game_core::{prelude::{GridCoords, MapInfo, ZDepth}, request_flag::RequestFlag};
+use game_core::{prelude::{GridArea, MapInfo, ZDepth}, request_flag::RequestFlag};
 use map_objects::{prelude::Wall, wall_style::{WallCanvasDebug, WallStyleKey, WallStyles}};
 use states::prelude::MapLoadingStage;
 use visuals::{canvas::MapCanvasBundle, shared_gpu::{SharedGpuBinding, SharedGpuWriter}, specialize_with_shared_gpu};
@@ -101,14 +101,14 @@ fn upload_gpu_wall_style_cells(
     mut shared_gpu: SharedGpuWriter,
     mut upload_requested: ResMut<RequestFlag<WallStyleCellsGpuUpload>>,
     map_info: Res<MapInfo>,
-    walls: Query<(&GridCoords, &WallStyleKey), With<Wall>>,
+    walls: Query<(&GridArea, &WallStyleKey), With<Wall>>,
 ) {
     upload_requested.clear();
 
     let map_bounds = map_info.grid_bounds;
     let mut cells = vec![0u32; map_bounds.area()];
-    for (coords, key) in walls.iter() {
-        let Some(index) = map_bounds.index_checked(*coords) else { continue; };
+    for (area, key) in walls.iter() {
+        let Some(index) = map_bounds.index_checked(area.origin) else { continue; };
         cells[index] = key.shader_index();
     }
     shared_gpu.write(SharedGpuBinding::WallStyleCells, cells);

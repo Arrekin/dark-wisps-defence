@@ -16,7 +16,7 @@ use bevy::{
 use almanach::prelude::Almanach;
 use alteration::modifiers::prelude::ModifierType;
 use buildings::prelude::Tower;
-use game_core::prelude::{BuildingType, GridCoords, GridImprint, MapInfo, MapObject, ZDepth};
+use game_core::prelude::{BuildingType, GridArea, MapInfo, MapObject, ZDepth};
 use grids::{
     placement::{GridObjectPlacer, GridPlacerChanged},
     prelude::GridVersion,
@@ -92,15 +92,14 @@ impl TowersRangeOverlayConfig {
 /// Temporary override of what the overlay shows.
 /// - `None`: not active
 /// - `Highlight { tower }`: emphasizes the selected tower's range
-/// - `PlacingTower { .. }`: previews the range flood from the planned building footprint
+/// - `PlacingTower { .. }`: previews the range flood from the planned building area
 #[derive(Default, Clone, Debug, PartialEq)]
 pub enum TowersRangeOverlaySecondaryMode {
     #[default]
     None,
     Highlight { tower: Entity },
     PlacingTower {
-        grid_coords: GridCoords,
-        grid_imprint: GridImprint,
+        area: GridArea,
         range: usize,
     },
 }
@@ -180,16 +179,9 @@ fn refresh_display_system(
         TowersRangeOverlaySecondaryMode::Highlight { tower } => {
             overlay_creator.generate_buffer_data(&HighlightMode::Selected(HashSet::from([*tower])))
         }
-        TowersRangeOverlaySecondaryMode::PlacingTower {
-            grid_coords,
-            grid_imprint,
-            range,
-        } => {
-            if grid_coords.are_in_bounds(tower_ranges_grid.bounds) {
-                overlay_creator.flood_preview_to_overlay(
-                    grid_imprint.iter_in_bounds(*grid_coords, tower_ranges_grid.bounds),
-                    *range,
-                )
+        TowersRangeOverlaySecondaryMode::PlacingTower { area, range } => {
+            if area.iter_in_bounds(tower_ranges_grid.bounds).next().is_some() {
+                overlay_creator.flood_preview_to_overlay(*area, *range)
             } else {
                 overlay_creator.generate_buffer_data(&HighlightMode::None)
             }
@@ -201,15 +193,14 @@ fn on_grid_placer_changed_preview_placement(
     _trigger: On<GridPlacerChanged>,
     almanach: Res<Almanach>,
     mut overlay_config: ResMut<TowersRangeOverlayConfig>,
-    grid_object_placer: Single<(&GridObjectPlacer, &GridCoords)>,
+    grid_object_placer: Single<(&GridObjectPlacer, &GridArea)>,
 ) {
-    let (grid_object_placer, grid_coords) = grid_object_placer.into_inner();
+    let (grid_object_placer, placer_area) = grid_object_placer.into_inner();
     let map_object = grid_object_placer.map_object();
     if let Some(MapObject::Building(building_type @ BuildingType::Tower(_))) = map_object {
         let building_info = almanach.get_building_info(building_type);
         overlay_config.secondary_mode = TowersRangeOverlaySecondaryMode::PlacingTower {
-            grid_coords: *grid_coords,
-            grid_imprint: building_info.grid_imprint,
+            area: *placer_area,
             range: building_info.baseline[&ModifierType::AttackRange] as usize,
         };
     } else {
@@ -251,10 +242,10 @@ impl<'a> OverlayBufferCreator<'a> {
     fn generate_buffer_data(&mut self, highlight_mode: &HighlightMode) {
         let grid = self.grid;
         self.buffer.clear();
-        self.buffer.extend(grid.grid.iter().map(|set| Self::create_cell_for_grid_field(set, highlight_mode)));
+        self.buffer.extend(grid.grid.iter().map(|set| Self::create_cell_for_grid_cell(set, highlight_mode)));
     }
 
-    fn create_cell_for_grid_field(set: &HashSet<Entity>, highlight_mode: &HighlightMode) -> TowerRangeCell {
+    fn create_cell_for_grid_cell(set: &HashSet<Entity>, highlight_mode: &HighlightMode) -> TowerRangeCell {
         if set.is_empty() {
             return TowerRangeCell::default();
         }
@@ -276,7 +267,7 @@ impl<'a> OverlayBufferCreator<'a> {
     /// Only sets the `highlight` bit; leaves `signature` intact.
     fn flood_preview_to_overlay(
         &mut self,
-        start_coords: impl IntoIterator<Item = GridCoords>,
+        area: GridArea,
         range: usize,
     ) {
         // Start with base buffer data (all signatures, nothing highlighted)
@@ -289,7 +280,7 @@ impl<'a> OverlayBufferCreator<'a> {
             let mut queue = VecDeque::new();
 
             // Flood from every imprint cell, so the distance is even around buildings.
-            start_coords.into_iter().for_each(|coords| {
+            area.iter_in_bounds(grid_bounds).for_each(|coords| {
                 let index = self.grid.index(coords);
                 // Do not alter signature; set highlight flag
                 buffer_data[index].highlight = 1;

@@ -10,17 +10,17 @@ use persistence::{prelude::*, rusqlite};
 use resources::prelude::Stock;
 use states::AdminMode;
 
-pub(crate) fn building_validator(map_object: MapObject, origin: GridCoords, imprint: GridImprint, grids: &GridsCollectionParam) -> PlacementValidity {
+pub(crate) fn building_validator(map_object: MapObject, area: GridArea, grids: &GridsCollectionParam) -> PlacementValidity {
     let MapObject::Building(building_type) = map_object else {
         return PlacementValidity::Invalid;
     };
 
-    if validator_all_empty(map_object, origin, imprint, grids) == PlacementValidity::Invalid {
+    if validator_all_empty(map_object, area, grids) == PlacementValidity::Invalid {
         return PlacementValidity::Invalid;
     }
 
     let needs_power = !matches!(building_type, BuildingType::MainBase | BuildingType::EnergyRelay);
-    if needs_power && !grids.energy_supply_grid.is_imprint_powered(origin, imprint) {
+    if needs_power && !grids.energy_supply_grid.is_area_powered(area) {
         return PlacementValidity::ValidUnpowered;
     }
 
@@ -69,16 +69,10 @@ pub(crate) struct BuildingPlacementManager<'w, 's> {
     grids: GridsCollectionParam<'w>,
     stock: ResMut<'w, Stock>,
     admin_mode: Res<'w, State<AdminMode>>,
-    placer: Single<'w, 's, (&'static GridCoords, &'static GridImprint), With<GridObjectPlacer>>,
+    placer: Single<'w, 's, &'static GridArea, With<GridObjectPlacer>>,
 }
 
 impl<'w, 's> BuildingPlacementManager<'w, 's> {
-    /// Origin the placer currently sits on.
-    pub(crate) fn coords(&self) -> GridCoords { *self.placer.0 }
-
-    /// Footprint the placer currently shows. Respects `GridPlacerOverridePropertyRequest::OverrideImprint`.
-    pub(crate) fn imprint(&self) -> GridImprint { *self.placer.1 }
-
     /// Validate the site, charge the building's cost, reserve the cells.
     /// `None` means refused or unaffordable; nothing is charged in that case.
     ///
@@ -89,36 +83,36 @@ impl<'w, 's> BuildingPlacementManager<'w, 's> {
             return self.claim_free(building_type);
         }
 
-        let (coords, imprint) = (self.coords(), self.imprint());
+        let area = **self.placer;
         let building_info = self.almanach.get_building_info(building_type);
 
-        #[info_player("'{}' cannot be placed at {coords}", building_info.name)]
-        if !self.is_site_valid(building_type, coords, imprint) { return None; }
+        #[info_player("'{}' cannot be placed at {}", building_info.name, area.origin)]
+        if !self.is_site_valid(building_type, area) { return None; }
         #[info_player("Not enough resources")]
         if !self.stock.try_remove_all(&building_info.cost) { return None; }
 
-        #[info_player("'{}' placed at {coords}", building_info.name)]
-        self.grids.reserved_coords.reserve(coords, imprint);
-        Some(coords)
+        #[info_player("'{}' placed at {}", building_info.name, area.origin)]
+        self.grids.reserved_coords.reserve(area);
+        Some(area.origin)
     }
 
     /// Validate the site and reserve the cells, charging nothing.
     #[log_tags(Tag::Build)]
     pub(crate) fn claim_free(&mut self, building_type: BuildingType) -> Option<GridCoords> {
-        let (coords, imprint) = (self.coords(), self.imprint());
+        let area = **self.placer;
         let building_info = self.almanach.get_building_info(building_type);
 
-        #[info_player("'{}' cannot be placed at {coords}", building_info.name)]
-        if !self.is_site_valid(building_type, coords, imprint) { return None; }
+        #[info_player("'{}' cannot be placed at {}", building_info.name, area.origin)]
+        if !self.is_site_valid(building_type, area) { return None; }
 
-        #[info_player("'{}' placed at {coords}", building_info.name)]
-        self.grids.reserved_coords.reserve(coords, imprint);
-        Some(coords)
+        #[info_player("'{}' placed at {}", building_info.name, area.origin)]
+        self.grids.reserved_coords.reserve(area);
+        Some(area.origin)
     }
 
-    fn is_site_valid(&self, building_type: BuildingType, coords: GridCoords, imprint: GridImprint) -> bool {
+    fn is_site_valid(&self, building_type: BuildingType, area: GridArea) -> bool {
         let validate = self.almanach.get_building_info(building_type).validate;
-        validate(MapObject::Building(building_type), coords, imprint, &self.grids) != PlacementValidity::Invalid
+        validate(MapObject::Building(building_type), area, &self.grids) != PlacementValidity::Invalid
     }
 }
 

@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
 use alteration::modifiers::prelude::AttackDamage;
-use game_core::prelude::{ALL_DIRECTIONS, CELL_SIZE, DamageMessage, GridCoords, OptionalCommands, Property};
+use game_core::prelude::{CELL_SIZE, DamageMessage, GridArea, GridCoords, GridImprint, OptionalCommands, Property};
 use grids::wisps::WispsGrid;
 use logging::prelude::*;
 use persistence::{prelude::*, rusqlite};
@@ -25,6 +25,9 @@ impl Plugin for CannonballPlugin {
 }
 
 const CANNONBALL_BASE_IMAGE: &str = "projectiles/cannonball.png";
+
+// Blast area, in cells from the landing cell
+const BLAST_REACH: i32 = 1;
 
 #[log_tags(Tag::GameSave)]
 fn collect_cannonballs(
@@ -103,20 +106,13 @@ fn cannonball_hit_system(
     for (entity, lob, attack_damage) in cannonballs.iter() {
         if !lob.is_landed(clock.now()) { continue; }
 
-        let coords = GridCoords::from_world_vec2(lob.target());
-        for direction in ALL_DIRECTIONS.iter().chain(&[(0, 0)]) {
-            let blast_zone_coords = coords.shifted(*direction);
-            if !blast_zone_coords.are_in_bounds(wisps_grid.bounds) { continue; }
-
+        let blast_zone = GridArea::centered_on(GridCoords::from_world_position(lob.target()), GridImprint::square_of_reach(BLAST_REACH));
+        for blast_zone_coords in blast_zone.iter_in_bounds(wisps_grid.bounds) {
             commands.spawn(BuilderExplosion(blast_zone_coords));
 
-            let wisps_in_coords = &wisps_grid[blast_zone_coords];
-            for wisp in wisps_in_coords {
-                if !wisps.contains(*wisp) { continue; } // May not find wisp if the wisp spawned at the same frame.
-                damage_messages.write(DamageMessage {
-                    target: *wisp,
-                    amount: attack_damage.get(),
-                });
+            for wisp in &wisps_grid[blast_zone_coords] {
+                if !wisps.contains(*wisp) { continue; } // Grid entries may not yet be visible to the query.
+                damage_messages.write(DamageMessage { target: *wisp, amount: attack_damage.get() });
             }
         }
         commands.entity(entity).despawn();

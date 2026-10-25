@@ -227,6 +227,17 @@ pub struct BuildingInfo {
     pub placement: PlacementModes,
 }
 
+impl BuildingInfo {
+    /// The building's sprite, sized to its imprint.
+    pub fn world_sprite(&self) -> Sprite {
+        Sprite {
+            image: self.sprite.clone(),
+            custom_size: Some(self.grid_imprint.world_size()),
+            ..default()
+        }
+    }
+}
+
 impl From<&BuildingInfo> for ObjectPlacementInfo {
     fn from(info: &BuildingInfo) -> Self {
         Self {
@@ -318,7 +329,7 @@ impl From<&QuantumFieldInfo> for ObjectPlacementInfo {
 
 impl QuantumFieldInfo {
     pub fn default_imprint(&self) -> GridImprint {
-        GridImprint::Rectangle { width: self.default_size, height: self.default_size }
+        GridImprint::square(self.default_size)
     }
 }
 

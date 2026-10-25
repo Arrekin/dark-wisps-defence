@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use game_core::prelude::{MapBound, SSS, ZDepth};
+use game_core::{math::angle_difference, prelude::{MapBound, SSS, ZDepth}};
 
 // Movement tuning
 pub const PATROL_RADIUS: f32 = 150.0;
@@ -68,6 +68,10 @@ impl ExpeditionDrone {
             PATROL_RADIUS * waypoint_angle.cos(),
             PATROL_RADIUS * waypoint_angle.sin(),
         );
+    }
+    /// Turns toward `desired_heading` by at most `max_turn` radians.
+    pub fn turn_toward(&mut self, desired_heading: f32, max_turn: f32) {
+        self.heading += angle_difference(desired_heading, self.heading).clamp(-max_turn, max_turn);
     }
 }
 

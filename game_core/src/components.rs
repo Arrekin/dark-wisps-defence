@@ -1,8 +1,8 @@
 use bevy::prelude::*;
 
-use crate::grid::{GridCoords, GridImprint};
+use crate::grid::GridArea;
 
-// Component for entities that are bound to the map and shall be removed on its change
+/// Component for entities that are bound to the map and shall be removed on its change
 #[derive(Component, Default)]
 pub struct MapBound;
 
@@ -27,11 +27,10 @@ impl IntegrityPoints {
     pub fn new(max: f32) -> Self {
         Self { current: max, max }
     }
-    pub fn get_current(&self) -> f32 {
-        self.current
-    }
-    pub fn get_max(&self) -> f32 {
-        self.max
+    /// Sets the maximum and clamps the current points to it.
+    pub fn set_max(&mut self, max: f32) {
+        self.max = max;
+        self.current = self.current.min(max);
     }
     pub fn get_percent(&self) -> f32 {
         self.current / self.max
@@ -56,11 +55,11 @@ impl Default for IntegrityPoints {
 /// Entity uses power and should have its power state managed by the
 /// energy-supply systems. Plain marker — power state is read via `IsPowered`.
 #[derive(Component, Default)]
-#[require(GridCoords, GridImprint)]
+#[require(GridArea)]
 pub struct NeedsPower;
 
 /// Marker indicating the entity currently has power. Inserted/removed by
-/// energy-supply systems in `grids_internal`. Absence ⇒ no power.
+/// energy-supply systems in `game_core_internal`. Absence ⇒ no power.
 #[derive(Component, Default)]
 pub struct IsPowered;
 

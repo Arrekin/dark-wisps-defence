@@ -1,8 +1,9 @@
-use bevy::{platform::collections::HashSet, prelude::*};
 use std::marker::ConstParamTy;
 
+use bevy::{platform::collections::HashSet, prelude::*};
+
 use alteration::modifiers::prelude::EnergySupplyRange;
-use game_core::prelude::{GridCoords, GridImprint, IsPowered};
+use game_core::prelude::{GridArea, GridCoords, IsPowered};
 
 use crate::{GridVersion, base::BaseGrid};
 
@@ -20,8 +21,8 @@ use crate::{GridVersion, base::BaseGrid};
 // unpowered (orange on overlay).
 //
 // Two suppliers exchange power when their ranges **overlap** — i.e. they
-// share at least one cell on the grid. The suppliers' building imprints
-// (coords/shape) are irrelevant for connectivity; only their flooded ranges
+// share at least one cell on the grid. The suppliers' building areas
+// are irrelevant for connectivity; only their flooded ranges
 // matter. This means a relay does not need to be inside another relay's
 // range to connect — their ranges just need to touch.
 //
@@ -40,7 +41,7 @@ use crate::{GridVersion, base::BaseGrid};
 #[require(EnergySupplyRange)]
 pub struct SupplierEnergy;
 
-// Produces energy
+/// Produces energy
 #[derive(Component, Copy, Clone, Debug)]
 #[require(IsPowered)]
 pub struct GeneratorEnergy;
@@ -48,8 +49,7 @@ pub struct GeneratorEnergy;
 #[derive(Message)]
 pub struct SupplierChangedMessage {
     pub supplier: Entity,
-    pub imprint: GridImprint,
-    pub grid_coords: GridCoords,
+    pub area: GridArea,
     pub range: EnergySupplyRange,
     pub mode: SupplierChange,
 }
@@ -61,8 +61,7 @@ pub struct SupplierChangedMessage {
 /// `apply_supplier_changes` in grids_internal), so the message can never
 /// disagree with the entity. This also makes `Place` overwrite-idempotent —
 /// duplicate or reordered emissions converge on the entity's actual state.
-/// `Remove` must keep working after despawn, hence the message payload carries
-/// coords/imprint/range.
+/// `Remove` must keep working after despawn, hence the message payload carries area/range.
 #[derive(ConstParamTy, PartialEq, Eq, Copy, Clone, Debug)]
 pub enum SupplierChange {
     /// (Re)stamp the supplier's coverage over its range.
@@ -80,12 +79,12 @@ pub enum FloodEnergySupplyMode {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct EnergySupplyField {
+pub struct EnergySupplyCell {
     suppliers: HashSet<Entity>,
     disabled_suppliers: HashSet<Entity>,
     has_power: bool,
 }
-impl EnergySupplyField {
+impl EnergySupplyCell {
     pub fn has_supply(&self) -> bool { !self.suppliers.is_empty() }
     pub fn has_disabled_supply(&self) -> bool { !self.disabled_suppliers.is_empty() }
     pub fn add_supplier(&mut self, supplier: Entity) { self.suppliers.insert(supplier); }
@@ -99,19 +98,19 @@ impl EnergySupplyField {
     pub fn disabled_suppliers(&self) -> &HashSet<Entity> { &self.disabled_suppliers }
 }
 
-pub type EnergySupplyGrid = BaseGrid<EnergySupplyField, GridVersion>;
+pub type EnergySupplyGrid = BaseGrid<EnergySupplyCell, GridVersion>;
 
 impl EnergySupplyGrid {
     /// (Re)stamp the supplier on this cell, in the active or disabled set.
     /// Idempotent: always removes from both sets first, so repeated/stale
     /// placements converge on the requested state.
     pub fn place_supplier(&mut self, coords: GridCoords, supplier: Entity, as_disabled: bool) {
-        let field = &mut self[coords];
-        field.remove_from_both(supplier);
+        let cell = &mut self[coords];
+        cell.remove_from_both(supplier);
         if as_disabled {
-            field.add_disabled_supplier(supplier);
+            cell.add_disabled_supplier(supplier);
         } else {
-            field.add_supplier(supplier);
+            cell.add_supplier(supplier);
         }
         self.version = self.version.wrapping_add(1);
     }
@@ -119,16 +118,16 @@ impl EnergySupplyGrid {
         self[coords].remove_from_both(supplier);
         self.version = self.version.wrapping_add(1);
     }
-    /// At least one of the imprint's cells must have energy supply.
-    pub fn is_imprint_suppliable(&self, coords: GridCoords, imprint: GridImprint) -> bool {
-        imprint.iter_in_bounds(coords, self.bounds).any(|c| self[c].has_supply())
+    /// True if at least one in-bounds cell of the area has energy supply.
+    pub fn is_area_suppliable(&self, area: GridArea) -> bool {
+        area.iter_in_bounds(self.bounds).any(|cell| self[cell].has_supply())
     }
-    /// At least one of the imprint's cells must have power.
-    pub fn is_imprint_powered(&self, coords: GridCoords, imprint: GridImprint) -> bool {
-        imprint.iter_in_bounds(coords, self.bounds).any(|c| self[c].has_power())
+    /// True if at least one in-bounds cell of the area has power.
+    pub fn is_area_powered(&self, area: GridArea) -> bool {
+        area.iter_in_bounds(self.bounds).any(|cell| self[cell].has_power())
     }
     pub fn reset_all_power_indicators(&mut self) {
-        self.grid.iter_mut().for_each(|field| field.set_power(false));
+        self.grid.iter_mut().for_each(|cell| cell.set_power(false));
         self.version = self.version.wrapping_add(1);
     }
 }

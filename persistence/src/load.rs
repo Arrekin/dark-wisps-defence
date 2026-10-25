@@ -69,7 +69,7 @@ impl Plugin for MapLoadPlugin {
                 spawn_stage_loaders,
             )
             // `State<InGame>` is already removed here, so reactions guarded by `in_state(InGame)` skip the teardown.
-            .add_systems(OnExit(InGame),|mut commands: Commands| commands.despawn_all::<(With<MapBound>, Allow<Disabled>)>())
+            .add_systems(OnExit(InGame), |mut commands: Commands| commands.despawn_all::<(With<MapBound>, Allow<Disabled>)>())
             .add_systems(OnEnter(MapLoadingStage::Ready), on_map_load_ready)
             .add_systems(OnExit(GameState::Loading), finish_map_load)
             .add_systems(Update, (
@@ -238,15 +238,15 @@ impl LoadContext<'_> {
         self.query_row_cached("stats", "SELECT stat_value FROM stats WHERE stat_name = ?1", [stat_name], |row| row.get(0))
     }
 
-    pub fn grid_coords(&self, old_id: u32) -> LoadResult<GridCoords> {
-        self.query_row_cached("grid_coords", "SELECT x, y FROM grid_coords WHERE entity_id = ?1", [old_id], |row| Ok(GridCoords { x: row.get(0)?, y: row.get(1)? }))
-    }
-
     /// Loads the saved lifetime, or returns `None` if no `time_bounds` row exists.
     pub fn time_bound(&self, old_id: u32) -> LoadResult<Option<TimeBound>> {
         self.conn.prepare_cached("SELECT starts_at, ends_at FROM time_bounds WHERE entity_id = ?1")
             .and_then(|mut statement| statement.query_row([old_id], |row| Ok(TimeBound::new(row.get(0)?, row.get(1)?))).optional())
             .map_err(LoadError::table_read("time_bounds"))
+    }
+
+    pub fn grid_coords(&self, old_id: u32) -> LoadResult<GridCoords> {
+        self.query_row_cached("grid_coords", "SELECT x, y FROM grid_coords WHERE entity_id = ?1", [old_id], |row| Ok(GridCoords { x: row.get(0)?, y: row.get(1)? }))
     }
 
     pub fn grid_imprint(&self, old_id: u32) -> LoadResult<GridImprint> {
@@ -261,6 +261,11 @@ impl LoadContext<'_> {
             ("Plus", _) => Ok(GridImprint::Plus { extents: width }),
             _ => Err(LoadError::unknown_value("grid imprint", format!("{shape} width={width} height={height:?}"))),
         }
+    }
+
+    /// Loads the origin from `grid_coords` and the imprint from `grid_imprints`.
+    pub fn grid_area(&self, old_id: u32) -> LoadResult<GridArea> {
+        Ok(GridArea::new(self.grid_coords(old_id)?, self.grid_imprint(old_id)?))
     }
 
     /// Reads the one row `query` selects through the connection's statement cache, so
@@ -676,7 +681,7 @@ fn on_map_load_ready(
 ) {
     #[info_player("Game loaded")]
     next_game_state.set(load_config.game_start_state);
-    (*next_admin_mode).set_if_different(load_config.admin_mode);
+    next_admin_mode.set_if_different(load_config.admin_mode);
 }
 
 /// On leaving `Loading`, report the map and release the load config and runner.

@@ -52,7 +52,10 @@ use units::{
     prelude::*,
 };
 use viewport::{BuilderPreviewCamera, OwnedCameras};
-use widgets::prelude::{BuilderFillBar, FillAxis, FillBar, HoverBackground, Tooltips};
+use widgets::{
+    common::utils::set_text_if_changed,
+    prelude::{BuilderFillBar, FillAxis, FillBar, HoverBackground, Tooltips},
+};
 
 use crate::{
     common::*,
@@ -110,7 +113,7 @@ impl BuilderExplorationCenter {
             description: "Houses expedition drones and sends them out to scan objects of interest.".to_string(),
             sprite: asset_server.load("buildings/exploration_center.png"),
             top_sprite: None,
-            grid_imprint: GridImprint::Rectangle { width: 4, height: 4 },
+            grid_imprint: GridImprint::square(4),
             cost: vec![ResourceAmount::new(ResourceType::DarkOre, 500)],
             baseline: HashMap::from([(ModifierType::MaxIntegrityPoints, 100.)]),
             sockets: vec![],
@@ -142,7 +145,6 @@ impl BuilderExplorationCenter {
         let Ok(builder) = builders.get(entity) else { return; };
 
         let building_info = almanach.get_building_info(BuildingType::ExplorationCenter);
-        let grid_imprint = building_info.grid_imprint;
 
         commands.entity(entity)
             .remove::<BuilderExplorationCenter>()
@@ -150,13 +152,8 @@ impl BuilderExplorationCenter {
             .insert_some(builder.disabled_by_player)
             .insert((
                 ExplorationCenter::new(2),
-                Sprite {
-                    image: building_info.sprite.clone(),
-                    custom_size: Some(grid_imprint.world_size()),
-                    ..default()
-                },
-                builder.grid_position,
-                grid_imprint,
+                building_info.world_sprite(),
+                GridArea::new(builder.grid_position, building_info.grid_imprint),
                 NeedsPower,
                 related![Indicators[
                     IndicatorType::NoPower,
@@ -186,7 +183,7 @@ fn on_exploration_center_place_request_do_so(
 
 #[log_tags(Tag::GameSave)]
 fn collect_exploration_centers(
-    exploration_centers: Query<(Entity, &GridCoords, &IntegrityPoints, Has<DisabledByPlayer>), With<ExplorationCenter>>,
+    exploration_centers: Query<(Entity, &GridArea, &IntegrityPoints, Has<DisabledByPlayer>), With<ExplorationCenter>>,
     mut save: SaveWriter,
 ) {
     if exploration_centers.is_empty() { return; }
@@ -194,11 +191,11 @@ fn collect_exploration_centers(
     #[debug_dev("Saving {} exploration centers", rows.len())]
     let rows: Vec<(u32, GridCoords, f32, bool)> = exploration_centers
         .iter()
-        .map(|(entity, coords, integrity_points, disabled_by_player)| {
+        .map(|(entity, area, integrity_points, disabled_by_player)| {
             (
                 entity.index_u32(),
-                *coords,
-                integrity_points.get_current(),
+                area.origin,
+                integrity_points.current,
                 disabled_by_player,
             )
         })
@@ -240,6 +237,7 @@ const SLOT_GAP: f32 = 8.0;
 const ACTION_BUTTON_ACTIVE_BACKGROUND: Color = Color::srgba(0.2, 0.3, 0.5, 0.9);
 const ACTION_BUTTON_INACTIVE_BACKGROUND: Color = Color::srgba(0.2, 0.2, 0.2, 0.5);
 const ACTION_BUTTON_HOVER_BACKGROUND: Color = Color::srgba(0.3, 0.4, 0.6, 0.95);
+const ACTION_TEXT_INACTIVE_COLOR: Color = Color::srgba(0.6, 0.6, 0.6, 1.);
 
 /// Trigger to rebuild the drone slots UI
 #[derive(Event)]
@@ -552,7 +550,7 @@ impl BuilderDroneActionButton {
 
         let text_entity = commands.spawn((
             Text::new(text),
-            TextColor::from(if is_active { Color::WHITE } else { Color::srgba(0.6, 0.6, 0.6, 1.) }),
+            TextColor::from(if is_active { Color::WHITE } else { ACTION_TEXT_INACTIVE_COLOR }),
             TextFont::from_font_size(10.0),
         )).id();
 
@@ -605,8 +603,8 @@ impl DroneActionButton {
             }
 
             let Ok((mut button_text, mut color)) = texts.get_mut(button.text_entity) else { continue };
-            button_text.0 = text.to_string();
-            *color = TextColor::from(if is_active { Color::WHITE } else { Color::srgba(0.6, 0.6, 0.6, 1.) });
+            set_text_if_changed(&mut button_text, text);
+            color.set_if_neq(TextColor::from(if is_active { Color::WHITE } else { ACTION_TEXT_INACTIVE_COLOR }));
         }
     }
 
@@ -883,9 +881,9 @@ impl TargetSelectionPanel {
         trigger: On<Add<TargetSelectionPanel>>,
         mut commands: Commands,
         panels: Query<&TargetSelectionPanel>,
-        targets: Query<(Entity, &Name, &GridCoords, &GridImprint), With<ExpeditionZone>>,
+        targets: Query<(Entity, &Name, &GridArea), With<ExpeditionZone>>,
         drones: Query<(&HomeBase, &DroneFuel)>,
-        home_bases: Query<&Transform, With<ExplorationCenter>>,
+        home_bases: Query<&GridArea, With<ExplorationCenter>>,
     ) {
         let entity = trigger.entity;
         let Ok(panel) = panels.get(entity) else { return };
@@ -893,27 +891,19 @@ impl TargetSelectionPanel {
 
         // Get drone's home base position and fuel for distance calculations
         let Ok((home_base, drone_fuel)) = drones.get(drone_entity) else { return };
-        let Ok(home_transform) = home_bases.get(home_base.0) else { return };
-        let home_position = home_transform.translation.xy();
+        let Ok(home_area) = home_bases.get(home_base.0) else { return };
+        let home_position = home_area.world_center();
 
         // Build list of target items with fuel cost data, sorted by effectiveness
         let mut target_data: Vec<_> = targets.iter()
-            .map(|(target_entity, name, coords, imprint)| {
-                let target_position = coords.to_world_position_centered(*imprint);
-                let distance = (target_position - home_position).length();
-                let fuel_percent = drone_fuel.fuel_percent_for_distance(distance);
-                (target_entity, name.as_str().to_string(), *coords, fuel_percent)
+            .map(|(target_entity, name, area)| {
+                let distance = (area.world_center() - home_position).length();
+                (target_entity, name, area.origin, drone_fuel.fuel_percent_for_distance(distance))
             })
             .collect();
 
         // Sort by fuel percentage (most effective = lowest fuel cost first)
-        target_data.sort_by(|a, b| a.3.total_cmp(&b.3));
-
-        let target_items: Vec<_> = target_data.iter()
-            .map(|(target_entity, name, coords, fuel_percent)| {
-                TargetListItem::new(drone_entity, *target_entity, name, *coords, *fuel_percent)
-            })
-            .collect();
+        target_data.sort_by(|(.., fuel_percent), (.., other_fuel_percent)| fuel_percent.total_cmp(other_fuel_percent));
 
         commands.entity(entity).insert((
             Node {
@@ -924,7 +914,7 @@ impl TargetSelectionPanel {
                 // Use negative margin to offset by half size for true centering
                 margin: UiRect {
                     left: Val::Px(-150.), // half of 300px width
-                    top: Val::Px(-200.),  // half of 400px max height
+                    top: Val::Px(-200.),  // half of a 400px height
                     ..default()
                 },
                 width: Val::Px(300.),
@@ -959,15 +949,15 @@ impl TargetSelectionPanel {
         commands.entity(entity).add_child(scroll_container);
 
         // Add target items or "no targets" message
-        if target_items.is_empty() {
+        if target_data.is_empty() {
             commands.entity(scroll_container).with_child((
                 Text::new("No valid targets"),
                 TextColor::from(Color::srgba(0.6, 0.6, 0.6, 1.)),
                 TextFont::from_font_size(12.0),
             ));
         } else {
-            for item in target_items {
-                commands.entity(scroll_container).with_child(item);
+            for (target_entity, name, coords, fuel_percent) in target_data {
+                commands.entity(scroll_container).with_child(TargetListItem::new(drone_entity, target_entity, name.as_str(), coords, fuel_percent));
             }
         }
 
@@ -1181,17 +1171,16 @@ impl TargetListItemCameraPreview {
         trigger: On<Add<TargetListItemCameraPreview>>,
         mut commands: Commands,
         previews: Query<&TargetListItemCameraPreview>,
-        targets: Query<(&GridCoords, &GridImprint)>,
+        targets: Query<&GridArea>,
     ) {
         let entity = trigger.entity;
         let Ok(preview) = previews.get(entity) else { return };
-        let Ok((coords, imprint)) = targets.get(preview.target_entity) else { return };
+        let Ok(area) = targets.get(preview.target_entity) else { return };
 
         // Add camera preview centered on the target
-        let world_position = coords.to_world_position_centered(*imprint);
         let camera = commands.spawn(BuilderPreviewCamera::new(
             entity,
-            world_position,
+            area.world_center(),
             3., // Zoom level
         )).id();
 

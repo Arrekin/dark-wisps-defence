@@ -18,7 +18,7 @@ import package::shaders::wisps::motion_look::WispMotionLook;
 // a texture.
 
 // Mesh padding factor. Mirrors `WispFireVisual::QUAD_SCALE` in wisps_internal/src/looks.rs:
-// the mesh is built this many times the grid footprint and we scale UV by it, so the
+// the mesh is built this many times the grid imprint and we scale UV by it, so the
 // flame licks have room to reach beyond the cell while the orb keeps its on-screen size.
 const QUAD_SCALE: f32 = 2.5;
 

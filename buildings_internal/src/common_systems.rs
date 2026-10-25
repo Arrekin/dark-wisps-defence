@@ -59,14 +59,14 @@ fn on_remove_is_operational_reset_shooting_timer(
 fn targeting_system(
     obstacle_grid: Res<ObstacleGrid>,
     wisps_grid: Res<WispsGrid>,
-    mut towers: Query<(&GridCoords, &GridImprint, &AttackRange, &mut TowerWispTarget), (With<Tower>, With<IsOperational>)>,
-    wisps: Query<&GridCoords, With<Wisp>>,
+    mut towers: Query<(&GridArea, &AttackRange, &mut TowerWispTarget), (With<Tower>, With<IsOperational>)>,
+    wisps: Query<&GridArea, With<Wisp>>,
 ) {
-    for (coords, grid_imprint, range, mut target) in towers.iter_mut() {
+    for (area, range, mut target) in towers.iter_mut() {
         match *target {
             TowerWispTarget::Wisp(wisp_entity) => {
-                if let Ok(wisp_coords) = wisps.get(wisp_entity)
-                    && grid_imprint.distance_to(*coords, *wisp_coords) <= range.get() as i32 { continue; }
+                if let Ok(wisp_area) = wisps.get(wisp_entity)
+                    && area.distance_to(wisp_area.origin) <= range.get() as i32 { continue; }
             }
             TowerWispTarget::NoValidTargets(grid_version) => {
                 if grid_version == wisps_grid.version {
@@ -79,7 +79,7 @@ fn targeting_system(
         *target = match target_find_closest_wisp(
             &obstacle_grid,
             &wisps_grid,
-            grid_imprint.iter(*coords),
+            area.iter(),
             range.get() as usize,
             true,
         ) {
@@ -139,14 +139,12 @@ fn on_building_destroy_request_do_so(
     trigger: On<BuildingDestroyRequest>,
     mut commands: Commands,
     almanach: Res<Almanach>,
-    buildings: Query<(&GridImprint, &GridCoords, &BuildingType), With<Building>>,
+    buildings: Query<(&GridArea, &BuildingType), With<Building>>,
 ) {
     let building_to_destroy = trigger.0;
-    let Ok((grid_imprint, grid_coords, building_type)) = buildings.get(building_to_destroy) else { return; };
+    let Ok((area, building_type)) = buildings.get(building_to_destroy) else { return; };
 
-    #[info_player("'{}' destroyed at {grid_coords}", almanach.get_building_info(*building_type).name)]
+    #[info_player("'{}' destroyed at {}", almanach.get_building_info(*building_type).name, area.origin)]
     commands.entity(building_to_destroy).despawn();
-    grid_imprint.iter(*grid_coords).for_each(|coords| {
-        commands.spawn(BuilderExplosion(coords));
-    });
+    commands.spawn_batch(area.iter().map(BuilderExplosion));
 }

@@ -9,14 +9,14 @@
 
 use bevy::prelude::*;
 
-use game_core::prelude::{GridCoords, GridImprint, MapBound};
+use game_core::prelude::{GridArea, GridCoords, MapBound};
 
 use crate::{GridVersion, base::BaseGrid};
 
-/// Ground cover on the cells defined by the entity's `GridCoords` and `GridImprint`.
+/// Ground cover on the cells defined by the entity's `GridArea`.
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 #[component(immutable)]
-#[require(GridCoords, GridImprint, MapBound)]
+#[require(GridArea, MapBound)]
 pub struct GroundCover(pub GroundCoverKind);
 
 /// Kinds of ground cover, in drawing order, bottom first. Mirrored by `GROUND_COVER_*` in
@@ -38,17 +38,17 @@ pub struct GroundCoverEntry {
 pub type GroundCoverGrid = BaseGrid<Vec<GroundCoverEntry>, GridVersion>;
 
 impl GroundCoverGrid {
-    /// Adds `entry` to every in-bounds cell of the imprint.
-    pub fn imprint(&mut self, coords: GridCoords, imprint: GridImprint, entry: GroundCoverEntry) {
-        for cell in imprint.iter_in_bounds(coords, self.bounds) {
+    /// Adds `entry` to every in-bounds cell of the area.
+    pub fn imprint(&mut self, area: GridArea, entry: GroundCoverEntry) {
+        for cell in area.iter_in_bounds(self.bounds) {
             self[cell].push(entry);
         }
         self.version = self.version.wrapping_add(1);
     }
 
-    /// Removes `entity` from every in-bounds cell of the imprint without preserving entry order.
-    pub fn deprint(&mut self, coords: GridCoords, imprint: GridImprint, entity: Entity) {
-        for cell in imprint.iter_in_bounds(coords, self.bounds) {
+    /// Removes `entity` from every in-bounds cell of the area without preserving entry order.
+    pub fn deprint(&mut self, area: GridArea, entity: Entity) {
+        for cell in area.iter_in_bounds(self.bounds) {
             let Some(position) = self[cell].iter().position(|entry| entry.entity == entity) else { continue; };
             self[cell].swap_remove(position);
         }
@@ -57,7 +57,6 @@ impl GroundCoverGrid {
 
     /// The entries on a cell. Empty outside the map.
     pub fn entries_at(&self, coords: GridCoords) -> &[GroundCoverEntry] {
-        if !coords.are_in_bounds(self.bounds) { return &[]; }
-        &self[coords]
+        self.get(coords).map_or(&[], Vec::as_slice)
     }
 }

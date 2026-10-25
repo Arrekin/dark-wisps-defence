@@ -1,9 +1,11 @@
 use bevy::{ecs::query::QueryData, prelude::*};
 
-use alteration::effects::prelude::EffectVisualState;
-use alteration::modifiers::prelude::{AttackRange, IncomingDamageMultiplier, MaxIntegrityPoints, ModifierBank, MovementSpeed};
+use alteration::{
+    effects::prelude::EffectVisualState,
+    modifiers::prelude::{AttackRange, IncomingDamageMultiplier, MaxIntegrityPoints, ModifierBank, MovementSpeed},
+};
 use fields::prelude::FieldAffectable;
-use game_core::{motion::Locomotion, prelude::{GridCoords, GridImprint, MapBound}};
+use game_core::{motion::Locomotion, prelude::{GridArea, GridCoords, GridImprint, MapBound}};
 use grids::prelude::{GridPath, GridVersion};
 
 pub mod summoning;
@@ -21,7 +23,7 @@ pub struct WispElectricType;
 #[require(
     WispState, WispChargeAttack, GridPath, ModifierBank, MapBound,
     MovementSpeed, AttackRange, MaxIntegrityPoints, IncomingDamageMultiplier,
-    FieldAffectable, EffectVisualState, Locomotion, GridImprint = WISP_GRID_IMPRINT
+    FieldAffectable, EffectVisualState, Locomotion, GridArea
 )]
 pub struct Wisp;
 
@@ -42,22 +44,23 @@ pub enum WispChargeAttack {
     Backoff,
 }
 
-pub const WISP_GRID_IMPRINT: GridImprint = GridImprint::Rectangle { width: 1, height: 1 };
+pub const WISP_GRID_IMPRINT: GridImprint = GridImprint::square(1);
 
 /// Wisp path and current cell, used to predict its next position.
 #[derive(QueryData)]
 pub struct WispHeading {
     grid_path: &'static GridPath,
-    grid_coords: &'static GridCoords,
+    /// Read for its origin, the wisp's current cell.
+    area: &'static GridArea,
 }
 impl WispHeadingItem<'_, '_> {
     /// The next path cell, or the current cell if no next step exists.
     pub fn next_cell(&self) -> GridCoords {
-        self.grid_path.next_in_path().unwrap_or(*self.grid_coords)
+        self.grid_path.next_in_path().unwrap_or(self.area.origin)
     }
     /// World-space center of [`Self::next_cell`].
     pub fn next_cell_center(&self) -> Vec2 {
-        self.next_cell().to_world_position_centered(WISP_GRID_IMPRINT)
+        GridArea::cell(self.next_cell()).world_center()
     }
 }
 

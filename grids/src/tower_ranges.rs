@@ -4,6 +4,12 @@ use game_core::prelude::GridCoords;
 
 use crate::{GridVersion, base::BaseGrid};
 
+#[derive(Copy, Clone, Debug)]
+pub enum FloodTowerRangeMode {
+    Add,
+    Remove,
+}
+
 pub type TowerRangesGrid = BaseGrid<HashSet<Entity>, GridVersion>;
 impl TowerRangesGrid {
     pub fn add_tower(&mut self, coords: GridCoords, tower: Entity) {

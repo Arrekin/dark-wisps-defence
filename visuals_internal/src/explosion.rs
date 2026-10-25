@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use game_core::prelude::{GridImprint, MapBound, ZDepth};
+use game_core::prelude::{GridArea, MapBound, ZDepth};
 use visuals::prelude::BuilderExplosion;
 
 use crate::sprite_animation::AnimationController;
@@ -54,6 +54,7 @@ fn on_builder_add_spawn_explosion(
     let entity = trigger.entity;
     let Ok(builder) = builders.get(entity) else { return; };
 
+    let cell = GridArea::cell(builder.0);
     commands.entity(entity)
         .remove::<BuilderExplosion>()
         .insert((
@@ -64,13 +65,10 @@ fn on_builder_add_spawn_explosion(
                     index: 0,
                     ..default()
                 }),
-                custom_size: Some(GridImprint::default().world_size()),
+                custom_size: Some(cell.imprint.world_size()),
                 ..default()
             },
-            Transform {
-                translation: builder.0.to_world_position_centered(GridImprint::Rectangle { width: 1, height: 1 }).extend(0.),
-                ..default()
-            },
+            Transform::from_translation(cell.world_center().extend(0.)),
             AnimationController::new(0, 3, 0.1, false),
             Explosion,
         ));

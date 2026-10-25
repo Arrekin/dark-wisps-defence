@@ -61,7 +61,7 @@ impl BuilderTowerInferno {
             description: "Hoards heat and releases it all at once over everything close by.".to_string(),
             sprite: asset_server.load("buildings/tower_emitter.png"),
             top_sprite: None,
-            grid_imprint: GridImprint::Rectangle { width: 2, height: 2 },
+            grid_imprint: GridImprint::square(2),
             cost: vec![ResourceAmount::new(ResourceType::DarkOre, 450)],
             baseline: HashMap::from([
                 (ModifierType::MaxIntegrityPoints, 100.),
@@ -104,7 +104,7 @@ impl BuilderTowerInferno {
         let Ok(builder) = builders.get(entity) else { return; };
 
         let building_info = almanach.get_building_info(BuildingType::Tower(TowerType::Inferno));
-        let grid_imprint = building_info.grid_imprint;
+        let world_size = building_info.grid_imprint.world_size();
 
         commands.entity(entity)
             .remove::<BuilderTowerInferno>()
@@ -113,13 +113,8 @@ impl BuilderTowerInferno {
             .insert_some(builder.shooting_timer.clone())
             .insert((
                 TowerInferno,
-                Sprite {
-                    image: building_info.sprite.clone(),
-                    custom_size: Some(grid_imprint.world_size()),
-                    ..default()
-                },
-                builder.grid_position,
-                grid_imprint,
+                building_info.world_sprite(),
+                GridArea::new(builder.grid_position, building_info.grid_imprint),
                 NeedsPower,
                 related![Indicators[
                     IndicatorType::NoPower,
@@ -130,7 +125,7 @@ impl BuilderTowerInferno {
                 ]],
                 children![
                     IndicatorDisplay::default(),
-                    (InfernoCore::default(), Transform::from_scale(grid_imprint.world_size().extend(1.))),
+                    (InfernoCore::default(), Transform::from_scale(world_size.extend(1.))),
                     InfernoEmberRing::default(),
                     InfernoHaze::default(),
                 ],
@@ -155,7 +150,7 @@ fn on_tower_inferno_place_request_do_so(
 
 #[log_tags(Tag::GameSave)]
 fn collect_tower_infernos(
-    towers: Query<(Entity, &GridCoords, &IntegrityPoints, Has<DisabledByPlayer>, &TowerShootingTimer), With<TowerInferno>>,
+    towers: Query<(Entity, &GridArea, &IntegrityPoints, Has<DisabledByPlayer>, &TowerShootingTimer), With<TowerInferno>>,
     mut save: SaveWriter,
 ) {
     if towers.is_empty() { return; }
@@ -163,11 +158,11 @@ fn collect_tower_infernos(
     #[debug_dev("Saving {} infernos", rows.len())]
     let rows: Vec<(u32, GridCoords, f32, bool, f32)> = towers
         .iter()
-        .map(|(entity, coords, integrity_points, disabled_by_player, shooting_timer)| {
+        .map(|(entity, area, integrity_points, disabled_by_player, shooting_timer)| {
             (
                 entity.index_u32(),
-                *coords,
-                integrity_points.get_current(),
+                area.origin,
+                integrity_points.current,
                 disabled_by_player,
                 shooting_timer.0.elapsed_secs(),
             )
