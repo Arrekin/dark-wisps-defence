@@ -5,6 +5,7 @@ pub(crate) mod map_ground;
 pub(crate) mod render_schedule;
 pub(crate) mod shared_gpu;
 pub(crate) mod sprite_animation;
+pub(crate) mod void_sea;
 pub(crate) mod wisp_attack;
 
 use bevy::prelude::*;
@@ -22,6 +23,7 @@ impl Plugin for VisualsPlugin {
                 shared_gpu::SharedGpuPlugin,
                 explosion::ExplosionPlugin,
                 map_ground::MapGroundPlugin,
+                void_sea::VoidSeaPlugin,
                 wisp_attack::WispAttackEffectPlugin,
             ))
             .add_systems(Startup, |mut meshes: ResMut<Assets<Mesh>>| { meshes.insert(&UNIT_QUAD, Rectangle::new(1., 1.).into()).expect("a uuid mesh id is always valid"); })

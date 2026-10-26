@@ -12,7 +12,10 @@ use bevy::{
     picking::{PickingSystems, hover::PickingInteraction},
     post_process::bloom::{Bloom, BloomCompositeMode, BloomPrefilter},
     prelude::*,
-    render::render_resource::{TextureDimension, TextureFormat, TextureUsages},
+    render::{
+        render_resource::{TextureDimension, TextureFormat, TextureUsages},
+        view::DebandDither,
+    },
     ui::ComputedNode,
     window::PrimaryWindow,
 };
@@ -56,6 +59,8 @@ fn spawn_main_camera(mut commands: Commands) {
             intensity: 0.1,
             ..Bloom::OLD_SCHOOL
         },
+        // Breaks up banding in dark gradients when the HDR image is written to the 8-bit output.
+        DebandDither::Enabled,
         MainCamera,
         // Pin egui's primary context to the main window camera. Requires
         // `EguiGlobalSettings::auto_create_primary_context = false` (set in EditorPlugin).
@@ -208,6 +213,7 @@ impl BuilderPreviewCamera {
                     ..default()
                 },
                 RenderTarget::Image(image_handle.into()),
+                DebandDither::Enabled,
                 Projection::Orthographic(OrthographicProjection {
                     scale: builder.scale,
                     ..OrthographicProjection::default_2d()

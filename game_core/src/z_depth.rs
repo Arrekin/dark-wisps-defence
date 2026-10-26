@@ -68,6 +68,10 @@ pub enum ZDepth {
     // Keep the placement ghost above the map and its validity overlay above the ghost.
     GridPlacerGhost,
     GridPlacer,
+    // The sea's shadow falls on everything in the world beneath it.
+    VoidSeaShadow,
+    // The world lies inside the sea, so nothing in it draws over the sea.
+    VoidSea,
 }
 impl ZDepth {
     /// Lowest world z of this layer. The first layer starts at 1.0, above the default z of 0.0.
@@ -113,7 +117,9 @@ impl ZDepth {
             | Self::Projectile
             | Self::FireballBody => Band::Air,
             Self::GridPlacerGhost
-            | Self::GridPlacer => Band::Placement,
+            | Self::GridPlacer
+            | Self::VoidSeaShadow
+            | Self::VoidSea => Band::Placement,
         }
     }
 

@@ -1,5 +1,4 @@
-//! Draws a floor beneath the map. Its darker colour distinguishes the map from the surrounding
-//! clear colour.
+//! Draws a floor beneath the map.
 
 use bevy::prelude::*;
 

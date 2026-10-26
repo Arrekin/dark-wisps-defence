@@ -9,3 +9,6 @@ const MAP_SUN_DIRECTION: vec3<f32> = vec3<f32>(-0.2124, 0.4248, 0.8800);
 
 // Unit half-vector between the fixed top-down eye and `MAP_SUN_DIRECTION`.
 const MAP_SUN_HALF_VECTOR: vec3<f32> = vec3<f32>(-0.1095, 0.2191, 0.9695);
+
+// Tangent of the sun's elevation above the ground plane, from `MAP_SUN_DIRECTION`.
+const MAP_SUN_ELEVATION_TANGENT: f32 = 1.8529;

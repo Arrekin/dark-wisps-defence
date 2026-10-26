@@ -17,6 +17,12 @@ pub const ADDITIVE_BLENDING: BlendState = BlendState {
     alpha: BlendComponent { src_factor: BlendFactor::Zero, dst_factor: BlendFactor::One, operation: BlendOperation::Add },
 };
 
+/// Darkens what lies beneath by the source alpha and leaves its alpha alone.
+pub const SHADOW_BLENDING: BlendState = BlendState {
+    color: BlendComponent { src_factor: BlendFactor::Zero, dst_factor: BlendFactor::OneMinusSrcAlpha, operation: BlendOperation::Add },
+    alpha: BlendComponent { src_factor: BlendFactor::Zero, dst_factor: BlendFactor::One, operation: BlendOperation::Add },
+};
+
 /// Sets how every color target of a material's pipeline blends; called from `Material2d::specialize`.
 pub fn set_blend(descriptor: &mut RenderPipelineDescriptor, blend: BlendState) {
     for target in descriptor.fragment.iter_mut().flat_map(|fragment| fragment.targets.iter_mut()).flatten() {
