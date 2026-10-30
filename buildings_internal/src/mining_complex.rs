@@ -94,6 +94,7 @@ impl BuilderMiningComplex {
             sprite: asset_server.load("buildings/mining_complex.png"),
             top_sprite: None,
             grid_imprint: GridImprint::square(3),
+            attack_range: None,
             cost: vec![ResourceAmount::new(ResourceType::DarkOre, 100)],
             baseline: HashMap::from([(ModifierType::MaxIntegrityPoints, 100.)]),
             sockets: vec![],

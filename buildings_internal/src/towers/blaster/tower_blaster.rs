@@ -60,17 +60,18 @@ impl BuilderTowerBlaster {
             sprite: asset_server.load("buildings/tower_blaster.png"),
             top_sprite: Some(asset_server.load("buildings/tower_blaster_top.png")),
             grid_imprint: GridImprint::square(2),
+            attack_range: AttackRangeType(RangeType::Cells).into(),
             cost: vec![ResourceAmount::new(ResourceType::DarkOre, 150)],
             baseline: HashMap::from([
                 (ModifierType::MaxIntegrityPoints, 100.),
-                (ModifierType::AttackRange, 15.),
+                (ModifierType::MaxAttackRange, 15.),
                 (ModifierType::AttackSpeed, 5.),
                 (ModifierType::AttackDamage, 1.),
                 (ModifierType::TurnSpeed, 10.),
             ]),
             sockets: vec![
                 ("attack_speed".into(), ShardSocket::new(ShardType::Speed, "Attack speed", ModifierType::AttackSpeed, [1., 2., 3.])),
-                ("attack_range".into(), ShardSocket::new(ShardType::Reach, "Attack range", ModifierType::AttackRange, [2., 4., 6.])),
+                ("attack_range".into(), ShardSocket::new(ShardType::Reach, "Attack range", ModifierType::MaxAttackRange, [2., 4., 6.])),
                 ("damage".into(), ShardSocket::new(ShardType::Strength, "Damage", ModifierType::AttackDamage, [2., 4., 6.])),
             ],
             validate: building_validator,
@@ -114,6 +115,7 @@ impl BuilderTowerBlaster {
 
         commands.entity(entity)
             .remove::<BuilderTowerBlaster>()
+            .insert_some(building_info.attack_range)
             .insert_some(builder.integrity_points)
             .insert_some(builder.disabled_by_player)
             .insert_some(builder.shooting_timer.clone())

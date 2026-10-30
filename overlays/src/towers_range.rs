@@ -1,12 +1,15 @@
-use std::collections::VecDeque;
+//! # Tower Range Overlay
+//!
+//! Uploads cell coverage and circular boundaries from [`TowerRangeIndex`] for the range shader.
+//! Index versions control buffer refreshes. A separate uniform describes the selected tower or
+//! placement preview, so changing the highlight does not require rebuilding the coverage buffers.
 
 use bevy::{
     input::common_conditions::input_just_released,
-    platform::collections::HashSet,
     prelude::*,
     reflect::TypePath,
     render::{
-        render_resource::AsBindGroup,
+        render_resource::{AsBindGroup, ShaderType},
         storage::ShaderBuffer,
     },
     shader::ShaderRef,
@@ -14,14 +17,13 @@ use bevy::{
 };
 
 use almanach::prelude::Almanach;
-use alteration::modifiers::prelude::ModifierType;
+use alteration::modifiers::prelude::{AttackRangeType, ModifierType};
 use buildings::prelude::Tower;
-use game_core::prelude::{BuildingType, GridArea, MapInfo, MapObject, ZDepth};
+use game_core::prelude::{AreaRange, CELL_SIZE, GridArea, GridCoords, GridImprint, MapInfo, MapObject, RangeType, ZDepth};
 use grids::{
     placement::{GridObjectPlacer, GridPlacerChanged},
     prelude::GridVersion,
-    search::common::VISITED_GRID,
-    tower_ranges::TowerRangesGrid,
+    tower_ranges::TowerRangeIndex,
 };
 use hud::prelude::FocusedMapObject;
 use states::prelude::{MapLoadingStage, UiInteraction};
@@ -49,6 +51,10 @@ impl Plugin for TowersRangeOverlayPlugin {
     }
 }
 
+/// Outline width in cells, used as the margin when finding circle edges.
+/// Must match `OUTLINE_RATIO` in `assets/shaders/overlays/towers_ranges_map.wesl`.
+const OUTLINE_RATIO: f32 = 2.0 / 16.0;
+
 #[derive(States, Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub enum TowersRangeOverlayState {
     #[default]
@@ -75,11 +81,7 @@ impl TowersRangeOverlayConfig {
         towers: Query<(), With<Tower>>,
     ) {
         let focused_entity = trigger.entity;
-        if towers.contains(focused_entity) {
-            overlay_config.secondary_mode = TowersRangeOverlaySecondaryMode::Highlight { tower: focused_entity };
-        } else {
-            overlay_config.secondary_mode = TowersRangeOverlaySecondaryMode::None;
-        }
+        overlay_config.secondary_mode = if towers.contains(focused_entity) { TowersRangeOverlaySecondaryMode::Highlight { tower: focused_entity } } else { TowersRangeOverlaySecondaryMode::None };
     }
     fn on_remove_focused_map_object_clear_highlight(
         _trigger: On<Remove<FocusedMapObject>>,
@@ -89,19 +91,15 @@ impl TowersRangeOverlayConfig {
     }
 }
 
-/// Temporary override of what the overlay shows.
-/// - `None`: not active
-/// - `Highlight { tower }`: emphasizes the selected tower's range
-/// - `PlacingTower { .. }`: previews the range flood from the planned building area
+/// Highlight shown while a tower is selected or being placed.
 #[derive(Default, Clone, Debug, PartialEq)]
 pub enum TowersRangeOverlaySecondaryMode {
     #[default]
     None,
+    /// Highlights the selected tower's indexed range.
     Highlight { tower: Entity },
-    PlacingTower {
-        area: GridArea,
-        range: usize,
-    },
+    /// Previews the planned tower's range.
+    PlacingTower { range: AreaRange },
 }
 impl TowersRangeOverlaySecondaryMode {
     pub fn is_none(&self) -> bool {
@@ -113,6 +111,14 @@ impl TowersRangeOverlaySecondaryMode {
 struct TowersRangeMaterial {
     #[storage(0, read_only)]
     pub cells: Handle<ShaderBuffer>,
+    /// Circle data keyed by tower range slot.
+    #[storage(1, read_only)]
+    pub circles: Handle<ShaderBuffer>,
+    /// Circle slot indexes grouped by cell, addressed by each cell's start offset and count.
+    #[storage(2, read_only)]
+    pub circle_indexes: Handle<ShaderBuffer>,
+    #[uniform(3)]
+    pub highlight: TowerRangeHighlight,
 }
 impl Material2d for TowersRangeMaterial {
     fn fragment_shader() -> ShaderRef {
@@ -129,15 +135,64 @@ impl Material2d for TowersRangeMaterial {
 #[derive(Component, Default)]
 #[require(ZDepth::OverlayTowerRanges)]
 pub struct TowersRangeOverlay {
-    /// Grid version and mode used for the last refresh; `None` before the first refresh.
-    shown: Option<(GridVersion, TowersRangeOverlaySecondaryMode)>,
+    /// Index version used to populate the buffers; `None` before the first refresh.
+    shown_version: Option<GridVersion>,
+    /// Mode used to populate the highlight uniform; `None` before the first refresh.
+    shown_mode: Option<TowersRangeOverlaySecondaryMode>,
+    /// Staging buffer for circle slot indexes. Retained between refreshes to reuse the allocation.
+    circle_indexes: Vec<u32>,
 }
 impl TowersRangeOverlay {
-    /// Records the requested version and mode. Returns whether the caller needs to refresh the buffer.
-    fn record_shown(&mut self, version: GridVersion, mode: &TowersRangeOverlaySecondaryMode) -> bool {
-        if self.shown.as_ref().is_some_and(|(shown_version, shown_mode)| *shown_version == version && shown_mode == mode) { return false; }
-        self.shown = Some((version, mode.clone()));
+    /// Records the index version and returns whether the buffers need a refresh.
+    fn record_version(&mut self, version: GridVersion) -> bool {
+        if self.shown_version == Some(version) { return false; }
+        self.shown_version = Some(version);
         true
+    }
+
+    /// Records the mode and returns whether the highlight needs a refresh.
+    fn record_mode(&mut self, mode: &TowersRangeOverlaySecondaryMode) -> bool {
+        if self.shown_mode.as_ref() == Some(mode) { return false; }
+        self.shown_mode = Some(mode.clone());
+        true
+    }
+
+    /// Writes cell coverage to the GPU buffer and stages each cell's circle slot indexes.
+    fn stage_cells(&mut self, index: &TowerRangeIndex, cells: &mut ShaderBuffer) {
+        self.circle_indexes.clear();
+        cells.clear();
+        cells.extend(index.bounds().iter().map(|coords| Self::create_cell(index, coords, &mut self.circle_indexes)));
+        // Storage buffers cannot be empty.
+        if self.circle_indexes.is_empty() { self.circle_indexes.push(0); }
+    }
+
+    /// Writes circle data at each tower's slot index, leaving unused entries zeroed.
+    fn write_circles(index: &TowerRangeIndex, circles: &mut ShaderBuffer) {
+        circles.clear();
+        // Keep one unused entry when the index is empty: storage buffers require nonzero size.
+        circles.extend(std::iter::repeat_n(TowerRangeCircle::default(), index.slot_count().max(1)));
+        let table = circles.cast_slice_mut::<TowerRangeCircle>().unwrap();
+        for indexed in index.ranges().filter(|indexed| indexed.range.range_type == RangeType::Circle) {
+            table[indexed.slot.index] = indexed.range.into();
+        }
+    }
+
+    /// Summarizes cell range coverage and appends circle slots with an outline near this cell.
+    fn create_cell(index: &TowerRangeIndex, coords: GridCoords, circle_indexes: &mut Vec<u32>) -> TowerRangeCell {
+        let mut cell = TowerRangeCell { circle_start: circle_indexes.len() as u32, ..default() };
+        for indexed in index.ranges_reaching(coords) {
+            match indexed.range.range_type {
+                RangeType::Cells => {
+                    cell.signature ^= indexed.entity.index_u32();
+                    cell.cover_count += 1;
+                }
+                RangeType::Circle => {
+                    if indexed.range.crosses_edge(coords, OUTLINE_RATIO) { circle_indexes.push(indexed.slot.index as u32); }
+                }
+            }
+        }
+        cell.circle_count = circle_indexes.len() as u32 - cell.circle_start;
+        cell
     }
 
     fn create(
@@ -151,7 +206,10 @@ impl TowersRangeOverlay {
 
         // Bind an initialized buffer on the material's spawn frame.
         let cells = buffers.add(ShaderBuffer::from(vec![TowerRangeCell::default(); map_info.grid_bounds.area()]));
-        let material = materials.add(TowersRangeMaterial { cells });
+        // Storage buffers cannot be empty, so these start with one unused row.
+        let circles = buffers.add(ShaderBuffer::from(vec![TowerRangeCircle::default()]));
+        let circle_indexes = buffers.add(ShaderBuffer::from(vec![0u32]));
+        let material = materials.add(TowersRangeMaterial { cells, circles, circle_indexes, highlight: default() });
         commands.spawn((
             MapCanvasBundle::new(material, &map_info),
             TowersRangeOverlay::default(),
@@ -162,31 +220,32 @@ impl TowersRangeOverlay {
 
 fn refresh_display_system(
     mut buffers: ResMut<Assets<ShaderBuffer>>,
-    materials: Res<Assets<TowersRangeMaterial>>,
-    tower_ranges_grid: Res<TowerRangesGrid>,
+    mut materials: ResMut<Assets<TowersRangeMaterial>>,
+    tower_range_index: Res<TowerRangeIndex>,
     overlay_config: Res<TowersRangeOverlayConfig>,
     towers_range_overlay: Single<(&MeshMaterial2d<TowersRangeMaterial>, &mut TowersRangeOverlay)>,
 ) {
     let (overlay_material, mut overlay) = towers_range_overlay.into_inner();
-    if !overlay.record_shown(tower_ranges_grid.version, &overlay_config.secondary_mode) { return; }
+    let version_changed = overlay.record_version(tower_range_index.version());
+    let mode_changed = overlay.record_mode(&overlay_config.secondary_mode);
 
-    let overlay_material = materials.get(overlay_material).unwrap();
-    let mut buffer = buffers.get_mut(&overlay_material.cells).unwrap();
+    // Refresh after index changes even when the same tower remains highlighted.
+    if version_changed || mode_changed {
+        let highlighted_range = match &overlay_config.secondary_mode {
+            TowersRangeOverlaySecondaryMode::None => None,
+            TowersRangeOverlaySecondaryMode::Highlight { tower } => tower_range_index.get(*tower).map(|indexed| indexed.range),
+            TowersRangeOverlaySecondaryMode::PlacingTower { range } => Some(*range),
+        };
+        materials.get_mut(overlay_material).unwrap().highlight = highlighted_range.map(TowerRangeHighlight::from).unwrap_or_default();
+    }
+    if !version_changed { return; }
 
-    let mut overlay_creator = OverlayBufferCreator::new(&tower_ranges_grid, &mut buffer);
-    match &overlay_config.secondary_mode {
-        TowersRangeOverlaySecondaryMode::None => overlay_creator.generate_buffer_data(&HighlightMode::None),
-        TowersRangeOverlaySecondaryMode::Highlight { tower } => {
-            overlay_creator.generate_buffer_data(&HighlightMode::Selected(HashSet::from([*tower])))
-        }
-        TowersRangeOverlaySecondaryMode::PlacingTower { area, range } => {
-            if area.iter_in_bounds(tower_ranges_grid.bounds).next().is_some() {
-                overlay_creator.flood_preview_to_overlay(*area, *range)
-            } else {
-                overlay_creator.generate_buffer_data(&HighlightMode::None)
-            }
-        }
-    };
+    let material = materials.get(overlay_material).unwrap();
+    overlay.stage_cells(&tower_range_index, &mut buffers.get_mut(&material.cells).unwrap());
+    TowersRangeOverlay::write_circles(&tower_range_index, &mut buffers.get_mut(&material.circles).unwrap());
+    let mut circle_indexes = buffers.get_mut(&material.circle_indexes).unwrap();
+    circle_indexes.clear();
+    circle_indexes.extend_from_slice(&overlay.circle_indexes);
 }
 
 fn on_grid_placer_changed_preview_placement(
@@ -196,114 +255,88 @@ fn on_grid_placer_changed_preview_placement(
     grid_object_placer: Single<(&GridObjectPlacer, &GridArea)>,
 ) {
     let (grid_object_placer, placer_area) = grid_object_placer.into_inner();
-    let map_object = grid_object_placer.map_object();
-    if let Some(MapObject::Building(building_type @ BuildingType::Tower(_))) = map_object {
-        let building_info = almanach.get_building_info(building_type);
-        overlay_config.secondary_mode = TowersRangeOverlaySecondaryMode::PlacingTower {
-            area: *placer_area,
-            range: building_info.baseline[&ModifierType::AttackRange] as usize,
-        };
-    } else {
-        overlay_config.secondary_mode = TowersRangeOverlaySecondaryMode::None;
-    }
+    let preview_range = match grid_object_placer.map_object() {
+        Some(MapObject::Building(building_type)) => {
+            let building_info = almanach.get_building_info(building_type);
+            building_info.attack_range.map(|AttackRangeType(range_type)| AreaRange {
+                range_type,
+                area: *placer_area,
+                min: building_info.baseline.get(&ModifierType::MinAttackRange).copied().unwrap_or(0.),
+                max: building_info.baseline[&ModifierType::MaxAttackRange],
+            })
+        }
+        _ => None,
+    };
+    overlay_config.secondary_mode = preview_range.map_or(TowersRangeOverlaySecondaryMode::None, |range| TowersRangeOverlaySecondaryMode::PlacingTower { range });
 }
 
-/// Field order and types mirror `TowerRangeCell` in `assets/shaders/overlays/towers_ranges_map.wesl`.
+/// Cell coverage and circle list offsets for the GPU.
+/// Field order and types must match `TowerRangeCell` in `assets/shaders/overlays/towers_ranges_map.wesl`.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable, Default)]
 struct TowerRangeCell {
-    /// XOR signature of towers covering this cell
+    /// XOR of the entity indexes of towers whose cell ranges cover this cell.
     signature: u32,
-    /// Number of towers covering this cell
+    /// Number of cell ranges covering this cell.
     cover_count: u32,
-    /// 1 if the cell is highlighted (either selected range or preview), otherwise 0
-    highlight: u32,
+    /// Offset of this cell's first entry in the circle indexes buffer.
+    circle_start: u32,
+    /// Number of circle slot indexes stored for this cell.
+    circle_count: u32,
 }
 
-#[derive(PartialEq)]
-enum HighlightMode {
-    None,
-    Selected(HashSet<Entity>),
+/// Circular range data in world units. Free slots and cell ranges use zeroed entries.
+/// Field order and types must match `TowerRangeCircle` in `assets/shaders/overlays/towers_ranges_map.wesl`.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable, Default)]
+struct TowerRangeCircle {
+    center: Vec2,
+    min_radius: f32,
+    max_radius: f32,
 }
-
-/// Builds the tower range overlay buffer for the shader.
-/// Writes into the caller's `ShaderBuffer`, reusing its allocation, and can
-/// optionally apply a preview flood to set the `highlight` bit.
-struct OverlayBufferCreator<'a> {
-    grid: &'a TowerRangesGrid,
-    buffer: &'a mut ShaderBuffer,
-}
-impl<'a> OverlayBufferCreator<'a> {
-    fn new(grid: &'a TowerRangesGrid, buffer: &'a mut ShaderBuffer) -> Self {
-        Self { grid, buffer }
-    }
-
-    /// Rebuilds the entire buffer for the current grid and highlight mode in O(n) over cells.
-    fn generate_buffer_data(&mut self, highlight_mode: &HighlightMode) {
-        let grid = self.grid;
-        self.buffer.clear();
-        self.buffer.extend(grid.grid.iter().map(|set| Self::create_cell_for_grid_cell(set, highlight_mode)));
-    }
-
-    fn create_cell_for_grid_cell(set: &HashSet<Entity>, highlight_mode: &HighlightMode) -> TowerRangeCell {
-        if set.is_empty() {
-            return TowerRangeCell::default();
+impl From<AreaRange> for TowerRangeCircle {
+    fn from(range: AreaRange) -> Self {
+        Self {
+            center: range.area.world_center(),
+            min_radius: range.min * CELL_SIZE,
+            max_radius: range.max * CELL_SIZE,
         }
-        let mut signature: u32 = 0;
-        for &entity in set.iter() {
-            signature ^= entity.index_u32();
-        }
-        let cover_count = set.len() as u32;
-        let highlight = match highlight_mode {
-            HighlightMode::None => 0u32,
-            HighlightMode::Selected(selected_entities) => {
-                if selected_entities.iter().any(|entity| set.contains(entity)) { 1 } else { 0 }
-            }
+    }
+}
+
+/// Uniform describing the highlighted range. The default disables highlighting.
+/// Field order and types must match `TowerRangeHighlight` in `assets/shaders/overlays/towers_ranges_map.wesl`.
+#[derive(ShaderType, Clone, Copy, Debug, Default)]
+struct TowerRangeHighlight {
+    /// 0: no highlight, 1: cell range, 2: circle. Must match `HIGHLIGHT_*` in the shader.
+    kind: u32,
+    /// 1 for a plus imprint, 0 for a rectangle.
+    is_plus: u32,
+    /// Bottom-left cell of the imprint's bounding box.
+    origin: IVec2,
+    /// Rectangle dimensions in cells, or plus arm extents repeated in both components.
+    size: IVec2,
+    /// Centre of the range in world units.
+    center: Vec2,
+    /// Inclusive minimum distance in cells.
+    min: f32,
+    /// Inclusive maximum distance in cells.
+    max: f32,
+}
+impl From<AreaRange> for TowerRangeHighlight {
+    fn from(range: AreaRange) -> Self {
+        let (is_plus, size) = match range.area.imprint {
+            GridImprint::Rectangle { width, height } => (0, IVec2::new(width, height)),
+            GridImprint::Plus { extents } => (1, IVec2::splat(extents)),
         };
-        TowerRangeCell { signature, cover_count, highlight }
-    }
-
-    /// Distance-limited BFS flood from all provided start cells (the building's imprint).
-    /// Only sets the `highlight` bit; leaves `signature` intact.
-    fn flood_preview_to_overlay(
-        &mut self,
-        area: GridArea,
-        range: usize,
-    ) {
-        // Start with base buffer data (all signatures, nothing highlighted)
-        self.generate_buffer_data(&HighlightMode::None);
-        let buffer_data = self.buffer.cast_slice_mut::<TowerRangeCell>().unwrap();
-        let grid_bounds = self.grid.bounds;
-
-        VISITED_GRID.with_borrow_mut(|visited_grid| {
-            visited_grid.resize_and_clear(grid_bounds);
-            let mut queue = VecDeque::new();
-
-            // Flood from every imprint cell, so the distance is even around buildings.
-            area.iter_in_bounds(grid_bounds).for_each(|coords| {
-                let index = self.grid.index(coords);
-                // Do not alter signature; set highlight flag
-                buffer_data[index].highlight = 1;
-                queue.push_back((0, coords));
-                visited_grid.set_visited(coords);
-            });
-
-            while let Some((distance, coords)) = queue.pop_front() {
-                for new_coords in grid_bounds.cardinal_neighbors(coords) {
-                    if visited_grid.is_visited(new_coords) {
-                        continue;
-                    }
-                    visited_grid.set_visited(new_coords);
-
-                    let buffer_index = self.grid.index(new_coords);
-                    buffer_data[buffer_index].highlight = 1;
-
-                    let new_distance = distance + 1;
-                    if new_distance < range {
-                        queue.push_back((new_distance, new_coords));
-                    }
-                }
-            }
-        });
+        Self {
+            kind: match range.range_type { RangeType::Cells => 1, RangeType::Circle => 2 },
+            is_plus,
+            origin: range.area.origin.into(),
+            size,
+            center: range.area.world_center(),
+            min: range.min,
+            max: range.max,
+        }
     }
 }

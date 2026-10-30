@@ -163,15 +163,16 @@ pub(crate) fn wisp_charge_attack(
     mut damage_messages: MessageWriter<DamageMessage>,
     obstacle_grid: Res<ObstacleGrid>,
     time: Res<Time>,
-    mut wisps: Query<(&mut WispState, &MovementSpeed, &AttackRange, &GridPath, &mut Transform, &mut WispChargeAttack, &GridArea), With<Wisp>>,
+    mut wisps: Query<(&mut WispState, &MovementSpeed, &MaxAttackRange, &GridPath, &mut Transform, &mut WispChargeAttack, &GridArea), With<Wisp>>,
 ) {
     for (mut wisp_state, speed, attack_range, grid_path, mut transform, mut attack, area) in wisps.iter_mut() {
+        let attack_reach = attack_range.get() as usize;
         // First check if moving wisps should switch to attack mode
         if matches!(*wisp_state, WispState::MovingToTarget) {
             // If wisps is at distance 1 to its target, it's always in range
             if grid_path.distance() == 1 {
                 *wisp_state = WispState::Attacking;
-            } else if let Some(coords_in_range) = grid_path.at_distance(attack_range.get() as usize) {
+            } else if let Some(coords_in_range) = grid_path.at_distance(attack_reach) {
                 // Otherwise, check if the cell in the current range is a building
                 if obstacle_grid[coords_in_range].has_building() {
                     *wisp_state = WispState::Attacking;
@@ -180,10 +181,10 @@ pub(crate) fn wisp_charge_attack(
         }
         if !matches!(*wisp_state, WispState::Attacking) { continue; }
         // Then confirm the target still exists
-        let Some(target_coords) = grid_path.at_distance(attack_range.get() as usize) else { continue; };
+        let Some(target_coords) = grid_path.at_distance(attack_reach) else { continue; };
         let GridStructureType::Building(target_entity, _) = obstacle_grid[target_coords].structure else {
             // If not, then either find new target if we were already at our intended target, or continue moving if we were stopped by an obstacle
-            if grid_path.distance() <= attack_range.get() as usize {
+            if grid_path.distance() <= attack_reach {
                 *wisp_state = WispState::NeedTarget;
             } else {
                 *wisp_state = WispState::MovingToTarget;

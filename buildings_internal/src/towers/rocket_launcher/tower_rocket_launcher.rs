@@ -62,17 +62,19 @@ impl BuilderTowerRocketLauncher {
             sprite: asset_server.load("buildings/tower_rocket_launcher.png"),
             top_sprite: Some(asset_server.load("buildings/tower_rocket_launcher_top.png")),
             grid_imprint: GridImprint::square(3),
+            attack_range: AttackRangeType(RangeType::Cells).into(),
             cost: vec![ResourceAmount::new(ResourceType::DarkOre, 350)],
             baseline: HashMap::from([
                 (ModifierType::MaxIntegrityPoints, 100.),
-                (ModifierType::AttackRange, 30.),
+                (ModifierType::MinAttackRange, 7.),
+                (ModifierType::MaxAttackRange, 30.),
                 (ModifierType::AttackSpeed, 0.33),
                 (ModifierType::AttackDamage, 50.),
                 (ModifierType::TurnSpeed, 1.),
             ]),
             sockets: vec![
                 ("attack_speed".into(), ShardSocket::new(ShardType::Speed, "Attack speed", ModifierType::AttackSpeed, [0.1, 0.2, 0.3])),
-                ("attack_range".into(), ShardSocket::new(ShardType::Reach, "Attack range", ModifierType::AttackRange, [2., 4., 6.])),
+                ("attack_range".into(), ShardSocket::new(ShardType::Reach, "Attack range", ModifierType::MaxAttackRange, [2., 4., 6.])),
                 ("projectile_speed".into(), ShardSocket::without_contributions(ShardType::Speed, "Projectile speed (no effect yet)")),
             ],
             validate: building_validator,
@@ -114,6 +116,7 @@ impl BuilderTowerRocketLauncher {
 
         commands.entity(entity)
             .remove::<BuilderTowerRocketLauncher>()
+            .insert_some(building_info.attack_range)
             .insert_some(builder.integrity_points)
             .insert_some(builder.disabled_by_player)
             .insert_some(builder.shooting_timer.clone())

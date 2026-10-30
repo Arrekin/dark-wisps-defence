@@ -2,7 +2,7 @@ use bevy::{ecs::query::QueryData, prelude::*};
 
 use alteration::{
     effects::prelude::EffectVisualState,
-    modifiers::prelude::{AttackRange, IncomingDamageMultiplier, MaxIntegrityPoints, ModifierBank, MovementSpeed},
+    modifiers::prelude::{IncomingDamageMultiplier, MaxAttackRange, MaxIntegrityPoints, MinAttackRange, ModifierBank, MovementSpeed},
 };
 use fields::prelude::FieldAffectable;
 use game_core::{motion::Locomotion, prelude::{GridArea, GridCoords, GridImprint, MapBound}};
@@ -22,7 +22,7 @@ pub struct WispElectricType;
 #[derive(Component, Debug, Default, PartialEq)]
 #[require(
     WispState, WispChargeAttack, GridPath, ModifierBank, MapBound,
-    MovementSpeed, AttackRange, MaxIntegrityPoints, IncomingDamageMultiplier,
+    MovementSpeed, MinAttackRange, MaxAttackRange, MaxIntegrityPoints, IncomingDamageMultiplier,
     FieldAffectable, EffectVisualState, Locomotion, GridArea
 )]
 pub struct Wisp;

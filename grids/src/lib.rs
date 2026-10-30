@@ -16,6 +16,7 @@ pub mod visited;
 pub mod emissions;
 pub mod placement;
 pub mod search;
+pub mod slot_index;
 
 pub type GridVersion = u32;
 

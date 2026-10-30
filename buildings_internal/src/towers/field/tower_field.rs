@@ -41,9 +41,8 @@ impl Plugin for TowerFieldPlugin {
 }
 
 // Field size
-const FIELD_RANGE_CELLS: f32 = 7.0;
-/// Extra radius in cells. Half a cell aligns the rim with cell edges along the grid axes.
-const FIELD_RIM_OFFSET_CELLS: f32 = 0.5;
+/// Radius in cells. The half-cell fraction aligns the rim with cell borders along the grid axes.
+const FIELD_RANGE_CELLS: f32 = 7.5;
 
 // Slow effect
 /// Reduction in a wisp's `MovementSpeed`, in world pixels per second.
@@ -66,13 +65,14 @@ impl BuilderTowerField {
             sprite: asset_server.load("buildings/tower_field.png"),
             top_sprite: None,
             grid_imprint: GridImprint::Plus { extents: 1 },
+            attack_range: AttackRangeType(RangeType::Circle).into(),
             cost: vec![ResourceAmount::new(ResourceType::DarkOre, 500)],
             baseline: HashMap::from([
                 (ModifierType::MaxIntegrityPoints, 100.),
-                (ModifierType::AttackRange, FIELD_RANGE_CELLS),
+                (ModifierType::MaxAttackRange, FIELD_RANGE_CELLS),
             ]),
             sockets: vec![
-                ("field_range".into(), ShardSocket::new(ShardType::Reach, "Field range", ModifierType::AttackRange, [2., 4., 6.])),
+                ("field_range".into(), ShardSocket::new(ShardType::Reach, "Field range", ModifierType::MaxAttackRange, [2., 4., 6.])),
                 ("slow_strength".into(), ShardSocket::without_contributions(ShardType::Strength, "Slow strength (no effect yet)")),
             ],
             validate: building_validator,
@@ -105,6 +105,7 @@ impl BuilderTowerField {
         let area = GridArea::new(builder.grid_position, building_info.grid_imprint);
         commands.entity(entity)
             .remove::<BuilderTowerField>()
+            .insert_some(building_info.attack_range)
             .insert_some(builder.integrity_points)
             .insert_some(builder.disabled_by_player)
             .insert((
@@ -123,7 +124,7 @@ impl BuilderTowerField {
                     IndicatorDisplay::default(),
                 ],
             ))
-            .observe(Self::on_insert_attack_range_resize_force_field)
+            .observe(Self::on_insert_max_attack_range_resize_force_field)
             .observe(on_technical_state_changed_recompute_operational)
             .observe(Self::on_add_is_operational_unfold_force_field)
             .observe(Self::on_remove_is_operational_fold_force_field);
@@ -136,28 +137,24 @@ impl BuilderTowerField {
         commands.trigger(TechnicalStateChanged { entity, kind: TechnicalChange::JustSpawned });
     }
 
-    fn field_radius(attack_range: &AttackRange) -> f32 {
-        (attack_range.get() + FIELD_RIM_OFFSET_CELLS) * CELL_SIZE
-    }
-
-    fn on_insert_attack_range_resize_force_field(
-        trigger: On<Insert<AttackRange>>,
-        towers: Query<(&GeneratedField, &AttackRange), With<IsOperational>>,
+    fn on_insert_max_attack_range_resize_force_field(
+        trigger: On<Insert<MaxAttackRange>>,
+        towers: Query<(&GeneratedField, &MaxAttackRange), With<IsOperational>>,
         mut fields: Query<&mut Field>,
     ) {
         let Ok((generated_field, attack_range)) = towers.get(trigger.entity) else { return; };
         let Ok(mut field) = fields.get_mut(generated_field.field()) else { return; };
-        field.target_radius = Self::field_radius(attack_range);
+        field.target_radius = attack_range.in_world_units();
     }
 
     fn on_add_is_operational_unfold_force_field(
         trigger: On<Add<IsOperational>>,
-        towers: Query<(&GeneratedField, &AttackRange)>,
+        towers: Query<(&GeneratedField, &MaxAttackRange)>,
         mut fields: Query<&mut Field>,
     ) {
         let Ok((generated_field, attack_range)) = towers.get(trigger.entity) else { return; };
         let Ok(mut field) = fields.get_mut(generated_field.field()) else { return; };
-        field.target_radius = Self::field_radius(attack_range);
+        field.target_radius = attack_range.in_world_units();
     }
 
     fn on_remove_is_operational_fold_force_field(

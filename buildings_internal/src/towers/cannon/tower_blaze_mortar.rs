@@ -69,16 +69,17 @@ impl BuilderTowerBlazeMortar {
             sprite: asset_server.load("buildings/tower_cannon.png"),
             top_sprite: None,
             grid_imprint: GridImprint::square(3),
+            attack_range: AttackRangeType(RangeType::Cells).into(),
             cost: vec![ResourceAmount::new(ResourceType::DarkOre, 350)],
             baseline: HashMap::from([
                 (ModifierType::MaxIntegrityPoints, 100.),
-                (ModifierType::AttackRange, 15.),
+                (ModifierType::MaxAttackRange, 15.),
                 (ModifierType::AttackSpeed, 0.3),
                 (ModifierType::AttackDamage, 70.),
             ]),
             sockets: vec![
                 ("attack_speed".into(), ShardSocket::new(ShardType::Speed, "Attack speed", ModifierType::AttackSpeed, [0.15, 0.3, 0.45])),
-                ("attack_range".into(), ShardSocket::new(ShardType::Reach, "Attack range", ModifierType::AttackRange, [2., 4., 6.])),
+                ("attack_range".into(), ShardSocket::new(ShardType::Reach, "Attack range", ModifierType::MaxAttackRange, [2., 4., 6.])),
                 ("damage".into(), ShardSocket::new(ShardType::Strength, "Damage", ModifierType::AttackDamage, [15., 30., 45.])),
             ],
             validate: building_validator,
@@ -116,6 +117,7 @@ impl BuilderTowerBlazeMortar {
 
         commands.entity(entity)
             .remove::<BuilderTowerBlazeMortar>()
+            .insert_some(building_info.attack_range)
             .insert_some(builder.integrity_points)
             .insert_some(builder.disabled_by_player)
             .insert_some(builder.shooting_timer.clone())

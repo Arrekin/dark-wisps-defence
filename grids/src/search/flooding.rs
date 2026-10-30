@@ -9,7 +9,6 @@ use crate::{
     emissions::{EmissionsGrid, EmissionsType, FloodEmissionsDetails, FloodEmissionsEvaluator, FloodEmissionsMode},
     energy_supply::{EnergySupplyGrid, FloodEnergySupplyMode},
     prelude::*,
-    tower_ranges::{FloodTowerRangeMode, TowerRangesGrid},
 };
 
 use super::common::VISITED_GRID;
@@ -139,45 +138,6 @@ pub fn flood_power_coverage(
                 if energy_supply_grid[new_coords].has_supply() {
                     queue.push_back(new_coords);
                     energy_supply_grid[new_coords].set_power(true);
-                }
-            }
-        }
-    });
-}
-
-/// Covers every cell within `range` of any start cell.
-pub fn flood_tower_range(
-    tower_ranges_grid: &mut TowerRangesGrid,
-    start_coords: impl IntoIterator<Item = GridCoords>,
-    mode: FloodTowerRangeMode,
-    range: usize,
-    tower_entity: Entity,
-) {
-    VISITED_GRID.with_borrow_mut(|visited_grid| {
-        visited_grid.resize_and_clear(tower_ranges_grid.bounds);
-        let mut queue = VecDeque::new();
-        start_coords.into_iter().for_each(|coords| {
-            match mode {
-                FloodTowerRangeMode::Add => tower_ranges_grid.add_tower(coords, tower_entity),
-                FloodTowerRangeMode::Remove => tower_ranges_grid.remove_tower(coords, tower_entity),
-            }
-            queue.push_back((0, coords));
-            visited_grid.set_visited(coords);
-        });
-        while let Some((distance, coords)) = queue.pop_front() {
-            for new_coords in tower_ranges_grid.bounds.cardinal_neighbors(coords) {
-                if visited_grid.is_visited(new_coords) {
-                    continue;
-                }
-
-                visited_grid.set_visited(new_coords);
-                match mode {
-                    FloodTowerRangeMode::Add => tower_ranges_grid.add_tower(new_coords, tower_entity),
-                    FloodTowerRangeMode::Remove => tower_ranges_grid.remove_tower(new_coords, tower_entity),
-                }
-                let new_distance = distance + 1;
-                if new_distance < range {
-                    queue.push_back((new_distance, new_coords));
                 }
             }
         }

@@ -62,15 +62,16 @@ impl BuilderTowerInferno {
             sprite: asset_server.load("buildings/tower_emitter.png"),
             top_sprite: None,
             grid_imprint: GridImprint::square(2),
+            attack_range: AttackRangeType(RangeType::Circle).into(),
             cost: vec![ResourceAmount::new(ResourceType::DarkOre, 450)],
             baseline: HashMap::from([
                 (ModifierType::MaxIntegrityPoints, 100.),
-                (ModifierType::AttackRange, 4.),
+                (ModifierType::MaxAttackRange, 4.),
                 (ModifierType::AttackSpeed, 0.2),
             ]),
             sockets: vec![
                 ("attack_speed".into(), ShardSocket::new(ShardType::Speed, "Attack speed", ModifierType::AttackSpeed, [0.05, 0.1, 0.15])),
-                ("attack_range".into(), ShardSocket::new(ShardType::Reach, "Attack range", ModifierType::AttackRange, [1., 2., 3.])),
+                ("attack_range".into(), ShardSocket::new(ShardType::Reach, "Attack range", ModifierType::MaxAttackRange, [1., 2., 3.])),
             ],
             validate: building_validator,
             annotate: annotate_non_empty,
@@ -108,6 +109,7 @@ impl BuilderTowerInferno {
 
         commands.entity(entity)
             .remove::<BuilderTowerInferno>()
+            .insert_some(building_info.attack_range)
             .insert_some(builder.integrity_points)
             .insert_some(builder.disabled_by_player)
             .insert_some(builder.shooting_timer.clone())
@@ -199,14 +201,14 @@ fn load_tower_infernos(ctx: &mut LoadContext) -> LoadResult {
 
 fn shooting_system(
     mut commands: Commands,
-    mut tower_infernos: Query<(&Transform, &AttackRange, &mut TowerShootingTimer, &TowerWispTarget), (With<TowerInferno>, With<IsOperational>)>,
+    mut tower_infernos: Query<(&Transform, &MaxAttackRange, &mut TowerShootingTimer, &TowerWispTarget), (With<TowerInferno>, With<IsOperational>)>,
     wisps: Query<(), With<Wisp>>,
 ) {
     for (transform, attack_range, mut timer, target) in tower_infernos.iter_mut() {
         if !timer.0.is_finished() { continue; }
         if !target.wisp().is_some_and(|wisp| wisps.contains(wisp)) { continue; }
 
-        commands.spawn((InfernoDome::new(attack_range.get() * CELL_SIZE), Transform::from_translation(transform.translation.with_z(0.))));
+        commands.spawn((InfernoDome::new(attack_range.in_world_units()), Transform::from_translation(transform.translation.with_z(0.))));
         timer.0.reset();
     }
 }

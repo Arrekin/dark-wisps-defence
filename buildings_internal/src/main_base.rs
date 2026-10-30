@@ -74,6 +74,7 @@ impl BuilderMainBase {
             sprite: asset_server.load("buildings/main_base.png"),
             top_sprite: None,
             grid_imprint: GridImprint::square(6),
+            attack_range: None,
             cost: vec![],
             baseline: HashMap::from([
                 (ModifierType::MaxIntegrityPoints, 10000.),

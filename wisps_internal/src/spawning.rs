@@ -76,7 +76,7 @@ impl BuilderWisp {
                 related![EffectInstances[
                     (ModifierContributions(HashMap::from([
                         (ModifierType::MaxIntegrityPoints, 10.),
-                        (ModifierType::AttackRange, 1.),
+                        (ModifierType::MaxAttackRange, 1.),
                         (ModifierType::MovementSpeed, 60.),
                     ])), BaselineEffect),
                 ]],

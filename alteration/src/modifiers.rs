@@ -1,5 +1,4 @@
-use bevy::platform::collections::HashMap;
-use bevy::prelude::*;
+use bevy::{ecs::query::QueryData, platform::collections::HashMap, prelude::*};
 use strum::{AsRefStr, EnumString};
 
 use game_core::prelude::*;
@@ -8,9 +7,9 @@ use crate::effects::ModifierContributions;
 
 pub mod prelude {
     pub use super::{
-        AttackDamage, AttackRange, AttackSpeed,
+        AttackAreaRange, AttackDamage, AttackRangeType, AttackSpeed,
         EnergySupplyRange, IncomingDamageMultiplier,
-        MaxIntegrityPoints, ModifierBank, ModifierType, MovementSpeed, TurnSpeed,
+        MaxAttackRange, MaxIntegrityPoints, MinAttackRange, ModifierBank, ModifierType, MovementSpeed, TurnSpeed,
     };
 }
 
@@ -21,7 +20,8 @@ pub mod prelude {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumString, AsRefStr)]
 pub enum ModifierType {
     AttackSpeed,
-    AttackRange,
+    MinAttackRange,
+    MaxAttackRange,
     AttackDamage,
     MaxIntegrityPoints,
     MovementSpeed,
@@ -33,7 +33,8 @@ impl ModifierType {
     fn aggregate(&self, values: impl Iterator<Item = f32>) -> f32 {
         match self {
             Self::AttackSpeed
-            | Self::AttackRange
+            | Self::MinAttackRange
+            | Self::MaxAttackRange
             | Self::AttackDamage
             | Self::MaxIntegrityPoints
             | Self::MovementSpeed
@@ -46,7 +47,8 @@ impl ModifierType {
     fn materialize(&self, value: f32, entity_commands: &mut EntityCommands) {
         match self {
             Self::AttackSpeed => { entity_commands.insert(AttackSpeed::new(value)); }
-            Self::AttackRange => { entity_commands.insert(AttackRange::new(value)); }
+            Self::MinAttackRange => { entity_commands.insert(MinAttackRange::new(value)); }
+            Self::MaxAttackRange => { entity_commands.insert(MaxAttackRange::new(value)); }
             Self::AttackDamage => { entity_commands.insert(AttackDamage::new(value)); }
             Self::MaxIntegrityPoints => { entity_commands.insert(MaxIntegrityPoints::new(value)); }
             Self::MovementSpeed => { entity_commands.insert(MovementSpeed::new(value)); }
@@ -75,9 +77,19 @@ pub struct AttackSpeed(f32);
 #[derive(Component, Default, Clone, Copy, Property)]
 #[component(immutable)]
 pub struct AttackDamage(f32);
+/// Inclusive minimum attack distance, in cells.
 #[derive(Component, Default, Clone, Copy, Property)]
 #[component(immutable)]
-pub struct AttackRange(f32);
+pub struct MinAttackRange(f32);
+/// Inclusive maximum attack distance, in cells.
+#[derive(Component, Default, Clone, Copy, Property)]
+#[component(immutable)]
+pub struct MaxAttackRange(f32);
+impl MaxAttackRange {
+    pub fn in_world_units(&self) -> f32 {
+        self.get() * CELL_SIZE
+    }
+}
 #[derive(Component, Default, Clone, Copy, Property)]
 #[component(immutable)]
 pub struct EnergySupplyRange(f32);
@@ -91,6 +103,28 @@ impl Default for IncomingDamageMultiplier {
 #[derive(Component, Default, Clone, Copy, Property)]
 #[component(immutable)]
 pub struct TurnSpeed(f32);
+
+////////////////////////
+//  ATTACK RANGE
+////////////////////////
+
+/// Distance metric for the entity's attack range.
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+#[component(immutable)]
+pub struct AttackRangeType(pub RangeType);
+/// Queries the grid area, distance metric, and limits needed to construct an [`AreaRange`].
+#[derive(QueryData)]
+pub struct AttackAreaRange {
+    area: &'static GridArea,
+    range_type: &'static AttackRangeType,
+    min_range: &'static MinAttackRange,
+    max_range: &'static MaxAttackRange,
+}
+impl AttackAreaRangeItem<'_, '_> {
+    pub fn area_range(&self) -> AreaRange {
+        AreaRange { range_type: self.range_type.0, area: *self.area, min: self.min_range.get(), max: self.max_range.get() }
+    }
+}
 
 /////////////////////
 // MODIFIER BANK  ///
@@ -115,11 +149,7 @@ impl ModifierBank {
     }
 
     fn aggregate(&self, stat: ModifierType) -> f32 {
-        let values = self.entries
-            .get(&stat)
-            .map(|sources| sources.values().copied())
-            .into_iter()
-            .flatten();
+        let values = self.entries.get(&stat).into_iter().flat_map(|sources| sources.values().copied());
         stat.aggregate(values)
     }
 

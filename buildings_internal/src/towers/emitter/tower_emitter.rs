@@ -55,16 +55,17 @@ impl BuilderTowerEmitter {
             sprite: asset_server.load("buildings/tower_emitter.png"),
             top_sprite: None,
             grid_imprint: GridImprint::square(2),
+            attack_range: AttackRangeType(RangeType::Circle).into(),
             cost: vec![ResourceAmount::new(ResourceType::DarkOre, 450)],
             baseline: HashMap::from([
                 (ModifierType::MaxIntegrityPoints, 100.),
-                (ModifierType::AttackRange, 4.),
+                (ModifierType::MaxAttackRange, 4.),
                 (ModifierType::AttackSpeed, 0.2),
                 (ModifierType::AttackDamage, 1.),
             ]),
             sockets: vec![
                 ("attack_speed".into(), ShardSocket::new(ShardType::Speed, "Attack speed", ModifierType::AttackSpeed, [0.05, 0.1, 0.15])),
-                ("attack_range".into(), ShardSocket::new(ShardType::Reach, "Attack range", ModifierType::AttackRange, [2., 4., 6.])),
+                ("attack_range".into(), ShardSocket::new(ShardType::Reach, "Attack range", ModifierType::MaxAttackRange, [2., 4., 6.])),
                 ("projectile_speed".into(), ShardSocket::without_contributions(ShardType::Speed, "Projectile speed (no effect yet)")),
             ],
             validate: building_validator,
@@ -100,6 +101,7 @@ impl BuilderTowerEmitter {
 
         commands.entity(entity)
             .remove::<BuilderTowerEmitter>()
+            .insert_some(building_info.attack_range)
             .insert_some(builder.integrity_points)
             .insert_some(builder.disabled_by_player)
             .insert_some(builder.shooting_timer.clone())
@@ -188,14 +190,14 @@ fn load_tower_emitters(ctx: &mut LoadContext) -> LoadResult {
 
 fn shooting_system(
     mut commands: Commands,
-    mut tower_emitters: Query<(&Transform, &AttackRange, &mut TowerShootingTimer, &TowerWispTarget), (With<TowerEmitter>, With<IsOperational>)>,
+    mut tower_emitters: Query<(&Transform, &MaxAttackRange, &mut TowerShootingTimer, &TowerWispTarget), (With<TowerEmitter>, With<IsOperational>)>,
     wisps: Query<(), With<Wisp>>,
 ) {
-    for (transform, range, mut timer, target) in tower_emitters.iter_mut() {
+    for (transform, attack_range, mut timer, target) in tower_emitters.iter_mut() {
         if !timer.0.is_finished() { continue; }
         if !target.wisp().is_some_and(|wisp| wisps.contains(wisp)) { continue; }
 
-        commands.spawn(BuilderRipple::new(transform.translation.xy(), range.get() * CELL_SIZE));
+        commands.spawn(BuilderRipple::new(transform.translation.xy(), attack_range.in_world_units()));
         timer.0.reset();
     }
 }

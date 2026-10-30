@@ -88,7 +88,7 @@ fn update_crucible_field_domes(
             radius,
             progress,
             seed: seed_from_entity(entity),
-            slot: slot.0 as u32,
+            slot: slot.index as u32,
         };
     }
 }

@@ -114,6 +114,7 @@ impl BuilderExplorationCenter {
             sprite: asset_server.load("buildings/exploration_center.png"),
             top_sprite: None,
             grid_imprint: GridImprint::square(4),
+            attack_range: None,
             cost: vec![ResourceAmount::new(ResourceType::DarkOre, 500)],
             baseline: HashMap::from([(ModifierType::MaxIntegrityPoints, 100.)]),
             sockets: vec![],

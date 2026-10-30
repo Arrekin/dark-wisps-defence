@@ -59,31 +59,34 @@ fn on_remove_is_operational_reset_shooting_timer(
 fn targeting_system(
     obstacle_grid: Res<ObstacleGrid>,
     wisps_grid: Res<WispsGrid>,
-    mut towers: Query<(&GridArea, &AttackRange, &mut TowerWispTarget), (With<Tower>, With<IsOperational>)>,
-    wisps: Query<&GridArea, With<Wisp>>,
+    mut towers: Query<(AttackAreaRange, &mut TowerWispTarget), (With<Tower>, With<IsOperational>)>,
+    wisps: Query<&Transform, With<Wisp>>,
 ) {
-    for (area, range, mut target) in towers.iter_mut() {
+    for (attack_range, mut target) in towers.iter_mut() {
+        let range = attack_range.area_range();
+        let in_range = |wisp: Entity| wisps.get(wisp).is_ok_and(|wisp_transform| range.contains(wisp_transform.translation.xy()));
         match *target {
-            TowerWispTarget::Wisp(wisp_entity) => {
-                if let Ok(wisp_area) = wisps.get(wisp_entity)
-                    && area.distance_to(wisp_area.origin) <= range.get() as i32 { continue; }
-            }
-            TowerWispTarget::NoValidTargets(grid_version) => {
-                if grid_version == wisps_grid.version {
-                    continue;
-                }
-            }
-            TowerWispTarget::SearchForNewTarget => {}
+            TowerWispTarget::Wisp(wisp) if in_range(wisp) => continue,
+            TowerWispTarget::NoValidTargets(grid_version) if grid_version == wisps_grid.version => continue,
             TowerWispTarget::Suspended => continue,
+            TowerWispTarget::Wisp(_) | TowerWispTarget::NoValidTargets(_) | TowerWispTarget::SearchForNewTarget => {}
         }
-        *target = match target_find_closest_wisp(
-            &obstacle_grid,
-            &wisps_grid,
-            area.iter(),
-            range.get() as usize,
-            true,
-        ) {
-            Some((_, target_wisp)) => TowerWispTarget::Wisp(target_wisp),
+        let mut wisp_on_edge = false;
+        let found = match range.range_type {
+            RangeType::Cells => target_find_closest_wisp(&obstacle_grid, &wisps_grid, &range, true).map(|(_, target_wisp)| target_wisp),
+            // Circular attacks use any wisp in range as the firing trigger.
+            RangeType::Circle => range.bounding_box().iter_in_bounds(wisps_grid.bounds).find_map(|coords| {
+                let cell_wisps = &wisps_grid[coords];
+                if cell_wisps.is_empty() { return None; }
+                let found = cell_wisps.iter().copied().find(|&wisp| in_range(wisp));
+                wisp_on_edge = wisp_on_edge || (found.is_none() && range.crosses_edge(coords, 0.));
+                found
+            }),
+        };
+        *target = match found {
+            Some(target_wisp) => TowerWispTarget::Wisp(target_wisp),
+            // Wisps in cells crossed by the circle's boundary can enter range without changing the grid version.
+            None if wisp_on_edge => TowerWispTarget::SearchForNewTarget,
             None => TowerWispTarget::NoValidTargets(wisps_grid.version),
         };
     }

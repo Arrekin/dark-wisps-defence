@@ -203,7 +203,8 @@ impl From<GridImprint> for Bounds {
 }
 
 /// Cells covered by `imprint` placed at `origin`.
-/// This component should be replaced in full. Mutate in place only if you are sure.
+/// This component should be replaced in full. Mutating in place skips `Insert<GridArea>` observers.
+/// Mutate in place only if you are sure.
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct GridArea {
     /// Bottom-left cell of the imprint's bounding box.
@@ -230,6 +231,10 @@ impl GridArea {
     pub fn covering(rect: Rect) -> Self {
         let (min, max) = (GridCoords::from_world_position(rect.min), GridCoords::from_world_position(rect.max));
         Self::new(min, GridImprint::Rectangle { width: max.x - min.x + 1, height: max.y - min.y + 1 })
+    }
+    /// Smallest grid rectangle enclosing the circle. `center` and `radius` use world units.
+    pub fn covering_circle(center: Vec2, radius: f32) -> Self {
+        Self::covering(Rect::from_center_half_size(center, Vec2::splat(radius)))
     }
 
     /// The rectangle of cells around the area, at the same origin.
@@ -265,7 +270,7 @@ impl GridArea {
         GridAreaIter { area: *self, x: 0, y: 0 }
     }
     /// Iterates cells of the area, skipping any that fall outside `bounds`.
-    pub fn iter_in_bounds(&self, bounds: Bounds) -> impl Iterator<Item = GridCoords> {
+    pub fn iter_in_bounds(&self, bounds: Bounds) -> impl Iterator<Item = GridCoords> + use<> {
         self.iter().filter(move |coords| bounds.contains(*coords))
     }
     /// True if the area fits entirely within `bounds`.
@@ -356,3 +361,86 @@ impl Iterator for GridAreaIter {
     }
 }
 impl ExactSizeIterator for GridAreaIter {}
+
+/// Distance metric used to measure a range around a grid area.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RangeType {
+    /// Cardinal grid steps from the nearest cell of the area.
+    Cells,
+    /// Euclidean distance from the area's world centre.
+    Circle,
+}
+
+/// Region between inclusive `min` and `max` distances from `area`, measured using `range_type`.
+///
+/// Both limits use cells as the unit of distance. A positive minimum excludes the inner region.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AreaRange {
+    pub range_type: RangeType,
+    pub area: GridArea,
+    pub min: f32,
+    pub max: f32,
+}
+impl AreaRange {
+    /// Tests whether `world_position` is in range.
+    /// Cell ranges use the position's grid cell; circular ranges use its exact world position.
+    pub fn contains(&self, world_position: Vec2) -> bool {
+        let distance = match self.range_type {
+            RangeType::Cells => self.area.distance_to(GridCoords::from_world_position(world_position)) as f32,
+            RangeType::Circle => world_position.distance(self.area.world_center()) / CELL_SIZE,
+        };
+        self.spans(distance)
+    }
+
+    /// Tests whether the range intersects the cell at `coords`, including its boundary.
+    pub fn reaches_cell(&self, coords: GridCoords) -> bool {
+        match self.range_type {
+            RangeType::Cells => self.spans(self.area.distance_to(coords) as f32),
+            RangeType::Circle => {
+                let (nearest, farthest) = self.circle_distances_to_cell(coords);
+                nearest <= self.max && self.min <= farthest
+            }
+        }
+    }
+
+    /// Tests whether either circular boundary intersects the cell within a radial tolerance of
+    /// `margin` cells. Returns `false` for cell ranges.
+    pub fn crosses_edge(&self, coords: GridCoords, margin: f32) -> bool {
+        match self.range_type {
+            RangeType::Cells => false,
+            RangeType::Circle => {
+                let (nearest, farthest) = self.circle_distances_to_cell(coords);
+                let crosses = |radius: f32| nearest <= radius + margin && radius - margin <= farthest;
+                crosses(self.max) || (self.min > 0. && crosses(self.min))
+            }
+        }
+    }
+
+    /// Grid rectangle enclosing the range. May include cells outside the range or map.
+    pub fn bounding_box(&self) -> GridArea {
+        match self.range_type {
+            RangeType::Cells => {
+                let reach = self.max.floor() as i32;
+                let Bounds { width, height } = self.area.imprint.into();
+                GridArea::new(
+                    self.area.origin.shifted((-reach, -reach)),
+                    GridImprint::Rectangle { width: width + 2 * reach, height: height + 2 * reach },
+                )
+            }
+            RangeType::Circle => GridArea::covering_circle(self.area.world_center(), self.max * CELL_SIZE),
+        }
+    }
+
+    fn spans(&self, distance: f32) -> bool {
+        self.min <= distance && distance <= self.max
+    }
+
+    /// Returns the nearest and farthest distances from the circle's centre to the cell, in cell widths.
+    fn circle_distances_to_cell(&self, coords: GridCoords) -> (f32, f32) {
+        let center = self.area.world_center();
+        let cell = GridArea::cell(coords).world_rect();
+        let nearest = center.clamp(cell.min, cell.max).distance(center) / CELL_SIZE;
+        let farthest = ((center - cell.center()).abs() + cell.half_size()).length() / CELL_SIZE;
+        (nearest, farthest)
+    }
+}

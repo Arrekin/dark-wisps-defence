@@ -1,6 +1,6 @@
 use bevy::{platform::collections::HashMap, prelude::*};
 
-use alteration::modifiers::prelude::ModifierType;
+use alteration::modifiers::prelude::{AttackRangeType, ModifierType};
 use game_core::prelude::{BuildingType, ContentId, GridImprint, MapObject, Shard};
 use grids::placement::{ObjectPlacementInfo, PlacementAnnotatorFn, PlacementModes, PlacementValidatorFn};
 use resources::prelude::{ResourceAmount, ResourceType};
@@ -216,6 +216,8 @@ pub struct BuildingInfo {
     pub name: String,
     pub description: String,
     pub grid_imprint: GridImprint,
+    /// Attack range distance metric, or `None` for buildings without an attack range.
+    pub attack_range: Option<AttackRangeType>,
     pub cost: Vec<ResourceAmount>,
     pub baseline: HashMap<ModifierType, f32>,
     /// Default sockets with a `ContentId` unique within the building. Empty if it takes no shards.

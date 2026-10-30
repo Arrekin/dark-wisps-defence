@@ -152,7 +152,7 @@ fn update_force_field_domes(
             progress,
             seed: seed_from_entity(entity),
             impact_count,
-            slot: slot.0 as u32,
+            slot: slot.index as u32,
             impacts,
         };
     }

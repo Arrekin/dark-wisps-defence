@@ -2,11 +2,12 @@ use std::time::Duration;
 
 use bevy::prelude::*;
 
-use alteration::modifiers::prelude::{AttackDamage, AttackRange, AttackSpeed, MaxIntegrityPoints, ModifierBank};
+use alteration::modifiers::prelude::{AttackDamage, AttackSpeed, MaxAttackRange, MaxIntegrityPoints, MinAttackRange, ModifierBank};
 use game_core::prelude::{AutoGridSnap, BuildingType, MapBound, TowerType, ZDepth};
 use grids::prelude::{GridVersion, ObstacleGridObject};
 
 #[derive(Component, Default)]
+#[require(Building, MinAttackRange, MaxAttackRange)]
 pub struct Tower;
 
 #[derive(Component, Clone, Debug, Default)]
@@ -43,43 +44,43 @@ impl ExplorationCenter {
 }
 
 #[derive(Component)]
-#[require(Tower, Building, BuildingType = BuildingType::Tower(TowerType::Blaster), AttackRange, AttackSpeed, AttackDamage, TowerShootingTimer, TowerWispTarget)]
+#[require(Tower, BuildingType = BuildingType::Tower(TowerType::Blaster), AttackSpeed, AttackDamage, TowerShootingTimer, TowerWispTarget)]
 pub struct TowerBlaster;
 
 #[derive(Component)]
-#[require(Tower, Building, BuildingType = BuildingType::Tower(TowerType::Cannon), AttackRange, AttackSpeed, AttackDamage, TowerShootingTimer, TowerWispTarget)]
+#[require(Tower, BuildingType = BuildingType::Tower(TowerType::Cannon), AttackSpeed, AttackDamage, TowerShootingTimer, TowerWispTarget)]
 pub struct TowerCannon;
 
 #[derive(Component)]
-#[require(Tower, Building, BuildingType = BuildingType::Tower(TowerType::RocketLauncher), AttackRange, AttackSpeed, AttackDamage, TowerShootingTimer, TowerWispTarget)]
+#[require(Tower, BuildingType = BuildingType::Tower(TowerType::RocketLauncher), AttackSpeed, AttackDamage, TowerShootingTimer, TowerWispTarget)]
 pub struct TowerRocketLauncher;
 
 #[derive(Component)]
-#[require(Tower, Building, BuildingType = BuildingType::Tower(TowerType::Emitter), AttackRange, AttackSpeed, AttackDamage, TowerShootingTimer, TowerWispTarget)]
+#[require(Tower, BuildingType = BuildingType::Tower(TowerType::Emitter), AttackSpeed, AttackDamage, TowerShootingTimer, TowerWispTarget)]
 pub struct TowerEmitter;
 
 #[derive(Component)]
-#[require(Tower, Building, BuildingType = BuildingType::Tower(TowerType::Field), AttackRange)]
+#[require(Tower, BuildingType = BuildingType::Tower(TowerType::Field))]
 pub struct TowerField;
 
 #[derive(Component)]
-#[require(Tower, Building, BuildingType = BuildingType::Tower(TowerType::Crucible), AttackRange)]
+#[require(Tower, BuildingType = BuildingType::Tower(TowerType::Crucible))]
 pub struct TowerCrucible;
 
 #[derive(Component)]
-#[require(Tower, Building, BuildingType = BuildingType::Tower(TowerType::Flamethrower), AttackRange, AttackSpeed, AttackDamage, TowerShootingTimer, TowerWispTarget)]
+#[require(Tower, BuildingType = BuildingType::Tower(TowerType::Flamethrower), AttackSpeed, AttackDamage, TowerShootingTimer, TowerWispTarget)]
 pub struct TowerFlamethrower;
 
 #[derive(Component)]
-#[require(Tower, Building, BuildingType = BuildingType::Tower(TowerType::BlazeMortar), AttackRange, AttackSpeed, AttackDamage, TowerShootingTimer, TowerWispTarget)]
+#[require(Tower, BuildingType = BuildingType::Tower(TowerType::BlazeMortar), AttackSpeed, AttackDamage, TowerShootingTimer, TowerWispTarget)]
 pub struct TowerBlazeMortar;
 
 #[derive(Component)]
-#[require(Tower, Building, BuildingType = BuildingType::Tower(TowerType::Inferno), AttackRange, AttackSpeed, TowerShootingTimer, TowerWispTarget)]
+#[require(Tower, BuildingType = BuildingType::Tower(TowerType::Inferno), AttackSpeed, TowerShootingTimer, TowerWispTarget)]
 pub struct TowerInferno;
 
 #[derive(Component)]
-#[require(Tower, Building, BuildingType = BuildingType::Tower(TowerType::NapalmBattery), AttackRange, AttackSpeed, TowerShootingTimer, TowerWispTarget)]
+#[require(Tower, BuildingType = BuildingType::Tower(TowerType::NapalmBattery), AttackSpeed, TowerShootingTimer, TowerWispTarget)]
 pub struct TowerNapalmBattery;
 
 #[derive(Component, Clone, Default)]

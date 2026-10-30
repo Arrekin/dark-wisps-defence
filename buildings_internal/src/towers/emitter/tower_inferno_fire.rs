@@ -4,7 +4,7 @@
 //! Each child uses a lane visual:
 //!
 //! - `InfernoCore` — core and seam glow masked by the tower sprite in its shared material.
-//! - `InfernoEmberRing` — ground ember ring along the outer edge of `AttackRange`.
+//! - `InfernoEmberRing` — ground ember ring at the radius given by `MaxAttackRange`.
 //! - `InfernoHaze` — distortion of the ground and surface bands, applied before the air band.
 //!   Shimmer rings start one tile beyond the imprint and reach the core at full charge.
 
@@ -138,11 +138,11 @@ fn update_cores(
 
 fn update_ember_rings(
     mut ember_rings: Query<(&ChildOf, &mut Transform, &mut InfernoEmberRing)>,
-    towers: Query<(&AttackRange, &TowerShootingTimer), With<TowerInferno>>,
+    towers: Query<(&MaxAttackRange, &TowerShootingTimer), With<TowerInferno>>,
 ) {
     for (child_of, mut transform, mut ember_ring) in ember_rings.iter_mut() {
         let Ok((attack_range, timer)) = towers.get(child_of.parent()) else { continue; };
-        let range = attack_range.get() * CELL_SIZE;
+        let range = attack_range.in_world_units();
         let half_size = range + EMBER_RING_MESH_MARGIN;
         transform.set_if_neq(Transform { scale: Vec3::new(2. * half_size, 2. * half_size, 1.), ..*transform });
         ember_ring.set_if_neq(InfernoEmberRing { range, charge: timer.0.fraction(), half_size });
