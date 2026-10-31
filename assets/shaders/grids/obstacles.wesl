@@ -1,26 +1,41 @@
-// Obstacle cells uploaded by grids_internal through the shared GPU group.
+// Obstacle cells uploaded by indexes_internal through the shared GPU group.
 // Custom materials enable this group through visuals::shared_gpu; lane shaders include it.
 
 import package::shaders::common::map_info::{grid_contains, grid_index};
 
 // One packed u32 per cell, row major. The layout mirrors `pack_obstacle_cell` in
-// grids_internal/src/obstacles.rs:
-//   bits 0-1   structure kind (STRUCTURE_*)
-//   bit 2      dark ore present
-//   bit 3      quantum field present
-//   bits 8-15  building type (BUILDING_*), 0 when the cell holds no building
+// indexes_internal/src/obstacles.rs:
+//   bits 0-3    underground structure kind (STRUCTURE_*)
+//   bits 4-7    elevation structure kind
+//   bits 8-11   on-elevation structure kind
+//   bit 12      quantum field present
+//   bits 16-23  building type (BUILDING_* or TOWER_*) at Elevation, or 0 if absent
 @group(3) @binding(103) var<storage, read> obstacle_cells: array<u32>;
 
-const STRUCTURE_EMPTY: u32 = 0u;
-const STRUCTURE_WALL: u32 = 1u;
-const STRUCTURE_BUILDING: u32 = 2u;
-// Never stored. Returned for coordinates outside the map.
-const STRUCTURE_OFF_MAP: u32 = 3u;
+// Bit offsets of each volume's structure code in the packed cell.
+const VOLUME_UNDERGROUND: u32 = 0u;
+const VOLUME_ELEVATION: u32 = 4u;
+const VOLUME_ON_ELEVATION: u32 = 8u;
 
-const STRUCTURE_MASK: u32 = 3u;
-const DARK_ORE_BIT: u32 = 4u;
-const QUANTUM_FIELD_BIT: u32 = 8u;
-const BUILDING_TYPE_SHIFT: u32 = 8u;
+// Mirrors `GridStructure::gpu_index` in indexes/src/obstacles.rs.
+const STRUCTURE_EMPTY: u32 = 0u;
+const STRUCTURE_SOLID: u32 = 1u;
+const STRUCTURE_DARK_ORE: u32 = 2u;
+const STRUCTURE_TUNNEL: u32 = 3u;
+const STRUCTURE_EXCAVATION: u32 = 4u;
+const STRUCTURE_BRIDGE: u32 = 5u;
+const STRUCTURE_RAMP: u32 = 6u;
+const STRUCTURE_WALL: u32 = 7u;
+const STRUCTURE_WALL_TUNNEL: u32 = 8u;
+const STRUCTURE_BUILDING: u32 = 9u;
+// Structure code returned for queries outside the map; never stored in the buffer.
+const STRUCTURE_OFF_MAP: u32 = 15u;
+
+const STRUCTURE_MASK: u32 = 15u;
+const QUANTUM_FIELD_BIT: u32 = 4096u;
+const BUILDING_TYPE_SHIFT: u32 = 16u;
+// Packed sentinel with STRUCTURE_OFF_MAP in all three volumes.
+const OFF_MAP_CELL: u32 = 0x0FFFu;
 
 // Mirrors `BuildingType::gpu_index` in game_core/src/types.rs.
 const BUILDING_NONE: u32 = 0u;
@@ -41,16 +56,17 @@ const TOWER_INFERNO: u32 = 39u;
 const TOWER_CRUCIBLE: u32 = 40u;
 const TOWER_NAPALM_BATTERY: u32 = 41u;
 
-// Returns the packed cell, or STRUCTURE_OFF_MAP with no other bits set outside the map.
+// Returns the packed cell, or OFF_MAP_CELL outside the map.
 fn obstacle_cell_at(coords: vec2<i32>) -> u32 {
     if !grid_contains(coords) {
-        return STRUCTURE_OFF_MAP;
+        return OFF_MAP_CELL;
     }
     return obstacle_cells[grid_index(coords)];
 }
 
-fn structure_at(coords: vec2<i32>) -> u32 {
-    return obstacle_cell_at(coords) & STRUCTURE_MASK;
+// Returns the structure code at `coords`; `volume` is a VOLUME_* bit offset.
+fn structure_at(coords: vec2<i32>, volume: u32) -> u32 {
+    return (obstacle_cell_at(coords) >> volume) & STRUCTURE_MASK;
 }
 
 fn building_type_at(coords: vec2<i32>) -> u32 {
@@ -61,16 +77,6 @@ fn is_tower_at(coords: vec2<i32>) -> bool {
     return building_type_at(coords) >= BUILDING_TOWER_FIRST;
 }
 
-fn has_dark_ore_at(coords: vec2<i32>) -> bool {
-    return (obstacle_cell_at(coords) & DARK_ORE_BIT) != 0u;
-}
-
 fn is_within_quantum_field_at(coords: vec2<i32>) -> bool {
     return (obstacle_cell_at(coords) & QUANTUM_FIELD_BIT) != 0u;
-}
-
-// Classifies structures, dark ore and out-of-map coordinates as raised ground.
-fn is_raised_at(coords: vec2<i32>) -> bool {
-    let cell = obstacle_cell_at(coords);
-    return (cell & STRUCTURE_MASK) != STRUCTURE_EMPTY || (cell & DARK_ORE_BIT) != 0u;
 }

@@ -1,12 +1,12 @@
 use bevy::prelude::*;
 
 use alteration::modifiers::prelude::AttackDamage;
-use game_core::prelude::{SSS, ZDepth};
+use game_core::prelude::{DrawLevel, SSS, ZDepth};
 
 use super::{components::Projectile, lob::Lob};
 
 #[derive(Component)]
-#[require(AttackDamage, Projectile, ZDepth::Projectile)]
+#[require(AttackDamage, Projectile, ZDepth::Projectile, DrawLevel::Airborne)]
 pub struct Cannonball;
 
 #[derive(Component, SSS)]

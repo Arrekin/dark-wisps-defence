@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-bevy = { workspace = true, features = ["ui"] }
+bevy = { workspace = true }
 resources = { workspace = true }
 states = { workspace = true }
 

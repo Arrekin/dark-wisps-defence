@@ -19,13 +19,10 @@ use bevy::{
 use almanach::prelude::Almanach;
 use alteration::modifiers::prelude::{AttackRangeType, ModifierType};
 use buildings::prelude::Tower;
-use game_core::prelude::{AreaRange, CELL_SIZE, GridArea, GridCoords, GridImprint, MapInfo, MapObject, RangeType, ZDepth};
-use grids::{
-    placement::{GridObjectPlacer, GridPlacerChanged},
-    prelude::GridVersion,
-    tower_ranges::TowerRangeIndex,
-};
+use game_core::prelude::{AreaRange, CELL_SIZE, DrawLevel, GridArea, GridCoords, GridImprint, MapInfo, MapObject, RangeType, ZDepth};
+use grids::{placement::GridPlacerChanged, prelude::GridVersion};
 use hud::prelude::FocusedMapObject;
+use indexes::{placement::GridObjectPlacer, tower_ranges::TowerRangeIndex};
 use states::prelude::{MapLoadingStage, UiInteraction};
 use visuals::{canvas::MapCanvasBundle, specialize_with_shared_gpu};
 
@@ -133,7 +130,7 @@ impl Material2d for TowersRangeMaterial {
 }
 
 #[derive(Component, Default)]
-#[require(ZDepth::OverlayTowerRanges)]
+#[require(ZDepth::OverlayTowerRanges, DrawLevel::Elevation)]
 pub struct TowersRangeOverlay {
     /// Index version used to populate the buffers; `None` before the first refresh.
     shown_version: Option<GridVersion>,
@@ -173,7 +170,7 @@ impl TowersRangeOverlay {
         circles.extend(std::iter::repeat_n(TowerRangeCircle::default(), index.slot_count().max(1)));
         let table = circles.cast_slice_mut::<TowerRangeCircle>().unwrap();
         for indexed in index.ranges().filter(|indexed| indexed.range.range_type == RangeType::Circle) {
-            table[indexed.slot.index] = indexed.range.into();
+            table[indexed.slot] = indexed.range.into();
         }
     }
 
@@ -187,7 +184,7 @@ impl TowersRangeOverlay {
                     cell.cover_count += 1;
                 }
                 RangeType::Circle => {
-                    if indexed.range.crosses_edge(coords, OUTLINE_RATIO) { circle_indexes.push(indexed.slot.index as u32); }
+                    if indexed.range.crosses_edge(coords, OUTLINE_RATIO) { circle_indexes.push(indexed.slot.index); }
                 }
             }
         }
@@ -332,7 +329,7 @@ impl From<AreaRange> for TowerRangeHighlight {
         Self {
             kind: match range.range_type { RangeType::Cells => 1, RangeType::Circle => 2 },
             is_plus,
-            origin: range.area.origin.into(),
+            origin: range.area.origin.coords.into(),
             size,
             center: range.area.world_center(),
             min: range.min,

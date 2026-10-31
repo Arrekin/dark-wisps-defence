@@ -1,8 +1,8 @@
 use bevy::prelude::*;
 
 use alteration::modifiers::prelude::AttackDamage;
-use game_core::prelude::{DamageMessage, GridCoords, Property};
-use grids::wisps::WispsGrid;
+use game_core::prelude::{DamageMessage, GridCoords, Property, VolumeLevel};
+use indexes::wisps::WispsGrid;
 use logging::prelude::*;
 use persistence::{prelude::*, rusqlite};
 use states::prelude::{GameState, MapLoadingStage};
@@ -132,7 +132,7 @@ fn laser_dart_hit_system(
             commands.entity(entity).despawn();
             continue;
         }
-        let wisps_in_coords = &wisps_grid[coords];
+        let wisps_in_coords = wisps_grid.wisps_at(coords.at(VolumeLevel::Elevation));
         for wisp in wisps_in_coords {
             let Ok(wisp_transform) = wisps.get(*wisp) else { continue; }; // May not find wisp if the wisp spawned at the same frame.
             if laser_dart_transform.translation.xy().distance(wisp_transform.translation.xy()) < LASER_DART_HIT_DISTANCE {

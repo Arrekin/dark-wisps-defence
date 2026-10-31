@@ -33,8 +33,9 @@ use alteration::{
 };
 use buildings::prelude::*;
 use game_core::prelude::*;
-use grids::placement::{annotate_non_empty, PlacementModes, PlaceRequest};
+use grids::placement::{PlacementModes, PlaceRequest};
 use hud::prelude::*;
+use indexes::placement::annotate_non_empty;
 use logging::prelude::*;
 use map_objects::prelude::*;
 use persistence::prelude::*;
@@ -100,7 +101,7 @@ const DRONE_COST: ResourceAmount = ResourceAmount { resource_type: ResourceType:
 
 #[derive(Component, SSS)]
 pub(crate) struct BuilderExplorationCenter {
-    pub grid_position: GridCoords,
+    pub grid_position: GridPosition,
     /// Custom integrity points, or `None` to use the fresh-spawn baseline.
     pub integrity_points: Option<IntegrityPoints>,
     /// Set when the player disabled this building. `None` on fresh spawn.
@@ -124,7 +125,7 @@ impl BuilderExplorationCenter {
         }
     }
 
-    pub fn new(grid_position: GridCoords) -> Self {
+    pub fn new(grid_position: GridPosition) -> Self {
         Self { grid_position, integrity_points: None, disabled_by_player: None }
     }
     pub fn with_integrity_points(mut self, integrity_points: f32) -> Self {
@@ -190,7 +191,7 @@ fn collect_exploration_centers(
     if exploration_centers.is_empty() { return; }
 
     #[debug_dev("Saving {} exploration centers", rows.len())]
-    let rows: Vec<(u32, GridCoords, f32, bool)> = exploration_centers
+    let rows: Vec<(u32, GridPosition, f32, bool)> = exploration_centers
         .iter()
         .map(|(entity, area, integrity_points, disabled_by_player)| {
             (
@@ -202,9 +203,9 @@ fn collect_exploration_centers(
         })
         .collect();
     save.submit(move |ctx| {
-        for (id, coords, integrity_points, disabled_by_player) in rows {
+        for (id, grid_position, integrity_points, disabled_by_player) in rows {
             ctx.save_marker("exploration_centers", id)?;
-            ctx.save_grid_coords(id, coords)?;
+            ctx.save_grid_position(id, grid_position)?;
             ctx.save_integrity_points(id, integrity_points)?;
             if disabled_by_player {
                 ctx.save_disabled_by_player(id)?;
@@ -216,7 +217,7 @@ fn collect_exploration_centers(
 
 fn load_exploration_centers(ctx: &mut LoadContext) -> LoadResult {
     ctx.for_each_entity("SELECT id FROM exploration_centers", |ctx, old_id, entity, _| {
-        let grid_position = ctx.grid_coords(old_id)?;
+        let grid_position = ctx.grid_position(old_id)?;
         let integrity_points = ctx.integrity_points(old_id)?;
         let disabled_by_player = ctx.disabled_by_player(old_id)?;
         let builder = BuilderExplorationCenter::new(grid_position)
@@ -899,7 +900,7 @@ impl TargetSelectionPanel {
         let mut target_data: Vec<_> = targets.iter()
             .map(|(target_entity, name, area)| {
                 let distance = (area.world_center() - home_position).length();
-                (target_entity, name, area.origin, drone_fuel.fuel_percent_for_distance(distance))
+                (target_entity, name, area.origin.coords, drone_fuel.fuel_percent_for_distance(distance))
             })
             .collect();
 

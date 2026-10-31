@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-bevy = { workspace = true, features = ["ui"] }
+bevy = { workspace = true }
 almanach = { workspace = true }
 game_core = { workspace = true }
 widgets = { workspace = true }

@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use alteration::modifiers::prelude::{AttackAreaRange, AttackRangeType, MaxAttackRange, MinAttackRange};
 use buildings::prelude::Tower;
 use game_core::prelude::MapInfo;
-use grids::tower_ranges::TowerRangeIndex;
+use indexes::tower_ranges::TowerRangeIndex;
 use states::prelude::MapLoadingStage;
 
 pub(crate) struct TowerRangesPlugin;

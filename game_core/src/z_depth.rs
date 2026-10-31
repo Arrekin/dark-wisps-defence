@@ -1,23 +1,108 @@
+//! World depth combines a visual's altitude ([`DrawLevel`]) and render layer ([`ZDepth`]).
+//! Each supported pair receives a separate depth range, ordered by altitude and then layer.
+//! [`Band`] groups layers for shared scene snapshots and distortion passes.
+
 use core::ops::{Index, IndexMut};
 
 use bevy::prelude::*;
-use strum::{EnumCount, EnumIter, IntoEnumIterator};
+use strum::{EnumCount, EnumIter, VariantArray};
 
 /// Number of bits used for the entity's fractional depth within a layer.
 const LAYER_OFFSET_BITS: u32 = 16;
 const LAYER_OFFSET_STEPS: u32 = 1 << LAYER_OFFSET_BITS;
 
-// A layer's world z is exact in f32 only while its integer part and the offset fit the 24-bit
-// significand together. More layers than this would make neighbouring offsets collapse.
+// The slot and fractional offset must fit together in f32's 24-bit significand.
+// Above this limit, distinct offsets could round to the same depth.
 const _: () = assert!(
-    (ZDepth::COUNT as u32 + 1) < 1 << (24 - LAYER_OFFSET_BITS),
-    "too many ZDepth layers for LAYER_OFFSET_BITS: lower the bits or merge layers",
+    SLOT_TABLE.count + 1 < 1 << (24 - LAYER_OFFSET_BITS),
+    "too many draw slots for LAYER_OFFSET_BITS: lower the bits, merge layers or narrow their draw levels",
 );
+
+/// A visual's altitude in the draw order.
+///
+/// Variants are ordered from bottom to top. All layers at one level draw before any layer
+/// at the next level.
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq, Hash, EnumIter, EnumCount, VariantArray)]
+#[component(immutable)]
+pub enum DrawLevel {
+    UndergroundFloor,
+    Underground,
+    GroundFloor,
+    Elevation,
+    ElevationFloor,
+    OnElevation,
+    Airborne,
+}
+
+/// A set of draw levels.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DrawLevels(u8);
+impl DrawLevels {
+    pub const FLOORS: Self = Self::only(DrawLevel::UndergroundFloor)
+        .with(DrawLevel::GroundFloor)
+        .with(DrawLevel::ElevationFloor);
+    pub const VOLUMES: Self = Self::only(DrawLevel::Underground)
+        .with(DrawLevel::Elevation)
+        .with(DrawLevel::OnElevation);
+
+    pub const fn only(level: DrawLevel) -> Self {
+        Self(1 << level as u8)
+    }
+    pub const fn with(self, level: DrawLevel) -> Self {
+        Self(self.0 | Self::only(level).0)
+    }
+    pub const fn contains(self, level: DrawLevel) -> bool {
+        self.0 & Self::only(level).0 != 0
+    }
+}
+
+/// Sentinel for an unsupported layer/level pair in [`SlotTable::slots`].
+const NO_SLOT: u8 = u8::MAX;
+const SLOT_TABLE: SlotTable = SlotTable::build();
+
+/// Depth slots for supported layer/level pairs, computed at compile time.
+struct SlotTable {
+    /// Indexed by level, then layer. Slots follow [`DrawLevel`] order, then [`ZDepth`] order.
+    slots: [[u8; ZDepth::COUNT]; DrawLevel::COUNT],
+    count: u32,
+    /// First slot belonging to each band, across all draw levels.
+    band_bases: [u8; Band::COUNT],
+}
+impl SlotTable {
+    const fn build() -> Self {
+        let mut table = Self { slots: [[NO_SLOT; ZDepth::COUNT]; DrawLevel::COUNT], count: 0, band_bases: [NO_SLOT; Band::COUNT] };
+        let mut level = 0;
+        while level < DrawLevel::COUNT {
+            let mut layer = 0;
+            while layer < ZDepth::COUNT {
+                let z_depth = ZDepth::VARIANTS[layer];
+                if z_depth.draw_levels().contains(DrawLevel::VARIANTS[level]) {
+                    table.slots[level][layer] = table.count as u8;
+                    let band = z_depth.band() as usize;
+                    if table.band_bases[band] == NO_SLOT {
+                        table.band_bases[band] = table.count as u8;
+                    }
+                    table.count += 1;
+                }
+                layer += 1;
+            }
+            level += 1;
+        }
+        let mut band = 0;
+        while band < Band::COUNT {
+            assert!(table.band_bases[band] != NO_SLOT, "every band holds at least one layer");
+            band += 1;
+        }
+        table
+    }
+}
 
 /// World-space render layer.
 ///
-/// Variant order is draw order. Each layer occupies a z range of width 1.0. The entity index
-/// selects a stable fractional offset within that range, reducing depth ties within a layer.
+/// Variant order determines draw order within a [`DrawLevel`]. A visual needs both components,
+/// and its level must be supported by [`ZDepth::draw_levels`]. Each supported layer/level pair
+/// occupies a z range of width 1.0. The entity index selects a stable fractional offset within
+/// that range to reduce depth ties.
 /// Use generic layers unless a visual needs a specific draw order or a dedicated layer for batching.
 ///
 /// Bevy batches adjacent paint instances of the same lane kind in the sorted phase.
@@ -31,7 +116,7 @@ const _: () = assert!(
 /// A child with its own `ZDepth` keeps its assigned world depth while inheriting the parent's
 /// x/y, rotation and scale. Children without `ZDepth` use normal transform propagation;
 /// they do not receive the parent's subsequent depth correction.
-#[derive(Component, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, EnumIter, EnumCount)]
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, EnumIter, EnumCount, VariantArray)]
 #[component(immutable)]
 #[require(Transform)]
 pub enum ZDepth {
@@ -39,8 +124,8 @@ pub enum ZDepth {
     OverlayEmissions,
     DarkOre,
     Obstacle,
-    GroundCover,
-    GroundDecal,
+    FloorCover,
+    FloorDecal,
     FireballScorch,
     FlameScorch,
     FlameGlow,
@@ -74,24 +159,68 @@ pub enum ZDepth {
     VoidSea,
 }
 impl ZDepth {
-    /// Lowest world z of this layer. The first layer starts at 1.0, above the default z of 0.0.
-    pub fn base_z(self) -> f32 {
-        (self as u32 + 1) as f32
+    /// Draw levels supported by this layer.
+    pub const fn draw_levels(self) -> DrawLevels {
+        match self {
+            Self::MapGround
+            | Self::OverlayEmissions
+            | Self::DarkOre => DrawLevels::only(DrawLevel::GroundFloor),
+            Self::FloorCover
+            | Self::FloorDecal
+            | Self::FireballScorch
+            | Self::FlameScorch => DrawLevels::FLOORS,
+            Self::OverlayEnergySupply
+            | Self::OverlayTowerRanges => DrawLevels::only(DrawLevel::Elevation),
+            Self::Obstacle
+            | Self::FlameGlow
+            | Self::Building
+            | Self::BuildingEffect
+            | Self::WispFire
+            | Self::WispWater
+            | Self::WispLight
+            | Self::WispElectric
+            | Self::GroundEffect
+            | Self::FireballGlow
+            | Self::FireballBlast
+            | Self::FlameJet
+            | Self::FlameImpact
+            | Self::FlamePilot
+            | Self::TowerTop
+            | Self::MapUi => DrawLevels::VOLUMES,
+            Self::AirEffect
+            | Self::AerialUnit
+            | Self::ProjectileUnder
+            | Self::Projectile
+            | Self::FireballBody
+            | Self::GridPlacerGhost
+            | Self::GridPlacer
+            | Self::VoidSeaShadow
+            | Self::VoidSea => DrawLevels::only(DrawLevel::Airborne),
+        }
     }
 
-    /// World z of `entity` on this layer.
-    pub fn world_z(self, entity: Entity) -> f32 {
-        self.base_z() + (entity.index_u32() % LAYER_OFFSET_STEPS) as f32 / LAYER_OFFSET_STEPS as f32
+    /// Lowest world z of this layer at `level`. Depth slots start at 1.0.
+    ///
+    /// Panics if this layer does not support `level`.
+    pub fn base_z(self, level: DrawLevel) -> f32 {
+        let slot = SLOT_TABLE.slots[level as usize][self as usize];
+        assert!(slot != NO_SLOT, "{self:?} cannot draw at {level:?}");
+        (slot as u32 + 1) as f32
     }
 
-    pub fn band(self) -> Band {
+    /// World z of `entity` on this layer at `level`.
+    pub fn world_z(self, level: DrawLevel, entity: Entity) -> f32 {
+        self.base_z(level) + (entity.index_u32() % LAYER_OFFSET_STEPS) as f32 / LAYER_OFFSET_STEPS as f32
+    }
+
+    pub const fn band(self) -> Band {
         match self {
             Self::MapGround
             | Self::OverlayEmissions
             | Self::DarkOre
             | Self::Obstacle
-            | Self::GroundCover
-            | Self::GroundDecal
+            | Self::FloorCover
+            | Self::FloorDecal
             | Self::FireballScorch
             | Self::FlameScorch
             | Self::FlameGlow
@@ -122,15 +251,12 @@ impl ZDepth {
             | Self::VoidSea => Band::Placement,
         }
     }
-
-    /// Layers of `band`, in draw order.
-    pub fn of_band(band: Band) -> impl Iterator<Item = Self> {
-        Self::iter().filter(move |layer| layer.band() == band)
-    }
 }
 
-/// Contiguous range of render layers. A cut before the band can distort or capture
-/// the scene drawn by lower bands.
+/// A group of render layers sharing one scene snapshot and distortion pass.
+///
+/// Layers are contiguous in [`ZDepth`] order, but may repeat at several draw levels.
+/// The cut occurs once, before the band's lowest depth across all levels.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, EnumIter, EnumCount)]
 pub enum Band {
     Ground,
@@ -139,9 +265,9 @@ pub enum Band {
     Placement,
 }
 impl Band {
-    /// Lowest world z of the band: the base of its first layer.
-    pub fn base_z(self) -> f32 {
-        ZDepth::of_band(self).next().expect("every band holds at least one layer").base_z()
+    /// Lowest world z occupied by this band across all draw levels.
+    pub const fn base_z(self) -> f32 {
+        (SLOT_TABLE.band_bases[self as usize] as u32 + 1) as f32
     }
 }
 
@@ -167,6 +293,8 @@ impl<T> IndexMut<Band> for PerBand<T> {
 
 #[cfg(test)]
 mod tests {
+    use strum::IntoEnumIterator;
+
     use super::*;
 
     #[test]

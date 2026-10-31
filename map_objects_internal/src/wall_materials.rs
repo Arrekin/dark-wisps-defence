@@ -28,7 +28,7 @@ impl Plugin for WallMaterialsPlugin {
 
 #[derive(Asset, AsBindGroup, TypePath, Clone, Copy, Debug)]
 pub(crate) struct WallSwatchMaterial {
-    /// [`WallStyleKey::shader_index`] of the drawn style.
+    /// [`WallStyleKey::gpu_index`] of the drawn style.
     #[uniform(0)]
     style_index: u32,
 }
@@ -43,7 +43,7 @@ impl UiMaterial for WallSwatchMaterial {
 /// World-space material for one isolated wall cell.
 #[derive(Asset, AsBindGroup, TypePath, Clone, Copy, Debug)]
 pub(crate) struct WallQuadMaterial {
-    /// [`WallStyleKey::shader_index`] of the drawn style.
+    /// [`WallStyleKey::gpu_index`] of the drawn style.
     #[uniform(0)]
     style_index: u32,
     #[uniform(0)]
@@ -81,7 +81,7 @@ fn on_object_face_request_draw_wall(
     let key = placement_styles.get(entity).map_or_else(|_| WallStyleKey::default(), |style| (*style).into());
     #[warn_dev("Wall face requested for {entity} with style {}, which is not in this map's table", key.0)]
     if !styles.contains(key) { return; }
-    let style_index = key.shader_index();
+    let style_index = key.gpu_index();
 
     match surface {
         FaceSurface::Ui => {

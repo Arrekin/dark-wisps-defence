@@ -10,8 +10,9 @@ use alteration::{
 };
 use buildings::prelude::*;
 use game_core::prelude::*;
-use grids::placement::{annotate_non_empty, PlacementModes, PlaceRequest};
+use grids::placement::{PlacementModes, PlaceRequest};
 use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
+use indexes::placement::annotate_non_empty;
 use logging::prelude::*;
 use persistence::prelude::*;
 use resources::prelude::*;
@@ -46,7 +47,7 @@ const CANNON_LOB: LobProfile = LobProfile {
 
 #[derive(Component, SSS)]
 pub(crate) struct BuilderTowerCannon {
-    pub grid_position: GridCoords,
+    pub grid_position: GridPosition,
     /// Custom integrity points, or `None` to use the fresh-spawn baseline.
     pub integrity_points: Option<IntegrityPoints>,
     /// Set when the player disabled this building. `None` on fresh spawn.
@@ -82,7 +83,7 @@ impl BuilderTowerCannon {
         }
     }
 
-    pub fn new(grid_position: GridCoords) -> Self {
+    pub fn new(grid_position: GridPosition) -> Self {
         Self { grid_position, integrity_points: None, disabled_by_player: None, shooting_timer: None }
     }
     pub fn with_integrity_points(mut self, integrity_points: f32) -> Self {
@@ -159,7 +160,7 @@ fn collect_tower_cannons(
     if towers.is_empty() { return; }
 
     #[debug_dev("Saving {} tower cannons", rows.len())]
-    let rows: Vec<(u32, GridCoords, f32, bool, f32)> = towers
+    let rows: Vec<(u32, GridPosition, f32, bool, f32)> = towers
         .iter()
         .map(|(entity, area, integrity_points, disabled_by_player, shooting_timer)| {
             (
@@ -172,9 +173,9 @@ fn collect_tower_cannons(
         })
         .collect();
     save.submit(move |ctx| {
-        for (id, coords, integrity_points, disabled_by_player, shooting_elapsed) in rows {
+        for (id, grid_position, integrity_points, disabled_by_player, shooting_elapsed) in rows {
             ctx.save_marker("tower_cannons", id)?;
-            ctx.save_grid_coords(id, coords)?;
+            ctx.save_grid_position(id, grid_position)?;
             ctx.save_integrity_points(id, integrity_points)?;
             ctx.save_shooting_elapsed(id, shooting_elapsed)?;
             if disabled_by_player {
@@ -187,7 +188,7 @@ fn collect_tower_cannons(
 
 fn load_tower_cannons(ctx: &mut LoadContext) -> LoadResult {
     ctx.for_each_entity("SELECT id FROM tower_cannons", |ctx, old_id, entity, _| {
-        let grid_position = ctx.grid_coords(old_id)?;
+        let grid_position = ctx.grid_position(old_id)?;
         let integrity_points = ctx.integrity_points(old_id)?;
         let disabled_by_player = ctx.disabled_by_player(old_id)?;
         let shooting_elapsed = ctx.shooting_elapsed(old_id)?;

@@ -78,7 +78,7 @@ impl SpawnArea {
             }
             SpawnArea::Rect { area } => {
                 let Bounds { width, height } = area.imprint.into();
-                area.origin.shifted((rng.generate_range(0..width), rng.generate_range(0..height)))
+                area.origin.coords.shifted((rng.generate_range(0..width), rng.generate_range(0..height)))
             }
             SpawnArea::Edge { side } => {
                 let Bounds { width, height } = bounds;

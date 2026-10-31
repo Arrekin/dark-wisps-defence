@@ -1,17 +1,14 @@
-use std::collections::VecDeque;
-
 use bevy::prelude::Entity;
 
 use alteration::modifiers::prelude::EnergySupplyRange;
 use game_core::prelude::{GridCoords, Property};
+use grids::search::{SEARCH_SCRATCH, SearchScratch};
 
 use crate::{
     emissions::{EmissionsGrid, EmissionsType, FloodEmissionsDetails, FloodEmissionsEvaluator, FloodEmissionsMode},
     energy_supply::{EnergySupplyGrid, FloodEnergySupplyMode},
     prelude::*,
 };
-
-use super::common::VISITED_GRID;
 
 pub fn flood_emissions<'a>(
     emissions_grid: &mut EmissionsGrid,
@@ -20,25 +17,25 @@ pub fn flood_emissions<'a>(
     emissions_details: impl IntoIterator<Item = &'a FloodEmissionsDetails> + Copy,
     should_cell_be_flooded: fn(&ObstacleCell) -> bool,
 ) {
-    VISITED_GRID.with_borrow_mut(|visited_grid| {
-        visited_grid.resize_and_clear(obstacles_grid.bounds);
-        let mut queue = VecDeque::new();
+    SEARCH_SCRATCH.with_borrow_mut(|SearchScratch { visited, distance_queue, .. }| {
+        visited.resize_and_clear(obstacles_grid.bounds);
+        distance_queue.clear();
         let max_range = emissions_details.into_iter().map(|details| details.range).max().unwrap();
         start_coords.into_iter().for_each(|coords| {
-            queue.push_back((1, coords));
-            visited_grid.set_visited(coords);
+            distance_queue.push_back((1, coords));
+            visited.set_visited(coords);
             for details in emissions_details {
                 apply_emissions_details(emissions_grid, coords, details, 1);
             }
         });
-        while let Some((distance, coords)) = queue.pop_front() {
+        while let Some((distance, coords)) = distance_queue.pop_front() {
             for new_coords in obstacles_grid.bounds.cardinal_neighbors(coords) {
-                if visited_grid.is_visited(new_coords) || !should_cell_be_flooded(&obstacles_grid[new_coords])
+                if visited.is_visited(new_coords) || !should_cell_be_flooded(&obstacles_grid[new_coords])
                 {
                     continue;
                 }
 
-                visited_grid.set_visited(new_coords);
+                visited.set_visited(new_coords);
                 let new_distance = distance + 1;
                 for details in emissions_details {
                     if new_distance <= details.range {
@@ -46,7 +43,7 @@ pub fn flood_emissions<'a>(
                     }
                 }
                 if new_distance < max_range {
-                    queue.push_back((new_distance, new_coords));
+                    distance_queue.push_back((new_distance, new_coords));
                 }
             }
         }
@@ -75,7 +72,7 @@ fn apply_emissions_details(
     }
 }
 
-/// Given start_coords, flood the supply in every direction in range
+/// Adds or removes supplier coverage by flooding cardinal neighbors from `start_coords`.
 pub fn flood_energy_supply(
     energy_supply_grid: &mut EnergySupplyGrid,
     start_coords: impl IntoIterator<Item = GridCoords>,
@@ -83,60 +80,60 @@ pub fn flood_energy_supply(
     range: EnergySupplyRange,
     supplier: Entity,
 ) {
-    VISITED_GRID.with_borrow_mut(|visited_grid| {
-        visited_grid.resize_and_clear(energy_supply_grid.bounds);
-        let mut queue = VecDeque::new();
+    SEARCH_SCRATCH.with_borrow_mut(|SearchScratch { visited, distance_queue, .. }| {
+        visited.resize_and_clear(energy_supply_grid.bounds);
+        distance_queue.clear();
         start_coords.into_iter().for_each(|coords| {
             match mode {
                 FloodEnergySupplyMode::Place { as_disabled } => energy_supply_grid.place_supplier(coords, supplier, as_disabled),
                 FloodEnergySupplyMode::Remove => energy_supply_grid.remove_supplier_from_both(coords, supplier),
             }
-            queue.push_back((0, coords));
-            visited_grid.set_visited(coords);
+            distance_queue.push_back((0, coords));
+            visited.set_visited(coords);
         });
-        while let Some((distance, coords)) = queue.pop_front() {
+        while let Some((distance, coords)) = distance_queue.pop_front() {
             for new_coords in energy_supply_grid.bounds.cardinal_neighbors(coords) {
-                if visited_grid.is_visited(new_coords) {
+                if visited.is_visited(new_coords) {
                     continue;
                 }
 
-                visited_grid.set_visited(new_coords);
+                visited.set_visited(new_coords);
                 match mode {
                     FloodEnergySupplyMode::Place { as_disabled } => energy_supply_grid.place_supplier(new_coords, supplier, as_disabled),
                     FloodEnergySupplyMode::Remove => energy_supply_grid.remove_supplier_from_both(new_coords, supplier),
                 }
                 let new_distance = distance + 1;
                 if new_distance < range.get() as usize {
-                    queue.push_back((new_distance, new_coords));
+                    distance_queue.push_back((new_distance, new_coords));
                 }
             }
         }
     });
 }
 
-/// Start with the list of generators coords and flood over all connected cells with energy supply
+/// Rebuilds power coverage from generator cells, following cardinal neighbors with active supply.
 pub fn flood_power_coverage(
     energy_supply_grid: &mut EnergySupplyGrid,
     start_coords: impl IntoIterator<Item = GridCoords>,
 ){
     energy_supply_grid.reset_all_power_indicators();
-    VISITED_GRID.with_borrow_mut(|visited_grid| {
-        visited_grid.resize_and_clear(energy_supply_grid.bounds);
-        let mut queue = VecDeque::new();
+    SEARCH_SCRATCH.with_borrow_mut(|SearchScratch { visited, coords_queue, .. }| {
+        visited.resize_and_clear(energy_supply_grid.bounds);
+        coords_queue.clear();
         start_coords.into_iter().for_each(|coords| {
-            queue.push_back(coords);
-            visited_grid.set_visited(coords);
+            coords_queue.push_back(coords);
+            visited.set_visited(coords);
             energy_supply_grid[coords].set_power(true);
         });
-        while let Some(coords) = queue.pop_front() {
+        while let Some(coords) = coords_queue.pop_front() {
             for new_coords in energy_supply_grid.bounds.cardinal_neighbors(coords) {
-                if visited_grid.is_visited(new_coords) {
+                if visited.is_visited(new_coords) {
                     continue;
                 }
 
-                visited_grid.set_visited(new_coords);
+                visited.set_visited(new_coords);
                 if energy_supply_grid[new_coords].has_supply() {
-                    queue.push_back(new_coords);
+                    coords_queue.push_back(new_coords);
                     energy_supply_grid[new_coords].set_power(true);
                 }
             }

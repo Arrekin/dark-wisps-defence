@@ -138,4 +138,8 @@ flowchart LR
 5. If needed, add controls for `BeginPlacing` / `StopPlacing` and send imprint or style overrides.
 6. Handle `MapObjectTooltipRequest` and add the appropriate menu offering, if the object is offered in the side menu.
 
-Placement types: `grids/src/placement.rs`. Placer implementation: `grids_internal/src/placement.rs`.
+The placement code is split across three modules:
+
+- [`grids/src/placement.rs`](../../grids/src/placement.rs): shared events, input modes, styles, and reservations.
+- [`indexes/src/placement.rs`](../../indexes/src/placement.rs): placer state, validation callbacks, and cell highlight callbacks.
+- [`indexes_internal/src/placement.rs`](../../indexes_internal/src/placement.rs): placement systems and observers.

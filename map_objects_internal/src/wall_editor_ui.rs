@@ -4,7 +4,8 @@
 use bevy::{prelude::*, ui_widgets::Button};
 
 use game_core::prelude::{CELL_SIZE, MapObject, ObjectFaceRequest};
-use grids::placement::{BeginPlacing, GridObjectPlacer, GridPlacerOverridePropertyRequest, PlacementStyle, StopPlacing};
+use grids::placement::{BeginPlacing, GridPlacerOverridePropertyRequest, PlacementStyle, StopPlacing};
+use indexes::placement::GridObjectPlacer;
 use map_objects::wall_style::{WallStyleKey, WallStyles};
 
 pub(crate) struct WallEditorUiPlugin;

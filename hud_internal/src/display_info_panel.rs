@@ -1,7 +1,7 @@
 use bevy::{color::palettes::css::YELLOW, prelude::*, ui::widget::ViewportNode};
 
-use grids::obstacles::{GridStructureType, ObstacleGrid};
 use hud::prelude::{DisplayPanelMainContentRoot, FocusedMapObject};
+use indexes::obstacles::{GridStructure, ObstacleGrid};
 use states::prelude::*;
 use viewport::{BuilderPreviewCamera, CameraAutoFollowEntity, MouseInfo};
 
@@ -69,8 +69,8 @@ fn show_on_click_system(
     if mouse_info.is_over_ui || !mouse.just_pressed(MouseButton::Left) { return; }
 
     let Some(cell) = obstacle_grid.get(mouse_info.grid_coords) else { return; };
-    let focused_element = match &cell.structure {
-        GridStructureType::Building(entity, _) => *entity,
+    let focused_element = match cell.elevation {
+        GridStructure::Building { slot, .. } => obstacle_grid.entry(slot).entity,
         _ => {
             let Some(entity) = cell.quantum_field else { return };
             entity

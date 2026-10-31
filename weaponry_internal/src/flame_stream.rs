@@ -14,8 +14,8 @@ use std::ops::RangeInclusive;
 
 use bevy::prelude::*;
 
-use game_core::prelude::{CELL_SIZE, GridArea, GridCoords, GridImprint};
-use grids::wisps::WispsGrid;
+use game_core::prelude::{AltitudeLevel, CELL_SIZE, GridArea, GridCoords, GridImprint, VolumeLevel};
+use indexes::wisps::WispsGrid;
 use states::prelude::GameState;
 use weaponry::{
     flame_stream::{FlameHit, FlameStreamBurntOut, FlameStreamGeneratedBy, FlameStreamSystems},
@@ -77,7 +77,7 @@ fn nearest_hit(stream: &FlameStream, fuel: RangeInclusive<f32>, wisps_grid: &Wis
     for (column_distance, slice) in columns(stream) {
         if nearest.as_ref().is_some_and(|hit| column_distance > hit.distance) { break; }
         for coords in slice.iter_in_bounds(wisps_grid.bounds) {
-            for &wisp in &wisps_grid[coords] {
+            for &wisp in wisps_grid.wisps_at(coords.at(VolumeLevel::Elevation)) {
                 let Ok(wisp_transform) = wisps.get(wisp) else { continue; };
                 let Some(hit_distance) = hit_distance(stream, wisp_transform.translation.xy()) else { continue; };
                 if !fuel.contains(&hit_distance) { continue; }
@@ -117,9 +117,9 @@ fn columns(stream: &FlameStream) -> impl Iterator<Item = (f32, GridArea)> {
         let low = cell_of(ends[0].min(ends[1]) - reach);
         let high = cell_of(ends[0].max(ends[1]) + reach);
         let slice = if along == 0 {
-            GridArea::new(GridCoords { x: column, y: low }, GridImprint::Rectangle { width: 1, height: high - low + 1 })
+            GridArea::new(GridCoords { x: column, y: low }.at(AltitudeLevel::Elevation), GridImprint::Rectangle { width: 1, height: high - low + 1 })
         } else {
-            GridArea::new(GridCoords { x: low, y: column }, GridImprint::Rectangle { width: high - low + 1, height: 1 })
+            GridArea::new(GridCoords { x: low, y: column }.at(AltitudeLevel::Elevation), GridImprint::Rectangle { width: high - low + 1, height: 1 })
         };
         (near, slice)
     })

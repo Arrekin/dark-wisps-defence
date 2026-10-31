@@ -1,7 +1,7 @@
 use bevy::ecs::entity_disabling::Disabled;
 use bevy::prelude::*;
 
-use game_core::prelude::ZDepth;
+use game_core::prelude::{DrawLevel, ZDepth};
 
 pub mod side_menu_tooltip;
 
@@ -30,7 +30,7 @@ impl Indicators {
 }
 
 #[derive(Component)]
-#[require(Transform, Visibility, Sprite, ZDepth::MapUi)]
+#[require(Transform, Visibility, Sprite, ZDepth::MapUi, DrawLevel::Elevation)]
 pub struct IndicatorDisplay {
     pub active_index: usize,
     pub cycle_time: f32,

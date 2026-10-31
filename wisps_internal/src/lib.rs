@@ -9,7 +9,8 @@ use bevy::prelude::*;
 
 use almanach::{WispInfo, prelude::*};
 use game_core::motion::MotionSystems;
-use grids::placement::{annotate_non_empty, PlacementModes};
+use grids::placement::PlacementModes;
+use indexes::placement::annotate_non_empty;
 use persistence::prelude::{AppGameLoadSaveExtension, CollectSave};
 use states::prelude::*;
 use visuals::{effect_visuals::sync_effect_visuals, lane::LanePlugin};

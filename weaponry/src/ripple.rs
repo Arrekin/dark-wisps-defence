@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use game_core::prelude::{MapBound, SSS, ZDepth};
+use game_core::prelude::{DrawLevel, MapBound, SSS, ZDepth};
 
 #[derive(Component, SSS)]
 pub struct BuilderRipple {
@@ -21,7 +21,7 @@ impl BuilderRipple {
 }
 
 #[derive(Component)]
-#[require(MapBound, ZDepth::AirEffect)]
+#[require(MapBound, ZDepth::AirEffect, DrawLevel::Airborne)]
 pub struct Ripple {
     pub max_radius: f32,
     pub current_radius: f32,

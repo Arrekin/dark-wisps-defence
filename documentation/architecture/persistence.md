@@ -148,7 +148,7 @@ app.register_loader(MapLoadingStage::SpawnMapElements, "my_entities", load_my_en
 fn load_my_entities(ctx: &mut LoadContext) -> LoadResult {
     ctx.for_each_entity("SELECT id, kind FROM my_entities", |ctx, old_id, entity, row| {
         let kind = row.get_parsed::<MyKind>(1)?;
-        let grid_position = ctx.grid_coords(old_id)?;
+        let grid_position = ctx.grid_position(old_id)?;
         ctx.insert(entity, BuilderMyEntity::new(grid_position, kind));
         Ok(())
     })
@@ -163,16 +163,18 @@ fn load_my_entities(ctx: &mut LoadContext) -> LoadResult {
   A collector registers only the entities it saves. Collectors run in any order, so a foreign key
   to `entities` goes only on a row's own id; references to other entities resolve at load, where
   an unsaved target fails `ctx.entity` and the loader logs it, then skips or degrades the row.
-- `grid_coords` — grid-based positions
+- `grid_coords` — grid coordinates and altitude level
 - `world_positions` — pixel-precise positions (smooth movement resume)
 - `integrity_points` — integrity-point values
 - `time_bounds` — `TimeBound` lifetimes in absolute game time; no row means no saved lifetime
 
 ### Marker Tables
 
-Entity types have marker tables (`mining_complexes`, `tower_cannons`, `wisps`, ...); shared
-tables hold common data, entity-specific columns go on the marker table. `SaveContext` writes the
-shared tables (`ctx.save_grid_coords(id, coords)?`, ...); `LoadContext` reads them (`ctx.grid_coords(old_id)?`, ...).
+Each entity type has a marker table, such as `mining_complexes`, `tower_cannons`, or `wisps`.
+Type-specific columns belong on that table; common data belongs in shared tables.
+`SaveContext` and `LoadContext` provide helpers for shared data. For example,
+`ctx.save_grid_position(id, position)?` saves coordinates and altitude to `grid_coords`,
+and `ctx.grid_position(old_id)?` restores them as a `GridPosition`.
 
 ### Lists
 

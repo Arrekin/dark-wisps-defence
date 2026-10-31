@@ -68,7 +68,7 @@ pub struct WallStyleEntry {
 pub struct WallStyleKey(pub u32);
 impl WallStyleKey {
     /// The style index shaders use: one-based, so 0 can mean open ground.
-    pub fn shader_index(self) -> u32 {
+    pub fn gpu_index(self) -> u32 {
         self.0 + 1
     }
 }
@@ -187,7 +187,7 @@ pub enum WallCanvasDebug {
     Noise = 3,
 }
 impl WallCanvasDebug {
-    pub fn shader_index(self) -> u32 {
+    pub fn gpu_index(self) -> u32 {
         self as u32
     }
 }

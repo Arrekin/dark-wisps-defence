@@ -1,8 +1,9 @@
+use std::ops::{Deref, DerefMut};
+
 use bevy::prelude::*;
 
-use game_core::prelude::{GridArea, GridCoords};
-
-use crate::{GridVersion, base::BaseGrid};
+use game_core::prelude::{Bounds, GridArea, GridCoords};
+use grids::{GridVersion, base::BaseGrid};
 
 #[derive(Component)]
 pub struct EmitterEnergy(pub FloodEmissionsDetails);
@@ -11,11 +12,8 @@ pub struct EmitterEnergy(pub FloodEmissionsDetails);
 pub struct EmitterChangedMessage {
     pub emitter_entity: Entity,
     pub area: GridArea,
-    pub emissions_details: Vec<FloodEmissionsDetails>,
+    pub emissions_details: FloodEmissionsDetails,
 }
-
-#[derive(Resource, Default)]
-pub struct EmissionsEnergyRecalculateAll(pub bool);
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum EmissionsType {
@@ -31,9 +29,20 @@ pub struct EmissionsGridVersion {
     pub energy: GridVersion,
 }
 
-pub type EmissionsGrid = BaseGrid<Emissions, EmissionsGridVersion>;
+#[derive(Resource, Default)]
+pub struct EmissionsGrid(BaseGrid<Emissions, EmissionsGridVersion>);
+impl Deref for EmissionsGrid {
+    type Target = BaseGrid<Emissions, EmissionsGridVersion>;
+    fn deref(&self) -> &Self::Target { &self.0 }
+}
+impl DerefMut for EmissionsGrid {
+    fn deref_mut(&mut self) -> &mut Self::Target { &mut self.0 }
+}
 
 impl EmissionsGrid {
+    pub fn new_with_size(bounds: impl Into<Bounds>) -> Self {
+        Self(BaseGrid::new_with_size(bounds))
+    }
     pub fn add_energy(&mut self, coords: GridCoords, energy: f32) {
         let emissions = &mut self[coords];
         emissions.energy += energy;
@@ -48,7 +57,7 @@ impl EmissionsGrid {
     }
 }
 
-/// Defines how to calculate the emissions as a function of distance
+/// Emission intensity as a function of distance.
 #[derive(Clone, Debug)]
 pub enum FloodEmissionsEvaluator {
     /// The same value at every distance.
@@ -59,8 +68,7 @@ pub enum FloodEmissionsEvaluator {
     ExponentialDecay{start_value: f32, decay: f32},
 }
 
-/// Describes what type of emissions, and how far to spread it.
-/// The evaluator determines how to calculate the emissions value as the flood spreads
+/// Emission type, spread distance, and intensity function used by the flood.
 #[derive(Clone, Debug)]
 pub struct FloodEmissionsDetails {
     pub emissions_type: EmissionsType,

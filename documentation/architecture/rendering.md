@@ -16,25 +16,29 @@ Three decisions shape the system:
 
 ## How the world becomes a frame
 
-The world has two levels of draw order. A **layer** places a visual relative to other visuals.
-A **band** groups contiguous layers and defines which parts of the scene an effect can sample
-or distort. The bands progress from Ground through Surface and Air to Placement.
+Draw order uses two coordinates: a **draw level** and a **layer**. Draw levels run from the
+tunnel floor to `Airborne`. All visuals at one level draw before any visual at the next level.
+Layers order visuals within a level, such as scorch marks below units or projectiles above them.
+They can also keep instances of the same visual together for batching.
 
-Layers express relationships such as a scorch mark below units or a projectile above them.
-They can also keep instances of the same visual together for batching. Bands express broader
-composition: an air effect can act on the ground and surface beneath it while leaving aerial
-units and projectiles to draw afterward.
+A **band** groups layers that share a scene snapshot and distortion pass. The bands are Ground,
+Surface, Air, and Placement. Ground and Surface layers support selected terrain levels; Air
+and Placement layers draw only at `Airborne`. A band has one composition boundary, before its
+lowest depth across all draw levels. For example, the Air boundary lets an effect act on the
+terrain beneath it while leaving aerial units and projectiles to draw afterward.
 
-`ZDepth` owns layer order, including stable offsets that reduce depth ties within a layer.
-Its world-space depth is enforced independently of parent transforms, so a visual child can
+Each visual declares a `ZDepth` layer and a supported `DrawLevel`. `ZDepth` defines the supported
+pairs and gives each pair a separate depth range, with stable entity offsets to reduce ties.
+World-space depth is enforced independently of parent transforms, so a visual child can
 follow its parent without inheriting the parent's render layer. The exact depth calculation
 and transform rules belong to the [`ZDepth` API](../../game_core/src/z_depth.rs).
 
 A camera renders the frame in this order:
 
 1. Opaque and alpha-masked world content.
-2. Transparent world content, in band order. Before a band draws, the renderer performs a
-   **cut** if its effects need displacement or a scene snapshot.
+2. Transparent world content, sorted by draw level and then layer. At a band's composition
+   boundary, the renderer performs a **cut** if effects need displacement or a scene snapshot.
+   Each band has at most one cut, even when its layers appear at several draw levels.
 3. Bloom and tonemapping of the composed world.
 4. Screen UI, followed by final output scaling.
 
@@ -47,8 +51,8 @@ regardless of its layer.
 
 ## Cuts: effects that act on the scene
 
-A cut processes the image accumulated before a band. It has three stages, each performed only
-when needed:
+A cut processes the image accumulated before a band's lowest depth. It has three stages,
+each performed only when needed:
 
 1. **Displace.** Effects contribute sampling offsets and brightness gains to a shared buffer.
    Contributions add together, and one full-screen pass applies their sum to the scene.
@@ -56,14 +60,15 @@ when needed:
    that image as the band's **beneath snapshot**. Drawing continues on a copy.
 3. **Overlay.** Effects draw over the scene in layer order, with access to the snapshot.
 
-The band's ordinary transparent items then draw. This includes **paint** visuals, which draw
-at their own depth and can request access to the snapshot.
+Ordinary transparent items, including **paint** visuals, draw at their assigned depth.
+Paint visuals can request access to their band's snapshot.
 
 ### What a snapshot means
 
-The snapshot contains the scene from before the band, including that band's displacement.
-It stays fixed while the band's overlays and paint visuals draw. They all see the same input;
-an overlay does not sample the output of an earlier overlay in its band.
+The snapshot contains the scene at the band's cut, after that cut's displacement. It stays
+fixed while the band's overlays and paint visuals draw. All draw levels in a band use the same
+snapshot. Raising a visual's draw level does not add intervening terrain or earlier overlays
+to that snapshot.
 
 This gives effects a predictable composition boundary. For example, a force field before the
 air band refracts the ground and surface, then adds its shell light as an overlay. The shell
@@ -81,8 +86,8 @@ full-screen copy, shared by all readers in that band and camera.
 
 This choice has visible consequences:
 
-- An effect sees lower bands, not earlier items in its own band. Changing its layer within the
-  band does not change the snapshot. To include more content, it must act from a higher band.
+- An effect sees the scene captured at its band's cut. Changing its layer or draw level within
+  that band does not change the snapshot. Sampling later content requires a later cut.
 - Displacement within one cut is additive, not a sequence of independent refractions.
   Sequential distortion requires separate composition boundaries.
 - The accumulated image no longer separates its objects. To keep an object undistorted, draw
@@ -218,7 +223,7 @@ Two implementation limits matter when extending the renderer:
 - The opaque and alpha-masked pass does not bind shared world data. Supporting consumers there
   requires adapting that pass as well as declaring the shader input.
 - Bevy can batch transparent items across a band boundary. Such a batch draws with its first
-  item, so some higher-band content can receive distortion intended for lower bands. The
+  item, so content above the cut can draw early and receive that cut's distortion. The
   boundary lookup currently does not split those batches.
 
 ## Batched painting (planned)

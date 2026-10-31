@@ -5,7 +5,7 @@
 use bevy::{ecs::component::Mutable, prelude::*, reflect::TypePath, render::render_resource::ShaderType};
 use nanorand::Rng;
 
-use game_core::{motion::Locomotion, prelude::ZDepth};
+use game_core::{motion::Locomotion, prelude::{DrawLevel, ZDepth}};
 use visuals::{effect_visuals::{EffectVisualTarget, EffectVisuals}, lane::LaneVisual};
 use wisps::prelude::WISP_GRID_IMPRINT;
 
@@ -41,7 +41,7 @@ impl WispMotionLook {
 
 /// A fire wisp. Field order and types mirror `Instance` in `assets/shaders/wisps/fire_quad.wesl`.
 #[derive(Component, ShaderType, TypePath, Clone)]
-#[require(ZDepth::WispFire)]
+#[require(ZDepth::WispFire, DrawLevel::Elevation)]
 pub(crate) struct WispFireVisual {
     /// `vigor` and `heading` stretch the flame licks and comb them backward into a trailing
     /// fireball (vigor = strength, heading = aim).
@@ -101,7 +101,7 @@ pub(crate) struct WispWaterLook {
 
 /// A water wisp. Field order and types mirror `Instance` in `assets/shaders/wisps/water_quad.wesl`.
 #[derive(Component, ShaderType, TypePath, Clone)]
-#[require(ZDepth::WispWater)]
+#[require(ZDepth::WispWater, DrawLevel::Elevation)]
 pub(crate) struct WispWaterVisual {
     pub look: WispWaterLook,
     pub effects: EffectVisuals,
@@ -140,7 +140,7 @@ impl EffectVisualTarget for WispWaterVisual {
 
 /// A light wisp. Field order and types mirror `Instance` in `assets/shaders/wisps/light_quad.wesl`.
 #[derive(Component, ShaderType, TypePath, Clone)]
-#[require(ZDepth::WispLight)]
+#[require(ZDepth::WispLight, DrawLevel::Elevation)]
 pub(crate) struct WispLightVisual {
     /// `vigor` brightens and flares the star and sheds motes, `heading` aims the mote wake.
     pub look: WispMotionLook,
@@ -172,7 +172,7 @@ impl EffectVisualTarget for WispLightVisual {
 /// An electric wisp. Field order and types mirror `Instance` in
 /// `assets/shaders/wisps/electric_quad.wesl`.
 #[derive(Component, ShaderType, TypePath, Clone)]
-#[require(ZDepth::WispElectric)]
+#[require(ZDepth::WispElectric, DrawLevel::Elevation)]
 pub(crate) struct WispElectricVisual {
     /// `vigor` scales the crackle, `heading` aims the spark wake.
     pub look: WispMotionLook,

@@ -1,15 +1,14 @@
 use bevy::prelude::*;
 
 use almanach::{Almanach, AlmanachAppExt, WallInfo};
-use game_core::prelude::{GridArea, GridCoords, GridImprint, MapObject, MapObjectTooltipRequest, SSS};
-use grids::{
-    obstacles::GridStructureType,
-    placement::{
-        annotate_non_empty, GridObjectPlacer, GridsCollectionParam, PlacementModes, PlacementStyle, PlacementValidity,
-        PlaceRequest, RemoveRequest, validator_all_empty,
-    },
-};
+use game_core::prelude::{GridArea, GridImprint, GridPosition, MapObject, MapObjectTooltipRequest, SSS};
+use grids::placement::{PlacementModes, PlacementStyle, PlacementValidity, PlaceRequest, RemoveRequest};
 use hud::prelude::BuilderSideMenuItemTooltip;
+use indexes::{
+    obstacles::GridStructure,
+    placement::{annotate_non_empty, GridObjectPlacer, GridsCollectionParam, validator_all_empty},
+    prelude::ObstacleGrid,
+};
 use logging::prelude::*;
 use map_objects::{
     prelude::Wall,
@@ -25,6 +24,8 @@ impl Plugin for WallPlugin {
             .add_systems(CollectSave, collect_walls)
             .register_loader(MapLoadingStage::SpawnMapElements, "walls", load_walls)
             .add_observer(BuilderWall::on_builder_add_spawn_wall)
+            .add_observer(on_insert_wall_imprint_on_obstacle_grid)
+            .add_observer(on_discard_wall_deprint_from_obstacle_grid)
             .add_observer(on_wall_place_request_do_so)
             .add_observer(on_wall_remove_request_do_so)
             .add_observer(on_map_object_tooltip_request_spawn_wall_tooltip)
@@ -54,7 +55,7 @@ impl From<String> for WallStyleSource {
 
 #[derive(Component, SSS)]
 pub(crate) struct BuilderWall {
-    pub grid_position: GridCoords,
+    pub grid_position: GridPosition,
     pub style: WallStyleSource,
 }
 impl BuilderWall {
@@ -69,7 +70,7 @@ impl BuilderWall {
         }
     }
 
-    pub fn new(grid_position: GridCoords, style: impl Into<WallStyleSource>) -> Self {
+    pub fn new(grid_position: GridPosition, style: impl Into<WallStyleSource>) -> Self {
         Self { grid_position, style: style.into() }
     }
 
@@ -110,7 +111,7 @@ fn collect_walls(
     if walls.is_empty() { return; }
 
     #[debug_dev("Saving {} walls", rows.len())]
-    let rows: Vec<(u32, GridCoords, String)> = walls
+    let rows: Vec<(u32, GridPosition, String)> = walls
         .iter()
         .map(|(entity, area, key)| {
             (
@@ -123,13 +124,13 @@ fn collect_walls(
         })
         .collect();
     save.submit(move |ctx| {
-        for (id, coords, style) in rows {
+        for (id, grid_position, style) in rows {
             ctx.register_entity(id)?;
             ctx.tx.execute(
                 "INSERT OR REPLACE INTO walls (id, style) VALUES (?1, ?2)",
                 rusqlite::params![id, style],
             )?;
-            ctx.save_grid_coords(id, coords)?;
+            ctx.save_grid_position(id, grid_position)?;
         }
         Ok(())
     });
@@ -138,10 +139,31 @@ fn collect_walls(
 fn load_walls(ctx: &mut LoadContext) -> LoadResult {
     ctx.for_each_entity("SELECT id, style FROM walls", |ctx, old_id, entity, row| {
         let style: String = row.get(1)?;
-        let grid_position = ctx.grid_coords(old_id)?;
+        let grid_position = ctx.grid_position(old_id)?;
         ctx.insert(entity, BuilderWall::new(grid_position, style));
         Ok(())
     })
+}
+
+#[log_tags(Tag::MapObjects)]
+fn on_insert_wall_imprint_on_obstacle_grid(
+    trigger: On<Insert<Wall>>,
+    mut obstacle_grid: ResMut<ObstacleGrid>,
+    walls: Query<(&GridArea, &WallStyleKey), With<Wall>>,
+) {
+    let entity = trigger.entity;
+    #[warn_dev("Wall {entity} has no area or style; not imprinted on the obstacle grid")]
+    let Ok((area, style)) = walls.get(entity) else { return; };
+    obstacle_grid.imprint_wall(*area, entity, *style);
+}
+
+fn on_discard_wall_deprint_from_obstacle_grid(
+    trigger: On<Discard<Wall>>,
+    mut obstacle_grid: ResMut<ObstacleGrid>,
+    walls: Query<&GridArea, With<Wall>>,
+) {
+    let Ok(area) = walls.get(trigger.entity) else { return; };
+    obstacle_grid.deprint(*area);
 }
 
 #[log_tags(Tag::MapObjects)]
@@ -169,10 +191,10 @@ fn on_wall_remove_request_do_so(
     placer: Single<&GridArea, With<GridObjectPlacer>>,
 ) {
     let RemoveRequest(MapObject::Wall) = *trigger else { return };
-    let coords = placer.origin;
+    let coords = placer.origin.coords;
     #[debug_dev("Wall removed at {coords}")]
-    if let Some(&GridStructureType::Wall(entity)) = grids.obstacle_grid.get(coords).map(|cell| &cell.structure) {
-        commands.entity(entity).despawn();
+    if let Some(&GridStructure::Wall { slot }) = grids.obstacle_grid.get(coords).map(|cell| &cell.elevation) {
+        commands.entity(grids.obstacle_grid.entry(slot).entity).despawn();
     }
 }
 

@@ -23,8 +23,8 @@ use bevy::{
 };
 
 use alteration::modifiers::prelude::AttackDamage;
-use game_core::prelude::{CELL_SIZE, DamageMessage, GridArea, GridCoords, GridImprint, MapBound, OptionalCommands, Property, ZDepth};
-use grids::wisps::WispsGrid;
+use game_core::prelude::{AltitudeLevel, CELL_SIZE, DamageMessage, DrawLevel, GridArea, GridCoords, GridImprint, MapBound, OptionalCommands, Property, VolumeLevel, ZDepth};
+use indexes::wisps::WispsGrid;
 use logging::prelude::*;
 use persistence::{prelude::*, rusqlite};
 use session::{GameClock, TimeBound};
@@ -94,7 +94,7 @@ const SCORCH_DURATION: f32 = 3.;
 /// The fireball's light pool on the ground, drawn additively by the paint lane. Child of a
 /// `Fireball`. Field order and types mirror `Instance` in `assets/shaders/weaponry/fireball_glow.wesl`.
 #[derive(Component, ShaderType, TypePath, Clone, PartialEq)]
-#[require(ZDepth::FireballGlow)]
+#[require(ZDepth::FireballGlow, DrawLevel::Elevation)]
 struct FireballGlow {
     intensity: f32,
     /// Mesh half-size, in pool radii.
@@ -272,14 +272,14 @@ fn fireball_hit_system(
         let landing_coords = GridCoords::from_world_position(lob.target());
         let seed = seed_from_entity(entity);
         let (blast, scorch) = (TimeBound::lasting(&clock, BLAST_DURATION), TimeBound::lasting(&clock, SCORCH_DURATION));
-        let transform = Transform::from_translation(GridArea::cell(landing_coords).world_center().extend(0.));
-        commands.spawn((FireballImpact::new(ImpactLayer::Blast, blast, seed, landing_coords), blast, transform, ZDepth::FireballBlast));
-        commands.spawn((FireballImpact::new(ImpactLayer::Scorch, scorch, seed, landing_coords), scorch, transform, ZDepth::FireballScorch));
-        let main_blast = GridArea::centered_on(landing_coords, GridImprint::square_of_reach(MAIN_BLAST_REACH));
-        let blast_zone = GridArea::centered_on(landing_coords, GridImprint::square_of_reach(RING_REACH));
+        let transform = Transform::from_translation(landing_coords.world_center().extend(0.));
+        commands.spawn((FireballImpact::new(ImpactLayer::Blast, blast, seed, landing_coords), blast, transform, ZDepth::FireballBlast, DrawLevel::Elevation));
+        commands.spawn((FireballImpact::new(ImpactLayer::Scorch, scorch, seed, landing_coords), scorch, transform, ZDepth::FireballScorch, DrawLevel::GroundFloor));
+        let main_blast = GridArea::centered_on(landing_coords.at(AltitudeLevel::Elevation), GridImprint::square_of_reach(MAIN_BLAST_REACH));
+        let blast_zone = GridArea::centered_on(landing_coords.at(AltitudeLevel::Elevation), GridImprint::square_of_reach(RING_REACH));
         for blast_zone_coords in blast_zone.iter_in_bounds(wisps_grid.bounds) {
             let damage = if main_blast.contains(blast_zone_coords) { attack_damage.get() } else { attack_damage.get() * RING_DAMAGE_SHARE };
-            for wisp in &wisps_grid[blast_zone_coords] {
+            for wisp in wisps_grid.wisps_at(blast_zone_coords.at(VolumeLevel::Elevation)) {
                 if !wisps.contains(*wisp) { continue; } // Grid entries may not yet be visible to the query.
                 damage_messages.write(DamageMessage { target: *wisp, amount: damage });
             }

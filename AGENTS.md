@@ -17,9 +17,8 @@ Every persistable entity type has a `Builder*` component (e.g., `BuilderTowerCan
 ```rust
 #[derive(Component, SSS)]
 pub struct BuilderFoo {
-    grid_position: GridCoords,           // or other spawn-time data
-    integrity_points: Option<f32>,       // None => baseline (fresh spawn), Some => restore
-    // ... other fields with fresh-spawn defaults
+    grid_position: GridPosition,
+    integrity_points: Option<f32>,       // None uses the baseline; Some for custome value. 
 }
 ```
 
@@ -258,7 +257,7 @@ Observer names describe both the trigger and what the function does. The trigger
 ### Systems: action-only names
 
 Systems have no single trigger (they run every frame or on schedule), so they use plain action names:
-- `update_emissions_grid`, `show_main_menu`, `apply_supplier_changes`
+- `recalculate_emissions`, `show_main_menu`, `apply_supplier_changes`
 - Save collectors: `collect_cannonballs`, `collect_walls` (registered in `CollectSave`)
 - Loaders: `load_cannonballs`, `load_walls` (registered via `register_loader`)
 

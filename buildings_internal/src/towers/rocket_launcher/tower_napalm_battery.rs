@@ -19,8 +19,9 @@ use alteration::{
 };
 use buildings::prelude::*;
 use game_core::prelude::*;
-use grids::placement::{annotate_non_empty, PlacementModes, PlaceRequest};
+use grids::placement::{PlacementModes, PlaceRequest};
 use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
+use indexes::placement::annotate_non_empty;
 use logging::prelude::*;
 use persistence::prelude::*;
 use resources::prelude::*;
@@ -76,7 +77,7 @@ const fn salvo_area_offsets() -> [(i32, i32); SALVO_AREA_SIDE * SALVO_AREA_SIDE]
 
 #[derive(Component, SSS)]
 pub(crate) struct BuilderTowerNapalmBattery {
-    pub grid_position: GridCoords,
+    pub grid_position: GridPosition,
     /// Custom integrity points, or `None` to use the fresh-spawn baseline.
     pub integrity_points: Option<IntegrityPoints>,
     /// Set when the player disabled this building. `None` on fresh spawn.
@@ -115,7 +116,7 @@ impl BuilderTowerNapalmBattery {
         }
     }
 
-    pub fn new(grid_position: GridCoords) -> Self { Self { grid_position, integrity_points: None, disabled_by_player: None, shooting_timer: None, top_angle: 0. } }
+    pub fn new(grid_position: GridPosition) -> Self { Self { grid_position, integrity_points: None, disabled_by_player: None, shooting_timer: None, top_angle: 0. } }
     pub fn with_integrity_points(mut self, integrity_points: f32) -> Self {
         self.integrity_points = Some(IntegrityPoints::new(integrity_points));
         self
@@ -206,7 +207,7 @@ fn collect_tower_napalm_batteries(
     if towers.is_empty() { return; }
 
     #[debug_dev("Saving {} tower napalm batteries", rows.len())]
-    let rows: Vec<(u32, GridCoords, f32, bool, f32, f32)> = towers
+    let rows: Vec<(u32, GridPosition, f32, bool, f32, f32)> = towers
         .iter()
         .map(|(entity, area, integrity_points, disabled_by_player, shooting_timer, top_rotation)| {
             (
@@ -220,9 +221,9 @@ fn collect_tower_napalm_batteries(
         })
         .collect();
     save.submit(move |ctx| {
-        for (id, coords, integrity_points, disabled_by_player, shooting_elapsed, top_angle) in rows {
+        for (id, grid_position, integrity_points, disabled_by_player, shooting_elapsed, top_angle) in rows {
             ctx.save_marker("tower_napalm_batteries", id)?;
-            ctx.save_grid_coords(id, coords)?;
+            ctx.save_grid_position(id, grid_position)?;
             ctx.save_integrity_points(id, integrity_points)?;
             ctx.save_shooting_elapsed(id, shooting_elapsed)?;
             ctx.save_top_angle(id, top_angle)?;
@@ -236,7 +237,7 @@ fn collect_tower_napalm_batteries(
 
 fn load_tower_napalm_batteries(ctx: &mut LoadContext) -> LoadResult {
     ctx.for_each_entity("SELECT id FROM tower_napalm_batteries", |ctx, old_id, entity, _| {
-        let grid_position = ctx.grid_coords(old_id)?;
+        let grid_position = ctx.grid_position(old_id)?;
         let integrity_points = ctx.integrity_points(old_id)?;
         let disabled_by_player = ctx.disabled_by_player(old_id)?;
         let shooting_elapsed = ctx.shooting_elapsed(old_id)?;
@@ -277,7 +278,7 @@ fn shooting_system(
             let landing_coords = aim_coords.shifted(offsets[index]);
             if !map_info.grid_bounds.contains(landing_coords) { continue; }
 
-            let landing_point = GridArea::cell(landing_coords).world_center();
+            let landing_point = landing_coords.world_center();
             let lob = lob_profile.lob(tower_center, landing_point, clock.from_now(launched as f32 * SALVO_LAUNCH_GAP));
             commands.spawn(BuilderNapalmBomb::new(lob).with_shooter(tower));
             launched += 1;

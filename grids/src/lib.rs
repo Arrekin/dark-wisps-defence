@@ -1,5 +1,3 @@
-#![feature(adt_const_params)]
-
 use std::{collections::VecDeque, fmt::Debug};
 
 use bevy::prelude::*;
@@ -7,13 +5,7 @@ use bevy::prelude::*;
 use game_core::prelude::GridCoords;
 
 pub mod base;
-pub mod obstacles;
-pub mod tower_ranges;
-pub mod energy_supply;
-pub mod ground_cover;
-pub mod wisps;
 pub mod visited;
-pub mod emissions;
 pub mod placement;
 pub mod search;
 pub mod slot_index;
@@ -49,15 +41,6 @@ impl GridPath {
     }
 }
 
-/// Component auto-managing given entity presence in ObstacleGrid
-#[derive(Component)]
-pub enum ObstacleGridObject {
-    Building,
-    Wall,
-    QuantumField,
-    DarkOre,
-}
-
 /// Adding or removing entities with this component causes full recalculation of the emission grid
 #[derive(Component, Default)]
 pub struct EmissionsGridSpreadAffector;
@@ -72,7 +55,6 @@ pub mod prelude {
         EnergySupplySystems,
         GridPath,
         GridVersion,
-        ObstacleGridObject,
     };
-    pub use super::obstacles::{ObstacleCell, ObstacleGrid, ReservedCoords};
+    pub use super::placement::ReservedCoords;
 }

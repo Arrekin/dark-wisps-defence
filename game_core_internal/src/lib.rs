@@ -3,7 +3,8 @@ use bytemuck::{Pod, Zeroable};
 
 use alteration::modifiers::prelude::IncomingDamageMultiplier;
 use game_core::{motion::{Locomotion, MotionSystems}, prelude::*};
-use grids::{energy_supply::EnergySupplyGrid, prelude::{EnergySupplySystems, GridVersion}};
+use grids::prelude::{EnergySupplySystems, GridVersion};
+use indexes::energy_supply::EnergySupplyGrid;
 use visuals::shared_gpu::{SharedGpuBinding, SharedGpuWriter};
 
 pub struct GameCorePlugin;
@@ -18,7 +19,7 @@ impl Plugin for GameCorePlugin {
                 update_power_state.after(EnergySupplySystems),
                 upload_gpu_map_info.run_if(resource_changed::<MapInfo>),
             ))
-            .add_observer(on_insert_zdepth_set_local_z)
+            .add_observer(on_insert_zdepth_or_draw_level_set_local_z)
             .add_observer(on_insert_grid_area_snap_transform)
             // Technical-state global observers: fold primitive component
             // events into one shared `TechnicalStateChanged` event. They fire
@@ -65,13 +66,13 @@ fn on_moment_happened_propagate_to_watchers(
     }
 }
 
-fn on_insert_zdepth_set_local_z(
-    trigger: On<Insert<ZDepth>>,
-    mut transforms: Query<(&mut Transform, &ZDepth)>,
+fn on_insert_zdepth_or_draw_level_set_local_z(
+    trigger: On<Insert<(ZDepth, DrawLevel)>>,
+    mut transforms: Query<(&mut Transform, &ZDepth, &DrawLevel)>,
 ) {
     let entity = trigger.entity;
-    let Ok((mut transform, z_depth)) = transforms.get_mut(entity) else { return; };
-    transform.translation.z = z_depth.world_z(entity);
+    let Ok((mut transform, z_depth, draw_level)) = transforms.get_mut(entity) else { return; };
+    transform.translation.z = z_depth.world_z(*draw_level, entity);
 }
 
 fn on_insert_grid_area_snap_transform(
@@ -97,9 +98,9 @@ fn on_add_display_icon_switcher_load_display_icon(
 /// See `ZDepth` docs. Runs after propagation so it sees final world transforms;
 /// the equality guard keeps unchanged entities from dirtying `GlobalTransform`
 /// (and re-triggering render extraction) every frame.
-fn enforce_zdepth_world_z(mut transforms: Query<(Entity, &mut GlobalTransform, &ZDepth)>) {
-    for (entity, mut global_transform, z_depth) in transforms.iter_mut() {
-        let world_z = z_depth.world_z(entity);
+fn enforce_zdepth_world_z(mut transforms: Query<(Entity, &mut GlobalTransform, &ZDepth, &DrawLevel)>) {
+    for (entity, mut global_transform, z_depth, draw_level) in transforms.iter_mut() {
+        let world_z = z_depth.world_z(*draw_level, entity);
         let mut affine = global_transform.affine();
         if affine.translation.z != world_z {
             affine.translation.z = world_z;

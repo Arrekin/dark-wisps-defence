@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use game_core::{math::angle_difference, prelude::{MapBound, SSS, ZDepth}};
+use game_core::{math::angle_difference, prelude::{DrawLevel, MapBound, SSS, ZDepth}};
 
 // Movement tuning
 pub const PATROL_RADIUS: f32 = 150.0;
@@ -49,7 +49,7 @@ pub enum DroneState {
 }
 
 #[derive(Component)]
-#[require(MapBound, ZDepth::AerialUnit)]
+#[require(MapBound, ZDepth::AerialUnit, DrawLevel::Airborne)]
 pub struct ExpeditionDrone {
     pub mission_target: Option<Entity>, // current mission target (ExpeditionZone)
     pub heading: f32,             // current facing direction in radians
@@ -76,14 +76,14 @@ impl ExpeditionDrone {
 }
 
 #[derive(Component)]
-#[require(MapBound, ZDepth::GroundEffect)]
+#[require(MapBound, ZDepth::GroundEffect, DrawLevel::Elevation)]
 pub struct ScanningBeam {
     pub drone: Entity,
     pub spot: Entity,  // the scan spot entity
 }
 
 #[derive(Component)]
-#[require(MapBound, ZDepth::GroundEffect)]
+#[require(MapBound, ZDepth::GroundEffect, DrawLevel::Elevation)]
 pub struct ScanSpot {
     pub destination: Vec2, // where moving toward (world coords)
 }

@@ -1,51 +1,34 @@
-use std::marker::ConstParamTy;
+//! # Energy supply
+//!
+//! Each cell records the suppliers whose ranges cover it. A power flood starts at generators
+//! and follows cardinally connected cells with active supply. Reached cells have power;
+//! cells with supply but no path to a generator remain unpowered.
+//!
+//! Connectivity depends on the coverage cells, so suppliers can connect without either
+//! building lying inside the other's range. Disabled suppliers have separate membership
+//! lists and do not extend power coverage.
+
+use std::{marker::ConstParamTy, ops::{Deref, DerefMut}};
 
 use bevy::{platform::collections::HashSet, prelude::*};
 
 use alteration::modifiers::prelude::EnergySupplyRange;
-use game_core::prelude::{GridArea, GridCoords, IsPowered};
-
-use crate::{GridVersion, base::BaseGrid};
-
-// ============================================================================
-// How energy supply works
-// ============================================================================
-//
-// The energy supply grid records, per cell, which suppliers cover that cell
-// (their flooded range). This is range recording, not conduction.
-//
-// A separate power flood (`flood_power_coverage`) starts from generators and
-// walks outward through any cell that `has_supply()`. This determines which
-// cells are actually connected to a generator. Cells the flood reaches are
-// powered (yellow on overlay); cells with supply but no flood reach are
-// unpowered (orange on overlay).
-//
-// Two suppliers exchange power when their ranges **overlap** — i.e. they
-// share at least one cell on the grid. The suppliers' building areas
-// are irrelevant for connectivity; only their flooded ranges
-// matter. This means a relay does not need to be inside another relay's
-// range to connect — their ranges just need to touch.
-//
-// A supplier that is unpowered is, by definition, isolated: if its range
-// overlapped any powered area, the power flood would reach it and it would
-// be powered. Unpowered = no overlap with any powered area.
-//
-// Disabled suppliers (player-disabled) are kept in a separate `disabled_suppliers`
-// set per cell. They do not contribute to `has_supply()`, so the power flood
-// does not walk through them. The overlay reads this set to render their
-// ranges as red dashed outlines.
-// ============================================================================
+use game_core::prelude::{Bounds, GridArea, GridCoords, IsPowered};
+use grids::{GridVersion, base::BaseGrid};
 
 /// Can provide energy to nearby buildings. Does not produce energy.
 #[derive(Component, Copy, Clone, Debug)]
 #[require(EnergySupplyRange)]
 pub struct SupplierEnergy;
 
-/// Produces energy
+/// Produces energy.
 #[derive(Component, Copy, Clone, Debug)]
 #[require(IsPowered)]
 pub struct GeneratorEnergy;
 
+/// Updates a supplier's grid coverage.
+///
+/// Carries the area and range so removal can be processed after the supplier despawns.
 #[derive(Message)]
 pub struct SupplierChangedMessage {
     pub supplier: Entity,
@@ -54,24 +37,19 @@ pub struct SupplierChangedMessage {
     pub mode: SupplierChange,
 }
 
-/// What happened to a supplier, as carried by `SupplierChangedMessage`.
+/// The coverage change requested by [`SupplierChangedMessage`].
 ///
-/// Deliberately state-free: whether a placed supplier lands in the active or
-/// disabled set is derived from live entity state at apply time (see
-/// `apply_supplier_changes` in grids_internal), so the message can never
-/// disagree with the entity. This also makes `Place` overwrite-idempotent —
-/// duplicate or reordered emissions converge on the entity's actual state.
-/// `Remove` must keep working after despawn, hence the message payload carries area/range.
+/// Placement uses the supplier's live `DisabledByPlayer` state when the message is applied.
+/// It is skipped if the entity no longer has `SupplierEnergy`.
 #[derive(ConstParamTy, PartialEq, Eq, Copy, Clone, Debug)]
 pub enum SupplierChange {
-    /// (Re)stamp the supplier's coverage over its range.
+    /// Add or refresh the supplier's coverage.
     Place,
-    /// Remove the supplier's coverage entirely (from both sets).
+    /// Remove the supplier from both active and disabled coverage.
     Remove,
 }
 
-/// Concrete grid operation for `flood_energy_supply`, resolved by the consumer
-/// from `SupplierChange` + live entity state.
+/// Grid operation for `flood_energy_supply`, with the supplier's disabled state resolved.
 #[derive(PartialEq, Eq, Copy, Clone, Debug)]
 pub enum FloodEnergySupplyMode {
     Place { as_disabled: bool },
@@ -98,12 +76,22 @@ impl EnergySupplyCell {
     pub fn disabled_suppliers(&self) -> &HashSet<Entity> { &self.disabled_suppliers }
 }
 
-pub type EnergySupplyGrid = BaseGrid<EnergySupplyCell, GridVersion>;
+#[derive(Resource, Default)]
+pub struct EnergySupplyGrid(BaseGrid<EnergySupplyCell, GridVersion>);
+impl Deref for EnergySupplyGrid {
+    type Target = BaseGrid<EnergySupplyCell, GridVersion>;
+    fn deref(&self) -> &Self::Target { &self.0 }
+}
+impl DerefMut for EnergySupplyGrid {
+    fn deref_mut(&mut self) -> &mut Self::Target { &mut self.0 }
+}
 
 impl EnergySupplyGrid {
-    /// (Re)stamp the supplier on this cell, in the active or disabled set.
-    /// Idempotent: always removes from both sets first, so repeated/stale
-    /// placements converge on the requested state.
+    pub fn new_with_size(bounds: impl Into<Bounds>) -> Self {
+        Self(BaseGrid::new_with_size(bounds))
+    }
+    /// Records the supplier in the cell's active or disabled set.
+    /// Removes prior membership from both sets before applying the requested state.
     pub fn place_supplier(&mut self, coords: GridCoords, supplier: Entity, as_disabled: bool) {
         let cell = &mut self[coords];
         cell.remove_from_both(supplier);
@@ -112,11 +100,11 @@ impl EnergySupplyGrid {
         } else {
             cell.add_supplier(supplier);
         }
-        self.version = self.version.wrapping_add(1);
+        self.advance_version();
     }
     pub fn remove_supplier_from_both(&mut self, coords: GridCoords, supplier: Entity) {
         self[coords].remove_from_both(supplier);
-        self.version = self.version.wrapping_add(1);
+        self.advance_version();
     }
     /// True if at least one in-bounds cell of the area has energy supply.
     pub fn is_area_suppliable(&self, area: GridArea) -> bool {
@@ -128,6 +116,6 @@ impl EnergySupplyGrid {
     }
     pub fn reset_all_power_indicators(&mut self) {
         self.grid.iter_mut().for_each(|cell| cell.set_power(false));
-        self.version = self.version.wrapping_add(1);
+        self.advance_version();
     }
 }

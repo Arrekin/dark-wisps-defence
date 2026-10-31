@@ -8,6 +8,7 @@ bevy = { workspace = true }
 bytemuck = { workspace = true }
 game_core = { workspace = true }
 grids = { workspace = true }
+indexes = { workspace = true }
 states = { workspace = true }
 hud = { workspace = true }
 buildings = { workspace = true }

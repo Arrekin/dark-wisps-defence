@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
 use game_core::prelude::{AutoGridSnap, GridArea, MapBound};
-use grids::{prelude::ObstacleGridObject, EmissionsGridSpreadAffector};
+use grids::EmissionsGridSpreadAffector;
 
 pub mod wall_style;
 
@@ -18,19 +18,19 @@ pub mod prelude {
 
 /// Drawn by the dark ore canvas from `GridArea`.
 #[derive(Component)]
-#[require(MapBound, ObstacleGridObject = ObstacleGridObject::DarkOre)]
+#[require(MapBound)]
 pub struct DarkOre {
     pub amount: i32,
 }
 
 /// Drawn by the wall canvas from `GridArea`, so the entity itself carries no transform or render layer.
 #[derive(Component)]
-#[require(MapBound, ObstacleGridObject = ObstacleGridObject::Wall, EmissionsGridSpreadAffector)]
+#[require(MapBound, EmissionsGridSpreadAffector)]
 pub struct Wall;
 
 /// Progressive obstacle requiring drone scanning to solve.
 #[derive(Component, Default)]
-#[require(AutoGridSnap, MapBound, ObstacleGridObject = ObstacleGridObject::QuantumField)]
+#[require(AutoGridSnap, MapBound)]
 pub struct QuantumField;
 
 /// Accumulates expedition-drone scan progress while a beam is active over the entity.

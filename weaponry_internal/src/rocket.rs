@@ -6,9 +6,9 @@ use bevy::{
 use alteration::modifiers::prelude::AttackDamage;
 use game_core::{
     math::angle_difference,
-    prelude::{DamageMessage, GridArea, GridCoords, GridImprint, Property},
+    prelude::{AltitudeLevel, DamageMessage, GridArea, GridCoords, GridImprint, Property, VolumeLevel},
 };
-use grids::wisps::WispsGrid;
+use indexes::wisps::WispsGrid;
 use logging::prelude::*;
 use persistence::{prelude::*, rusqlite};
 use states::prelude::{GameState, MapLoadingStage};
@@ -175,11 +175,11 @@ fn rocket_hit_system(
         let Some(Ok(wisp_transform)) = target.0.map(|wisp| wisps_transforms.get(wisp)) else { continue; };
         if rocket_transform.translation.xy().distance(wisp_transform.translation.xy()) > ROCKET_HIT_DISTANCE { continue; }
 
-        let blast_zone = GridArea::centered_on(rocket_coords, GridImprint::square_of_reach(BLAST_REACH));
+        let blast_zone = GridArea::centered_on(rocket_coords.at(AltitudeLevel::Elevation), GridImprint::square_of_reach(BLAST_REACH));
         for blast_zone_coords in blast_zone.iter_in_bounds(wisps_grid.bounds) {
             commands.spawn(BuilderExplosion(blast_zone_coords));
 
-            for wisp in &wisps_grid[blast_zone_coords] {
+            for wisp in wisps_grid.wisps_at(blast_zone_coords.at(VolumeLevel::Elevation)) {
                 if !wisps_transforms.contains(*wisp) { continue; } // Grid entries may not yet be visible to the query.
                 damage_messages.write(DamageMessage { target: *wisp, amount: attack_damage.get() });
             }

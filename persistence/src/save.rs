@@ -10,7 +10,7 @@ use bevy::{
     tasks::IoTaskPool,
 };
 
-use game_core::prelude::{GridArea, GridCoords, GridImprint};
+use game_core::prelude::{GridArea, GridImprint, GridPosition};
 use logging::prelude::*;
 use session::TimeBound;
 
@@ -75,8 +75,8 @@ impl SaveContext<'_> {
         self.tx.prepare_cached("INSERT OR REPLACE INTO time_bounds (entity_id, starts_at, ends_at) VALUES (?1, ?2, ?3)")?.execute((entity_id, time_bound.starts_at, time_bound.ends_at))
     }
 
-    pub fn save_grid_coords(&self, entity_id: u32, coords: GridCoords) -> rusqlite::Result<usize> {
-        self.tx.prepare_cached("INSERT INTO grid_coords (entity_id, x, y) VALUES (?1, ?2, ?3)")?.execute((entity_id, coords.x, coords.y))
+    pub fn save_grid_position(&self, entity_id: u32, position: GridPosition) -> rusqlite::Result<usize> {
+        self.tx.prepare_cached("INSERT INTO grid_coords (entity_id, x, y, level) VALUES (?1, ?2, ?3, ?4)")?.execute((entity_id, position.coords.x, position.coords.y, position.level.as_ref()))
     }
 
     pub fn save_grid_imprint(&self, entity_id: u32, imprint: GridImprint) -> rusqlite::Result<usize> {
@@ -89,9 +89,9 @@ impl SaveContext<'_> {
         self.tx.prepare_cached("INSERT OR REPLACE INTO grid_imprints (id, shape, width, height) VALUES (?1, ?2, ?3, ?4)")?.execute(rusqlite::params![entity_id, shape, width, height])
     }
 
-    /// Saves the origin to `grid_coords` and the imprint to `grid_imprints`.
+    /// Saves the origin and level to `grid_coords` and the imprint to `grid_imprints`.
     pub fn save_grid_area(&self, entity_id: u32, area: GridArea) -> rusqlite::Result<()> {
-        self.save_grid_coords(entity_id, area.origin)?;
+        self.save_grid_position(entity_id, area.origin)?;
         self.save_grid_imprint(entity_id, area.imprint)?;
         Ok(())
     }

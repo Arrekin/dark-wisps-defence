@@ -9,7 +9,7 @@ use bevy::{
     sprite_render::{AlphaMode2d, Material2d, Material2dPlugin, MeshMaterial2d},
 };
 
-use game_core::{prelude::{GridArea, MapInfo, ZDepth}, request_flag::RequestFlag};
+use game_core::{prelude::{DrawLevel, GridArea, MapInfo, ZDepth}, request_flag::RequestFlag};
 use map_objects::{prelude::Wall, wall_style::{WallCanvasDebug, WallStyleKey, WallStyles}};
 use states::prelude::MapLoadingStage;
 use visuals::{canvas::MapCanvasBundle, shared_gpu::{SharedGpuBinding, SharedGpuWriter}, specialize_with_shared_gpu};
@@ -57,7 +57,7 @@ impl Material2d for WallCanvasMaterial {
 }
 
 #[derive(Component)]
-#[require(ZDepth::Obstacle)]
+#[require(ZDepth::Obstacle, DrawLevel::Elevation)]
 struct WallCanvas;
 impl WallCanvas {
     fn create(
@@ -71,7 +71,7 @@ impl WallCanvas {
         upload_requested.request();
 
         let material = materials.add(WallCanvasMaterial {
-            settings: WallCanvasSettings { debug_mode: debug.shader_index() },
+            settings: WallCanvasSettings { debug_mode: debug.gpu_index() },
         });
         commands.spawn((
             MapCanvasBundle::new(material, &map_info),
@@ -108,8 +108,8 @@ fn upload_gpu_wall_style_cells(
     let map_bounds = map_info.grid_bounds;
     let mut cells = vec![0u32; map_bounds.area()];
     for (area, key) in walls.iter() {
-        let Some(index) = map_bounds.index_checked(area.origin) else { continue; };
-        cells[index] = key.shader_index();
+        let Some(index) = map_bounds.index_checked(area.origin.coords) else { continue; };
+        cells[index] = key.gpu_index();
     }
     shared_gpu.write(SharedGpuBinding::WallStyleCells, cells);
 }
@@ -126,5 +126,5 @@ fn apply_wall_canvas_debug(
     debug: Res<WallCanvasDebug>,
     wall_canvas: Single<&MeshMaterial2d<WallCanvasMaterial>, With<WallCanvas>>,
 ) {
-    materials.get_mut(wall_canvas.into_inner()).unwrap().settings.debug_mode = debug.shader_index();
+    materials.get_mut(wall_canvas.into_inner()).unwrap().settings.debug_mode = debug.gpu_index();
 }

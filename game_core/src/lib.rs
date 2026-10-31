@@ -1,3 +1,4 @@
+pub mod altitude;
 pub mod components;
 pub mod display;
 pub mod events;
@@ -19,15 +20,16 @@ pub mod prelude {
     // `#[derive(MomentKind)]` work wherever the traits are in scope.
     pub use lib_derive::{FromEntity, MomentKind, Property, SSS};
 
+    pub use crate::altitude::{AltitudeLevel, FloorLevel, VolumeLevel};
     pub use crate::components::{ContentId, DisabledByPlayer, IntegrityPoints, IsOperational, IsPowered, MapBound, NeedsPower};
     pub use crate::display::{DisplayDescription, DisplayIcon, DisplayIconSwitcher, DisplayName, DisplayOrder, FaceSurface, GHOST_ALPHA, MapObjectTooltipRequest, ObjectFaceRequest};
     pub use crate::events::{DamageMessage, TechnicalChange, TechnicalStateChanged};
-    pub use crate::grid::{AreaRange, AutoGridSnap, Bounds, CELL_SIZE, GridArea, GridCoords, GridImprint, MapInfo, RangeType};
+    pub use crate::grid::{AreaRange, AutoGridSnap, Bounds, CELL_SIZE, CellSide, GridArea, GridCoords, GridImprint, GridPosition, MapInfo, RangeType};
     pub use crate::moments::{
         HasMoments, Moment, MomentHappened, MomentKind, MomentOf, MomentOfInterest, MomentWatchers,
     };
     pub use crate::response_request::ResponseRequest;
     pub use crate::traits::{OptionalCommands, Property, SSS};
     pub use crate::types::{BuildingType, MapObject, Shard, ShardTier, ShardType, TowerType, WispType};
-    pub use crate::z_depth::ZDepth;
+    pub use crate::z_depth::{DrawLevel, ZDepth};
 }

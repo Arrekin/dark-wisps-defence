@@ -185,7 +185,7 @@ fn ui_spawn_area(ui: &mut egui::Ui, area: &mut SpawnArea) {
                 *area = SpawnArea::Coords { coords: vec![GridCoords::default()] };
             }
             if ui.selectable_label(matches!(area, SpawnArea::Rect { .. }), SpawnArea::Rect { area: GridArea::default() }.as_ref()).clicked() {
-                *area = SpawnArea::Rect { area: GridArea::new(GridCoords::default(), GridImprint::square(10)) };
+                *area = SpawnArea::Rect { area: GridArea::new(GridCoords::default().at(AltitudeLevel::Elevation), GridImprint::square(10)) };
             }
             if ui.selectable_label(matches!(area, SpawnArea::Edge { .. }), SpawnArea::Edge { side: EdgeSide::default() }.as_ref()).clicked() {
                 *area = SpawnArea::Edge { side: EdgeSide::default() };
@@ -226,9 +226,9 @@ fn ui_spawn_area(ui: &mut egui::Ui, area: &mut SpawnArea) {
         SpawnArea::Rect { area } => {
             ui.horizontal(|ui| {
                 ui.label("Origin X:");
-                ui.add(egui::DragValue::new(&mut area.origin.x));
+                ui.add(egui::DragValue::new(&mut area.origin.coords.x));
                 ui.label("Y:");
-                ui.add(egui::DragValue::new(&mut area.origin.y));
+                ui.add(egui::DragValue::new(&mut area.origin.coords.y));
             });
             let GridImprint::Rectangle { width, height } = &mut area.imprint else { unreachable!("SpawnArea::Rect holds a rectangle") };
             ui.horizontal(|ui| {

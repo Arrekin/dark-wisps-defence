@@ -69,10 +69,12 @@ CREATE TABLE IF NOT EXISTS stock (
 -- Map layout
 -- ========================
 
+-- A grid location is a cell at an altitude level, stored as its `AltitudeLevel` name.
 CREATE TABLE IF NOT EXISTS grid_coords (
     entity_id INTEGER,
     x INTEGER,
     y INTEGER,
+    level TEXT NOT NULL,
     FOREIGN KEY(entity_id) REFERENCES entities(id)
 );
 
@@ -484,6 +486,7 @@ CREATE TABLE IF NOT EXISTS summoning_area_rect (
     origin_y INTEGER NOT NULL,
     width INTEGER NOT NULL,
     height INTEGER NOT NULL,
+    level TEXT NOT NULL,
     FOREIGN KEY(summoning_id) REFERENCES entities(id)
 );
 

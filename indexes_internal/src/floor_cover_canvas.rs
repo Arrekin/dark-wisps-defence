@@ -1,6 +1,6 @@
-//! Draws ground cover on a single quad covering the map, using the shared GPU buffers.
-//! Each domain supplies shaders for its cover kinds. The canvas blends them in `GroundCoverKind`
-//! order, bottom first, and hides ground cover beneath walls and buildings.
+//! Draws floor cover on a single quad covering the map, using the shared GPU buffers.
+//! Each domain supplies shaders for its cover kinds. The canvas blends them in `FloorCoverKind`
+//! order, bottom first, and hides floor cover beneath walls and buildings.
 
 use bevy::{
     mesh::MeshVertexBufferLayoutRef,
@@ -11,24 +11,24 @@ use bevy::{
     sprite_render::{AlphaMode2d, Material2d, Material2dKey, Material2dPipeline, Material2dPlugin},
 };
 
-use game_core::prelude::{MapInfo, ZDepth};
+use game_core::prelude::{DrawLevel, MapInfo, ZDepth};
 use states::prelude::MapLoadingStage;
 use visuals::{canvas::MapCanvasBundle, shader::set_blend, shared_gpu::add_shared_gpu_layout};
 
-pub(crate) struct GroundCoverCanvasPlugin;
-impl Plugin for GroundCoverCanvasPlugin {
+pub(crate) struct FloorCoverCanvasPlugin;
+impl Plugin for FloorCoverCanvasPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_plugins(Material2dPlugin::<GroundCoverCanvasMaterial>::default())
-            .add_systems(OnEnter(MapLoadingStage::LoadResources), GroundCoverCanvas::create);
+            .add_plugins(Material2dPlugin::<FloorCoverCanvasMaterial>::default())
+            .add_systems(OnEnter(MapLoadingStage::LoadResources), FloorCoverCanvas::create);
     }
 }
 
 #[derive(Asset, AsBindGroup, TypePath, Debug, Clone, Default)]
-struct GroundCoverCanvasMaterial {}
-impl Material2d for GroundCoverCanvasMaterial {
+struct FloorCoverCanvasMaterial {}
+impl Material2d for FloorCoverCanvasMaterial {
     fn fragment_shader() -> ShaderRef {
-        "shaders/grids/ground_cover_canvas.wesl".into()
+        "shaders/grids/floor_cover_canvas.wesl".into()
     }
 
     fn alpha_mode(&self) -> AlphaMode2d {
@@ -48,22 +48,22 @@ impl Material2d for GroundCoverCanvasMaterial {
     }
 }
 
-/// The map's ground cover canvas. Hidden while the map has no ground cover.
+/// The map's floor cover canvas. Hidden while the map has no floor cover.
 #[derive(Component)]
-#[require(ZDepth::GroundCover)]
-pub(crate) struct GroundCoverCanvas;
-impl GroundCoverCanvas {
+#[require(ZDepth::FloorCover, DrawLevel::GroundFloor)]
+pub(crate) struct FloorCoverCanvas;
+impl FloorCoverCanvas {
     fn create(
         mut commands: Commands,
         map_info: Res<MapInfo>,
-        mut materials: ResMut<Assets<GroundCoverCanvasMaterial>>,
+        mut materials: ResMut<Assets<FloorCoverCanvasMaterial>>,
     ) {
-        commands.despawn_all::<With<GroundCoverCanvas>>();
+        commands.despawn_all::<With<FloorCoverCanvas>>();
 
-        let material = materials.add(GroundCoverCanvasMaterial {});
+        let material = materials.add(FloorCoverCanvasMaterial {});
         commands.spawn((
             MapCanvasBundle::new(material, &map_info),
-            GroundCoverCanvas,
+            FloorCoverCanvas,
             Visibility::Hidden,
         ));
     }

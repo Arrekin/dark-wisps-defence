@@ -7,8 +7,9 @@ use bevy::{
 };
 
 use almanach::prelude::Almanach;
-use game_core::prelude::{Bounds, BuildingType, CELL_SIZE, GridArea, GridCoords, MapObject, ObjectFaceRequest, TowerType, ZDepth};
+use game_core::prelude::{Bounds, BuildingType, CELL_SIZE, DrawLevel, GridArea, GridCoords, MapObject, ObjectFaceRequest, TowerType, ZDepth};
 use grids::placement::*;
+use indexes::placement::*;
 use states::prelude::UiInteraction;
 use viewport::MouseInfo;
 
@@ -17,14 +18,14 @@ impl Plugin for GridObjectPlacerPlugin {
     fn build(&self, app: &mut App) {
         app
             .add_plugins(Material2dPlugin::<GridPlacerMaterial>::default())
-            .insert_resource(GridObjectPlacerRequest::default())
+            .init_resource::<GridObjectPlacerRequest>()
             .add_systems(Startup, spawn_placer)
             .add_systems(PreUpdate, (
                 follow_mouse_system.run_if(in_state(UiInteraction::PlaceGridObject)),
                 keyboard_input_system,
             ))
             .add_systems(Update, (
-                begin_placement.run_if(GridObjectPlacerRequest::there_is_request()),
+                begin_placement.run_if(GridObjectPlacerRequest::is_requested),
                 handle_placement_click.run_if(in_state(UiInteraction::PlaceGridObject)),
             ))
             .add_systems(OnEnter(UiInteraction::PlaceGridObject), show_placer)
@@ -77,9 +78,7 @@ impl Material2d for GridPlacerMaterial {
 /// the `CELL_*` constants in `assets/shaders/grids/grid_placer.wesl`.
 fn build_cell_data(area: GridArea, annotations: &[(GridCoords, CellHighlight)]) -> UVec4 {
     let mut words = [0u32; 4];
-    for (cell_index, cell_coords) in area.bounding_box().iter().enumerate() {
-        if cell_index >= 64 { break; }
-
+    for (cell_index, cell_coords) in area.bounding_box().iter().enumerate().take(64) {
         let state: u32 = if area.contains(cell_coords) {
             match annotations.iter().find(|(coords, _)| *coords == cell_coords) {
                 Some((_, CellHighlight::Negative)) => 2,
@@ -105,8 +104,8 @@ fn follow_mouse_system(
     placer: Single<(Entity, &GridArea), With<GridObjectPlacer>>,
 ) {
     let (placer_entity, placer_area) = placer.into_inner();
-    if placer_area.origin != mouse_info.grid_coords {
-        commands.entity(placer_entity).insert(GridArea::new(mouse_info.grid_coords, placer_area.imprint));
+    if placer_area.origin.coords != mouse_info.grid_coords {
+        commands.entity(placer_entity).insert(GridArea::new(mouse_info.grid_coords.at(placer_area.origin.level), placer_area.imprint));
         commands.trigger(GridPlacerChanged);
     }
 }
@@ -150,7 +149,7 @@ fn on_placement_ghost_stale_respawn_ghost(
     let Some(map_object) = grid_object_placer.map_object() else { return; };
     placer_commands.with_children(|placer| {
         placer
-            .spawn((ZDepth::GridPlacerGhost, placer_area.imprint, *placement_style))
+            .spawn((ZDepth::GridPlacerGhost, DrawLevel::Airborne, placer_area.imprint, *placement_style))
             .trigger(|ghost| ObjectFaceRequest::ghost(ghost, map_object));
     });
 }
@@ -176,7 +175,7 @@ fn on_grid_placer_changed_revalidate_placement(
     let validity = (active_placement.placement_info.validate)(active_placement.map_object, *placer_area, &grids);
     let annotations = (active_placement.placement_info.annotate)(active_placement.map_object, *placer_area, validity, &grids);
 
-    material.uniform.validity = validity.shader_index();
+    material.uniform.validity = validity.gpu_index();
     material.uniform.cell_data = build_cell_data(*placer_area, &annotations);
 }
 

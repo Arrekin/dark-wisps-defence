@@ -2,7 +2,8 @@ use bevy::{platform::collections::HashMap, prelude::*};
 
 use alteration::modifiers::prelude::{AttackRangeType, ModifierType};
 use game_core::prelude::{BuildingType, ContentId, GridImprint, MapObject, Shard};
-use grids::placement::{ObjectPlacementInfo, PlacementAnnotatorFn, PlacementModes, PlacementValidatorFn};
+use grids::placement::PlacementModes;
+use indexes::placement::{ObjectPlacementInfo, PlacementAnnotatorFn, PlacementValidatorFn};
 use resources::prelude::{ResourceAmount, ResourceType};
 use shards::prelude::ShardSocket;
 use states::prelude::MapLoadingStage;

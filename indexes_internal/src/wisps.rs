@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
 use game_core::prelude::MapInfo;
-use grids::wisps::WispsGrid;
+use indexes::wisps::WispsGrid;
 use states::prelude::MapLoadingStage;
 
 pub(crate) struct WispsGridPlugin;

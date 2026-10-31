@@ -10,7 +10,7 @@
 
 use bevy::{prelude::*, reflect::TypePath, render::render_resource::{BlendState, ShaderType}};
 
-use game_core::prelude::{GridArea, ZDepth};
+use game_core::prelude::{DrawLevel, GridArea, ZDepth};
 use units::expedition_drone::{ExpeditionDrone, ScanSpot, ScanningBeam};
 use visuals::{
     lane::{LaneParts, LanePlugin, LaneVisual},
@@ -38,7 +38,7 @@ const QUAD_MARGIN: f32 = 16.;
 /// Visual data stored on the quantum field entity. Field order and types mirror
 /// `Instance` in `assets/shaders/quantum_field/anomaly.wesl`.
 #[derive(Component, ShaderType, TypePath, Clone, Default)]
-#[require(ZDepth::AirEffect)]
+#[require(ZDepth::AirEffect, DrawLevel::Airborne)]
 pub(crate) struct QuantumFieldAnomaly {
     /// World-space center used to compare overlapping fields.
     center: Vec2,

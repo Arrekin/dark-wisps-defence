@@ -1,5 +1,5 @@
 [package]
-name = "grids_internal"
+name = "indexes_internal"
 version.workspace = true
 edition.workspace = true
 
@@ -8,6 +8,7 @@ bevy = { workspace = true }
 bytemuck = { workspace = true }
 game_core = { workspace = true }
 grids = { workspace = true }
+indexes = { workspace = true }
 buildings = { workspace = true }
 alteration = { workspace = true }
 logging = { workspace = true }

@@ -9,6 +9,7 @@ bytemuck = { workspace = true }
 fields = { workspace = true }
 game_core = { workspace = true }
 grids = { workspace = true }
+indexes = { workspace = true }
 states = { workspace = true }
 visuals = { workspace = true }
 

@@ -252,7 +252,7 @@ fn rebuild_panel(
     }
     let selected_forge = selection.forge();
     let shown_queue = selected_forge.unwrap_or(*global_queue);
-    let mut sorted_forges: Vec<(Entity, GridCoords)> = forges.iter().map(|(forge, area)| (forge, area.origin)).collect();
+    let mut sorted_forges: Vec<(Entity, GridCoords)> = forges.iter().map(|(forge, area)| (forge, area.origin.coords)).collect();
     sorted_forges.sort_by_key(|&(_, coords)| (coords.y, coords.x));
 
     // Reuse the entry layout for the current selection and the dropdown options.

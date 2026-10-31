@@ -17,8 +17,9 @@ use fields::{
     prelude::*,
 };
 use game_core::prelude::*;
-use grids::placement::{annotate_non_empty, PlacementModes, PlaceRequest};
+use grids::placement::{PlacementModes, PlaceRequest};
 use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
+use indexes::placement::annotate_non_empty;
 use logging::prelude::*;
 use persistence::prelude::*;
 use resources::prelude::*;
@@ -50,7 +51,7 @@ const SLOW_AMOUNT: f32 = 40.0;
 
 #[derive(Component, SSS)]
 pub(crate) struct BuilderTowerField {
-    pub grid_position: GridCoords,
+    pub grid_position: GridPosition,
     /// Custom integrity points, or `None` to use the fresh-spawn baseline.
     pub integrity_points: Option<IntegrityPoints>,
     /// Set when the player disabled this building. `None` on fresh spawn.
@@ -81,7 +82,7 @@ impl BuilderTowerField {
         }
     }
 
-    pub fn new(grid_position: GridCoords) -> Self { Self { grid_position, integrity_points: None, disabled_by_player: None } }
+    pub fn new(grid_position: GridPosition) -> Self { Self { grid_position, integrity_points: None, disabled_by_player: None } }
     pub fn with_integrity_points(mut self, integrity_points: f32) -> Self {
         self.integrity_points = Some(IntegrityPoints::new(integrity_points));
         self
@@ -209,7 +210,7 @@ fn collect_tower_fields(
     if towers.is_empty() { return; }
 
     #[debug_dev("Saving {} tower fields", rows.len())]
-    let rows: Vec<(u32, GridCoords, f32, bool)> = towers
+    let rows: Vec<(u32, GridPosition, f32, bool)> = towers
         .iter()
         .map(|(entity, area, integrity_points, disabled_by_player)| {
             (
@@ -221,9 +222,9 @@ fn collect_tower_fields(
         })
         .collect();
     save.submit(move |ctx| {
-        for (id, coords, integrity_points, disabled_by_player) in rows {
+        for (id, grid_position, integrity_points, disabled_by_player) in rows {
             ctx.save_marker("tower_fields", id)?;
-            ctx.save_grid_coords(id, coords)?;
+            ctx.save_grid_position(id, grid_position)?;
             ctx.save_integrity_points(id, integrity_points)?;
             if disabled_by_player {
                 ctx.save_disabled_by_player(id)?;
@@ -235,7 +236,7 @@ fn collect_tower_fields(
 
 fn load_tower_fields(ctx: &mut LoadContext) -> LoadResult {
     ctx.for_each_entity("SELECT id FROM tower_fields", |ctx, old_id, entity, _| {
-        let grid_position = ctx.grid_coords(old_id)?;
+        let grid_position = ctx.grid_position(old_id)?;
         let integrity_points = ctx.integrity_points(old_id)?;
         let disabled_by_player = ctx.disabled_by_player(old_id)?;
         let builder = BuilderTowerField::new(grid_position)

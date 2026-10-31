@@ -10,7 +10,7 @@ use bevy::{
 };
 
 use almanach::Almanach;
-use game_core::{prelude::{GridArea, MapInfo, ZDepth}, request_flag::RequestFlag};
+use game_core::{prelude::{DrawLevel, GridArea, MapInfo, ZDepth}, request_flag::RequestFlag};
 use map_objects::prelude::DarkOre;
 use states::prelude::MapLoadingStage;
 use visuals::{canvas::MapCanvasBundle, shared_gpu::{SharedGpuBinding, SharedGpuWriter}, specialize_with_shared_gpu};
@@ -45,7 +45,7 @@ impl Material2d for DarkOreCanvasMaterial {
 }
 
 #[derive(Component)]
-#[require(ZDepth::DarkOre)]
+#[require(ZDepth::DarkOre, DrawLevel::GroundFloor)]
 struct DarkOreCanvas;
 impl DarkOreCanvas {
     fn create(
@@ -97,7 +97,7 @@ fn upload_gpu_dark_ore_fill(
     let map_bounds = map_info.grid_bounds;
     let mut fill = vec![0f32; map_bounds.area()];
     for (area, dark_ore) in dark_ores.iter() {
-        let Some(index) = map_bounds.index_checked(area.origin) else { continue; };
+        let Some(index) = map_bounds.index_checked(area.origin.coords) else { continue; };
         fill[index] = (dark_ore.amount as f32 / max_field_saturation).clamp(0.0, 1.0);
     }
     shared_gpu.write(SharedGpuBinding::DarkOreFill, fill);

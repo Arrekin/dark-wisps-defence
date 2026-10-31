@@ -8,7 +8,6 @@ bevy = { workspace = true }
 nanorand = { workspace = true }
 units = { workspace = true }
 game_core = { workspace = true }
-grids = { workspace = true }
 buildings = { workspace = true }
 map_objects = { workspace = true }
 states = { workspace = true }

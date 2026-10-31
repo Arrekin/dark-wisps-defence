@@ -10,6 +10,7 @@ logging = { workspace = true }
 hud = { workspace = true }
 game_core = { workspace = true }
 grids = { workspace = true }
+indexes = { workspace = true }
 map_objects = { workspace = true }
 viewport = { workspace = true }
 widgets = { workspace = true }

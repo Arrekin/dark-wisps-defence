@@ -1,12 +1,12 @@
 use bevy::prelude::*;
 
 use alteration::modifiers::prelude::AttackDamage;
-use game_core::prelude::{SSS, ZDepth};
+use game_core::prelude::{DrawLevel, SSS, ZDepth};
 
 use super::components::Projectile;
 
 #[derive(Component)]
-#[require(ZDepth::Projectile)]
+#[require(ZDepth::Projectile, DrawLevel::Airborne)]
 pub struct LaserDart;
 
 /// LaserDart follows Wisp, and if the wisp no longer exists, follows to the target vector

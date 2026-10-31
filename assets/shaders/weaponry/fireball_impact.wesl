@@ -5,7 +5,7 @@ import package::shaders::common::game_time::game_time_since;
 import package::shaders::common::fire_ramp::fire_ramp;
 import package::shaders::common::gradient_noise::{gradient_fbm_2d, gradient_noise_2d};
 import package::shaders::common::hash::{HASH_GOLDEN, hash_mix, hash_unit};
-import package::shaders::grids::obstacles::is_raised_at;
+import package::shaders::grids::obstacles::{STRUCTURE_BUILDING, STRUCTURE_DARK_ORE, STRUCTURE_OFF_MAP, STRUCTURE_WALL, VOLUME_ELEVATION, VOLUME_UNDERGROUND, structure_at};
 
 // Fireball impact with two layers sharing a square mesh centered on the landing cell:
 // - Blast: flash, expanding fire and smoke, an outward-moving fire ring, splatter, and sparks.
@@ -81,9 +81,16 @@ fn premultiplied_over(below: vec4<f32>, color: vec3<f32>, alpha: f32) -> vec4<f3
     return vec4<f32>(color * alpha + below.rgb * (1.0 - alpha), alpha + below.a * (1.0 - alpha));
 }
 
-// `cell` is relative to the landing cell.
+// `cell` is relative to the landing cell. Scorch and ground fire stay off cells outside the map,
+// walls, buildings and dark ore.
 fn is_raised_cell(cell: vec2<i32>) -> f32 {
-    return f32(is_raised_at(impact.landing_cell + cell));
+    let coords = impact.landing_cell + cell;
+    let elevation = structure_at(coords, VOLUME_ELEVATION);
+    let is_blocked = elevation == STRUCTURE_OFF_MAP
+        || elevation == STRUCTURE_WALL
+        || elevation == STRUCTURE_BUILDING
+        || structure_at(coords, VOLUME_UNDERGROUND) == STRUCTURE_DARK_ORE;
+    return f32(is_blocked);
 }
 
 // Raised-cell coverage: 1 on obstacles, 0 on open ground, with softened edges and rounded corners.

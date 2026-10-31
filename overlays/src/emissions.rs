@@ -7,11 +7,9 @@ use bevy::{
     sprite_render::{AlphaMode2d, Material2d, Material2dPlugin, MeshMaterial2d},
 };
 
-use game_core::prelude::{MapInfo, ZDepth};
-use grids::{
-    emissions::{EmissionsGrid, EmissionsType},
-    prelude::GridVersion,
-};
+use game_core::prelude::{DrawLevel, MapInfo, ZDepth};
+use grids::prelude::GridVersion;
+use indexes::emissions::{EmissionsGrid, EmissionsType};
 use states::prelude::MapLoadingStage;
 use visuals::{canvas::MapCanvasBundle, specialize_with_shared_gpu};
 
@@ -88,7 +86,7 @@ impl Material2d for EmissionsOverlayMaterial {
 }
 
 #[derive(Component, Default)]
-#[require(ZDepth::OverlayEmissions)]
+#[require(ZDepth::OverlayEmissions, DrawLevel::GroundFloor)]
 pub struct EmissionsOverlay {
     /// Grid version used to calculate normalization; `None` before the first refresh.
     shown_version: Option<GridVersion>,

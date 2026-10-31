@@ -11,8 +11,9 @@ use alteration::{
 };
 use buildings::prelude::*;
 use game_core::prelude::*;
-use grids::placement::{CellHighlight, GridsCollectionParam, PlacementModes, PlacementValidity, PlaceRequest};
+use grids::placement::{CellHighlight, PlacementModes, PlacementValidity, PlaceRequest};
 use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
+use indexes::placement::GridsCollectionParam;
 use logging::prelude::*;
 use map_objects::{
     DarkOre,
@@ -80,7 +81,7 @@ pub(crate) struct MiningComplexDeliveryTimer(pub Timer);
 
 #[derive(Component, SSS)]
 pub(crate) struct BuilderMiningComplex {
-    pub grid_position: GridCoords,
+    pub grid_position: GridPosition,
     /// Custom integrity points, or `None` to use the fresh-spawn baseline.
     pub integrity_points: Option<IntegrityPoints>,
     /// Set when the player disabled this building. `None` on fresh spawn.
@@ -104,7 +105,7 @@ impl BuilderMiningComplex {
         }
     }
 
-    pub fn new(grid_position: GridCoords) -> Self {
+    pub fn new(grid_position: GridPosition) -> Self {
         Self { grid_position, integrity_points: None, disabled_by_player: None }
     }
     pub fn with_integrity_points(mut self, integrity_points: f32) -> Self {
@@ -174,7 +175,7 @@ fn collect_mining_complexes(
     if mining_complexes.is_empty() { return; }
 
     #[debug_dev("Saving {} mining complexes", rows.len())]
-    let rows: Vec<(u32, GridCoords, f32, bool)> = mining_complexes
+    let rows: Vec<(u32, GridPosition, f32, bool)> = mining_complexes
         .iter()
         .map(|(entity, area, integrity_points, disabled_by_player)| {
             (
@@ -186,9 +187,9 @@ fn collect_mining_complexes(
         })
         .collect();
     save.submit(move |ctx| {
-        for (id, coords, integrity_points, disabled_by_player) in rows {
+        for (id, grid_position, integrity_points, disabled_by_player) in rows {
             ctx.save_marker("mining_complexes", id)?;
-            ctx.save_grid_coords(id, coords)?;
+            ctx.save_grid_position(id, grid_position)?;
             ctx.save_integrity_points(id, integrity_points)?;
             if disabled_by_player {
                 ctx.save_disabled_by_player(id)?;
@@ -200,7 +201,7 @@ fn collect_mining_complexes(
 
 fn load_mining_complexes(ctx: &mut LoadContext) -> LoadResult {
     ctx.for_each_entity("SELECT id FROM mining_complexes", |ctx, old_id, entity, _| {
-        let grid_position = ctx.grid_coords(old_id)?;
+        let grid_position = ctx.grid_position(old_id)?;
         let integrity_points = ctx.integrity_points(old_id)?;
         let disabled_by_player = ctx.disabled_by_player(old_id)?;
         let builder = BuilderMiningComplex::new(grid_position)

@@ -22,7 +22,7 @@ fn main() {
             game_core_internal::GameCorePlugin,
             session_internal::SessionPlugin,
             almanach::AlmanachPlugin,
-            grids_internal::GridsPlugin,
+            indexes_internal::IndexesPlugin,
             visuals_internal::VisualsPlugin,
             viewport::ViewportPlugin,
             widgets_internal::WidgetsPlugin,

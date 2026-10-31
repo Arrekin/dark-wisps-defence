@@ -13,7 +13,7 @@
 
 use bevy::{prelude::*, reflect::TypePath, render::render_resource::{BlendState, ShaderType}};
 
-use game_core::prelude::ZDepth;
+use game_core::prelude::{DrawLevel, ZDepth};
 use session::{GameClock, TimeBound};
 use visuals::{
     lane::{LaneParts, LanePlugin, LaneVisual},
@@ -59,7 +59,7 @@ const SHIMMER_MARGIN: f32 = 8.;
 /// Field order and types mirror `Instance` in
 /// `assets/shaders/weaponry/inferno_dome.wesl`.
 #[derive(Component, ShaderType, TypePath, Clone)]
-#[require(ZDepth::AirEffect)]
+#[require(ZDepth::AirEffect, DrawLevel::Airborne)]
 struct InfernoDomeFire {
     /// Wrapped game time of the discharge.
     start_time: f32,
@@ -81,7 +81,7 @@ impl LaneVisual for InfernoDomeFire {
 /// Ground flash and scorch quad. Child of `InfernoDome`. Field order and types mirror `Instance` in
 /// `assets/shaders/weaponry/inferno_dome_ground.wesl`.
 #[derive(Component, ShaderType, TypePath, Clone)]
-#[require(ZDepth::GroundDecal)]
+#[require(ZDepth::FloorDecal, DrawLevel::GroundFloor)]
 struct InfernoDomeGround {
     /// Wrapped game time of the discharge.
     start_time: f32,
@@ -104,7 +104,7 @@ impl LaneVisual for InfernoDomeGround {
 /// Field order and types mirror `Instance` in
 /// `assets/shaders/weaponry/inferno_dome_displacement.wesl`.
 #[derive(Component, ShaderType, TypePath, Clone)]
-#[require(ZDepth::AirEffect)]
+#[require(ZDepth::AirEffect, DrawLevel::Airborne)]
 struct InfernoDomeDisplacement {
     /// Wrapped game time of the discharge.
     start_time: f32,

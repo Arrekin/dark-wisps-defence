@@ -1,18 +1,18 @@
 use bevy::prelude::*;
 
 use alteration::modifiers::prelude::AttackDamage;
-use game_core::prelude::{SSS, ZDepth};
+use game_core::prelude::{DrawLevel, SSS, ZDepth};
 
 use super::components::Projectile;
 
 #[derive(Component)]
-#[require(AttackDamage, Projectile, ZDepth::Projectile)]
+#[require(AttackDamage, Projectile, ZDepth::Projectile, DrawLevel::Airborne)]
 pub struct Rocket {
     /// Flight direction in radians.
     pub heading: f32,
 }
 #[derive(Component)]
-#[require(ZDepth::ProjectileUnder)]
+#[require(ZDepth::ProjectileUnder, DrawLevel::Airborne)]
 pub struct RocketExhaust;
 
 /// Rocket follows Wisp, and if the wisp no longer exists, looks for another target

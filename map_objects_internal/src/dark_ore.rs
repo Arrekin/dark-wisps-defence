@@ -1,15 +1,14 @@
 use bevy::prelude::*;
 
 use almanach::{Almanach, DarkOreInfo, prelude::AlmanachAppExt};
-use game_core::prelude::{GridArea, GridCoords, GridImprint, MapObject, MapObjectTooltipRequest, SSS};
-use grids::{
-    placement::{
-        annotate_non_empty, GridObjectPlacer, GridsCollectionParam, PlacementModes, PlacementValidity, PlaceRequest,
-        RemoveRequest, validator_all_empty,
-    },
+use game_core::prelude::{AltitudeLevel, GridArea, GridImprint, GridPosition, MapObject, MapObjectTooltipRequest, SSS};
+use grids::placement::{PlacementModes, PlacementValidity, PlaceRequest, RemoveRequest};
+use hud::prelude::BuilderSideMenuItemTooltip;
+use indexes::{
+    obstacles::GridStructure,
+    placement::{annotate_non_empty, GridObjectPlacer, GridsCollectionParam, validator_all_empty},
     prelude::ObstacleGrid,
 };
-use hud::prelude::BuilderSideMenuItemTooltip;
 use logging::prelude::*;
 use map_objects::prelude::*;
 use persistence::prelude::*;
@@ -21,6 +20,8 @@ impl Plugin for DarkOrePlugin {
         app
             .add_systems(Update, despawn_depleted_dark_ores)
             .add_observer(BuilderDarkOre::on_builder_add_spawn_dark_ore)
+            .add_observer(on_insert_dark_ore_imprint_on_obstacle_grid)
+            .add_observer(on_discard_dark_ore_deprint_from_obstacle_grid)
             .add_observer(dark_ore_area_scanner::on_insert_dark_ore_area_scanner_rescan)
             .add_observer(dark_ore_area_scanner::on_remove_dark_ore_sync_scanners.run_if(in_state(InGame)))
             .add_observer(dark_ore_area_scanner::on_add_dark_ore_sync_scanners)
@@ -37,7 +38,7 @@ const DARK_ORE_GRID_IMPRINT: GridImprint = GridImprint::square(1);
 
 #[derive(Component, SSS)]
 pub(crate) struct BuilderDarkOre {
-    pub grid_position: GridCoords,
+    pub grid_position: GridPosition,
     pub amount: u32,
 }
 impl BuilderDarkOre {
@@ -53,7 +54,7 @@ impl BuilderDarkOre {
         }
     }
 
-    pub fn new(grid_position: GridCoords, amount: u32) -> Self {
+    pub fn new(grid_position: GridPosition, amount: u32) -> Self {
         Self { grid_position, amount }
     }
 
@@ -82,7 +83,7 @@ fn collect_dark_ores(
     if dark_ores.is_empty() { return; }
 
     #[debug_dev("Saving {} dark ores", rows.len())]
-    let rows: Vec<(u32, GridCoords, u32)> = dark_ores
+    let rows: Vec<(u32, GridPosition, u32)> = dark_ores
         .iter()
         .map(|(entity, area, dark_ore)| {
             (
@@ -93,13 +94,13 @@ fn collect_dark_ores(
         })
         .collect();
     save.submit(move |ctx| {
-        for (id, coords, amount) in rows {
+        for (id, grid_position, amount) in rows {
             ctx.register_entity(id)?;
             ctx.tx.execute(
                 "INSERT OR REPLACE INTO dark_ores (id, amount) VALUES (?1, ?2)",
                 (id, amount),
             )?;
-            ctx.save_grid_coords(id, coords)?;
+            ctx.save_grid_position(id, grid_position)?;
         }
         Ok(())
     });
@@ -108,10 +109,31 @@ fn collect_dark_ores(
 fn load_dark_ores(ctx: &mut LoadContext) -> LoadResult {
     ctx.for_each_entity("SELECT id, amount FROM dark_ores", |ctx, old_id, entity, row| {
         let amount: u32 = row.get(1)?;
-        let grid_position = ctx.grid_coords(old_id)?;
+        let grid_position = ctx.grid_position(old_id)?;
         ctx.insert(entity, BuilderDarkOre::new(grid_position, amount));
         Ok(())
     })
+}
+
+#[log_tags(Tag::MapObjects)]
+fn on_insert_dark_ore_imprint_on_obstacle_grid(
+    trigger: On<Insert<DarkOre>>,
+    mut obstacle_grid: ResMut<ObstacleGrid>,
+    dark_ores: Query<&GridArea, With<DarkOre>>,
+) {
+    let entity = trigger.entity;
+    #[warn_dev("Dark ore {entity} has no area; not imprinted on the obstacle grid")]
+    let Ok(area) = dark_ores.get(entity) else { return; };
+    obstacle_grid.imprint_dark_ore(*area, entity);
+}
+
+fn on_discard_dark_ore_deprint_from_obstacle_grid(
+    trigger: On<Discard<DarkOre>>,
+    mut obstacle_grid: ResMut<ObstacleGrid>,
+    dark_ores: Query<&GridArea, With<DarkOre>>,
+) {
+    let Ok(area) = dark_ores.get(trigger.entity) else { return; };
+    obstacle_grid.deprint(*area);
 }
 
 #[log_tags(Tag::Resources)]
@@ -140,7 +162,7 @@ fn on_dark_ore_place_request_do_so(
     let validity = (almanach.dark_ore.validate)(MapObject::DarkOre, area, &grids);
     if validity == PlacementValidity::Invalid { return; }
     #[debug_dev("Dark ore placed at {}", area.origin)]
-    commands.spawn(BuilderDarkOre::new(area.origin, almanach.dark_ore.max_field_saturation));
+    commands.spawn(BuilderDarkOre::new(area.origin.coords.at(AltitudeLevel::Underground), almanach.dark_ore.max_field_saturation));
     grids.reserved_coords.reserve(area);
 }
 
@@ -152,10 +174,10 @@ fn on_dark_ore_remove_request_do_so(
     placer: Single<&GridArea, With<GridObjectPlacer>>,
 ) {
     let RemoveRequest(MapObject::DarkOre) = *trigger else { return };
-    let coords = placer.origin;
+    let coords = placer.origin.coords;
     #[debug_dev("Dark ore removed at {coords}")]
-    if let Some(entity) = grids.obstacle_grid.get(coords).and_then(|cell| cell.dark_ore) {
-        commands.entity(entity).despawn();
+    if let Some(&GridStructure::DarkOre { slot }) = grids.obstacle_grid.get(coords).map(|cell| &cell.underground) {
+        commands.entity(grids.obstacle_grid.entry(slot).entity).despawn();
     }
 }
 
@@ -171,7 +193,9 @@ pub(crate) mod dark_ore_area_scanner {
     ) {
         let entity = trigger.entity;
         let Ok((scanner, mut dark_ore_in_range)) = scanners.get_mut(entity) else { return; };
-        let ore_entities_in_range = obstacle_grid.query_area_element(scanner.range, |cell| cell.dark_ore);
+        let ore_entities_in_range: Vec<Entity> = scanner.range.iter_in_bounds(obstacle_grid.bounds)
+            .filter_map(|coords| match obstacle_grid[coords].underground { GridStructure::DarkOre { slot } => Some(obstacle_grid.entry(slot).entity), _ => None })
+            .collect();
         if ore_entities_in_range.is_empty() {
             commands.entity(entity).remove::<HasOreInScannerRange>();
         } else {
@@ -190,7 +214,7 @@ pub(crate) mod dark_ore_area_scanner {
         let entity = trigger.entity;
         let Ok(dark_ore_area) = dark_ores.get(entity) else { return; };
         for (scanner_entity, scanner, mut dark_ore_in_range) in scanners.iter_mut() {
-            if scanner.range.contains(dark_ore_area.origin)
+            if scanner.range.contains(dark_ore_area.origin.coords)
                 && let Some(index) = dark_ore_in_range.0.iter().position(|&ore| ore == entity)
             {
                 dark_ore_in_range.0.swap_remove(index);
@@ -211,7 +235,7 @@ pub(crate) mod dark_ore_area_scanner {
         let Ok(dark_ore_area) = dark_ores.get(entity) else { return; };
 
         for (scanner_entity, scanner, mut dark_ore_in_range) in scanners.iter_mut() {
-            if scanner.range.contains(dark_ore_area.origin)
+            if scanner.range.contains(dark_ore_area.origin.coords)
                 && !dark_ore_in_range.0.contains(&entity)
             {
                 let was_empty = dark_ore_in_range.0.is_empty();

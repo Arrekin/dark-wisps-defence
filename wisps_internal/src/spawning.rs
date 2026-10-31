@@ -3,11 +3,8 @@ use bevy::{platform::collections::HashMap, prelude::*};
 use almanach::prelude::*;
 use alteration::{effects::prelude::*, modifiers::prelude::*};
 use game_core::prelude::*;
-use grids::{
-    obstacles::ObstacleCell,
-    placement::{GridObjectPlacer, GridsCollectionParam, PlacementValidity, PlaceRequest, RemoveRequest},
-    wisps::WispsGrid,
-};
+use grids::placement::{PlacementValidity, PlaceRequest, RemoveRequest};
+use indexes::{obstacles::ObstacleCell, placement::{GridObjectPlacer, GridsCollectionParam}, wisps::WispsGrid};
 use logging::prelude::*;
 use persistence::{prelude::*, rusqlite};
 use resources::prelude::*;
@@ -20,18 +17,16 @@ pub(crate) struct DeathLoot(pub Vec<ResourceAmount>);
 #[derive(Component, SSS)]
 pub(crate) struct BuilderWisp {
     pub wisp_type: WispType,
-    pub grid_coords: GridCoords,
-    /// Saved integrity points. `None` ⇒ defer to baseline (fresh spawn);
-    /// `Some` ⇒ override (restore).
+    pub grid_position: GridPosition,
+    /// Integrity override for loading a saved wisp; `None` uses the baseline.
     pub integrity_points: Option<IntegrityPoints>,
-    /// Saved world position. `None` ⇒ compute from grid_coords (fresh spawn);
-    /// `Some` ⇒ use as-is (restore mid-flight wisp).
+    /// Exact world position for loading a moving wisp; `None` uses the center of its grid area.
     pub world_position: Option<Vec2>,
 }
 
 impl BuilderWisp {
-    pub fn new(wisp_type: WispType, grid_coords: GridCoords) -> Self {
-        Self { wisp_type, grid_coords, integrity_points: None, world_position: None }
+    pub fn new(wisp_type: WispType, grid_position: GridPosition) -> Self {
+        Self { wisp_type, grid_position, integrity_points: None, world_position: None }
     }
     pub fn with_integrity_points(mut self, integrity_points: f32) -> Self {
         self.integrity_points = Some(IntegrityPoints::new(integrity_points));
@@ -56,7 +51,7 @@ impl BuilderWisp {
             .remove::<BuilderWisp>()
             .insert_some(builder.integrity_points);
 
-        let area = GridArea::new(builder.grid_coords, WISP_GRID_IMPRINT);
+        let area = GridArea::new(builder.grid_position, WISP_GRID_IMPRINT);
         let translation = builder.world_position
             .unwrap_or_else(|| area.world_center())
             .extend(0.);
@@ -82,7 +77,7 @@ impl BuilderWisp {
                 ]],
             ))
             .trigger(move |entity| ObjectFaceRequest::world(entity, MapObject::Wisp(builder.wisp_type)));
-        wisps_grid.wisp_add(builder.grid_coords, entity);
+        wisps_grid.wisp_add(builder.grid_position, entity);
     }
 }
 
@@ -94,7 +89,7 @@ pub(crate) fn collect_wisps(
     if wisps.is_empty() { return; }
 
     #[debug_dev("Saving {} wisps", rows.len())]
-    let rows: Vec<(u32, WispType, GridCoords, f32, Vec2)> = wisps
+    let rows: Vec<(u32, WispType, GridPosition, f32, Vec2)> = wisps
         .iter()
         .map(|(entity, wisp_type, area, integrity_points, transform, wisp_state)| {
             // TODO: Once the wisps logic is mature, save the full wisp state properly. Right now we are ignoring some states (for example, attacking) and simply allow wisp to retarget on spawn, and continue from there.
@@ -113,10 +108,10 @@ pub(crate) fn collect_wisps(
         })
         .collect();
     save.submit(move |ctx| {
-        for (id, wisp_type, coords, integrity_points, position) in rows {
+        for (id, wisp_type, grid_position, integrity_points, position) in rows {
             ctx.register_entity(id)?;
             ctx.save_world_position(id, position)?;
-            ctx.save_grid_coords(id, coords)?;
+            ctx.save_grid_position(id, grid_position)?;
             ctx.save_integrity_points(id, integrity_points)?;
             ctx.tx.execute(
                 "INSERT OR REPLACE INTO wisps (id, wisp_type) VALUES (?1, ?2)",
@@ -130,10 +125,10 @@ pub(crate) fn collect_wisps(
 pub(crate) fn load_wisps(ctx: &mut LoadContext) -> LoadResult {
     ctx.for_each_entity("SELECT id, wisp_type FROM wisps", |ctx, old_id, entity, row| {
         let wisp_type = row.get_parsed::<WispType>(1)?;
-        let grid_coords = ctx.grid_coords(old_id)?;
+        let grid_position = ctx.grid_position(old_id)?;
         let integrity_points = ctx.integrity_points(old_id)?;
         let world_position = ctx.world_position(old_id)?;
-        let builder = BuilderWisp::new(wisp_type, grid_coords)
+        let builder = BuilderWisp::new(wisp_type, grid_position)
             .with_integrity_points(integrity_points)
             .with_world_position(world_position);
         ctx.insert(entity, builder);
@@ -152,7 +147,7 @@ pub(crate) fn wisp_validator(
     if !grids.obstacle_grid.query_area_all(area, ObstacleCell::is_empty) {
         return PlacementValidity::Invalid;
     }
-    if area.iter().any(|cell| !grids.wisps_grid[cell].is_empty()) {
+    if area.iter().any(|cell| grids.wisps_grid.has_wisps(cell.at(VolumeLevel::Elevation))) {
         return PlacementValidity::Invalid;
     }
     PlacementValidity::Valid
@@ -180,16 +175,17 @@ pub(crate) fn on_wisp_remove_request_do_so(
     trigger: On<RemoveRequest>,
     mut commands: Commands,
     mut wisps_grid: ResMut<WispsGrid>,
-    wisps: Query<Entity, With<Wisp>>,
+    wisps: Query<&GridArea, With<Wisp>>,
     placer: Single<&GridArea, With<GridObjectPlacer>>,
 ) {
     let RemoveRequest(MapObject::Wisp(_)) = *trigger else { return };
-    let coords = placer.origin;
-    let Some(wisp_entities) = wisps_grid.get(coords).cloned() else { return; };
+    let coords = placer.origin.coords;
+    if !wisps_grid.bounds.contains(coords) { return; }
+    let wisp_entities = wisps_grid.wisps_at(coords.at(VolumeLevel::Elevation)).to_vec();
     for wisp_entity in wisp_entities {
         #[debug_dev("Wisp removed at {coords}")]
-        if wisps.contains(wisp_entity) {
-            wisps_grid.wisp_remove(coords, wisp_entity);
+        if let Ok(area) = wisps.get(wisp_entity) {
+            wisps_grid.wisp_remove(area.origin, wisp_entity);
             commands.entity(wisp_entity).despawn();
         }
     }

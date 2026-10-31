@@ -25,15 +25,10 @@ use bevy::{
 };
 
 use almanach::{Almanach, QuantumFieldInfo, prelude::AlmanachAppExt};
-use game_core::prelude::{GridArea, GridCoords, GridImprint, MapObject, MapObjectTooltipRequest, SSS};
-use grids::{
-    placement::{
-        BeginPlacing, CellHighlight, GridObjectPlacer, GridPlacerOverridePropertyRequest, GridsCollectionParam,
-        PlacementModes, PlacementValidity, PlaceRequest, RemoveRequest, StopPlacing,
-    },
-    prelude::ObstacleCell,
-};
+use game_core::prelude::{AltitudeLevel, GridArea, GridCoords, GridImprint, MapObject, MapObjectTooltipRequest, SSS};
+use grids::placement::{BeginPlacing, CellHighlight, GridPlacerOverridePropertyRequest, PlacementModes, PlacementValidity, PlaceRequest, RemoveRequest, StopPlacing};
 use hud::prelude::{BuilderSideMenuItemTooltip, DisplayPanelMainContentRoot, FocusedMapObject};
+use indexes::{placement::{GridObjectPlacer, GridsCollectionParam}, prelude::{ObstacleCell, ObstacleGrid}};
 use logging::prelude::*;
 use map_objects::prelude::*;
 use persistence::{prelude::*, rusqlite};
@@ -57,6 +52,8 @@ impl Plugin for QuantumFieldPlugin {
                 ).run_if(in_state(UiInteraction::DisplayInfoPanel)),
             ))
             .add_observer(BuilderQuantumField::on_builder_add_spawn_quantum_field)
+            .add_observer(on_insert_quantum_field_imprint_on_obstacle_grid)
+            .add_observer(on_discard_quantum_field_deprint_from_obstacle_grid)
             .add_observer(GridPlacerUiForQuantumField::on_add_construct_grid_placer_ui)
             .add_observer(GridPlacerUiForQuantumField::on_begin_placing_spawn_grid_placer_ui)
             .add_observer(GridPlacerUiForQuantumField::on_stop_placing_despawn_grid_placer_ui)
@@ -290,7 +287,7 @@ fn on_quantum_field_place_request_do_so(
     let validity = (almanach.quantum_fields.validate)(MapObject::QuantumField, area, &grids);
     if validity == PlacementValidity::Invalid { return; }
     #[debug_dev("Quantum field placed at {}", area.origin)]
-    commands.spawn(BuilderQuantumField::new(area));
+    commands.spawn(BuilderQuantumField::new(area.at_level(AltitudeLevel::AllEncompassing)));
     grids.reserved_coords.reserve(area);
 }
 
@@ -302,7 +299,7 @@ fn on_quantum_field_remove_request_do_so(
     placer: Single<&GridArea, With<GridObjectPlacer>>,
 ) {
     let RemoveRequest(MapObject::QuantumField) = *trigger else { return };
-    let coords = placer.origin;
+    let coords = placer.origin.coords;
     #[debug_dev("Quantum field removed at {coords}")]
     if let Some(entity) = grids.obstacle_grid.get(coords).and_then(|cell| cell.quantum_field) {
         commands.entity(entity).despawn();
@@ -358,6 +355,27 @@ impl QuantumFieldImprintSelector {
             Err(format!("Already at min size {}", self.min))
         }
     }
+}
+
+#[log_tags(Tag::MapObjects)]
+fn on_insert_quantum_field_imprint_on_obstacle_grid(
+    trigger: On<Insert<QuantumField>>,
+    mut obstacle_grid: ResMut<ObstacleGrid>,
+    quantum_fields: Query<&GridArea, With<QuantumField>>,
+) {
+    let entity = trigger.entity;
+    #[warn_dev("Quantum field {entity} has no area; not imprinted on the obstacle grid")]
+    let Ok(area) = quantum_fields.get(entity) else { return; };
+    obstacle_grid.imprint_quantum_field(*area, entity);
+}
+
+fn on_discard_quantum_field_deprint_from_obstacle_grid(
+    trigger: On<Discard<QuantumField>>,
+    mut obstacle_grid: ResMut<ObstacleGrid>,
+    quantum_fields: Query<&GridArea, With<QuantumField>>,
+) {
+    let Ok(area) = quantum_fields.get(trigger.entity) else { return; };
+    obstacle_grid.deprint_quantum_field(*area);
 }
 
 /// Editor UI for selecting QuantumField size before placement.

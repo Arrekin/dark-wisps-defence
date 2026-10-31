@@ -10,6 +10,7 @@ logging = { workspace = true }
 wisps = { workspace = true }
 game_core = { workspace = true }
 grids = { workspace = true }
+indexes = { workspace = true }
 alteration = { workspace = true }
 visuals = { workspace = true }
 hud = { workspace = true }

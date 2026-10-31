@@ -6,11 +6,7 @@ use almanach::prelude::*;
 use alteration::modifiers::prelude::*;
 use buildings::prelude::*;
 use game_core::prelude::*;
-use grids::{
-    prelude::*,
-    search::targetfinding::target_find_closest_wisp,
-    wisps::WispsGrid,
-};
+use indexes::{prelude::*, search::targetfinding::target_find_closest_wisp, wisps::WispsGrid};
 use logging::prelude::*;
 use states::prelude::*;
 use visuals::prelude::*;
@@ -32,6 +28,10 @@ impl Plugin for CommonSystemsPlugin {
             ).chain().in_set(TowerAimingSystems).run_if(in_state(GameState::Running)))
             .add_systems(Update, rotate_tower_top_system.after(TowerAimingSystems))
             .add_observer(on_building_destroy_request_do_so)
+            .add_observer(on_insert_building_imprint_on_obstacle_grid)
+            .add_observer(on_discard_building_deprint_from_obstacle_grid)
+            .add_observer(on_insert_is_operational_update_obstacle_grid)
+            .add_observer(on_remove_is_operational_update_obstacle_grid)
             .add_observer(on_insert_attack_speed_sync_shooting_timer)
             .add_observer(on_remove_is_operational_reset_shooting_timer)
             .add_observer(on_object_face_request_draw_building);
@@ -76,7 +76,7 @@ fn targeting_system(
             RangeType::Cells => target_find_closest_wisp(&obstacle_grid, &wisps_grid, &range, true).map(|(_, target_wisp)| target_wisp),
             // Circular attacks use any wisp in range as the firing trigger.
             RangeType::Circle => range.bounding_box().iter_in_bounds(wisps_grid.bounds).find_map(|coords| {
-                let cell_wisps = &wisps_grid[coords];
+                let cell_wisps = wisps_grid.wisps_at(coords.at(VolumeLevel::Elevation));
                 if cell_wisps.is_empty() { return None; }
                 let found = cell_wisps.iter().copied().find(|&wisp| in_range(wisp));
                 wisp_on_edge = wisp_on_edge || (found.is_none() && range.crosses_edge(coords, 0.));
@@ -135,6 +135,45 @@ fn rotational_aiming_system(
         if turn == 0. { continue; }
         rotation.current_angle += turn;
     }
+}
+
+#[log_tags(Tag::Build)]
+fn on_insert_building_imprint_on_obstacle_grid(
+    trigger: On<Insert<Building>>,
+    mut obstacle_grid: ResMut<ObstacleGrid>,
+    buildings: Query<(&GridArea, &BuildingType), With<Building>>,
+) {
+    let entity = trigger.entity;
+    #[warn_dev("Building {entity} has no area or BuildingType; not imprinted on the obstacle grid")]
+    let Ok((area, building_type)) = buildings.get(entity) else { return; };
+    obstacle_grid.imprint_building(*area, entity, *building_type);
+}
+
+fn on_insert_is_operational_update_obstacle_grid(
+    trigger: On<Insert<IsOperational>>,
+    mut obstacle_grid: ResMut<ObstacleGrid>,
+    buildings: Query<&GridArea, With<Building>>,
+) {
+    let Ok(area) = buildings.get(trigger.entity) else { return; };
+    obstacle_grid.set_building_operational(*area, trigger.entity, true);
+}
+
+fn on_remove_is_operational_update_obstacle_grid(
+    trigger: On<Remove<IsOperational>>,
+    mut obstacle_grid: ResMut<ObstacleGrid>,
+    buildings: Query<&GridArea, With<Building>>,
+) {
+    let Ok(area) = buildings.get(trigger.entity) else { return; };
+    obstacle_grid.set_building_operational(*area, trigger.entity, false);
+}
+
+fn on_discard_building_deprint_from_obstacle_grid(
+    trigger: On<Discard<Building>>,
+    mut obstacle_grid: ResMut<ObstacleGrid>,
+    buildings: Query<&GridArea, With<Building>>,
+) {
+    let Ok(area) = buildings.get(trigger.entity) else { return; };
+    obstacle_grid.deprint(*area);
 }
 
 #[log_tags(Tag::Build)]

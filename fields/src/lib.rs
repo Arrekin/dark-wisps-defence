@@ -22,7 +22,7 @@
 //!
 //! ## Finding the owner of a point
 //!
-//! [`FieldIndex`](index::FieldIndex) tells which field owns a point. It keeps a list of fields
+//! `indexes::fields::FieldIndex` finds the field that owns a point. It keeps a list of fields
 //! per grid cell, so a lookup only checks the few fields near the point.
 //!
 //! The shaders get a copy of the index (`assets/shaders/fields/fields.wesl`). A field's look uses
@@ -39,10 +39,8 @@
 
 pub mod field;
 pub mod field_types;
-pub mod index;
 
 pub mod prelude {
     pub use super::field::{Field, FieldAffectable, FieldType};
     pub use super::field_types::{BuilderCrucibleField, BuilderForceField, CrucibleField, ForceField};
-    pub use super::index::{FieldIndex, FieldSlot};
 }

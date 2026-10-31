@@ -3,7 +3,7 @@
 use bevy::{prelude::*, ui::FocusPolicy, ui_widgets::Button};
 
 use game_core::prelude::*;
-use grids::placement::GridObjectPlacerRequest;
+use indexes::placement::GridObjectPlacerRequest;
 use widgets::prelude::{BuilderVoidPanel, VoidPanelBorderSurge};
 
 // Tile frame

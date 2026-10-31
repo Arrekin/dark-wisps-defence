@@ -2,10 +2,10 @@ use bevy::prelude::*;
 
 use alteration::modifiers::prelude::EnergySupplyRange;
 use game_core::{prelude::{DisabledByPlayer, GridArea, MapInfo}, request_flag::RequestFlag};
-use grids::{
+use grids::EnergySupplySystems;
+use indexes::{
     energy_supply::{EnergySupplyGrid, FloodEnergySupplyMode, GeneratorEnergy, SupplierChange, SupplierChangedMessage, SupplierEnergy},
     search::flooding::{flood_energy_supply, flood_power_coverage},
-    EnergySupplySystems,
 };
 use states::prelude::MapLoadingStage;
 
@@ -69,16 +69,12 @@ fn apply_supplier_changes(
     suppliers: Query<Has<DisabledByPlayer>, With<SupplierEnergy>>,
 ) {
     for message in supplier_changed_messages.read() {
-        // Resolve the concrete grid operation from live entity state, so a
-        // message can never act on state that was stale at emit time.
+        // Resolve the disabled state at apply time; it may have changed since the message was sent.
         let mode = match message.mode {
             SupplierChange::Remove => FloodEnergySupplyMode::Remove,
             SupplierChange::Place => {
-                // Supplier no longer alive with SupplierEnergy by apply time
-                // (despawned, or component removed): its Discard observer
-                // emitted a Remove for the same range — drop this Place so a
-                // dead supplier can't be resurrected (e.g. by the
-                // Remove<DisabledByPlayer> that fires during despawn).
+                // Ignore placements for removed suppliers. Removing DisabledByPlayer during
+                // despawn can enqueue a Place after the Discard observer enqueues a Remove.
                 let Ok(as_disabled) = suppliers.get(message.supplier) else { continue; };
                 FloodEnergySupplyMode::Place { as_disabled }
             }
@@ -101,5 +97,5 @@ fn recalculate_power_coverage(
 ) {
     need_recalculate_power.clear();
 
-    flood_power_coverage(&mut energy_supply_grid, generators.iter().map(|area| area.origin));
+    flood_power_coverage(&mut energy_supply_grid, generators.iter().map(|area| area.origin.coords));
 }

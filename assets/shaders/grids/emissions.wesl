@@ -1,4 +1,4 @@
-// Emitted energy uploaded by grids_internal through the shared GPU group.
+// Emitted energy uploaded by indexes_internal through the shared GPU group.
 // Custom materials enable this group through visuals::shared_gpu; lane shaders include it.
 
 import package::shaders::common::map_info::{grid_contains, grid_index};

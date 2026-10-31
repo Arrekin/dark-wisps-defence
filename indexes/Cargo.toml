@@ -1,0 +1,15 @@
+[package]
+name = "indexes"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bevy = { workspace = true }
+game_core = { workspace = true }
+grids = { workspace = true }
+map_objects = { workspace = true }
+alteration = { workspace = true }
+fields = { workspace = true }
+
+[lints]
+workspace = true

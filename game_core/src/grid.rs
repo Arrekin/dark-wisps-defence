@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use serde::Serialize;
 
-use crate::prelude::SSS;
+use crate::{altitude::{AltitudeLevel, FloorLevel, VolumeLevel}, prelude::SSS};
 
 pub const CELL_SIZE: f32 = 32.;
 
@@ -98,16 +98,27 @@ impl GridCoords {
             y: (world_coords.y / CELL_SIZE).floor() as i32,
         }
     }
-    pub fn to_world_position(&self) -> Vec2 {
+    pub fn to_world_position(self) -> Vec2 {
         Vec2::new(self.x as f32 * CELL_SIZE, self.y as f32 * CELL_SIZE)
     }
-    pub fn shifted(&self, (dx, dy): (i32, i32)) -> Self {
+    pub fn world_center(self) -> Vec2 {
+        self.to_world_position() + Vec2::splat(CELL_SIZE / 2.)
+    }
+    pub fn world_rect(self) -> Rect {
+        let min = self.to_world_position();
+        Rect::from_corners(min, min + Vec2::splat(CELL_SIZE))
+    }
+    /// Combines these coordinates with an altitude level.
+    pub const fn at<L>(self, level: L) -> GridPosition<L> {
+        GridPosition { coords: self, level }
+    }
+    pub fn shifted(self, (dx, dy): (i32, i32)) -> Self {
         Self {
             x: self.x + dx,
             y: self.y + dy,
         }
     }
-    pub fn manhattan_distance(&self, other: &Self) -> i32 {
+    pub fn manhattan_distance(self, other: Self) -> i32 {
         (self.x - other.x).abs() + (self.y - other.y).abs()
     }
 }
@@ -135,6 +146,59 @@ impl std::fmt::Display for GridCoords {
     }
 }
 
+/// A cardinal edge of a grid cell.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub enum CellSide {
+    #[default]
+    Top,
+    Bottom,
+    Left,
+    Right,
+}
+
+/// Grid coordinates paired with an altitude level.
+///
+/// The default level type is [`AltitudeLevel`]. Use `GridPosition<VolumeLevel>` or
+/// `GridPosition<FloorLevel>` when an API accepts only volumes or floors.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub struct GridPosition<L = AltitudeLevel> {
+    pub coords: GridCoords,
+    pub level: L,
+}
+impl<L> GridPosition<L> {
+    pub const fn new(coords: GridCoords, level: L) -> Self {
+        Self { coords, level }
+    }
+}
+impl From<GridPosition<VolumeLevel>> for GridPosition {
+    fn from(position: GridPosition<VolumeLevel>) -> Self {
+        position.coords.at(position.level.into())
+    }
+}
+impl From<GridPosition<FloorLevel>> for GridPosition {
+    fn from(position: GridPosition<FloorLevel>) -> Self {
+        position.coords.at(position.level.into())
+    }
+}
+/// Returns the original position as an error if its level is not a volume.
+impl TryFrom<GridPosition> for GridPosition<VolumeLevel> {
+    type Error = GridPosition;
+    fn try_from(position: GridPosition) -> Result<Self, GridPosition> {
+        VolumeLevel::try_from(position.level).map(|level| position.coords.at(level)).map_err(|_| position)
+    }
+}
+/// Returns the original position as an error if its level is not a floor.
+impl TryFrom<GridPosition> for GridPosition<FloorLevel> {
+    type Error = GridPosition;
+    fn try_from(position: GridPosition) -> Result<Self, GridPosition> {
+        FloorLevel::try_from(position.level).map(|level| position.coords.at(level)).map_err(|_| position)
+    }
+}
+impl<L: std::fmt::Debug> std::fmt::Display for GridPosition<L> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {:?}", self.coords, self.level)
+    }
+}
 
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GridImprint {
@@ -202,39 +266,44 @@ impl From<GridImprint> for Bounds {
     fn from(imprint: GridImprint) -> Self { Self::from(&imprint) }
 }
 
-/// Cells covered by `imprint` placed at `origin`.
-/// This component should be replaced in full. Mutating in place skips `Insert<GridArea>` observers.
-/// Mutate in place only if you are sure.
+/// A footprint of grid cells placed at the coordinates and altitude of `origin`.
+///
+/// Replace this component to notify `Insert<GridArea>` observers. In-place mutations skip them.
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct GridArea {
-    /// Bottom-left cell of the imprint's bounding box.
-    pub origin: GridCoords,
+    /// Coordinates of the bounding box's bottom-left cell and the altitude of the whole area.
+    pub origin: GridPosition,
     pub imprint: GridImprint,
 }
 impl GridArea {
-    pub const fn new(origin: GridCoords, imprint: GridImprint) -> Self {
-        Self { origin, imprint }
+    pub fn new(origin: impl Into<GridPosition>, imprint: GridImprint) -> Self {
+        Self { origin: origin.into(), imprint }
     }
-    pub fn cell(coords: GridCoords) -> Self {
-        Self::new(coords, GridImprint::default())
+    pub fn cell(origin: impl Into<GridPosition>) -> Self {
+        Self::new(origin, GridImprint::default())
     }
     /// Places `imprint` at the zero origin, in its own local space.
-    pub fn local(imprint: GridImprint) -> Self {
-        Self::new(GridCoords::default(), imprint)
+    pub fn local(imprint: GridImprint, level: AltitudeLevel) -> Self {
+        Self::new(GridCoords::default().at(level), imprint)
     }
     /// Places `imprint` with `center` as its middle cell. An even side puts `center` just above or right of the middle.
-    pub fn centered_on(center: GridCoords, imprint: GridImprint) -> Self {
+    pub fn centered_on(center: impl Into<GridPosition>, imprint: GridImprint) -> Self {
+        let center = center.into();
         let Bounds { width, height } = imprint.into();
-        Self::new(center.shifted((-(width / 2), -(height / 2))), imprint)
+        Self::new(center.coords.shifted((-(width / 2), -(height / 2))).at(center.level), imprint)
     }
     /// Smallest rectangle of cells that contains `rect`.
-    pub fn covering(rect: Rect) -> Self {
+    pub fn covering(rect: Rect, level: AltitudeLevel) -> Self {
         let (min, max) = (GridCoords::from_world_position(rect.min), GridCoords::from_world_position(rect.max));
-        Self::new(min, GridImprint::Rectangle { width: max.x - min.x + 1, height: max.y - min.y + 1 })
+        Self::new(min.at(level), GridImprint::Rectangle { width: max.x - min.x + 1, height: max.y - min.y + 1 })
     }
     /// Smallest grid rectangle enclosing the circle. `center` and `radius` use world units.
-    pub fn covering_circle(center: Vec2, radius: f32) -> Self {
-        Self::covering(Rect::from_center_half_size(center, Vec2::splat(radius)))
+    pub fn covering_circle(center: Vec2, radius: f32, level: AltitudeLevel) -> Self {
+        Self::covering(Rect::from_center_half_size(center, Vec2::splat(radius)), level)
+    }
+    /// Returns this footprint at a different altitude.
+    pub fn at_level(self, level: impl Into<AltitudeLevel>) -> Self {
+        Self::new(self.origin.coords.at(level.into()), self.imprint)
     }
 
     /// The rectangle of cells around the area, at the same origin.
@@ -246,10 +315,10 @@ impl GridArea {
     }
 
     pub fn world_center(&self) -> Vec2 {
-        self.origin.to_world_position() + self.imprint.world_center()
+        self.origin.coords.to_world_position() + self.imprint.world_center()
     }
     pub fn world_rect(&self) -> Rect {
-        let min = self.origin.to_world_position();
+        let min = self.origin.coords.to_world_position();
         Rect::from_corners(min, min + self.imprint.world_size())
     }
     pub fn random_world_point(&self) -> Vec2 {
@@ -262,7 +331,7 @@ impl GridArea {
                 Vec2::new(cell_x as f32 + rng.generate::<f32>(), cell_y as f32 + rng.generate::<f32>()) * CELL_SIZE
             }
         };
-        self.origin.to_world_position() + local_offset
+        self.origin.coords.to_world_position() + local_offset
     }
 
     /// Iterates all cells of the area. Does not check map bounds.
@@ -276,11 +345,11 @@ impl GridArea {
     /// True if the area fits entirely within `bounds`.
     pub fn fits_in(&self, bounds: Bounds) -> bool {
         let Bounds { width, height } = self.imprint.into();
-        bounds.contains(self.origin) && bounds.contains(self.origin.shifted((width - 1, height - 1)))
+        bounds.contains(self.origin.coords) && bounds.contains(self.origin.coords.shifted((width - 1, height - 1)))
     }
 
     pub fn contains(&self, coords: GridCoords) -> bool {
-        let local = coords.shifted((-self.origin.x, -self.origin.y));
+        let local = coords.shifted((-self.origin.coords.x, -self.origin.coords.y));
         if !Bounds::from(self.imprint).contains(local) { return false; }
         match self.imprint {
             GridImprint::Rectangle { .. } => true,
@@ -289,7 +358,7 @@ impl GridArea {
     }
     /// Manhattan distance from `coords` to the nearest cell of the area. Zero when covered.
     pub fn distance_to(&self, coords: GridCoords) -> i32 {
-        let origin = self.origin;
+        let origin = self.origin.coords;
         let span_distance = |value: i32, start: i32, length: i32| (start - value).max(value - (start + length - 1)).max(0);
         match self.imprint {
             GridImprint::Rectangle { width, height } => {
@@ -332,7 +401,7 @@ pub struct GridAreaIter {
 impl Iterator for GridAreaIter {
     type Item = GridCoords;
     fn next(&mut self) -> Option<GridCoords> {
-        let origin = self.area.origin;
+        let origin = self.area.origin.coords;
         match self.area.imprint {
             GridImprint::Rectangle { width, height } => {
                 if self.y >= height { return None; }
@@ -423,11 +492,11 @@ impl AreaRange {
                 let reach = self.max.floor() as i32;
                 let Bounds { width, height } = self.area.imprint.into();
                 GridArea::new(
-                    self.area.origin.shifted((-reach, -reach)),
+                    self.area.origin.coords.shifted((-reach, -reach)).at(self.area.origin.level),
                     GridImprint::Rectangle { width: width + 2 * reach, height: height + 2 * reach },
                 )
             }
-            RangeType::Circle => GridArea::covering_circle(self.area.world_center(), self.max * CELL_SIZE),
+            RangeType::Circle => GridArea::covering_circle(self.area.world_center(), self.max * CELL_SIZE, self.area.origin.level),
         }
     }
 
@@ -438,7 +507,7 @@ impl AreaRange {
     /// Returns the nearest and farthest distances from the circle's centre to the cell, in cell widths.
     fn circle_distances_to_cell(&self, coords: GridCoords) -> (f32, f32) {
         let center = self.area.world_center();
-        let cell = GridArea::cell(coords).world_rect();
+        let cell = coords.world_rect();
         let nearest = center.clamp(cell.min, cell.max).distance(center) / CELL_SIZE;
         let farthest = ((center - cell.center()).abs() + cell.half_size()).length() / CELL_SIZE;
         (nearest, farthest)

@@ -10,10 +10,12 @@ use alteration::{
 };
 use buildings::prelude::*;
 use game_core::prelude::*;
-use grids::{
+use grids::placement::{PlacementModes, PlaceRequest};
+use indexes::{
     emissions::{EmissionsType, EmitterEnergy, FloodEmissionsDetails, FloodEmissionsEvaluator, FloodEmissionsMode},
     energy_supply::{GeneratorEnergy, SupplierEnergy},
-    placement::{annotate_non_empty, PlacementModes, PlaceRequest},
+    placement::annotate_non_empty,
+    prelude::ObstacleGrid,
 };
 use persistence::{creating_new_map, prelude::*};
 use states::prelude::*;
@@ -43,7 +45,7 @@ fn seed_main_base(mut commands: Commands, almanach: Res<Almanach>, map_info: Res
         y: map_info.grid_bounds.height / 2,
     };
     let imprint = almanach.get_building_info(BuildingType::MainBase).grid_imprint;
-    commands.spawn(BuilderMainBase::new(GridArea::centered_on(center, imprint).origin));
+    commands.spawn(BuilderMainBase::new(GridArea::centered_on(center.at(AltitudeLevel::Elevation), imprint).origin));
 }
 
 /// Runs at the end of every map build. Centers the main camera on the `MainBase`,
@@ -63,7 +65,7 @@ fn center_camera_on_main_base(
 
 #[derive(Component, SSS)]
 pub(crate) struct BuilderMainBase {
-    pub grid_position: GridCoords,
+    pub grid_position: GridPosition,
     pub integrity_points: Option<IntegrityPoints>,
 }
 impl BuilderMainBase {
@@ -87,7 +89,7 @@ impl BuilderMainBase {
         }
     }
 
-    pub fn new(grid_position: GridCoords) -> Self {
+    pub fn new(grid_position: GridPosition) -> Self {
         Self { grid_position, integrity_points: None }
     }
     pub fn with_integrity_points(mut self, integrity_points: f32) -> Self {
@@ -136,13 +138,15 @@ impl BuilderMainBase {
 fn on_main_base_place_request_do_so(
     trigger: On<PlaceRequest>,
     mut commands: Commands,
-    mut placement: BuildingPlacementManager,
+    mut placement_and_obstacle_grid: ParamSet<(BuildingPlacementManager, ResMut<ObstacleGrid>)>,
     main_base: Single<(Entity, &GridArea), With<MainBase>>,
 ) {
     let PlaceRequest(MapObject::Building(BuildingType::MainBase)) = *trigger else { return };
-    let Some(coords) = placement.claim_free(BuildingType::MainBase) else { return };
-    let (main_base, area) = main_base.into_inner();
-    commands.entity(main_base).insert(GridArea::new(coords, area.imprint));
+    let Some(grid_position) = placement_and_obstacle_grid.p0().claim_free(BuildingType::MainBase) else { return };
+    let (main_base, &area) = main_base.into_inner();
+    let new_area = GridArea::new(grid_position, area.imprint);
+    placement_and_obstacle_grid.p1().relocate(area, new_area);
+    commands.entity(main_base).insert(new_area);
 }
 
 fn collect_main_bases(
@@ -154,7 +158,7 @@ fn collect_main_bases(
     let integrity_points = integrity_points.current;
     save.submit(move |ctx| {
         ctx.save_marker("main_bases", id)?;
-        ctx.save_grid_coords(id, area.origin)?;
+        ctx.save_grid_position(id, area.origin)?;
         ctx.save_integrity_points(id, integrity_points)?;
         Ok(())
     });
@@ -162,7 +166,7 @@ fn collect_main_bases(
 
 fn load_main_bases(ctx: &mut LoadContext) -> LoadResult {
     ctx.for_each_entity("SELECT id FROM main_bases", |ctx, old_id, entity, _| {
-        let grid_position = ctx.grid_coords(old_id)?;
+        let grid_position = ctx.grid_position(old_id)?;
         let integrity_points = ctx.integrity_points(old_id)?;
         let builder = BuilderMainBase::new(grid_position)
             .with_integrity_points(integrity_points);

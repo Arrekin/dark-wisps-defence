@@ -15,6 +15,7 @@ use fields::{
 };
 use game_core::prelude::MapInfo;
 use grids::GridVersion;
+use indexes::fields::{FieldIndex, FieldSlot};
 use states::prelude::{GameState, MapLoadingStage};
 use visuals::shared_gpu::{SharedGpuBinding, SharedGpuWriter};
 
@@ -112,7 +113,7 @@ fn upload_gpu_field_index(
     let mut entries = Vec::new();
     for cell in cells.grid.iter() {
         offsets.push(entries.len() as u32);
-        entries.extend(cell.iter().map(|&slot| slot as u32));
+        entries.extend(cell.iter().map(|slot| slot.index));
     }
     offsets.push(entries.len() as u32);
     shared_gpu.write(SharedGpuBinding::FieldCellOffsets, offsets);

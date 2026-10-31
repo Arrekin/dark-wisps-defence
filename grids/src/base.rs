@@ -4,13 +4,14 @@ use bevy::prelude::*;
 
 use game_core::prelude::{Bounds, GridCoords};
 
-use crate::{CellTrait, GridVersionTrait};
+use crate::{CellTrait, GridVersion, GridVersionTrait};
 
 #[derive(Resource, Default)]
 pub struct BaseGrid<CellType, GridVersionType> where CellType: CellTrait, GridVersionType: GridVersionTrait {
     pub bounds: Bounds,
     pub grid: Vec<CellType>,
-    pub version: GridVersionType, // Used to determine whether the grid has changed
+    /// Caller-managed counter: a change version for indexes or a generation stamp for searches.
+    pub version: GridVersionType,
 }
 
 impl<CellType, GridVersionType> BaseGrid<CellType, GridVersionType> where CellType: CellTrait, GridVersionType: GridVersionTrait {
@@ -46,6 +47,12 @@ impl<CellType, GridVersionType> BaseGrid<CellType, GridVersionType> where CellTy
     }
 }
 
+impl<CellType> BaseGrid<CellType, GridVersion> where CellType: CellTrait {
+    /// Increments the version, wrapping on overflow.
+    pub fn advance_version(&mut self) {
+        self.version = self.version.wrapping_add(1);
+    }
+}
 
 impl<CellType, GridVersionType> Index<GridCoords> for BaseGrid<CellType, GridVersionType> where CellType: CellTrait, GridVersionType: GridVersionTrait {
     type Output = CellType;

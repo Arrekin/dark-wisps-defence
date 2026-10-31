@@ -135,6 +135,7 @@ dependencies = [
  "bevy",
  "game_core",
  "grids",
+ "indexes",
  "resources",
  "shards",
  "states",
@@ -2185,6 +2186,7 @@ dependencies = [
  "game_core",
  "grids",
  "hud",
+ "indexes",
  "logging",
  "map_objects",
  "nanorand",
@@ -2617,8 +2619,8 @@ dependencies = [
  "editor",
  "fields_internal",
  "game_core_internal",
- "grids_internal",
  "hud_internal",
+ "indexes_internal",
  "logging",
  "map_objects_internal",
  "narrative_internal",
@@ -2982,7 +2984,6 @@ version = "0.2.0"
 dependencies = [
  "bevy",
  "game_core",
- "grids",
 ]
 
 [[package]]
@@ -2994,6 +2995,7 @@ dependencies = [
  "fields",
  "game_core",
  "grids",
+ "indexes",
  "states",
  "visuals",
 ]
@@ -3188,6 +3190,7 @@ dependencies = [
  "bytemuck",
  "game_core",
  "grids",
+ "indexes",
  "visuals",
 ]
 
@@ -3346,27 +3349,8 @@ dependencies = [
 name = "grids"
 version = "0.2.0"
 dependencies = [
- "alteration",
  "bevy",
  "game_core",
-]
-
-[[package]]
-name = "grids_internal"
-version = "0.2.0"
-dependencies = [
- "almanach",
- "alteration",
- "bevy",
- "buildings",
- "bytemuck",
- "game_core",
- "grids",
- "logging",
- "session",
- "states",
- "viewport",
- "visuals",
 ]
 
 [[package]]
@@ -3549,6 +3533,7 @@ dependencies = [
  "game_core",
  "grids",
  "hud",
+ "indexes",
  "logging",
  "map_objects",
  "persistence",
@@ -3755,6 +3740,37 @@ dependencies = [
  "num-traits",
  "png",
  "tiff",
+]
+
+[[package]]
+name = "indexes"
+version = "0.2.0"
+dependencies = [
+ "alteration",
+ "bevy",
+ "fields",
+ "game_core",
+ "grids",
+ "map_objects",
+]
+
+[[package]]
+name = "indexes_internal"
+version = "0.2.0"
+dependencies = [
+ "almanach",
+ "alteration",
+ "bevy",
+ "buildings",
+ "bytemuck",
+ "game_core",
+ "grids",
+ "indexes",
+ "logging",
+ "session",
+ "states",
+ "viewport",
+ "visuals",
 ]
 
 [[package]]
@@ -4213,6 +4229,7 @@ dependencies = [
  "game_core",
  "grids",
  "hud",
+ "indexes",
  "logging",
  "map_objects",
  "persistence",
@@ -4966,6 +4983,7 @@ dependencies = [
  "game_core",
  "grids",
  "hud",
+ "indexes",
  "states",
  "visuals",
 ]
@@ -6534,7 +6552,6 @@ dependencies = [
  "bevy",
  "buildings",
  "game_core",
- "grids",
  "logging",
  "map_objects",
  "nanorand",
@@ -6937,8 +6954,8 @@ dependencies = [
  "bevy",
  "buildings",
  "game_core",
- "grids",
  "hud",
+ "indexes",
  "logging",
  "persistence",
  "session",
@@ -7643,6 +7660,7 @@ dependencies = [
  "game_core",
  "grids",
  "hud",
+ "indexes",
  "logging",
  "nanorand",
  "persistence",

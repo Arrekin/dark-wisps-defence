@@ -422,7 +422,7 @@ fn assign_orders_to_free_forges(
     };
 
     for (forge, area, own_queue, &WorksGlobalQueue(works_global)) in free_forges.iter() {
-        let coords = area.origin;
+        let coords = area.origin.coords;
         let mut own_orders = own_queue.map(|queue| OrderWalk::new(queue, &order_tree)).into_iter().flatten();
         if own_orders.any(|order| try_take(forge, coords, order)) { continue; }
         if !works_global { continue; }

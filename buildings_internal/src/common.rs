@@ -2,9 +2,8 @@ use bevy::{ecs::system::SystemParam, prelude::*};
 
 use almanach::prelude::Almanach;
 use game_core::{math::angle_difference, prelude::*};
-use grids::placement::{
-    validator_all_empty, GridObjectPlacer, GridsCollectionParam, PlacementValidity,
-};
+use grids::placement::PlacementValidity;
+use indexes::placement::{GridObjectPlacer, GridsCollectionParam, validator_all_empty};
 use logging::prelude::*;
 use persistence::{prelude::*, rusqlite};
 use resources::prelude::Stock;
@@ -78,7 +77,7 @@ impl<'w, 's> BuildingPlacementManager<'w, 's> {
     ///
     /// In admin mode placement is free. Validation still runs.
     #[log_tags(Tag::Build)]
-    pub(crate) fn claim(&mut self, building_type: BuildingType) -> Option<GridCoords> {
+    pub(crate) fn claim(&mut self, building_type: BuildingType) -> Option<GridPosition> {
         if self.admin_mode.get().is_enabled() {
             return self.claim_free(building_type);
         }
@@ -98,7 +97,7 @@ impl<'w, 's> BuildingPlacementManager<'w, 's> {
 
     /// Validate the site and reserve the cells, charging nothing.
     #[log_tags(Tag::Build)]
-    pub(crate) fn claim_free(&mut self, building_type: BuildingType) -> Option<GridCoords> {
+    pub(crate) fn claim_free(&mut self, building_type: BuildingType) -> Option<GridPosition> {
         let area = **self.placer;
         let building_info = self.almanach.get_building_info(building_type);
 
@@ -145,7 +144,7 @@ pub(crate) struct TowerAimingSystems;
 /// Rotating top sprite of a tower. Displays the tower's `TowerTopRotation`.
 #[derive(Component)]
 #[relationship(relationship_target = TowerTop)]
-#[require(ZDepth::TowerTop)]
+#[require(ZDepth::TowerTop, DrawLevel::Elevation)]
 pub(crate) struct TowerTopOf(pub Entity);
 
 #[derive(Component)]

@@ -8,15 +8,11 @@
 use bevy::{platform::collections::HashMap, prelude::*};
 
 use game_core::prelude::{AreaRange, Bounds, GridArea, GridCoords, RangeType};
-
-use crate::{GridVersion, slot_index::SlotIndex};
+use grids::{GridVersion, slot_index::{Slot, SlotIndex}};
 
 /// Index slot that stays stable across range updates. Removal frees it for reuse by another tower.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct TowerRangeSlot {
-    /// Zero-based slot index, less than [`TowerRangeIndex::slot_count`] while the tower is indexed.
-    pub index: usize,
-}
+/// Its [`Slot::index`] is less than [`TowerRangeIndex::slot_count`] while the tower is indexed.
+pub type TowerRangeSlot = Slot<IndexedTowerRange>;
 
 /// One tower's indexed range.
 #[derive(Clone, Copy, Debug)]
@@ -28,15 +24,15 @@ pub struct IndexedTowerRange {
     bounding_box: GridArea,
 }
 impl IndexedTowerRange {
-    fn new(entity: Entity, range: AreaRange, slot: usize) -> Self {
-        Self { entity, range, slot: TowerRangeSlot { index: slot }, bounding_box: range.bounding_box() }
+    fn new(entity: Entity, range: AreaRange, slot: TowerRangeSlot) -> Self {
+        Self { entity, range, slot, bounding_box: range.bounding_box() }
     }
 }
 
 #[derive(Resource, Default)]
 pub struct TowerRangeIndex {
     index: SlotIndex<IndexedTowerRange>,
-    tower_slots: HashMap<Entity, usize>,
+    tower_slots: HashMap<Entity, TowerRangeSlot>,
 }
 impl TowerRangeIndex {
     pub fn new_with_size(bounds: impl Into<Bounds>) -> Self {
@@ -52,7 +48,7 @@ impl TowerRangeIndex {
         self.index.version()
     }
 
-    /// Number of slots, including free ones. Use this to size tables keyed by [`TowerRangeSlot::index`].
+    /// Number of slots, including free ones. Use this to size tables keyed by [`Slot::index`].
     pub fn slot_count(&self) -> usize {
         self.index.slots().len()
     }
@@ -97,7 +93,7 @@ impl TowerRangeIndex {
     }
 
     /// Updates cell memberships that differ between `old` and `new`, then advances the version.
-    fn relist(&mut self, slot: usize, old: Option<IndexedTowerRange>, new: Option<IndexedTowerRange>) {
+    fn relist(&mut self, slot: TowerRangeSlot, old: Option<IndexedTowerRange>, new: Option<IndexedTowerRange>) {
         // Changing only the minimum affects cells within the larger of the old and new inner boundaries.
         let (unlist_region, enlist_region) = match (old, new) {
             (Some(old), Some(new)) if AreaRange { min: new.range.min, ..old.range } == new.range => {

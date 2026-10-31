@@ -25,7 +25,7 @@ use bevy::{
 };
 
 use buildings::prelude::TowerWispTarget;
-use game_core::prelude::{CELL_SIZE, ZDepth};
+use game_core::prelude::{CELL_SIZE, DrawLevel, ZDepth};
 use hud::prelude::FocusedMapObject;
 use persistence::{prelude::*, rusqlite};
 use session::GameClock;
@@ -171,12 +171,12 @@ impl LobView {
 
 /// Visible projectile body. Child of a `Lob` entity.
 #[derive(Component)]
-#[require(ZDepth::Projectile)]
+#[require(ZDepth::Projectile, DrawLevel::Airborne)]
 pub(crate) struct LobBody;
 
 /// The projectile's shadow on the ground. Child of a `Lob` entity.
 #[derive(Component)]
-#[require(ZDepth::GroundEffect)]
+#[require(ZDepth::GroundEffect, DrawLevel::Elevation)]
 pub(crate) struct LobShadow;
 
 /// Soft round texture shared by lob shadows and preview dots.
@@ -283,9 +283,9 @@ fn on_add_lob_preview_spawn_dots(
 ) {
     commands.entity(trigger.entity).insert(LobPreviewTarget::default()).with_children(|parent| {
         for index in 0..PREVIEW_MAX_DOTS {
-            for (kind, color, diameter, z_depth) in [
-                (LobPreviewDotKind::Shadow, SHADOW_COLOR, PREVIEW_SHADOW_DOT_DIAMETER, ZDepth::GroundEffect),
-                (LobPreviewDotKind::Body, PREVIEW_BODY_COLOR, PREVIEW_BODY_DOT_DIAMETER, ZDepth::ProjectileUnder),
+            for (kind, color, diameter, z_depth, draw_level) in [
+                (LobPreviewDotKind::Shadow, SHADOW_COLOR, PREVIEW_SHADOW_DOT_DIAMETER, ZDepth::GroundEffect, DrawLevel::Elevation),
+                (LobPreviewDotKind::Body, PREVIEW_BODY_COLOR, PREVIEW_BODY_DOT_DIAMETER, ZDepth::ProjectileUnder, DrawLevel::Airborne),
             ] {
                 parent.spawn((
                     LobPreviewDot::new(index, kind),
@@ -297,6 +297,7 @@ fn on_add_lob_preview_spawn_dots(
                     },
                     Visibility::Hidden,
                     z_depth,
+                    draw_level,
                 ));
             }
         }

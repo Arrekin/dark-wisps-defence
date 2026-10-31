@@ -245,8 +245,15 @@ impl LoadContext<'_> {
             .map_err(LoadError::table_read("time_bounds"))
     }
 
-    pub fn grid_coords(&self, old_id: u32) -> LoadResult<GridCoords> {
-        self.query_row_cached("grid_coords", "SELECT x, y FROM grid_coords WHERE entity_id = ?1", [old_id], |row| Ok(GridCoords { x: row.get(0)?, y: row.get(1)? }))
+    pub fn grid_position(&self, old_id: u32) -> LoadResult<GridPosition> {
+        let (x, y, level): (i32, i32, String) = self.query_row_cached(
+            "grid_coords",
+            "SELECT x, y, level FROM grid_coords WHERE entity_id = ?1",
+            [old_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )?;
+        let level = level.parse().map_err(|_| LoadError::unknown_value("altitude level", level))?;
+        Ok(GridCoords { x, y }.at(level))
     }
 
     pub fn grid_imprint(&self, old_id: u32) -> LoadResult<GridImprint> {
@@ -263,9 +270,9 @@ impl LoadContext<'_> {
         }
     }
 
-    /// Loads the origin from `grid_coords` and the imprint from `grid_imprints`.
+    /// Loads the origin and level from `grid_coords` and the imprint from `grid_imprints`.
     pub fn grid_area(&self, old_id: u32) -> LoadResult<GridArea> {
-        Ok(GridArea::new(self.grid_coords(old_id)?, self.grid_imprint(old_id)?))
+        Ok(GridArea::new(self.grid_position(old_id)?, self.grid_imprint(old_id)?))
     }
 
     /// Reads the one row `query` selects through the connection's statement cache, so

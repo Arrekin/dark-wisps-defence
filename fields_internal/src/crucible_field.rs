@@ -12,7 +12,8 @@ use fields::{
     field::FieldGeneratedBy,
     prelude::*,
 };
-use game_core::prelude::ZDepth;
+use game_core::prelude::{DrawLevel, ZDepth};
+use indexes::fields::FieldSlot;
 use visuals::{
     lane::{LaneParts, LanePlugin, LaneVisual},
     shader::{ADDITIVE_BLENDING, seed_from_entity},
@@ -51,7 +52,7 @@ fn on_builder_add_spawn_crucible_field(
 /// Dome visual stored on the crucible field entity. Field order and types mirror `Instance` in
 /// `assets/shaders/fields/crucible_field_dome.wesl`.
 #[derive(Component, ShaderType, TypePath, Clone, Default)]
-#[require(ZDepth::AirEffect)]
+#[require(ZDepth::AirEffect, DrawLevel::Airborne)]
 pub(crate) struct CrucibleFieldDome {
     /// Full dome radius, at least as large as the current field radius.
     /// Follows positive target radii and retains its value while the field folds to zero.
@@ -88,7 +89,7 @@ fn update_crucible_field_domes(
             radius,
             progress,
             seed: seed_from_entity(entity),
-            slot: slot.index as u32,
+            slot: slot.index,
         };
     }
 }

@@ -13,7 +13,7 @@
 
 use bevy::{prelude::*, reflect::TypePath, render::render_resource::{BlendState, ShaderType}};
 
-use game_core::prelude::{GridArea, GridCoords, MapBound, ZDepth};
+use game_core::prelude::{DrawLevel, GridCoords, MapBound, ZDepth};
 use session::{GameClock, TimeBound};
 use states::prelude::GameState;
 use visuals::{
@@ -77,7 +77,7 @@ const PILOT_OFFSET: f32 = 1.5;
 /// Stream jet quad. Child of `FlameStream`. Field order and types mirror `Instance` in
 /// `assets/shaders/weaponry/flame_stream.wesl`.
 #[derive(Component, ShaderType, TypePath, Clone, Default, PartialEq)]
-#[require(ZDepth::FlameJet)]
+#[require(ZDepth::FlameJet, DrawLevel::Elevation)]
 struct Flame {
     seed: f32,
     length: f32,
@@ -103,7 +103,7 @@ impl LaneVisual for Flame {
 /// Additive ground light along the stream and around the hit. Child of `Flame`. Field order and
 /// types mirror `Instance` in `assets/shaders/weaponry/flame_stream_glow.wesl`.
 #[derive(Component, ShaderType, TypePath, Clone, Default, PartialEq)]
-#[require(ZDepth::FlameGlow)]
+#[require(ZDepth::FlameGlow, DrawLevel::Elevation)]
 struct FlameGlow {
     intensity: f32,
     near: f32,
@@ -171,7 +171,7 @@ struct BurntTile {
 /// Fire on the currently hit tile. Field order and types mirror `Instance` in
 /// `assets/shaders/weaponry/flame_stream_impact.wesl`.
 #[derive(Component, ShaderType, TypePath, Clone, Default, PartialEq)]
-#[require(ZDepth::FlameImpact)]
+#[require(ZDepth::FlameImpact, DrawLevel::Elevation)]
 struct ImpactFireVisual {
     intensity: f32,
     seed: f32,
@@ -195,7 +195,7 @@ impl LaneVisual for ImpactFireVisual {
 /// Temporary scorch decal spawned when a tile stops burning.
 /// Field order and types mirror `Instance` in `assets/shaders/weaponry/flame_stream_scorch.wesl`.
 #[derive(Component, ShaderType, TypePath, Clone)]
-#[require(MapBound, ZDepth::FlameScorch)]
+#[require(MapBound, ZDepth::FlameScorch, DrawLevel::GroundFloor)]
 struct FlameScorch {
     /// Wrapped game time the tile stopped burning.
     start_time: f32,
@@ -222,7 +222,7 @@ impl LaneVisual for FlameScorch {
 /// Nozzle pilot flame shown while the stream is armed. Child of `FlameStream`. Field order and
 /// types mirror `Instance` in `assets/shaders/weaponry/flame_stream_pilot.wesl`.
 #[derive(Component, ShaderType, TypePath, Clone)]
-#[require(ZDepth::FlamePilot)]
+#[require(ZDepth::FlamePilot, DrawLevel::Elevation)]
 struct PilotFlame {
     seed: f32,
     size: f32,
@@ -337,7 +337,7 @@ fn update_impact_fires(
 
         let burnt = match &stream.hit {
             Some(hit) => {
-                let tile_center = GridArea::cell(hit.coords).world_center();
+                let tile_center = hit.coords.world_center();
                 transform.set_if_neq(Transform { translation: tile_center.extend(transform.translation.z), ..*transform });
                 next.hit_point = stream.nozzle + stream.direction * hit.distance - tile_center;
                 next.direction = stream.direction;
@@ -360,7 +360,7 @@ fn update_impact_fires(
                     half_size: SCORCH_MESH_HALF_SIZE,
                 },
                 time_bound,
-                Transform::from_translation(GridArea::cell(burnt.coords).world_center().extend(0.)),
+                Transform::from_translation(burnt.coords.world_center().extend(0.)),
             ));
         }
     }

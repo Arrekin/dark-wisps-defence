@@ -10,8 +10,8 @@
 
 use bevy::prelude::*;
 
-use game_core::prelude::{DamageMessage, GridArea, GridCoords, SSS};
-use grids::{ground_cover::{GroundCover, GroundCoverKind}, wisps::WispsGrid};
+use game_core::prelude::{DamageMessage, FloorLevel, GridArea, GridPosition, SSS};
+use indexes::{floor_cover::{FloorCover, FloorCoverKind}, wisps::WispsGrid};
 use logging::prelude::*;
 use persistence::prelude::*;
 use session::{GameClock, TimeBound};
@@ -42,12 +42,12 @@ pub(crate) struct Napalm;
 
 #[derive(Component, SSS)]
 pub(crate) struct BuilderNapalm {
-    pub grid_coords: GridCoords,
+    pub grid_position: GridPosition,
     pub time_bound: TimeBound,
 }
 impl BuilderNapalm {
-    pub fn new(grid_coords: GridCoords, time_bound: TimeBound) -> Self {
-        Self { grid_coords, time_bound }
+    pub fn new(grid_position: GridPosition, time_bound: TimeBound) -> Self {
+        Self { grid_position, time_bound }
     }
 }
 
@@ -59,14 +59,14 @@ fn collect_napalms(
     if napalms.is_empty() { return; }
 
     #[debug_dev("Saving {} napalms", rows.len())]
-    let rows: Vec<(u32, GridCoords, TimeBound)> = napalms
+    let rows: Vec<(u32, GridPosition, TimeBound)> = napalms
         .iter()
         .map(|(entity, area, time_bound)| (entity.index_u32(), area.origin, *time_bound))
         .collect();
     save.submit(move |ctx| {
-        for (id, grid_coords, time_bound) in rows {
+        for (id, grid_position, time_bound) in rows {
             ctx.save_marker("napalms", id)?;
-            ctx.save_grid_coords(id, grid_coords)?;
+            ctx.save_grid_position(id, grid_position)?;
             ctx.save_time_bound(id, time_bound)?;
         }
         Ok(())
@@ -75,9 +75,9 @@ fn collect_napalms(
 
 fn load_napalms(ctx: &mut LoadContext) -> LoadResult {
     ctx.for_each_entity("SELECT id FROM napalms", |ctx, old_id, entity, _| {
-        let grid_coords = ctx.grid_coords(old_id)?;
+        let grid_position = ctx.grid_position(old_id)?;
         let time_bound = ctx.time_bound(old_id)?.ok_or(LoadError::MissingRow { table: "time_bounds" })?;
-        ctx.insert(entity, BuilderNapalm::new(grid_coords, time_bound));
+        ctx.insert(entity, BuilderNapalm::new(grid_position, time_bound));
         Ok(())
     })
 }
@@ -94,8 +94,8 @@ fn on_builder_add_spawn_napalm(
         .remove::<BuilderNapalm>()
         .insert((
             Napalm,
-            GroundCover(GroundCoverKind::Napalm),
-            GridArea::cell(builder.grid_coords),
+            FloorCover(FloorCoverKind::Napalm),
+            GridArea::cell(builder.grid_position),
             builder.time_bound,
         ));
 }
@@ -109,8 +109,8 @@ fn napalm_damage_system(
 ) {
     let damage = NAPALM_DAMAGE_PER_SECOND * time.delta_secs();
     for area in napalms.iter() {
-        let Some(wisps_here) = wisps_grid.get(area.origin) else { continue; };
-        for wisp in wisps_here {
+        let floor: GridPosition<FloorLevel> = area.origin.try_into().expect("napalm lies on a floor");
+        for wisp in wisps_grid.wisps_at(floor.coords.at(floor.level.volume_above())) {
             if !wisps.contains(*wisp) { continue; } // Grid entries may not yet be visible to the query.
             damage_messages.write(DamageMessage { target: *wisp, amount: damage });
         }
@@ -125,7 +125,7 @@ fn on_remove_napalm_spawn_char(
 ) {
     let Ok(area) = napalms.get(trigger.entity) else { return; };
     commands.spawn((
-        GroundCover(GroundCoverKind::Char),
+        FloorCover(FloorCoverKind::Char),
         *area,
         TimeBound::lasting(&clock, CHAR_DURATION),
     ));

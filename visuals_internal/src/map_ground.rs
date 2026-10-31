@@ -2,7 +2,7 @@
 
 use bevy::prelude::*;
 
-use game_core::prelude::{MapInfo, ZDepth};
+use game_core::prelude::{DrawLevel, MapInfo, ZDepth};
 use states::prelude::MapLoadingStage;
 
 const MAP_GROUND_COLOR: Color = Color::srgb_u8(19, 20, 22); // near black
@@ -15,7 +15,7 @@ impl Plugin for MapGroundPlugin {
 }
 
 #[derive(Component)]
-#[require(ZDepth::MapGround)]
+#[require(ZDepth::MapGround, DrawLevel::GroundFloor)]
 struct MapGround;
 
 fn spawn_map_ground(mut commands: Commands, map_info: Res<MapInfo>) {

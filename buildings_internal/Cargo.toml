@@ -11,6 +11,7 @@ buildings = { workspace = true }
 fields = { workspace = true }
 game_core = { workspace = true }
 grids = { workspace = true }
+indexes = { workspace = true }
 alteration = { workspace = true }
 hud = { workspace = true }
 map_objects = { workspace = true }

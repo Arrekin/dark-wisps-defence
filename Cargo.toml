@@ -10,7 +10,7 @@ states = { workspace = true }
 game_core_internal = { workspace = true }
 persistence = { workspace = true }
 session_internal = { workspace = true }
-grids_internal = { workspace = true }
+indexes_internal = { workspace = true }
 viewport = { workspace = true }
 alteration_internal = { workspace = true }
 resources_internal = { workspace = true }
@@ -41,7 +41,8 @@ members = [
   "game_core",
   "game_core_internal",
   "grids",
-  "grids_internal",
+  "indexes",
+  "indexes_internal",
   "buildings",
   "wisps",
   "map_objects",
@@ -99,7 +100,7 @@ new_ret_no_self = "allow"       # Intentional builder constructors that return a
 needless_update = "allow"       # Leaving `..Default::default()` on a fully-specified struct lets you comment out fields for testing without breaking the initializer
 
 [workspace.dependencies]
-bevy = { version = "0.20.*", default-features = false, features = ["dynamic_linking", "2d"] }
+bevy = { version = "0.20.*", default-features = false, features = ["dynamic_linking", "2d", "ui"] }
 bevy_egui = "0.43.*"
 strum = { version = "0.28.*", features = ["derive"] }
 nanorand = "0.8"
@@ -121,7 +122,8 @@ states = { path = "states" }
 game_core = { path = "game_core" }
 game_core_internal = { path = "game_core_internal" }
 grids = { path = "grids" }
-grids_internal = { path = "grids_internal" }
+indexes = { path = "indexes" }
+indexes_internal = { path = "indexes_internal" }
 buildings = { path = "buildings" }
 wisps = { path = "wisps" }
 map_objects = { path = "map_objects" }

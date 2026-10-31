@@ -24,7 +24,7 @@ use bevy::{
     sprite_render::{AlphaMode2d, Material2d, Material2dKey, Material2dPipeline, Material2dPlugin, MeshMaterial2d},
 };
 
-use game_core::prelude::{MapInfo, ZDepth};
+use game_core::prelude::{DrawLevel, MapInfo, ZDepth};
 use states::prelude::MapLoadingStage;
 use visuals::{
     canvas::UNIT_QUAD,
@@ -102,11 +102,11 @@ impl Material2d for VoidSeaShadowMaterial {
 }
 
 #[derive(Component)]
-#[require(ZDepth::VoidSea)]
+#[require(ZDepth::VoidSea, DrawLevel::Airborne)]
 struct VoidSea;
 
 #[derive(Component)]
-#[require(ZDepth::VoidSeaShadow)]
+#[require(ZDepth::VoidSeaShadow, DrawLevel::Airborne)]
 struct VoidSeaShadow;
 
 fn spawn_void_sea(

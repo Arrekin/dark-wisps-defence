@@ -5,13 +5,13 @@ import package::shaders::common::core::{CELL_HALF, CELL_SIZE, bounds_contains, b
 // is rendered separately by a child entity below this quad.
 
 // Cell states packed 2 bits per cell in cell_data. Mirrors `build_cell_data` in
-// grids_internal/src/placement.rs.
+// indexes_internal/src/placement.rs.
 const CELL_OUTSIDE:  u32 = 0u;
 const CELL_PLAIN:    u32 = 1u;
 const CELL_NEGATIVE: u32 = 2u;
 const CELL_POSITIVE: u32 = 3u;
 
-// Mirrors `PlacementValidity::shader_index` in grids/src/placement.rs.
+// Mirrors `PlacementValidity::gpu_index` in grids/src/placement.rs.
 const VALIDITY_VALID:           u32 = 0u;
 const VALIDITY_VALID_UNPOWERED: u32 = 1u;
 const VALIDITY_INVALID:         u32 = 2u;
@@ -40,7 +40,7 @@ const HATCH_DIM: f32 = 0.5;
 
 const INV_SQRT_2: f32 = 0.70710678;
 
-// Field order and types mirror `GridPlacerUniform` in grids_internal/src/placement.rs.
+// Field order and types mirror `GridPlacerUniform` in indexes_internal/src/placement.rs.
 struct GridPlacerData {
     cell_data: vec4<u32>,  // 2 bits/cell, up to 64 cells (8×8 bounding box)
     bounds: vec2<u32>,

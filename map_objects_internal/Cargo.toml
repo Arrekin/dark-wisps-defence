@@ -9,6 +9,7 @@ logging = { workspace = true }
 map_objects = { workspace = true }
 game_core = { workspace = true }
 grids = { workspace = true }
+indexes = { workspace = true }
 almanach = { workspace = true }
 widgets = { workspace = true }
 visuals = { workspace = true }

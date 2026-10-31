@@ -1,8 +1,8 @@
 use bevy::prelude::*;
 
 use alteration::modifiers::prelude::AttackDamage;
-use game_core::prelude::{CELL_SIZE, DamageMessage, GridArea, GridCoords, GridImprint, OptionalCommands, Property};
-use grids::wisps::WispsGrid;
+use game_core::prelude::{AltitudeLevel, CELL_SIZE, DamageMessage, GridArea, GridCoords, GridImprint, OptionalCommands, Property, VolumeLevel};
+use indexes::wisps::WispsGrid;
 use logging::prelude::*;
 use persistence::{prelude::*, rusqlite};
 use session::GameClock;
@@ -106,11 +106,11 @@ fn cannonball_hit_system(
     for (entity, lob, attack_damage) in cannonballs.iter() {
         if !lob.is_landed(clock.now()) { continue; }
 
-        let blast_zone = GridArea::centered_on(GridCoords::from_world_position(lob.target()), GridImprint::square_of_reach(BLAST_REACH));
+        let blast_zone = GridArea::centered_on(GridCoords::from_world_position(lob.target()).at(AltitudeLevel::Elevation), GridImprint::square_of_reach(BLAST_REACH));
         for blast_zone_coords in blast_zone.iter_in_bounds(wisps_grid.bounds) {
             commands.spawn(BuilderExplosion(blast_zone_coords));
 
-            for wisp in &wisps_grid[blast_zone_coords] {
+            for wisp in wisps_grid.wisps_at(blast_zone_coords.at(VolumeLevel::Elevation)) {
                 if !wisps.contains(*wisp) { continue; } // Grid entries may not yet be visible to the query.
                 damage_messages.write(DamageMessage { target: *wisp, amount: attack_damage.get() });
             }

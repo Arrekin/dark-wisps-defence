@@ -29,20 +29,16 @@
 
 use bevy::prelude::*;
 
-use game_core::prelude::{Bounds, CELL_SIZE, GridArea, GridCoords};
-use grids::{base::BaseGrid, slot_index::SlotIndex, GridVersion};
-
-use crate::field::{Field, FieldType};
+use fields::field::{Field, FieldType};
+use game_core::prelude::{AltitudeLevel, Bounds, CELL_SIZE, GridArea, GridCoords};
+use grids::{base::BaseGrid, slot_index::{Slot, SlotIndex}, GridVersion};
 
 /// Extra radius in world pixels used to build a field's area.
 /// This lets shaders find neighbouring fields when drawing seams.
 pub const FIELD_INDEX_MARGIN: f32 = CELL_SIZE;
 
 /// The field's slot in the index, assigned when it joins.
-#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
-pub struct FieldSlot {
-    pub index: usize,
-}
+pub type FieldSlot = Slot<IndexedField>;
 
 /// Field data and grid coverage stored in one index slot.
 #[derive(Clone, Copy)]
@@ -58,7 +54,7 @@ pub struct IndexedField {
 impl IndexedField {
     /// Copies the field data and computes its grid coverage, including [`FIELD_INDEX_MARGIN`].
     fn new(entity: Entity, field_type: FieldType, center: Vec2, field: &Field) -> Self {
-        let area = (field.current_radius > 0.).then(|| GridArea::covering_circle(center, field.current_radius + FIELD_INDEX_MARGIN));
+        let area = (field.current_radius > 0.).then(|| GridArea::covering_circle(center, field.current_radius + FIELD_INDEX_MARGIN, AltitudeLevel::AllEncompassing));
         Self { entity, field_type, center, current_radius: field.current_radius, strength: field.strength, area }
     }
 
@@ -89,29 +85,29 @@ impl FieldIndex {
     }
 
     /// Candidate slots per grid cell, with a version counter for changes to the lists.
-    pub fn cells(&self) -> &BaseGrid<Vec<usize>, GridVersion> {
+    pub fn cells(&self) -> &BaseGrid<Vec<FieldSlot>, GridVersion> {
         self.index.cells()
     }
 
     /// Gives `entity` a slot and lists it in the cells its area covers.
     pub fn insert(&mut self, entity: Entity, field_type: FieldType, center: Vec2, field: &Field) -> FieldSlot {
-        let slot = FieldSlot { index: self.index.allocate() };
+        let slot = self.index.allocate();
         self.write(slot, IndexedField::new(entity, field_type, center, field));
         slot
     }
 
     /// Updates the field data. Updates its cell memberships only if the area changed.
     pub fn update(&mut self, slot: FieldSlot, field_type: FieldType, center: Vec2, field: &Field) {
-        let Some(indexed_field) = self.index.get(slot.index) else { return; };
+        let Some(indexed_field) = self.index.get(slot) else { return; };
         self.write(slot, IndexedField::new(indexed_field.entity, field_type, center, field));
     }
 
     /// Frees the slot if `entity` still holds it.
     pub fn remove(&mut self, slot: FieldSlot, entity: Entity) {
-        let Some(indexed_field) = self.index.get(slot.index) else { return; };
+        let Some(indexed_field) = self.index.get(slot) else { return; };
         if indexed_field.entity != entity { return; }
         self.relist(slot, indexed_field.area, None);
-        self.index.free(slot.index);
+        self.index.free(slot);
     }
 
     /// Returns the containing field with the lowest claim, or `None` outside all fields or the map.
@@ -125,9 +121,9 @@ impl FieldIndex {
 
     /// Replaces the slot's data and updates its cell memberships if the area changed.
     fn write(&mut self, slot: FieldSlot, new: IndexedField) {
-        let old_area = self.index.get(slot.index).and_then(|indexed_field| indexed_field.area);
+        let old_area = self.index.get(slot).and_then(|indexed_field| indexed_field.area);
         self.relist(slot, old_area, new.area);
-        self.index.set(slot.index, new);
+        self.index.set(slot, new);
     }
 
     /// Moves the slot's cell memberships from `old` to `new` and advances the grid version when the
@@ -151,7 +147,7 @@ impl FieldIndex {
     fn unlist(&mut self, slot: FieldSlot, cells: impl Iterator<Item = GridCoords>) {
         let bounds = self.index.bounds();
         for coords in cells.filter(|coords| bounds.contains(*coords)) {
-            self.index.unlist(slot.index, coords);
+            self.index.unlist(slot, coords);
         }
     }
 
@@ -159,7 +155,7 @@ impl FieldIndex {
     fn enlist(&mut self, slot: FieldSlot, cells: impl Iterator<Item = GridCoords>) {
         let bounds = self.index.bounds();
         for coords in cells.filter(|coords| bounds.contains(*coords)) {
-            self.index.list(slot.index, coords);
+            self.index.list(slot, coords);
         }
     }
 }

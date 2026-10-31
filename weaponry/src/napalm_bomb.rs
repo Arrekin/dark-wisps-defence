@@ -1,12 +1,12 @@
 use bevy::prelude::*;
 
-use game_core::prelude::{SSS, ZDepth};
+use game_core::prelude::{DrawLevel, SSS, ZDepth};
 
 use super::{components::Projectile, lob::Lob};
 
 /// The Napalm Battery's lobbed projectile.
 #[derive(Component)]
-#[require(Projectile, ZDepth::Projectile)]
+#[require(Projectile, ZDepth::Projectile, DrawLevel::Airborne)]
 pub struct NapalmBomb;
 
 #[derive(Component, SSS)]

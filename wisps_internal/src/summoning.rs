@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use nanorand::Rng;
 
 use game_core::{moments::moment_attach_self_trigger_to_parent, prelude::*};
-use grids::prelude::ObstacleGrid;
+use indexes::prelude::ObstacleGrid;
 use logging::prelude::*;
 use persistence::{prelude::*, rusqlite};
 use session::GameClock;
@@ -140,8 +140,8 @@ fn save_area(ctx: &SaveContext, id: u32, area: &SpawnArea) -> rusqlite::Result<(
         SpawnArea::Rect { area } => {
             let Bounds { width, height } = area.imprint.into();
             ctx.tx.execute(
-                "INSERT OR REPLACE INTO summoning_area_rect (summoning_id, origin_x, origin_y, width, height) VALUES (?1, ?2, ?3, ?4, ?5)",
-                rusqlite::params![id, area.origin.x, area.origin.y, width, height],
+                "INSERT OR REPLACE INTO summoning_area_rect (summoning_id, origin_x, origin_y, width, height, level) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                rusqlite::params![id, area.origin.coords.x, area.origin.coords.y, width, height, area.origin.level.as_ref()],
             )?;
         }
         SpawnArea::Edge { side } => {
@@ -199,16 +199,15 @@ fn load_summonings(ctx: &mut LoadContext) -> LoadResult {
                         .collect::<rusqlite::Result<Vec<_>>>()?;
                     SpawnArea::Coords { coords }
                 }
-                "Rect" => ctx.conn.query_row(
-                    "SELECT origin_x, origin_y, width, height FROM summoning_area_rect WHERE summoning_id = ?1",
-                    [old_id],
-                    |row| Ok(SpawnArea::Rect {
-                        area: GridArea::new(
-                            GridCoords { x: row.get(0)?, y: row.get(1)? },
-                            GridImprint::Rectangle { width: row.get(2)?, height: row.get(3)? },
-                        ),
-                    }),
-                ).map_err(LoadError::table_read("summoning_area_rect"))?,
+                "Rect" => {
+                    let (x, y, width, height, level): (i32, i32, i32, i32, String) = ctx.conn.query_row(
+                        "SELECT origin_x, origin_y, width, height, level FROM summoning_area_rect WHERE summoning_id = ?1",
+                        [old_id],
+                        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+                    ).map_err(LoadError::table_read("summoning_area_rect"))?;
+                    let level: AltitudeLevel = level.parse().map_err(|_| LoadError::unknown_value("altitude level", level))?;
+                    SpawnArea::Rect { area: GridArea::new(GridCoords { x, y }.at(level), GridImprint::Rectangle { width, height }) }
+                }
                 "Edge" => {
                     let side_name: String = ctx.conn.query_row(
                         "SELECT side FROM summoning_area_edge WHERE summoning_id = ?1",
@@ -290,7 +289,7 @@ fn tick_active_summoning_system(
                 for _ in 0..(to_spawn as usize) {
                     let grid_coords = summoning.area.get_random_coord(obstacle_grid.bounds, &mut rng);
                     let wisp_type = summoning.get_random_wisp_type(&mut rng);
-                    commands.spawn(BuilderWisp::new(wisp_type, grid_coords));
+                    commands.spawn(BuilderWisp::new(wisp_type, grid_coords.at(AltitudeLevel::Elevation)));
                 }
                 runtime.produced = runtime.produced.saturating_add(to_spawn);
                 let jitter_offset = if jitter > 0.0 { (rng.generate::<f32>() * 2.0 - 1.0) * jitter } else { 0.0 };

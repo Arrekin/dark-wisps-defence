@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use game_core::prelude::{MapBound, ZDepth};
+use game_core::prelude::{DrawLevel, MapBound, ZDepth};
 use visuals::prelude::BuilderWispAttackEffect;
 
 use crate::sprite_animation::AnimationController;
@@ -42,7 +42,7 @@ impl FromWorld for WispAttackEffectAtlas {
 }
 
 #[derive(Component)]
-#[require(MapBound, ZDepth::GroundEffect)]
+#[require(MapBound, ZDepth::GroundEffect, DrawLevel::Elevation)]
 pub(crate) struct WispAttackEffect;
 
 fn on_builder_add_spawn_wisp_attack_effect(
