@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use nanorand::Rng;
 use strum::{AsRefStr, EnumIter, EnumString};
 
-use game_core::prelude::{Bounds, FromEntity, GridArea, GridCoords, MapBound, Moment, MomentKind, MomentOfInterest, SSS, WispType};
+use game_core::prelude::{Bounds, EdgeSide, FromEntity, GridArea, GridCoords, MapBound, Moment, MomentKind, MomentOfInterest, SSS, WispType};
 
 #[derive(Component, Clone, Debug)]
 #[require(MapBound, SummoningRuntime)]
@@ -12,6 +12,22 @@ pub struct Summoning {
     pub area: SpawnArea,
     pub tempo: SpawnTempo,
     pub limit_count: Option<i32>,
+}
+impl Default for Summoning {
+    fn default() -> Self {
+        Self {
+            id_name: "new_summoning".to_string(),
+            wisp_types: vec![WispType::Fire],
+            area: SpawnArea::default(),
+            tempo: SpawnTempo::default(),
+            limit_count: None,
+        }
+    }
+}
+impl Summoning {
+    pub fn get_random_wisp_type(&self, rng: &mut nanorand::tls::TlsWyRand) -> WispType {
+        self.wisp_types[rng.generate_range(0..self.wisp_types.len())]
+    }
 }
 
 // ============================================================================
@@ -39,22 +55,6 @@ pub struct SummoningInactive;
 pub struct SummoningActive;
 #[derive(Component, Default)]
 pub struct SummoningExhausted;
-impl Default for Summoning {
-    fn default() -> Self {
-        Self {
-            id_name: "new_summoning".to_string(),
-            wisp_types: vec![WispType::Fire],
-            area: SpawnArea::default(),
-            tempo: SpawnTempo::default(),
-            limit_count: None,
-        }
-    }
-}
-impl Summoning {
-    pub fn get_random_wisp_type(&self, rng: &mut nanorand::tls::TlsWyRand) -> WispType {
-        self.wisp_types[rng.generate_range(0..self.wisp_types.len())]
-    }
-}
 
 #[derive(Clone, Debug, Default, PartialEq, EnumIter, AsRefStr)]
 pub enum SpawnArea {
@@ -110,15 +110,6 @@ impl SpawnArea {
             }
         }
     }
-}
-
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, EnumIter, EnumString, AsRefStr)]
-pub enum EdgeSide {
-    #[default]
-    Top,
-    Bottom,
-    Left,
-    Right,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, AsRefStr)]

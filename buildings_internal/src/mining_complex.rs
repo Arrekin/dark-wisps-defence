@@ -48,7 +48,7 @@ fn mining_complex_validator(_: MapObject, area: GridArea, grids: &GridsCollectio
     }
     let mut has_ore = false;
     for coords in area {
-        let cell = &grids.obstacle_grid[coords];
+        let cell = grids.obstacle_grid.cell(coords);
         if cell.has_structure() || cell.is_within_quantum_field() {
             return PlacementValidity::Invalid;
         }
@@ -70,7 +70,7 @@ fn mining_complex_annotator(_: MapObject, area: GridArea, validity: PlacementVal
             .map(|coords| (coords, CellHighlight::Negative))
             .collect(),
         _ => area.iter_in_bounds(grids.obstacle_grid.bounds)
-            .filter(|coords| grids.obstacle_grid[*coords].has_dark_ore())
+            .filter(|coords| grids.obstacle_grid.cell(*coords).has_dark_ore())
             .map(|coords| (coords, CellHighlight::Positive))
             .collect(),
     }

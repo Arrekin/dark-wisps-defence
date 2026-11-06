@@ -24,7 +24,7 @@ pub mod prelude {
     pub use crate::components::{ContentId, DisabledByPlayer, IntegrityPoints, IsOperational, IsPowered, MapBound, NeedsPower};
     pub use crate::display::{DisplayDescription, DisplayIcon, DisplayIconSwitcher, DisplayName, DisplayOrder, FaceSurface, GHOST_ALPHA, MapObjectTooltipRequest, ObjectFaceRequest};
     pub use crate::events::{DamageMessage, TechnicalChange, TechnicalStateChanged};
-    pub use crate::grid::{AreaRange, AutoGridSnap, Bounds, CELL_SIZE, CellSide, GridArea, GridCoords, GridImprint, GridPosition, MapInfo, RangeType};
+    pub use crate::grid::{AreaRange, AutoGridSnap, Bounds, CELL_SIZE, EdgeSide, GridArea, GridCoords, GridFloorPosition, GridImprint, GridPosition, GridVolumePosition, MapInfo, RangeType};
     pub use crate::moments::{
         HasMoments, Moment, MomentHappened, MomentKind, MomentOf, MomentOfInterest, MomentWatchers,
     };

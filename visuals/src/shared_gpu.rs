@@ -43,8 +43,8 @@ pub enum SharedGpuBinding {
     DarkOreFill = 102,
     /// Obstacle cells, one packed `u32` per cell, read through `shaders::grids::obstacles`.
     ObstacleCells = 103,
-    /// Wall style index per cell, read through `shaders::walls::styles`.
-    WallStyleCells = 104,
+    /// Wall style index and ramp code per cell, read through `shaders::walls::styles`.
+    WallCells = 104,
     /// The wall style table, read through `shaders::walls::styles`.
     WallStyles = 105,
     /// Emitted energy, one `f32` per cell, read through `shaders::grids::emissions`.

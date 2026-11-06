@@ -14,7 +14,7 @@ use std::ops::RangeInclusive;
 
 use bevy::prelude::*;
 
-use game_core::prelude::{AltitudeLevel, CELL_SIZE, GridArea, GridCoords, GridImprint, VolumeLevel};
+use game_core::prelude::{AltitudeLevel, CELL_SIZE, GridArea, GridCoords, GridImprint};
 use indexes::wisps::WispsGrid;
 use states::prelude::GameState;
 use weaponry::{
@@ -77,7 +77,7 @@ fn nearest_hit(stream: &FlameStream, fuel: RangeInclusive<f32>, wisps_grid: &Wis
     for (column_distance, slice) in columns(stream) {
         if nearest.as_ref().is_some_and(|hit| column_distance > hit.distance) { break; }
         for coords in slice.iter_in_bounds(wisps_grid.bounds) {
-            for &wisp in wisps_grid.wisps_at(coords.at(VolumeLevel::Elevation)) {
+            for wisp in wisps_grid.wisps_in_cell(coords) {
                 let Ok(wisp_transform) = wisps.get(wisp) else { continue; };
                 let Some(hit_distance) = hit_distance(stream, wisp_transform.translation.xy()) else { continue; };
                 if !fuel.contains(&hit_distance) { continue; }

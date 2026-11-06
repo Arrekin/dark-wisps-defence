@@ -56,7 +56,7 @@ pub struct WispHeading {
 impl WispHeadingItem<'_, '_> {
     /// The next path cell, or the current cell if no next step exists.
     pub fn next_cell(&self) -> GridCoords {
-        self.grid_path.next_in_path().unwrap_or(self.area.origin.coords)
+        self.grid_path.next_in_path().map_or(self.area.origin.coords, |position| position.coords)
     }
     /// World-space center of [`Self::next_cell`].
     pub fn next_cell_center(&self) -> Vec2 {

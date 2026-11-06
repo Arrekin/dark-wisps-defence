@@ -14,7 +14,7 @@ use alteration::{
     },
     modifiers::prelude::MovementSpeed,
 };
-use game_core::prelude::{AltitudeLevel, GridArea, Property, VolumeLevel};
+use game_core::prelude::{AltitudeLevel, GridArea, Property};
 use indexes::wisps::WispsGrid;
 use logging::prelude::*;
 use persistence::{prelude::*, rusqlite};
@@ -135,15 +135,15 @@ fn ripple_hit_system(
     for (ripple_entity, ripple, ripple_speed, ripple_transform, sourced_effects) in ripples.iter() {
         let covered_area = GridArea::covering_circle(ripple_transform.translation.xy(), ripple.current_radius, AltitudeLevel::Elevation);
         for coords in covered_area.iter_in_bounds(wisps_grid.bounds) {
-            for wisp in wisps_grid.wisps_at(coords.at(VolumeLevel::Elevation)) {
-                if already_hit_this_target(sourced_effects, *wisp, &effect_targets) { continue; }
-                let Ok((wisp_transform, wisp_speed)) = wisps.get(*wisp) else { continue; };
+            for wisp in wisps_grid.wisps_in_cell(coords) {
+                if already_hit_this_target(sourced_effects, wisp, &effect_targets) { continue; }
+                let Ok((wisp_transform, wisp_speed)) = wisps.get(wisp) else { continue; };
                 let distance = wisp_transform.translation.xy().distance(ripple_transform.translation.xy());
                 // Include a frame of ripple expansion and wisp movement so approaching wisps cannot skip the hit band.
                 let closing_distance = (ripple_speed.get() + wisp_speed.get()) * time.delta_secs();
                 if distance > ripple.current_radius || distance <= ripple.current_radius - closing_distance { continue; }
                 commands.spawn(
-                    BuilderBrittleEffect::new(*wisp, BRITTLE_DAMAGE_MULTIPLIER)
+                    BuilderBrittleEffect::new(wisp, BRITTLE_DAMAGE_MULTIPLIER)
                         .with_source(ripple_entity)
                         .with_time_bound(TimeBound::lasting(&clock, BRITTLE_DURATION_SECONDS))
                 );

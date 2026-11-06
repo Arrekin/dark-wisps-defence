@@ -31,7 +31,7 @@ use bevy::prelude::*;
 
 use fields::field::{Field, FieldType};
 use game_core::prelude::{AltitudeLevel, Bounds, CELL_SIZE, GridArea, GridCoords};
-use grids::{base::BaseGrid, slot_index::{Slot, SlotIndex}, GridVersion};
+use grids::slot_index::{Slot, SlotCells, SlotIndex};
 
 /// Extra radius in world pixels used to build a field's area.
 /// This lets shaders find neighbouring fields when drawing seams.
@@ -85,7 +85,7 @@ impl FieldIndex {
     }
 
     /// Candidate slots per grid cell, with a version counter for changes to the lists.
-    pub fn cells(&self) -> &BaseGrid<Vec<FieldSlot>, GridVersion> {
+    pub fn cells(&self) -> &SlotCells<IndexedField> {
         self.index.cells()
     }
 

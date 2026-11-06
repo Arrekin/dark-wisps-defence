@@ -253,7 +253,7 @@ fn quantum_field_validator(
     if grids.reserved_coords.any_reserved(area) {
         return PlacementValidity::Invalid;
     }
-    if !grids.obstacle_grid.query_area_all(area, |cell| !cell.is_within_quantum_field()) {
+    if !grids.obstacle_grid.cells_in(area).all(|cell| !cell.is_within_quantum_field()) {
         return PlacementValidity::Invalid;
     }
     PlacementValidity::Valid
@@ -286,7 +286,7 @@ fn on_quantum_field_place_request_do_so(
     let area = *placer.into_inner();
     let validity = (almanach.quantum_fields.validate)(MapObject::QuantumField, area, &grids);
     if validity == PlacementValidity::Invalid { return; }
-    #[debug_dev("Quantum field placed at {}", area.origin)]
+    #[debug_player("Quantum field placed at {}", area.origin)]
     commands.spawn(BuilderQuantumField::new(area.at_level(AltitudeLevel::AllEncompassing)));
     grids.reserved_coords.reserve(area);
 }
@@ -300,7 +300,7 @@ fn on_quantum_field_remove_request_do_so(
 ) {
     let RemoveRequest(MapObject::QuantumField) = *trigger else { return };
     let coords = placer.origin.coords;
-    #[debug_dev("Quantum field removed at {coords}")]
+    #[debug_player("Quantum field removed at {coords}")]
     if let Some(entity) = grids.obstacle_grid.get(coords).and_then(|cell| cell.quantum_field) {
         commands.entity(entity).despawn();
     }
@@ -427,7 +427,7 @@ impl GridPlacerUiForQuantumField {
             quantum_field_info.default_size,
         );
         commands.spawn(GridPlacerUiForQuantumField { imprint_selector });
-        commands.trigger(GridPlacerOverridePropertyRequest::OverrideImprint(imprint_selector.imprint()));
+        commands.trigger(GridPlacerOverridePropertyRequest::Imprint(imprint_selector.imprint()));
     }
 
     fn on_stop_placing_despawn_grid_placer_ui(
@@ -501,7 +501,7 @@ impl ArrowButton {
         size_label.into_inner().0 = grid_placer_ui.imprint_label();
 
         let imprint = grid_placer_ui.imprint_selector.imprint();
-        commands.trigger(GridPlacerOverridePropertyRequest::OverrideImprint(imprint));
+        commands.trigger(GridPlacerOverridePropertyRequest::Imprint(imprint));
     }
 }
 

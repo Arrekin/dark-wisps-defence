@@ -4,7 +4,7 @@
 use bevy::{ecs::system::SystemParam, prelude::*};
 
 use game_core::prelude::{AutoGridSnap, DrawLevel, GridArea, GridCoords, GridImprint, MapObject, ZDepth};
-use grids::placement::{CellHighlight, PlacementModes, PlacementStyle, PlacementValidity, ReservedCoords};
+use grids::placement::{CellHighlight, PlacementDirection, PlacementModes, PlacementStyle, PlacementValidity, ReservedCoords};
 
 use crate::{energy_supply::EnergySupplyGrid, obstacles::{ObstacleCell, ObstacleGrid}, wisps::WispsGrid};
 
@@ -25,7 +25,7 @@ pub type PlacementValidatorFn = fn(MapObject, GridArea, &GridsCollectionParam) -
 /// For example, an annotator can highlight blocked cells when placement is invalid.
 pub type PlacementAnnotatorFn = fn(MapObject, GridArea, PlacementValidity, &GridsCollectionParam) -> Vec<(GridCoords, CellHighlight)>;
 
-/// Footprint, input modes, and callbacks supplied by Almanach for one object type.
+/// Imprint, input modes, and callbacks supplied by Almanach for one object type.
 pub struct ObjectPlacementInfo {
     pub imprint: GridImprint,
     pub validate: PlacementValidatorFn,
@@ -40,7 +40,7 @@ pub struct ActivePlacement {
 }
 
 #[derive(Component, Default)]
-#[require(GridArea, PlacementStyle, ZDepth::GridPlacer, DrawLevel::Airborne, AutoGridSnap)]
+#[require(GridArea, PlacementStyle, PlacementDirection, ZDepth::GridPlacer, DrawLevel::Airborne, AutoGridSnap)]
 pub struct GridObjectPlacer {
     pub active_placement: Option<ActivePlacement>,
 }
@@ -76,7 +76,7 @@ pub fn validator_all_empty(
     if grids.reserved_coords.any_reserved(area) {
         return PlacementValidity::Invalid;
     }
-    if !grids.obstacle_grid.query_area_all(area, ObstacleCell::is_empty) {
+    if !grids.obstacle_grid.cells_in(area).all(ObstacleCell::is_empty) {
         return PlacementValidity::Invalid;
     }
     PlacementValidity::Valid

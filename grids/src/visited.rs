@@ -1,8 +1,8 @@
-use std::collections::VecDeque;
+use std::{collections::VecDeque, ops::{Index, IndexMut}};
 
-use game_core::prelude::{Bounds, GridCoords};
+use game_core::prelude::{Bounds, GridVolumePosition, VolumeLevel};
 
-use crate::{CellTrait, base::BaseGrid};
+use crate::base::{BaseGrid, GridCell, GridStack};
 
 /// A counter used to mark cells visited during a search.
 pub trait Stamp: Copy + PartialEq {
@@ -21,8 +21,6 @@ impl Stamp for u32 {
 }
 
 /// The current search's stamp, compared against cell stamps to identify visited cells.
-///
-/// The `u8` and `u32` implementations start at 1, leaving default cells unvisited.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Generation<S>(S);
 impl<S: Stamp> Generation<S> {
@@ -35,7 +33,7 @@ impl<S: Stamp> Default for Generation<S> {
     fn default() -> Self { Self(S::FIRST) }
 }
 
-impl<C: CellTrait, S: Stamp> BaseGrid<C, Generation<S>> {
+impl<CellType: GridCell, S: Stamp> BaseGrid<CellType, Generation<S>> {
     pub fn resize_and_clear(&mut self, bounds: impl Into<Bounds>) {
         self.resize(bounds);
         self.clear();
@@ -53,40 +51,51 @@ impl<C: CellTrait, S: Stamp> BaseGrid<C, Generation<S>> {
     }
 }
 
-pub type VisitedGrid = BaseGrid<u8, Generation<u8>>;
-impl VisitedGrid {
-    pub fn set_visited(&mut self, coords: GridCoords) {
-        self[coords] = self.version.stamp();
+/// Tracks visits in the current search using generation stamps.
+///
+/// Use [`crate::base::GridSingle`] for visits per coordinate or [`GridStack`] for visits
+/// per volume position.
+pub type VisitedGrid<CellType> = BaseGrid<CellType, Generation<u8>>;
+impl<CellType: GridCell<Data = u8>> VisitedGrid<CellType> {
+    pub fn set_visited<Key>(&mut self, key: Key) where Self: IndexMut<Key, Output = u8> {
+        self[key] = self.version.stamp();
     }
-    pub fn is_visited(&self, coords: GridCoords) -> bool {
-        self[coords] == self.version.stamp()
+    pub fn is_visited<Key>(&self, key: Key) -> bool where Self: Index<Key, Output = u8> {
+        self[key] == self.version.stamp()
     }
 }
 
-/// A visited cell's generation stamp and predecessor, used to reconstruct a path.
+/// A generation stamp and predecessor offset for reconstructing a path.
 #[derive(Copy, Clone, Debug, PartialEq, Default)]
 pub struct Tracking {
-    pub stamp: u32,
-    pub from: GridCoords,
+    stamp: u32,
+    /// Coordinate offset from this position to its predecessor.
+    step_back: (i8, i8),
+    from_level: VolumeLevel,
 }
 
-pub type TrackingGrid = BaseGrid<Tracking, Generation<u32>>;
+const _: () = assert!(size_of::<Tracking>() == 8, "Tracking is written for every position a path search reaches");
+
+pub type TrackingGrid = BaseGrid<GridStack<Tracking>, Generation<u32>>;
 impl TrackingGrid {
-    pub fn set_tracked(&mut self, coords: GridCoords, from: GridCoords) {
-        self[coords] = Tracking { stamp: self.version.stamp(), from };
+    /// Marks `position` as visited and records `from` as its predecessor.
+    /// The coordinates must differ by at most one cell on each axis.
+    pub fn set_tracked(&mut self, position: GridVolumePosition, from: GridVolumePosition) {
+        let step_back = ((from.coords.x - position.coords.x) as i8, (from.coords.y - position.coords.y) as i8);
+        self[position] = Tracking { stamp: self.version.stamp(), step_back, from_level: from.level };
     }
-    pub fn is_tracked(&self, coords: GridCoords) -> bool {
-        self[coords].stamp == self.version.stamp()
+    pub fn is_tracked(&self, position: GridVolumePosition) -> bool {
+        self[position].stamp == self.version.stamp()
     }
     /// Replaces `path` with the route from `start` to `end`, excluding `start` and including `end`.
-    /// The route is reconstructed by following predecessors from `end`.
-    pub fn compile_path_into(&self, start: GridCoords, end: GridCoords, path: &mut VecDeque<GridCoords>) {
+    pub fn compile_path_into(&self, start: GridVolumePosition, end: GridVolumePosition, path: &mut VecDeque<GridVolumePosition>) {
         path.clear();
         let mut current = end;
         while current != start {
-            assert!(self.is_tracked(current), "Encountered untracked cell during compilation of path");
+            assert!(self.is_tracked(current), "Encountered untracked position during compilation of path");
             path.push_front(current);
-            current = self[current].from;
+            let Tracking { step_back: (step_x, step_y), from_level, .. } = self[current];
+            current = current.coords.shifted((step_x as i32, step_y as i32)).at(from_level);
         }
     }
 }

@@ -1,9 +1,13 @@
 use std::collections::VecDeque;
 
-use game_core::prelude::GridCoords;
-use grids::search::{SEARCH_SCRATCH, SearchScratch, State};
+use game_core::prelude::GridVolumePosition;
 
 use crate::{emissions::EmissionsGrid, obstacles::GridStructure, prelude::*};
+
+use super::{
+    scratch::{SEARCH_SCRATCH, SearchScratch, State},
+    stepping::{walkable_diagonals, walkable_neighbors},
+};
 
 const EMPTY_FIELD_MODIFIER: f32 = 1.0;
 const BUILDING_FIELD_MODIFIER: f32 = 0.1;
@@ -15,46 +19,32 @@ const BUILDING_FIELD_MODIFIER: f32 = 0.1;
 pub fn path_find_energy_beckon(
     obstacle_grid: &ObstacleGrid,
     emissions_grid: &EmissionsGrid,
-    start_coords: GridCoords,
-    path: &mut VecDeque<GridCoords>,
+    start: GridVolumePosition,
+    path: &mut VecDeque<GridVolumePosition>,
 ) -> bool {
     SEARCH_SCRATCH.with_borrow_mut(|SearchScratch { tracking, cost_queue, .. }| {
         tracking.resize_and_clear(obstacle_grid.bounds);
         cost_queue.clear();
-        cost_queue.push(State{ cost: f32::MIN, distance: 0, coords: start_coords });
-        tracking.set_tracked(start_coords, start_coords);
-        while let Some(State{ distance, coords, .. }) = cost_queue.pop() {
-            for new_coords in obstacle_grid.bounds.all_neighbors(coords) {
-                if tracking.is_tracked(new_coords)
-                    || obstacle_grid[new_coords].has_wall()
-                {
+        cost_queue.push(State { cost: f32::MIN, distance: 0, key: start });
+        tracking.set_tracked(start, start);
+        while let Some(State { distance, key: position, .. }) = cost_queue.pop() {
+            for new_position in walkable_neighbors(obstacle_grid, position).chain(walkable_diagonals(obstacle_grid, position)) {
+                if tracking.is_tracked(new_position) {
                     continue;
                 }
 
-                // Prevent diagonal movement past the corner of a wall or building.
-                let is_diagonal_move = new_coords.x != coords.x && new_coords.y != coords.y;
-                if is_diagonal_move {
-                    let adjacent_x = GridCoords { x: new_coords.x, y: coords.y };
-                    let adjacent_y = GridCoords { x: coords.x, y: new_coords.y };
-                    if obstacle_grid[adjacent_x].has_structure() || obstacle_grid[adjacent_y].has_structure() {
-                        continue;
-                    }
-                }
-
-                tracking.set_tracked(new_coords, coords);
+                tracking.set_tracked(new_position, position);
                 let new_distance = distance + 1;
-                let new_cost = match obstacle_grid[new_coords].elevation {
-                    GridStructure::Building { slot, building_type } => {
-                        if building_type.is_energy_supplier() && obstacle_grid.entry(slot).data.operational {
-                            tracking.compile_path_into(start_coords, new_coords, path);
-                            return true;
-                        } else {
-                            -emissions_grid[new_coords].energy * BUILDING_FIELD_MODIFIER + new_distance as f32
-                        }
+                let field_modifier = match obstacle_grid[new_position] {
+                    GridStructure::Building { slot, building_type } if building_type.is_energy_supplier() && obstacle_grid.entry(slot).data.operational => {
+                        tracking.compile_path_into(start, new_position, path);
+                        return true;
                     }
-                    _ => -emissions_grid[new_coords].energy * EMPTY_FIELD_MODIFIER + new_distance as f32,
+                    GridStructure::Building { .. } => BUILDING_FIELD_MODIFIER,
+                    _ => EMPTY_FIELD_MODIFIER,
                 };
-                cost_queue.push(State { cost: new_cost, distance: new_distance, coords: new_coords });
+                let new_cost = -emissions_grid[new_position].energy * field_modifier + new_distance as f32;
+                cost_queue.push(State { cost: new_cost, distance: new_distance, key: new_position });
             }
         }
         false

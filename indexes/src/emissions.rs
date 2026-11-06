@@ -1,9 +1,9 @@
-use std::ops::{Deref, DerefMut};
+use std::ops::Deref;
 
 use bevy::prelude::*;
 
-use game_core::prelude::{Bounds, GridArea, GridCoords};
-use grids::{GridVersion, base::BaseGrid};
+use game_core::prelude::{Bounds, GridArea, GridVolumePosition};
+use grids::{GridVersion, base::{BaseGrid, GridStack}};
 
 #[derive(Component)]
 pub struct EmitterEnergy(pub FloodEmissionsDetails);
@@ -30,30 +30,29 @@ pub struct EmissionsGridVersion {
 }
 
 #[derive(Resource, Default)]
-pub struct EmissionsGrid(BaseGrid<Emissions, EmissionsGridVersion>);
-impl Deref for EmissionsGrid {
-    type Target = BaseGrid<Emissions, EmissionsGridVersion>;
-    fn deref(&self) -> &Self::Target { &self.0 }
+pub struct EmissionsGrid {
+    cells: BaseGrid<GridStack<Emissions>, EmissionsGridVersion>,
 }
-impl DerefMut for EmissionsGrid {
-    fn deref_mut(&mut self) -> &mut Self::Target { &mut self.0 }
+impl Deref for EmissionsGrid {
+    type Target = BaseGrid<GridStack<Emissions>, EmissionsGridVersion>;
+    fn deref(&self) -> &Self::Target { &self.cells }
 }
 
 impl EmissionsGrid {
     pub fn new_with_size(bounds: impl Into<Bounds>) -> Self {
-        Self(BaseGrid::new_with_size(bounds))
+        Self { cells: BaseGrid::new_with_size(bounds) }
     }
-    pub fn add_energy(&mut self, coords: GridCoords, energy: f32) {
-        let emissions = &mut self[coords];
+    pub fn add_energy(&mut self, position: GridVolumePosition, energy: f32) {
+        let emissions = &mut self.cells[position];
         emissions.energy += energy;
         if emissions.energy.abs() < 0.0001 { emissions.energy = 0.; }
-        self.version.energy = self.version.energy.wrapping_add(1);
+        self.cells.version.energy = self.cells.version.energy.wrapping_add(1);
     }
     pub fn reset_energy_emissions(&mut self) {
-        self.grid.iter_mut().for_each(|emissions| {
+        self.cells.grid.iter_mut().flatten().for_each(|emissions| {
             emissions.energy = 0.;
         });
-        self.version.energy = self.version.energy.wrapping_add(1);
+        self.cells.version.energy = self.cells.version.energy.wrapping_add(1);
     }
 }
 

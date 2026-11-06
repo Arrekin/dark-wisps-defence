@@ -12,32 +12,24 @@ use std::ops::Deref;
 
 use bevy::prelude::*;
 
-use game_core::prelude::{Bounds, BuildingType, CellSide, GridArea, VolumeLevel};
-use grids::{GridVersion, base::BaseGrid, slot_index::{Slot, Slots}};
+use game_core::prelude::{Bounds, BuildingType, EdgeSide, FloorLevel, GridArea, VolumeLevel};
+use grids::{GridVersion, base::{BaseGrid, GridCell}, slot_index::{Slot, Slots}};
 use map_objects::wall_style::WallStyleKey;
 
 /// Contents of one cell volume, including empty space and solid earth.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GridStructure {
-    /// Open space, the default at `Elevation` and `OnElevation`.
+    /// Open space. The default at `Elevation` and `OnElevation`; represents a pit at `Underground`.
     Empty,
     /// Packed earth, the default at `Underground`.
     Solid,
     DarkOre { slot: Slot<DarkOreData> },
-    /// An underground passage under intact ground.
-    Tunnel { slot: Slot<TunnelData> },
-    /// An open pit.
-    Excavation { slot: Slot<ExcavationData> },
-    /// At `Underground`, spans a pit at ground height.
-    /// At `Elevation`, spans open ground at wall-top height.
-    Bridge { slot: Slot<BridgeData> },
-    /// A slope connecting adjacent heights, rising toward `high_side`.
-    Ramp { slot: Slot<RampData>, high_side: CellSide },
-    Wall { slot: Slot<WallData> },
-    /// A passage through a wall at ground height.
-    WallTunnel { slot: Slot<WallTunnelData> },
+    /// A wall whose top is flat when `high_side` is `None`, or slopes up toward the given side.
+    Wall { slot: Slot<WallData>, style: WallStyleKey, high_side: Option<EdgeSide> },
     Building { slot: Slot<BuildingData>, building_type: BuildingType },
 }
+
+const _: () = assert!(size_of::<GridStructure>() == 8, "GridStructure sits in every cell volume and is read in hot loops");
 
 impl GridStructure {
     /// GPU code matching `STRUCTURE_*` in `assets/shaders/grids/obstacles.wesl`.
@@ -46,13 +38,8 @@ impl GridStructure {
             Self::Empty => 0,
             Self::Solid => 1,
             Self::DarkOre { .. } => 2,
-            Self::Tunnel { .. } => 3,
-            Self::Excavation { .. } => 4,
-            Self::Bridge { .. } => 5,
-            Self::Ramp { .. } => 6,
-            Self::Wall { .. } => 7,
-            Self::WallTunnel { .. } => 8,
-            Self::Building { .. } => 9,
+            Self::Wall { .. } => 3,
+            Self::Building { .. } => 4,
         }
     }
 
@@ -61,6 +48,38 @@ impl GridStructure {
         match level {
             VolumeLevel::Underground => Self::Solid,
             VolumeLevel::Elevation | VolumeLevel::OnElevation => Self::Empty,
+        }
+    }
+
+    pub const fn is_building(self) -> bool {
+        matches!(self, Self::Building { .. })
+    }
+
+    pub const fn is_ramp(self) -> bool {
+        self.high_side().is_some()
+    }
+
+    /// Returns the ramp's high side, or `None` for flat walls and other structures.
+    pub const fn high_side(self) -> Option<EdgeSide> {
+        match self {
+            Self::Wall { high_side, .. } => high_side,
+            _ => None,
+        }
+    }
+
+    /// Returns the style of a wall or ramp, or `None` for other structures.
+    pub const fn style(self) -> Option<WallStyleKey> {
+        match self {
+            Self::Wall { style, .. } => Some(style),
+            _ => None,
+        }
+    }
+
+    /// True if this structure provides the floor of the volume above it.
+    pub const fn provides_floor(self) -> bool {
+        match self {
+            Self::Solid | Self::DarkOre { .. } | Self::Wall { .. } => true,
+            Self::Empty | Self::Building { .. } => false,
         }
     }
 }
@@ -76,19 +95,7 @@ pub struct StructureEntry<D> {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DarkOreData;
 #[derive(Clone, Copy, Debug, Default)]
-pub struct TunnelData;
-#[derive(Clone, Copy, Debug, Default)]
-pub struct ExcavationData;
-#[derive(Clone, Copy, Debug, Default)]
-pub struct BridgeData;
-#[derive(Clone, Copy, Debug, Default)]
-pub struct RampData;
-#[derive(Clone, Copy, Debug, Default)]
-pub struct WallData {
-    pub style: WallStyleKey,
-}
-#[derive(Clone, Copy, Debug, Default)]
-pub struct WallTunnelData;
+pub struct WallData;
 #[derive(Clone, Copy, Debug, Default)]
 pub struct BuildingData {
     pub operational: bool,
@@ -109,12 +116,7 @@ macro_rules! structure_data {
 }
 structure_data!(
     DarkOreData => dark_ores,
-    TunnelData => tunnels,
-    ExcavationData => excavations,
-    BridgeData => bridges,
-    RampData => ramps,
     WallData => walls,
-    WallTunnelData => wall_tunnels,
     BuildingData => buildings,
 );
 
@@ -130,27 +132,38 @@ impl Default for ObstacleCell {
         Self { underground: GridStructure::default_at(VolumeLevel::Underground), elevation: GridStructure::default_at(VolumeLevel::Elevation), on_elevation: GridStructure::default_at(VolumeLevel::OnElevation), quantum_field: None }
     }
 }
-impl ObstacleCell {
-    pub fn structure(&self, level: VolumeLevel) -> GridStructure {
+impl GridCell for ObstacleCell {
+    type Data = GridStructure;
+    fn at(&self, level: VolumeLevel) -> &GridStructure {
         match level {
-            VolumeLevel::Underground => self.underground,
-            VolumeLevel::Elevation => self.elevation,
-            VolumeLevel::OnElevation => self.on_elevation,
+            VolumeLevel::Underground => &self.underground,
+            VolumeLevel::Elevation => &self.elevation,
+            VolumeLevel::OnElevation => &self.on_elevation,
         }
     }
-    fn structure_mut(&mut self, level: VolumeLevel) -> &mut GridStructure {
+    fn at_mut(&mut self, level: VolumeLevel) -> &mut GridStructure {
         match level {
             VolumeLevel::Underground => &mut self.underground,
             VolumeLevel::Elevation => &mut self.elevation,
             VolumeLevel::OnElevation => &mut self.on_elevation,
         }
     }
-
+}
+impl ObstacleCell {
     pub fn has_dark_ore(&self) -> bool {
         matches!(self.underground, GridStructure::DarkOre { .. })
     }
     pub fn is_within_quantum_field(&self) -> bool {
         self.quantum_field.is_some()
+    }
+    /// Returns whether this cell has the requested floor.
+    /// The underground floor always exists; higher floors require a supporting structure below.
+    pub fn has_floor(&self, floor: FloorLevel) -> bool {
+        match floor {
+            FloorLevel::UndergroundFloor => true,
+            FloorLevel::GroundFloor => self.underground.provides_floor(),
+            FloorLevel::ElevationFloor => self.elevation.provides_floor(),
+        }
     }
     /// True for solid earth beneath two empty volumes, with no quantum field.
     pub fn is_empty(&self) -> bool {
@@ -158,12 +171,6 @@ impl ObstacleCell {
             && self.on_elevation == GridStructure::Empty
             && self.underground == GridStructure::Solid
             && !self.is_within_quantum_field()
-    }
-    pub fn has_building(&self) -> bool {
-        matches!(self.elevation, GridStructure::Building { .. })
-    }
-    pub fn has_wall(&self) -> bool {
-        matches!(self.elevation, GridStructure::Wall { .. })
     }
     /// True if a wall or building occupies the cell's `Elevation` volume.
     pub fn has_structure(&self) -> bool {
@@ -180,12 +187,7 @@ impl ObstacleCell {
 pub struct ObstacleGrid {
     cells: BaseGrid<ObstacleCell, GridVersion>,
     dark_ores: Slots<StructureEntry<DarkOreData>, DarkOreData>,
-    tunnels: Slots<StructureEntry<TunnelData>, TunnelData>,
-    excavations: Slots<StructureEntry<ExcavationData>, ExcavationData>,
-    bridges: Slots<StructureEntry<BridgeData>, BridgeData>,
-    ramps: Slots<StructureEntry<RampData>, RampData>,
     walls: Slots<StructureEntry<WallData>, WallData>,
-    wall_tunnels: Slots<StructureEntry<WallTunnelData>, WallTunnelData>,
     buildings: Slots<StructureEntry<BuildingData>, BuildingData>,
 }
 impl Deref for ObstacleGrid {
@@ -212,12 +214,7 @@ impl ObstacleGrid {
         Some(match structure {
             GridStructure::Empty | GridStructure::Solid => return None,
             GridStructure::DarkOre { slot } => self.entry(slot).entity,
-            GridStructure::Tunnel { slot } => self.entry(slot).entity,
-            GridStructure::Excavation { slot } => self.entry(slot).entity,
-            GridStructure::Bridge { slot } => self.entry(slot).entity,
-            GridStructure::Ramp { slot, .. } => self.entry(slot).entity,
             GridStructure::Wall { slot, .. } => self.entry(slot).entity,
-            GridStructure::WallTunnel { slot } => self.entry(slot).entity,
             GridStructure::Building { slot, .. } => self.entry(slot).entity,
         })
     }
@@ -225,23 +222,8 @@ impl ObstacleGrid {
     pub fn imprint_dark_ore(&mut self, area: GridArea, entity: Entity) {
         self.imprint(area, entity, DarkOreData, |slot| GridStructure::DarkOre { slot });
     }
-    pub fn imprint_tunnel(&mut self, area: GridArea, entity: Entity) {
-        self.imprint(area, entity, TunnelData, |slot| GridStructure::Tunnel { slot });
-    }
-    pub fn imprint_excavation(&mut self, area: GridArea, entity: Entity) {
-        self.imprint(area, entity, ExcavationData, |slot| GridStructure::Excavation { slot });
-    }
-    pub fn imprint_bridge(&mut self, area: GridArea, entity: Entity) {
-        self.imprint(area, entity, BridgeData, |slot| GridStructure::Bridge { slot });
-    }
-    pub fn imprint_ramp(&mut self, area: GridArea, entity: Entity, high_side: CellSide) {
-        self.imprint(area, entity, RampData, |slot| GridStructure::Ramp { slot, high_side });
-    }
-    pub fn imprint_wall(&mut self, area: GridArea, entity: Entity, style: WallStyleKey) {
-        self.imprint(area, entity, WallData { style }, |slot| GridStructure::Wall { slot });
-    }
-    pub fn imprint_wall_tunnel(&mut self, area: GridArea, entity: Entity) {
-        self.imprint(area, entity, WallTunnelData, |slot| GridStructure::WallTunnel { slot });
+    pub fn imprint_wall(&mut self, area: GridArea, entity: Entity, style: WallStyleKey, high_side: Option<EdgeSide>) {
+        self.imprint(area, entity, WallData, |slot| GridStructure::Wall { slot, style, high_side });
     }
     pub fn imprint_building(&mut self, area: GridArea, entity: Entity, building_type: BuildingType) {
         self.imprint(area, entity, BuildingData::default(), |slot| GridStructure::Building { slot, building_type });
@@ -262,14 +244,8 @@ impl ObstacleGrid {
     /// `old` must be the structure's full area; `new` must not overwrite another structure.
     pub fn relocate(&mut self, old: GridArea, new: GridArea) {
         let Some(structure) = self.structure_in(old) else { return; };
-        let old_level = VolumeLevel::try_from(old.origin.level).expect("a structure stands in a volume");
-        let new_level = VolumeLevel::try_from(new.origin.level).expect("a structure stands in a volume");
-        for coords in old.iter_in_bounds(self.cells.bounds) {
-            *self.cells[coords].structure_mut(old_level) = GridStructure::default_at(old_level);
-        }
-        for coords in new.iter_in_bounds(self.cells.bounds) {
-            *self.cells[coords].structure_mut(new_level) = structure;
-        }
+        self.fill(old, GridStructure::default_at(old.origin.level.volume()));
+        self.fill(new, structure);
         self.set_entry_area(structure, new);
         self.cells.advance_version();
     }
@@ -280,68 +256,47 @@ impl ObstacleGrid {
         if let Some(structure) = self.structure_in(area) {
             self.free_entry(structure);
         }
-        let level = VolumeLevel::try_from(area.origin.level).expect("a structure stands in a volume");
-        for coords in area.iter_in_bounds(self.cells.bounds) {
-            *self.cells[coords].structure_mut(level) = GridStructure::default_at(level);
-        }
+        self.fill(area, GridStructure::default_at(area.origin.level.volume()));
         self.cells.advance_version();
     }
 
     /// Records `entity` as the quantum field covering the area's in-bounds cells.
     pub fn imprint_quantum_field(&mut self, area: GridArea, entity: Entity) {
-        area.iter_in_bounds(self.cells.bounds).for_each(|coords| self.cells[coords].quantum_field = Some(entity));
+        area.iter_in_bounds(self.cells.bounds).for_each(|coords| self.cells.cell_mut(coords).quantum_field = Some(entity));
         self.cells.advance_version();
     }
     pub fn deprint_quantum_field(&mut self, area: GridArea) {
-        area.iter_in_bounds(self.cells.bounds).for_each(|coords| self.cells[coords].quantum_field = None);
+        area.iter_in_bounds(self.cells.bounds).for_each(|coords| self.cells.cell_mut(coords).quantum_field = None);
         self.cells.advance_version();
-    }
-
-    /// True if `query` returns true for every in-bounds cell of the area.
-    pub fn query_area_all(&self, area: GridArea, query: fn(&ObstacleCell) -> bool) -> bool {
-        area.iter_in_bounds(self.cells.bounds).all(|cell| query(&self.cells[cell]))
-    }
-    /// True if `query` returns true for at least one in-bounds cell of the area.
-    pub fn query_area_any(&self, area: GridArea, query: fn(&ObstacleCell) -> bool) -> bool {
-        area.iter_in_bounds(self.cells.bounds).any(|cell| query(&self.cells[cell]))
-    }
-    /// Number of in-bounds cells for which `query` returns true.
-    pub fn query_area_count(&self, area: GridArea, query: fn(&ObstacleCell) -> bool) -> usize {
-        area.iter_in_bounds(self.cells.bounds).filter(|cell| query(&self.cells[*cell])).count()
-    }
-    /// Collects the `Some` results of `query` over the area's in-bounds cells.
-    pub fn query_area_element<T>(&self, area: GridArea, query: fn(&ObstacleCell) -> Option<T>) -> Vec<T> {
-        area.iter_in_bounds(self.cells.bounds).filter_map(|cell| query(&self.cells[cell])).collect()
     }
 
     /// Stores the structure's entry and writes its variant into the area's volume.
-    fn imprint<D: StructureData>(&mut self, area: GridArea, entity: Entity, data: D, structure: impl Fn(Slot<D>) -> GridStructure) {
-        let level = VolumeLevel::try_from(area.origin.level).expect("a structure stands in a volume");
+    fn imprint<D: StructureData>(&mut self, area: GridArea, entity: Entity, data: D, structure: impl FnOnce(Slot<D>) -> GridStructure) {
         let slot = D::table_mut(self).insert(StructureEntry { entity, area, data });
-        let structure = structure(slot);
-        for coords in area.iter_in_bounds(self.cells.bounds) {
-            *self.cells[coords].structure_mut(level) = structure;
-        }
+        self.fill(area, structure(slot));
         self.cells.advance_version();
+    }
+
+    /// Writes `structure` into the area's in-bounds cells at the area's volume level.
+    fn fill(&mut self, area: GridArea, structure: GridStructure) {
+        let level = area.origin.level.volume();
+        for coords in area.iter_in_bounds(self.cells.bounds) {
+            self.cells[coords.at(level)] = structure;
+        }
     }
 
     /// Reads the structure from the area's first in-bounds cell at the area's volume level.
     fn structure_in(&self, area: GridArea) -> Option<GridStructure> {
-        let level = VolumeLevel::try_from(area.origin.level).expect("a structure stands in a volume");
+        let level = area.origin.level.volume();
         let coords = area.iter_in_bounds(self.cells.bounds).next()?;
-        Some(self.cells[coords].structure(level))
+        Some(self.cells[coords.at(level)])
     }
 
     fn set_entry_area(&mut self, structure: GridStructure, area: GridArea) {
         match structure {
             GridStructure::Empty | GridStructure::Solid => {}
             GridStructure::DarkOre { slot } => self.entry_mut(slot).area = area,
-            GridStructure::Tunnel { slot } => self.entry_mut(slot).area = area,
-            GridStructure::Excavation { slot } => self.entry_mut(slot).area = area,
-            GridStructure::Bridge { slot } => self.entry_mut(slot).area = area,
-            GridStructure::Ramp { slot, .. } => self.entry_mut(slot).area = area,
-            GridStructure::Wall { slot } => self.entry_mut(slot).area = area,
-            GridStructure::WallTunnel { slot } => self.entry_mut(slot).area = area,
+            GridStructure::Wall { slot, .. } => self.entry_mut(slot).area = area,
             GridStructure::Building { slot, .. } => self.entry_mut(slot).area = area,
         }
     }
@@ -350,12 +305,7 @@ impl ObstacleGrid {
         match structure {
             GridStructure::Empty | GridStructure::Solid => {}
             GridStructure::DarkOre { slot } => { self.dark_ores.free(slot); }
-            GridStructure::Tunnel { slot } => { self.tunnels.free(slot); }
-            GridStructure::Excavation { slot } => { self.excavations.free(slot); }
-            GridStructure::Bridge { slot } => { self.bridges.free(slot); }
-            GridStructure::Ramp { slot, .. } => { self.ramps.free(slot); }
             GridStructure::Wall { slot, .. } => { self.walls.free(slot); }
-            GridStructure::WallTunnel { slot } => { self.wall_tunnels.free(slot); }
             GridStructure::Building { slot, .. } => { self.buildings.free(slot); }
         }
     }

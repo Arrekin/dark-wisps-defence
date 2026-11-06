@@ -14,7 +14,7 @@ use bevy::{platform::collections::HashSet, prelude::*};
 
 use alteration::modifiers::prelude::EnergySupplyRange;
 use game_core::prelude::{Bounds, GridArea, GridCoords, IsPowered};
-use grids::{GridVersion, base::BaseGrid};
+use grids::{GridVersion, base::{BaseGrid, GridSingle}};
 
 /// Can provide energy to nearby buildings. Does not produce energy.
 #[derive(Component, Copy, Clone, Debug)]
@@ -77,9 +77,9 @@ impl EnergySupplyCell {
 }
 
 #[derive(Resource, Default)]
-pub struct EnergySupplyGrid(BaseGrid<EnergySupplyCell, GridVersion>);
+pub struct EnergySupplyGrid(BaseGrid<GridSingle<EnergySupplyCell>, GridVersion>);
 impl Deref for EnergySupplyGrid {
-    type Target = BaseGrid<EnergySupplyCell, GridVersion>;
+    type Target = BaseGrid<GridSingle<EnergySupplyCell>, GridVersion>;
     fn deref(&self) -> &Self::Target { &self.0 }
 }
 impl DerefMut for EnergySupplyGrid {
@@ -106,13 +106,20 @@ impl EnergySupplyGrid {
         self[coords].remove_from_both(supplier);
         self.advance_version();
     }
+    /// Applies a supplier's coverage change at `coords`.
+    pub fn apply_flood(&mut self, coords: GridCoords, supplier: Entity, mode: FloodEnergySupplyMode) {
+        match mode {
+            FloodEnergySupplyMode::Place { as_disabled } => self.place_supplier(coords, supplier, as_disabled),
+            FloodEnergySupplyMode::Remove => self.remove_supplier_from_both(coords, supplier),
+        }
+    }
     /// True if at least one in-bounds cell of the area has energy supply.
     pub fn is_area_suppliable(&self, area: GridArea) -> bool {
-        area.iter_in_bounds(self.bounds).any(|cell| self[cell].has_supply())
+        self.cells_in(area).any(|cell| cell.has_supply())
     }
     /// True if at least one in-bounds cell of the area has power.
     pub fn is_area_powered(&self, area: GridArea) -> bool {
-        area.iter_in_bounds(self.bounds).any(|cell| self[cell].has_power())
+        self.cells_in(area).any(|cell| cell.has_power())
     }
     pub fn reset_all_power_indicators(&mut self) {
         self.grid.iter_mut().for_each(|cell| cell.set_power(false));

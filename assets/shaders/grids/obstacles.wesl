@@ -21,13 +21,8 @@ const VOLUME_ON_ELEVATION: u32 = 8u;
 const STRUCTURE_EMPTY: u32 = 0u;
 const STRUCTURE_SOLID: u32 = 1u;
 const STRUCTURE_DARK_ORE: u32 = 2u;
-const STRUCTURE_TUNNEL: u32 = 3u;
-const STRUCTURE_EXCAVATION: u32 = 4u;
-const STRUCTURE_BRIDGE: u32 = 5u;
-const STRUCTURE_RAMP: u32 = 6u;
-const STRUCTURE_WALL: u32 = 7u;
-const STRUCTURE_WALL_TUNNEL: u32 = 8u;
-const STRUCTURE_BUILDING: u32 = 9u;
+const STRUCTURE_WALL: u32 = 3u;
+const STRUCTURE_BUILDING: u32 = 4u;
 // Structure code returned for queries outside the map; never stored in the buffer.
 const STRUCTURE_OFF_MAP: u32 = 15u;
 

@@ -10,7 +10,7 @@
 
 use bevy::prelude::*;
 
-use game_core::prelude::{DamageMessage, FloorLevel, GridArea, GridPosition, SSS};
+use game_core::prelude::{DamageMessage, GridArea, GridPosition, SSS};
 use indexes::{floor_cover::{FloorCover, FloorCoverKind}, wisps::WispsGrid};
 use logging::prelude::*;
 use persistence::prelude::*;
@@ -109,7 +109,7 @@ fn napalm_damage_system(
 ) {
     let damage = NAPALM_DAMAGE_PER_SECOND * time.delta_secs();
     for area in napalms.iter() {
-        let floor: GridPosition<FloorLevel> = area.origin.try_into().expect("napalm lies on a floor");
+        let floor = area.origin.floor();
         for wisp in wisps_grid.wisps_at(floor.coords.at(floor.level.volume_above())) {
             if !wisps.contains(*wisp) { continue; } // Grid entries may not yet be visible to the query.
             damage_messages.write(DamageMessage { target: *wisp, amount: damage });

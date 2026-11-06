@@ -23,7 +23,7 @@ use bevy::{
 };
 
 use alteration::modifiers::prelude::AttackDamage;
-use game_core::prelude::{AltitudeLevel, CELL_SIZE, DamageMessage, DrawLevel, GridArea, GridCoords, GridImprint, MapBound, OptionalCommands, Property, VolumeLevel, ZDepth};
+use game_core::prelude::{AltitudeLevel, CELL_SIZE, DamageMessage, DrawLevel, GridArea, GridCoords, GridImprint, MapBound, OptionalCommands, Property, ZDepth};
 use indexes::wisps::WispsGrid;
 use logging::prelude::*;
 use persistence::{prelude::*, rusqlite};
@@ -279,9 +279,10 @@ fn fireball_hit_system(
         let blast_zone = GridArea::centered_on(landing_coords.at(AltitudeLevel::Elevation), GridImprint::square_of_reach(RING_REACH));
         for blast_zone_coords in blast_zone.iter_in_bounds(wisps_grid.bounds) {
             let damage = if main_blast.contains(blast_zone_coords) { attack_damage.get() } else { attack_damage.get() * RING_DAMAGE_SHARE };
-            for wisp in wisps_grid.wisps_at(blast_zone_coords.at(VolumeLevel::Elevation)) {
-                if !wisps.contains(*wisp) { continue; } // Grid entries may not yet be visible to the query.
-                damage_messages.write(DamageMessage { target: *wisp, amount: damage });
+            for wisp in wisps_grid.wisps_in_cell(blast_zone_coords) {
+                // A deferred spawn can enter the grid before its components are available to queries.
+                if !wisps.contains(wisp) { continue; }
+                damage_messages.write(DamageMessage { target: wisp, amount: damage });
             }
         }
         commands.entity(entity).despawn();

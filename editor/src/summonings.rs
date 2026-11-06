@@ -5,7 +5,7 @@ use strum::IntoEnumIterator;
 use game_core::prelude::*;
 use session::MomentGameStart;
 use wisps::summoning::{
-    BuilderSummoning, EdgeSide, MomentSummoningExhausted, MomentSummoningStarted, SpawnArea,
+    BuilderSummoning, MomentSummoningExhausted, MomentSummoningStarted, SpawnArea,
     SpawnTempo, Summoning,
 };
 

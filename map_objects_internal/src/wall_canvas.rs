@@ -1,5 +1,5 @@
-//! Draws all walls on one quad covering the map.
-//! Cell style indices and the style table are shared GPU data, also available to preview shaders.
+//! Draws walls and ramps on a single quad covering the map.
+//! Uploads cell styles, ramp directions, and the style table to shared GPU buffers for wall shaders.
 
 use bevy::{
     prelude::*,
@@ -19,19 +19,23 @@ impl Plugin for WallCanvasPlugin {
     fn build(&self, app: &mut App) {
         app
             .add_plugins(Material2dPlugin::<WallCanvasMaterial>::default())
-            .init_resource::<RequestFlag<WallStyleCellsGpuUpload>>()
+            .init_resource::<RequestFlag<WallCellsGpuUpload>>()
             .init_resource::<WallCanvasDebug>()
             .add_systems(OnEnter(MapLoadingStage::Init), |mut commands: Commands| { commands.insert_resource(WallStyles::presets()); })
             .add_systems(OnEnter(MapLoadingStage::LoadResources), WallCanvas::create)
             .add_systems(PostUpdate, (
-                upload_gpu_wall_style_cells.run_if(RequestFlag::<WallStyleCellsGpuUpload>::is_requested),
+                upload_gpu_wall_cells.run_if(RequestFlag::<WallCellsGpuUpload>::is_requested),
                 upload_gpu_wall_styles.run_if(resource_changed::<WallStyles>),
                 apply_wall_canvas_debug.run_if(resource_changed::<WallCanvasDebug>),
             ))
-            .add_observer(on_insert_wall_style_key_request_wall_style_cells_gpu_upload)
-            .add_observer(on_remove_wall_style_key_request_wall_style_cells_gpu_upload);
+            .add_observer(on_insert_wall_style_key_request_wall_cells_gpu_upload)
+            .add_observer(on_remove_wall_style_key_request_wall_cells_gpu_upload);
     }
 }
+
+/// Bit offset of the ramp code; the low eight bits store the style index.
+/// Mirrors `RAMP_CODE_SHIFT` in `assets/shaders/walls/styles.wesl`.
+const RAMP_CODE_SHIFT: u32 = 8;
 
 /// Field order and types mirror `WallCanvasSettings` in `assets/shaders/walls/canvas.wesl`.
 #[derive(Clone, Copy, Debug, PartialEq, ShaderType, Default)]
@@ -65,7 +69,7 @@ impl WallCanvas {
         map_info: Res<MapInfo>,
         debug: Res<WallCanvasDebug>,
         mut materials: ResMut<Assets<WallCanvasMaterial>>,
-        mut upload_requested: ResMut<RequestFlag<WallStyleCellsGpuUpload>>,
+        mut upload_requested: ResMut<RequestFlag<WallCellsGpuUpload>>,
     ) {
         commands.despawn_all::<With<WallCanvas>>();
         upload_requested.request();
@@ -80,38 +84,38 @@ impl WallCanvas {
     }
 }
 
-/// Upload of wall style indices.
-struct WallStyleCellsGpuUpload;
+/// Request marker for uploading packed wall cell data.
+struct WallCellsGpuUpload;
 
-fn on_insert_wall_style_key_request_wall_style_cells_gpu_upload(
+fn on_insert_wall_style_key_request_wall_cells_gpu_upload(
     _trigger: On<Insert<WallStyleKey>>,
-    mut upload_requested: ResMut<RequestFlag<WallStyleCellsGpuUpload>>,
+    mut upload_requested: ResMut<RequestFlag<WallCellsGpuUpload>>,
 ) {
     upload_requested.request();
 }
 
-fn on_remove_wall_style_key_request_wall_style_cells_gpu_upload(
+fn on_remove_wall_style_key_request_wall_cells_gpu_upload(
     _trigger: On<Remove<WallStyleKey>>,
-    mut upload_requested: ResMut<RequestFlag<WallStyleCellsGpuUpload>>,
+    mut upload_requested: ResMut<RequestFlag<WallCellsGpuUpload>>,
 ) {
     upload_requested.request();
 }
 
-fn upload_gpu_wall_style_cells(
+fn upload_gpu_wall_cells(
     mut shared_gpu: SharedGpuWriter,
-    mut upload_requested: ResMut<RequestFlag<WallStyleCellsGpuUpload>>,
+    mut upload_requested: ResMut<RequestFlag<WallCellsGpuUpload>>,
     map_info: Res<MapInfo>,
-    walls: Query<(&GridArea, &WallStyleKey), With<Wall>>,
+    walls: Query<(&Wall, &GridArea, &WallStyleKey)>,
 ) {
     upload_requested.clear();
 
     let map_bounds = map_info.grid_bounds;
     let mut cells = vec![0u32; map_bounds.area()];
-    for (area, key) in walls.iter() {
+    for (wall, area, key) in walls.iter() {
         let Some(index) = map_bounds.index_checked(area.origin.coords) else { continue; };
-        cells[index] = key.gpu_index();
+        cells[index] = key.gpu_index() | Wall::ramp_gpu_code(wall.high_side) << RAMP_CODE_SHIFT;
     }
-    shared_gpu.write(SharedGpuBinding::WallStyleCells, cells);
+    shared_gpu.write(SharedGpuBinding::WallCells, cells);
 }
 
 fn upload_gpu_wall_styles(

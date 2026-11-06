@@ -1,6 +1,6 @@
 use bevy::{platform::collections::HashSet, prelude::*};
 
-use game_core::prelude::{GridArea, GridCoords, GridImprint, MapObject};
+use game_core::prelude::{EdgeSide, GridArea, GridCoords, GridImprint, MapObject};
 
 /// Event emitted when the grid placer's state changes (area, style, etc).
 /// Other systems can observe this to react to placer updates.
@@ -9,8 +9,8 @@ pub struct GridPlacerChanged;
 
 /// Emitted when placement begins for an object.
 ///
-/// Domain UI observes this event to create controls such as size or style selectors. Imprint and
-/// style changes within the same session do not emit another event.
+/// Domain UI observes this event to create controls such as size or style selectors.
+/// Changing the imprint, style, or direction does not start a new session.
 #[derive(Event, Clone, Copy, Debug)]
 pub struct BeginPlacing(pub MapObject);
 
@@ -19,14 +19,14 @@ pub struct BeginPlacing(pub MapObject);
 #[derive(Event, Clone, Copy, Debug)]
 pub struct StopPlacing;
 
-/// Event to request modification of the grid placer's state.
-/// Placer observes this and handles changes internally.
+/// Requests a property change within the active placement session.
 #[derive(Event, Clone, Copy, Debug)]
 pub enum GridPlacerOverridePropertyRequest {
-    OverrideImprint(GridImprint),
-    /// Index into whatever variant table the placed object's domain keeps.
-    /// See [`PlacementStyle`].
-    OverrideStyle(u32),
+    Imprint(GridImprint),
+    /// Selects a variant from the object's domain; see [`PlacementStyle`].
+    Style(u8),
+    /// Sets or clears the object's direction; see [`PlacementDirection`].
+    Direction(Option<EdgeSide>),
 }
 
 /// Requests placement of the active object at the placer's current position.
@@ -95,11 +95,16 @@ pub enum PlacementMode {
     OnPress,
 }
 
-/// Which variant of the object is being placed. The placer carries the number and never
-/// interprets it; the domain that owns the object decides what it selects. Reset when a
-/// placement session begins, so a choice made for one object does not carry to the next.
+/// Variant selected for placement, interpreted by the object's domain.
+/// The placer resets it to 0 when a session begins.
 #[derive(Component, Clone, Copy, Default)]
-pub struct PlacementStyle(pub u32);
+pub struct PlacementStyle(pub u8);
+
+/// Optional direction selected for placement, interpreted by the object's domain.
+/// For walls, it selects the ramp's high side; `None` selects a flat wall.
+/// The placer resets it to `None` when a session begins.
+#[derive(Component, Clone, Copy, Default)]
+pub struct PlacementDirection(pub Option<EdgeSide>);
 
 /// Cells reserved for deferred placement, before the obstacle grid reflects the new objects.
 ///

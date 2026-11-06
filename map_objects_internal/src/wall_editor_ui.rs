@@ -1,10 +1,10 @@
-//! The style picker shown while placing walls: a row of swatches, one per style,
-//! framed when selected. Lives only for the length of a wall placement session.
+//! Wall placement controls: style swatches and a keyboard shortcut for cycling ramp direction.
+//! Selections update the active placer, which rebuilds the ghost preview.
 
-use bevy::{prelude::*, ui_widgets::Button};
+use bevy::{input::common_conditions::input_just_pressed, prelude::*, ui_widgets::Button};
 
-use game_core::prelude::{CELL_SIZE, MapObject, ObjectFaceRequest};
-use grids::placement::{BeginPlacing, GridPlacerOverridePropertyRequest, PlacementStyle, StopPlacing};
+use game_core::prelude::{CELL_SIZE, EdgeSide, MapObject, ObjectFaceRequest};
+use grids::placement::{BeginPlacing, GridPlacerOverridePropertyRequest, PlacementDirection, PlacementStyle, StopPlacing};
 use indexes::placement::GridObjectPlacer;
 use map_objects::wall_style::{WallStyleKey, WallStyles};
 
@@ -12,21 +12,38 @@ pub(crate) struct WallEditorUiPlugin;
 impl Plugin for WallEditorUiPlugin {
     fn build(&self, app: &mut App) {
         app
+            .add_systems(Update, GridPlacerUiForWall::cycle_shape.run_if(input_just_pressed(SHAPE_KEY)).run_if(any_with_component::<GridPlacerUiForWall>))
             .add_observer(GridPlacerUiForWall::on_add_construct_grid_placer_ui)
             .add_observer(GridPlacerUiForWall::on_begin_placing_spawn_grid_placer_ui)
             .add_observer(GridPlacerUiForWall::on_stop_placing_despawn_grid_placer_ui);
     }
 }
 
+const SHAPE_KEY: KeyCode = KeyCode::KeyR;
+
 // Swatch-frame colors for selected and idle styles.
 const SWATCH_FRAME_SELECTED: Color = Color::srgb(0.16, 0.78, 1.00); // cyan
 const SWATCH_FRAME_IDLE: Color = Color::srgb(0.15, 0.15, 0.18); // dark grey
 
-/// Style picker, alive for the length of a wall placement session. It stores no selection:
-/// the placer's [`PlacementStyle`] holds it, and the frames are drawn from it.
+/// Root of the style picker, created and removed with the wall placement session.
+/// Initializes the selected swatch from the placer's [`PlacementStyle`].
 #[derive(Component)]
 pub(crate) struct GridPlacerUiForWall;
 impl GridPlacerUiForWall {
+    fn cycle_shape(
+        mut commands: Commands,
+        placer: Single<&PlacementDirection, With<GridObjectPlacer>>,
+    ) {
+        let next = match placer.into_inner().0 {
+            None => Some(EdgeSide::Top),
+            Some(EdgeSide::Top) => Some(EdgeSide::Right),
+            Some(EdgeSide::Right) => Some(EdgeSide::Bottom),
+            Some(EdgeSide::Bottom) => Some(EdgeSide::Left),
+            Some(EdgeSide::Left) => None,
+        };
+        commands.trigger(GridPlacerOverridePropertyRequest::Direction(next));
+    }
+
     fn on_add_construct_grid_placer_ui(
         trigger: On<Add<GridPlacerUiForWall>>,
         mut commands: Commands,
@@ -45,7 +62,7 @@ impl GridPlacerUiForWall {
             })
             .with_children(|parent| {
                 for (index, entry) in styles.entries.iter().enumerate() {
-                    let key = WallStyleKey(index as u32);
+                    let key = WallStyleKey(index as u8);
                     parent.spawn((
                         WallStyleButton(key),
                         Node {
@@ -60,8 +77,7 @@ impl GridPlacerUiForWall {
                         BackgroundColor(Color::BLACK),
                     ))
                     .with_children(|button| {
-                        // The swatch node is sized here and carries the style it stands for; the
-                        // wall domain answers the request by drawing that style onto it.
+                        // The face renderer reads PlacementStyle from the swatch node.
                         button
                             .spawn((
                                 Node {
@@ -96,8 +112,8 @@ impl GridPlacerUiForWall {
     }
 }
 
-/// One selectable style: a swatch and its name, framed when selected. The frame is on this
-/// node so it does not cover the cell being previewed.
+/// A style button containing a swatch and its name.
+/// The selection border surrounds the button so it does not obscure the preview.
 #[derive(Component, Clone, Copy)]
 #[require(Button, Pickable)]
 pub(crate) struct WallStyleButton(pub WallStyleKey);
@@ -111,6 +127,6 @@ impl WallStyleButton {
         for (button, mut frame) in buttons.iter_mut() {
             *frame = BorderColor::from(if button.0 == selected { SWATCH_FRAME_SELECTED } else { SWATCH_FRAME_IDLE });
         }
-        commands.trigger(GridPlacerOverridePropertyRequest::OverrideStyle(selected.0));
+        commands.trigger(GridPlacerOverridePropertyRequest::Style(selected.0));
     }
 }

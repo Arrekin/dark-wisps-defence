@@ -6,7 +6,7 @@ use bevy::{
 use alteration::modifiers::prelude::AttackDamage;
 use game_core::{
     math::angle_difference,
-    prelude::{AltitudeLevel, DamageMessage, GridArea, GridCoords, GridImprint, Property, VolumeLevel},
+    prelude::{AltitudeLevel, DamageMessage, GridArea, GridCoords, GridImprint, Property},
 };
 use indexes::wisps::WispsGrid;
 use logging::prelude::*;
@@ -179,9 +179,10 @@ fn rocket_hit_system(
         for blast_zone_coords in blast_zone.iter_in_bounds(wisps_grid.bounds) {
             commands.spawn(BuilderExplosion(blast_zone_coords));
 
-            for wisp in wisps_grid.wisps_at(blast_zone_coords.at(VolumeLevel::Elevation)) {
-                if !wisps_transforms.contains(*wisp) { continue; } // Grid entries may not yet be visible to the query.
-                damage_messages.write(DamageMessage { target: *wisp, amount: attack_damage.get() });
+            for wisp in wisps_grid.wisps_in_cell(blast_zone_coords) {
+                // A deferred spawn can enter the grid before its components are available to queries.
+                if !wisps_transforms.contains(wisp) { continue; }
+                damage_messages.write(DamageMessage { target: wisp, amount: attack_damage.get() });
             }
         }
         commands.entity(entity).despawn();

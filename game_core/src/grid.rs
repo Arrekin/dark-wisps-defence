@@ -1,15 +1,12 @@
 use bevy::prelude::*;
 use serde::Serialize;
+use strum::{AsRefStr, EnumIter, EnumString};
 
 use crate::{altitude::{AltitudeLevel, FloorLevel, VolumeLevel}, prelude::SSS};
 
 pub const CELL_SIZE: f32 = 32.;
 
-const CARDINAL_DIRECTIONS: [(i32, i32); 4] = [(0, 1), (1, 0), (0, -1), (-1, 0)];
-const ALL_DIRECTIONS: [(i32, i32); 8] = [
-    (0, 1), (1, 0), (0, -1), (-1, 0), // Cardinal directions
-    (1, 1), (1, -1), (-1, 1), (-1, -1) // Diagonal directions
-];
+const CARDINAL_DIRECTIONS: [(i32, i32); 4] = [EdgeSide::Top.direction(), EdgeSide::Right.direction(), EdgeSide::Bottom.direction(), EdgeSide::Left.direction()];
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize)]
 pub struct Bounds {
@@ -36,12 +33,7 @@ impl Bounds {
     pub fn cardinal_neighbors(self, coords: GridCoords) -> impl Iterator<Item = GridCoords> {
         CARDINAL_DIRECTIONS.iter()
             .map(move |&direction| coords.shifted(direction))
-            .filter(move |c| self.contains(*c))
-    }
-    pub fn all_neighbors(self, coords: GridCoords) -> impl Iterator<Item = GridCoords> {
-        ALL_DIRECTIONS.iter()
-            .map(move |&direction| coords.shifted(direction))
-            .filter(move |c| self.contains(*c))
+            .filter(move |cell| self.contains(*cell))
     }
     /// Iterates every cell as local coords `(0,0)..(width-1,height-1)`, row-major with `x` fastest.
     /// The position of each item equals the [`Self::index`] of that cell, so `enumerate` yields indices.
@@ -118,6 +110,10 @@ impl GridCoords {
             y: self.y + dy,
         }
     }
+    /// Returns the neighboring cell across `side`, without checking map bounds.
+    pub fn neighbor(self, side: EdgeSide) -> Self {
+        self.shifted(side.direction())
+    }
     pub fn manhattan_distance(self, other: Self) -> i32 {
         (self.x - other.x).abs() + (self.y - other.y).abs()
     }
@@ -146,52 +142,90 @@ impl std::fmt::Display for GridCoords {
     }
 }
 
-/// A cardinal edge of a grid cell.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
-pub enum CellSide {
+/// A cardinal side of a grid cell or the map, ordered clockwise from the top.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, EnumIter, EnumString, AsRefStr)]
+pub enum EdgeSide {
     #[default]
     Top,
+    Right,
     Bottom,
     Left,
-    Right,
+}
+impl EdgeSide {
+    /// The four diagonal offsets, each expressed as a pair of cardinal sides.
+    pub const DIAGONALS: [(Self, Self); 4] = [
+        (Self::Right, Self::Top),
+        (Self::Right, Self::Bottom),
+        (Self::Left, Self::Top),
+        (Self::Left, Self::Bottom),
+    ];
+
+    pub const fn opposite(self) -> Self {
+        match self {
+            Self::Top => Self::Bottom,
+            Self::Right => Self::Left,
+            Self::Bottom => Self::Top,
+            Self::Left => Self::Right,
+        }
+    }
+    /// Returns the grid offset across this side; positive y points up.
+    pub const fn direction(self) -> (i32, i32) {
+        match self {
+            Self::Top => (0, 1),
+            Self::Right => (1, 0),
+            Self::Bottom => (0, -1),
+            Self::Left => (-1, 0),
+        }
+    }
 }
 
 /// Grid coordinates paired with an altitude level.
 ///
-/// The default level type is [`AltitudeLevel`]. Use `GridPosition<VolumeLevel>` or
-/// `GridPosition<FloorLevel>` when an API accepts only volumes or floors.
+/// The default level type is [`AltitudeLevel`]. Use [`GridVolumePosition`] or
+/// [`GridFloorPosition`] when an API accepts only volumes or floors.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct GridPosition<L = AltitudeLevel> {
     pub coords: GridCoords,
     pub level: L,
 }
+pub type GridVolumePosition = GridPosition<VolumeLevel>;
+pub type GridFloorPosition = GridPosition<FloorLevel>;
+
 impl<L> GridPosition<L> {
     pub const fn new(coords: GridCoords, level: L) -> Self {
         Self { coords, level }
     }
+    /// Offsets the coordinates while preserving the altitude level.
+    pub fn shifted(self, offset: (i32, i32)) -> Self {
+        Self { coords: self.coords.shifted(offset), level: self.level }
+    }
 }
-impl From<GridPosition<VolumeLevel>> for GridPosition {
-    fn from(position: GridPosition<VolumeLevel>) -> Self {
+impl From<GridVolumePosition> for GridPosition {
+    fn from(position: GridVolumePosition) -> Self {
         position.coords.at(position.level.into())
     }
 }
-impl From<GridPosition<FloorLevel>> for GridPosition {
-    fn from(position: GridPosition<FloorLevel>) -> Self {
+impl From<GridFloorPosition> for GridPosition {
+    fn from(position: GridFloorPosition) -> Self {
         position.coords.at(position.level.into())
     }
 }
-/// Returns the original position as an error if its level is not a volume.
-impl TryFrom<GridPosition> for GridPosition<VolumeLevel> {
-    type Error = GridPosition;
-    fn try_from(position: GridPosition) -> Result<Self, GridPosition> {
-        VolumeLevel::try_from(position.level).map(|level| position.coords.at(level)).map_err(|_| position)
+impl GridPosition {
+    /// Converts the altitude to a volume level, preserving the coordinates.
+    ///
+    /// # Panics
+    ///
+    /// Panics for floor levels, `Airborne`, and `AllEncompassing`.
+    pub fn volume(self) -> GridVolumePosition {
+        self.coords.at(self.level.volume())
     }
-}
-/// Returns the original position as an error if its level is not a floor.
-impl TryFrom<GridPosition> for GridPosition<FloorLevel> {
-    type Error = GridPosition;
-    fn try_from(position: GridPosition) -> Result<Self, GridPosition> {
-        FloorLevel::try_from(position.level).map(|level| position.coords.at(level)).map_err(|_| position)
+    /// Converts the altitude to a floor level, preserving the coordinates.
+    ///
+    /// # Panics
+    ///
+    /// Panics for volume levels, `Airborne`, and `AllEncompassing`.
+    pub fn floor(self) -> GridFloorPosition {
+        self.coords.at(self.level.floor())
     }
 }
 impl<L: std::fmt::Debug> std::fmt::Display for GridPosition<L> {
@@ -216,22 +250,22 @@ impl GridImprint {
         Self::square(2 * reach + 1)
     }
 
-    pub const fn cell_count(&self) -> i32 {
+    pub const fn cell_count(self) -> i32 {
         match self {
-            GridImprint::Rectangle { width, height } => *width * *height,
-            GridImprint::Plus { extents } => 4 * *extents + 1,
+            GridImprint::Rectangle { width, height } => width * height,
+            GridImprint::Plus { extents } => 4 * extents + 1,
         }
     }
 
-    pub fn world_size(&self) -> Vec2 {
+    pub fn world_size(self) -> Vec2 {
         Bounds::from(self).world_size()
     }
-    pub fn world_center(&self) -> Vec2 {
+    pub fn world_center(self) -> Vec2 {
         self.world_size() / 2.
     }
 
     /// Short imprint label: `3×3` for a rectangle, and a plus's bounding box as `Plus 3×3`.
-    pub fn label(&self) -> String {
+    pub fn label(self) -> String {
         let Bounds { width, height } = self.into();
         match self {
             GridImprint::Rectangle { .. } => format!("{width}×{height}"),
@@ -254,19 +288,16 @@ impl Default for GridImprint {
         GridImprint::square(1)
     }
 }
-impl From<&GridImprint> for Bounds {
-    fn from(imprint: &GridImprint) -> Self {
+impl From<GridImprint> for Bounds {
+    fn from(imprint: GridImprint) -> Self {
         match imprint {
-            GridImprint::Rectangle { width, height } => Self { width: *width, height: *height },
-            GridImprint::Plus { extents } => { let side = 2 * *extents + 1; Self { width: side, height: side } }
+            GridImprint::Rectangle { width, height } => Self { width, height },
+            GridImprint::Plus { extents } => { let side = 2 * extents + 1; Self { width: side, height: side } }
         }
     }
 }
-impl From<GridImprint> for Bounds {
-    fn from(imprint: GridImprint) -> Self { Self::from(&imprint) }
-}
 
-/// A footprint of grid cells placed at the coordinates and altitude of `origin`.
+/// An imprint placed at the coordinates and altitude of `origin`.
 ///
 /// Replace this component to notify `Insert<GridArea>` observers. In-place mutations skip them.
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -290,7 +321,7 @@ impl GridArea {
     pub fn centered_on(center: impl Into<GridPosition>, imprint: GridImprint) -> Self {
         let center = center.into();
         let Bounds { width, height } = imprint.into();
-        Self::new(center.coords.shifted((-(width / 2), -(height / 2))).at(center.level), imprint)
+        Self::new(center.shifted((-(width / 2), -(height / 2))), imprint)
     }
     /// Smallest rectangle of cells that contains `rect`.
     pub fn covering(rect: Rect, level: AltitudeLevel) -> Self {
@@ -301,7 +332,7 @@ impl GridArea {
     pub fn covering_circle(center: Vec2, radius: f32, level: AltitudeLevel) -> Self {
         Self::covering(Rect::from_center_half_size(center, Vec2::splat(radius)), level)
     }
-    /// Returns this footprint at a different altitude.
+    /// Returns this area at a different altitude.
     pub fn at_level(self, level: impl Into<AltitudeLevel>) -> Self {
         Self::new(self.origin.coords.at(level.into()), self.imprint)
     }
@@ -492,7 +523,7 @@ impl AreaRange {
                 let reach = self.max.floor() as i32;
                 let Bounds { width, height } = self.area.imprint.into();
                 GridArea::new(
-                    self.area.origin.coords.shifted((-reach, -reach)).at(self.area.origin.level),
+                    self.area.origin.shifted((-reach, -reach)),
                     GridImprint::Rectangle { width: width + 2 * reach, height: height + 2 * reach },
                 )
             }

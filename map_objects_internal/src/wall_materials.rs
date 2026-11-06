@@ -11,9 +11,9 @@ use bevy::{
 };
 
 use game_core::prelude::{FaceSurface, GridImprint, MapObject, ObjectFaceRequest};
-use grids::placement::PlacementStyle;
+use grids::placement::{PlacementDirection, PlacementStyle};
 use logging::prelude::*;
-use map_objects::wall_style::{WallStyleKey, WallStyles};
+use map_objects::{prelude::Wall, wall_style::{WallStyleKey, WallStyles}};
 use visuals::{specialize_ui_with_shared_gpu, specialize_with_shared_gpu};
 
 pub(crate) struct WallMaterialsPlugin;
@@ -40,7 +40,8 @@ impl UiMaterial for WallSwatchMaterial {
     specialize_ui_with_shared_gpu!();
 }
 
-/// World-space material for one isolated wall cell.
+/// World-space material for one isolated wall cell. Field order and types mirror `WallQuad` in
+/// `assets/shaders/walls/quad.wesl`.
 #[derive(Asset, AsBindGroup, TypePath, Clone, Copy, Debug)]
 pub(crate) struct WallQuadMaterial {
     /// [`WallStyleKey::gpu_index`] of the drawn style.
@@ -48,6 +49,9 @@ pub(crate) struct WallQuadMaterial {
     style_index: u32,
     #[uniform(0)]
     alpha: f32,
+    /// Ramp direction encoded by [`Wall::ramp_gpu_code`]; 0 selects a flat wall.
+    #[uniform(0)]
+    ramp: u32,
 }
 impl Material2d for WallQuadMaterial {
     fn fragment_shader() -> ShaderRef {
@@ -74,6 +78,7 @@ fn on_object_face_request_draw_wall(
     mut quad_materials: ResMut<Assets<WallQuadMaterial>>,
     grid_imprints: Query<&GridImprint>,
     placement_styles: Query<&PlacementStyle>,
+    placement_directions: Query<&PlacementDirection>,
 ) {
     let ObjectFaceRequest { entity, object: MapObject::Wall, surface, alpha } = *trigger else { return; };
 
@@ -90,9 +95,11 @@ fn on_object_face_request_draw_wall(
         FaceSurface::World => {
             #[warn_dev("Wall face requested in the world for {entity}, which has no GridImprint or no longer exists")]
             let Ok(grid_imprint) = grid_imprints.get(entity) else { return; };
+            let high_side = placement_directions.get(entity).ok().and_then(|direction| direction.0);
+            let ramp = Wall::ramp_gpu_code(high_side);
             commands.entity(entity).insert((
                 Mesh2d(meshes.add(Rectangle::from_size(grid_imprint.world_size()))),
-                MeshMaterial2d(quad_materials.add(WallQuadMaterial { style_index, alpha })),
+                MeshMaterial2d(quad_materials.add(WallQuadMaterial { style_index, alpha, ramp })),
             ));
         }
     }

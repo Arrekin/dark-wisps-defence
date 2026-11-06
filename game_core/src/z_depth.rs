@@ -7,6 +7,8 @@ use core::ops::{Index, IndexMut};
 use bevy::prelude::*;
 use strum::{EnumCount, EnumIter, VariantArray};
 
+use crate::altitude::VolumeLevel;
+
 /// Number of bits used for the entity's fractional depth within a layer.
 const LAYER_OFFSET_BITS: u32 = 16;
 const LAYER_OFFSET_STEPS: u32 = 1 << LAYER_OFFSET_BITS;
@@ -32,6 +34,16 @@ pub enum DrawLevel {
     ElevationFloor,
     OnElevation,
     Airborne,
+}
+
+impl From<VolumeLevel> for DrawLevel {
+    fn from(level: VolumeLevel) -> Self {
+        match level {
+            VolumeLevel::Underground => Self::Underground,
+            VolumeLevel::Elevation => Self::Elevation,
+            VolumeLevel::OnElevation => Self::OnElevation,
+        }
+    }
 }
 
 /// A set of draw levels.

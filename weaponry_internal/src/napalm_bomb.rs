@@ -9,7 +9,7 @@
 
 use bevy::prelude::*;
 
-use game_core::prelude::{AltitudeLevel, CELL_SIZE, DamageMessage, GridCoords, OptionalCommands, VolumeLevel};
+use game_core::prelude::{AltitudeLevel, CELL_SIZE, DamageMessage, GridCoords, OptionalCommands};
 use indexes::{prelude::ObstacleGrid, wisps::WispsGrid};
 use logging::prelude::*;
 use persistence::prelude::*;
@@ -112,11 +112,12 @@ fn napalm_bomb_hit_system(
         let landing_coords = GridCoords::from_world_position(lob.target());
         // TODO: Add a napalm impact visual.
         if wisps_grid.bounds.contains(landing_coords) {
-            for wisp in wisps_grid.wisps_at(landing_coords.at(VolumeLevel::Elevation)) {
-                if !wisps.contains(*wisp) { continue; } // Grid entries may not yet be visible to the query.
-                damage_messages.write(DamageMessage { target: *wisp, amount: NAPALM_BOMB_IMPACT_DAMAGE });
+            for wisp in wisps_grid.wisps_in_cell(landing_coords) {
+                // A deferred spawn can enter the grid before its components are available to queries.
+                if !wisps.contains(wisp) { continue; }
+                damage_messages.write(DamageMessage { target: wisp, amount: NAPALM_BOMB_IMPACT_DAMAGE });
             }
-            if !obstacle_grid[landing_coords].has_structure() {
+            if !obstacle_grid.cell(landing_coords).has_structure() {
                 commands.spawn(BuilderNapalm::new(landing_coords.at(AltitudeLevel::GroundFloor), TimeBound::lasting(&clock, NAPALM_BURN_DURATION)));
             }
         }

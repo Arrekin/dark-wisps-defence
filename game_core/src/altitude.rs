@@ -20,7 +20,7 @@ pub enum AltitudeLevel {
     Underground,
     /// Floor covers on the ground, such as scorch marks and napalm.
     GroundFloor,
-    /// Structures and units at ground level, including walls, buildings, bridges, and ramps.
+    /// Structures and units at ground level, including walls and buildings.
     #[default]
     Elevation,
     /// Floor covers on wall tops.
@@ -33,6 +33,36 @@ pub enum AltitudeLevel {
     AllEncompassing,
 }
 
+impl AltitudeLevel {
+    /// Converts this altitude to a volume level.
+    ///
+    /// # Panics
+    ///
+    /// Panics for floor levels, `Airborne`, and `AllEncompassing`.
+    pub fn volume(self) -> VolumeLevel {
+        match self {
+            Self::Underground => VolumeLevel::Underground,
+            Self::Elevation => VolumeLevel::Elevation,
+            Self::OnElevation => VolumeLevel::OnElevation,
+            other => panic!("{other:?} is not a volume"),
+        }
+    }
+
+    /// Converts this altitude to a floor level.
+    ///
+    /// # Panics
+    ///
+    /// Panics for volume levels, `Airborne`, and `AllEncompassing`.
+    pub fn floor(self) -> FloorLevel {
+        match self {
+            Self::UndergroundFloor => FloorLevel::UndergroundFloor,
+            Self::GroundFloor => FloorLevel::GroundFloor,
+            Self::ElevationFloor => FloorLevel::ElevationFloor,
+            other => panic!("{other:?} is not a floor"),
+        }
+    }
+}
+
 /// Space above a floor, with room for one structure and multiple units per cell.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, EnumIter, EnumCount)]
 pub enum VolumeLevel {
@@ -42,6 +72,24 @@ pub enum VolumeLevel {
     OnElevation,
 }
 impl VolumeLevel {
+    /// Returns the volume directly above, or `None` at `OnElevation`.
+    pub const fn above(self) -> Option<Self> {
+        match self {
+            Self::Underground => Some(Self::Elevation),
+            Self::Elevation => Some(Self::OnElevation),
+            Self::OnElevation => None,
+        }
+    }
+
+    /// Returns the volume directly below, or `None` at `Underground`.
+    pub const fn below(self) -> Option<Self> {
+        match self {
+            Self::Underground => None,
+            Self::Elevation => Some(Self::Underground),
+            Self::OnElevation => Some(Self::Elevation),
+        }
+    }
+
     /// The floor directly below this volume.
     pub const fn floor_below(self) -> FloorLevel {
         match self {
@@ -95,31 +143,6 @@ impl From<FloorLevel> for AltitudeLevel {
             FloorLevel::UndergroundFloor => Self::UndergroundFloor,
             FloorLevel::GroundFloor => Self::GroundFloor,
             FloorLevel::ElevationFloor => Self::ElevationFloor,
-        }
-    }
-}
-
-/// Returns the original level as an error if it is not a volume.
-impl TryFrom<AltitudeLevel> for VolumeLevel {
-    type Error = AltitudeLevel;
-    fn try_from(level: AltitudeLevel) -> Result<Self, AltitudeLevel> {
-        match level {
-            AltitudeLevel::Underground => Ok(Self::Underground),
-            AltitudeLevel::Elevation => Ok(Self::Elevation),
-            AltitudeLevel::OnElevation => Ok(Self::OnElevation),
-            other => Err(other),
-        }
-    }
-}
-/// Returns the original level as an error if it is not a floor.
-impl TryFrom<AltitudeLevel> for FloorLevel {
-    type Error = AltitudeLevel;
-    fn try_from(level: AltitudeLevel) -> Result<Self, AltitudeLevel> {
-        match level {
-            AltitudeLevel::UndergroundFloor => Ok(Self::UndergroundFloor),
-            AltitudeLevel::GroundFloor => Ok(Self::GroundFloor),
-            AltitudeLevel::ElevationFloor => Ok(Self::ElevationFloor),
-            other => Err(other),
         }
     }
 }

@@ -65,11 +65,11 @@ pub struct WallStyleEntry {
 /// Index into [`WallStyles`], identifying which style a wall is drawn with.
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[component(immutable)]
-pub struct WallStyleKey(pub u32);
+pub struct WallStyleKey(pub u8);
 impl WallStyleKey {
     /// The style index shaders use: one-based, so 0 can mean open ground.
     pub fn gpu_index(self) -> u32 {
-        self.0 + 1
+        u32::from(self.0) + 1
     }
 }
 
@@ -154,7 +154,7 @@ impl WallStyles {
         self.entries
             .iter()
             .position(|entry| entry.name == name)
-            .map(|index| WallStyleKey(index as u32))
+            .map(|index| WallStyleKey(index as u8))
     }
 
     /// The name the entry at `key` is saved under.

@@ -319,7 +319,7 @@ fn damage_flame_hits(
         let Ok(stream) = streams.get(generated_stream.stream()) else { continue; };
         let Some(hit) = &stream.hit else { continue; };
         if !timer.0.is_finished() { continue; }
-        for &wisp in wisps_grid.wisps_at(hit.coords.at(VolumeLevel::Elevation)) {
+        for wisp in wisps_grid.wisps_in_cell(hit.coords) {
             damage_messages.write(DamageMessage { target: wisp, amount: attack_damage.get() });
         }
         timer.0.reset();

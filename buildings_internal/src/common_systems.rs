@@ -76,9 +76,9 @@ fn targeting_system(
             RangeType::Cells => target_find_closest_wisp(&obstacle_grid, &wisps_grid, &range, true).map(|(_, target_wisp)| target_wisp),
             // Circular attacks use any wisp in range as the firing trigger.
             RangeType::Circle => range.bounding_box().iter_in_bounds(wisps_grid.bounds).find_map(|coords| {
-                let cell_wisps = wisps_grid.wisps_at(coords.at(VolumeLevel::Elevation));
-                if cell_wisps.is_empty() { return None; }
-                let found = cell_wisps.iter().copied().find(|&wisp| in_range(wisp));
+                let mut cell_wisps = wisps_grid.wisps_in_cell(coords).peekable();
+                cell_wisps.peek()?;
+                let found = cell_wisps.find(|&wisp| in_range(wisp));
                 wisp_on_edge = wisp_on_edge || (found.is_none() && range.crosses_edge(coords, 0.));
                 found
             }),

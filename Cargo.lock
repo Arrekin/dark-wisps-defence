@@ -3351,6 +3351,7 @@ version = "0.2.0"
 dependencies = [
  "bevy",
  "game_core",
+ "strum",
 ]
 
 [[package]]
@@ -3752,6 +3753,7 @@ dependencies = [
  "game_core",
  "grids",
  "map_objects",
+ "strum",
 ]
 
 [[package]]
@@ -7656,7 +7658,6 @@ dependencies = [
  "almanach",
  "alteration",
  "bevy",
- "buildings",
  "game_core",
  "grids",
  "hud",

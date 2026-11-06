@@ -7,8 +7,8 @@ use bevy::{
     sprite_render::{AlphaMode2d, Material2d, Material2dPlugin, MeshMaterial2d},
 };
 
-use game_core::prelude::{DrawLevel, MapInfo, ZDepth};
-use grids::prelude::GridVersion;
+use game_core::prelude::{DrawLevel, MapInfo, VolumeLevel, ZDepth};
+use grids::{base::GridCell, prelude::GridVersion};
 use indexes::emissions::{EmissionsGrid, EmissionsType};
 use states::prelude::MapLoadingStage;
 use visuals::{canvas::MapCanvasBundle, specialize_with_shared_gpu};
@@ -126,7 +126,7 @@ fn refresh_display_system(
 
     // Find min/max for GPU-side normalization
     let (mut min_value, mut max_value) = (f32::MAX, f32::MIN);
-    for emissions in emissions_grid.grid.iter() {
+    for emissions in emissions_grid.grid.iter().map(|cell| cell.at(VolumeLevel::Elevation)) {
         let value = match overlay_config.emissions_type {
             EmissionsType::Energy => emissions.energy,
         };

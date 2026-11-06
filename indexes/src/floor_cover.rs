@@ -11,7 +11,7 @@ use std::ops::{Deref, DerefMut};
 use bevy::prelude::*;
 
 use game_core::prelude::{Bounds, FloorLevel, GridArea, GridCoords, MapBound};
-use grids::{GridVersion, base::BaseGrid};
+use grids::{GridVersion, base::{BaseGrid, GridSingle}};
 
 /// A floor cover effect occupying the entity's `GridArea`, which must use a floor level.
 ///
@@ -45,9 +45,9 @@ pub struct FloorCoverEntry {
 }
 
 #[derive(Resource, Default)]
-pub struct FloorCoverGrid(BaseGrid<Vec<FloorCoverEntry>, GridVersion>);
+pub struct FloorCoverGrid(BaseGrid<GridSingle<Vec<FloorCoverEntry>>, GridVersion>);
 impl Deref for FloorCoverGrid {
-    type Target = BaseGrid<Vec<FloorCoverEntry>, GridVersion>;
+    type Target = BaseGrid<GridSingle<Vec<FloorCoverEntry>>, GridVersion>;
     fn deref(&self) -> &Self::Target { &self.0 }
 }
 impl DerefMut for FloorCoverGrid {
@@ -60,25 +60,26 @@ impl FloorCoverGrid {
     }
     /// Adds `entity` with `kind` to every in-bounds cell of the area, on the area's floor.
     pub fn imprint(&mut self, area: GridArea, entity: Entity, kind: FloorCoverKind) {
-        let level = FloorLevel::try_from(area.origin.level).expect("a floor cover lies on a floor");
+        let level = area.origin.level.floor();
         let entry = FloorCoverEntry { entity, kind, level };
-        for cell in area.iter_in_bounds(self.bounds) {
-            self[cell].push(entry);
+        for coords in area.iter_in_bounds(self.bounds) {
+            self[coords].push(entry);
         }
         self.advance_version();
     }
 
     /// Removes `entity` from every in-bounds cell of the area without preserving entry order.
     pub fn deprint(&mut self, area: GridArea, entity: Entity) {
-        for cell in area.iter_in_bounds(self.bounds) {
-            let Some(position) = self[cell].iter().position(|entry| entry.entity == entity) else { continue; };
-            self[cell].swap_remove(position);
+        for coords in area.iter_in_bounds(self.bounds) {
+            let entries = &mut self[coords];
+            let Some(position) = entries.iter().position(|entry| entry.entity == entity) else { continue; };
+            entries.swap_remove(position);
         }
         self.advance_version();
     }
 
     /// Returns entries for all floors at `coords`, or an empty slice outside the map.
     pub fn entries_at(&self, coords: GridCoords) -> &[FloorCoverEntry] {
-        self.get(coords).map_or(&[], Vec::as_slice)
+        self.get(coords).map_or(&[], |cell| cell.as_slice())
     }
 }

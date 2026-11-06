@@ -32,6 +32,7 @@ Older previews:
 
 ## Building Placement (Quick Keys)
 - **W**: Place walls to block wisp paths
+- **R**: While placing walls, cycle between a flat wall and ramps rising toward the top, right, bottom, or left
 - **O**: Place dark ore deposits for mining
 - **Q**: Place quantum fields 
 - **M**: Place mining complex (extracts resources from dark ore)

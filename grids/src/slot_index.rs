@@ -13,7 +13,7 @@ use bevy::prelude::*;
 
 use game_core::prelude::{Bounds, GridCoords};
 
-use crate::{GridVersion, base::BaseGrid};
+use crate::{GridVersion, base::{BaseGrid, GridSingle}};
 
 /// An index into a [`Slots`] store, distinguished by key type `K`.
 ///
@@ -113,12 +113,15 @@ impl<T, K> Slots<T, K> {
     }
 }
 
+/// Slot references grouped by grid coordinate.
+pub type SlotCells<T> = BaseGrid<GridSingle<Vec<Slot<T>>>, GridVersion>;
+
 /// A slot store with a list of slot references for each grid cell.
 ///
 /// Callers must keep each cell's list unique and remove its references before freeing a slot.
 pub struct SlotIndex<T> {
     slots: Slots<T>,
-    cells: BaseGrid<Vec<Slot<T>>, GridVersion>,
+    cells: SlotCells<T>,
 }
 impl<T> Default for SlotIndex<T> {
     fn default() -> Self {
@@ -145,7 +148,7 @@ impl<T> SlotIndex<T> {
     }
 
     /// Slots per grid cell and the caller-managed version counter.
-    pub fn cells(&self) -> &BaseGrid<Vec<Slot<T>>, GridVersion> {
+    pub fn cells(&self) -> &SlotCells<T> {
         &self.cells
     }
 
@@ -156,7 +159,7 @@ impl<T> SlotIndex<T> {
 
     /// Iterates over values listed in `coords`, skipping empty slots. Empty outside the grid.
     pub fn listed_at(&self, coords: GridCoords) -> impl Iterator<Item = &T> {
-        self.cells.get(coords).into_iter().flatten().filter_map(|&slot| self.slots.get(slot))
+        self.cells.get(coords).into_iter().flat_map(|cell| cell.iter()).filter_map(|&slot| self.slots.get(slot))
     }
 
     /// Reserves a reusable slot or appends a new one. The slot remains empty until [`Self::set`].

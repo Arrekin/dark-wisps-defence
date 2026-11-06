@@ -4,7 +4,7 @@
 //!
 //! Spatial indexes for structures, wisps, floor cover, field and tower coverage, emissions, and
 //! energy supply. These indexes store domain types and support queries against the map.
-//! Reusable grid storage, search scratch space, and shared placement types live in `grids`.
+//! Reusable grid storage and shared placement types live in `grids`.
 
 pub mod emissions;
 pub mod energy_supply;

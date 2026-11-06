@@ -5,7 +5,7 @@ The grid object placer lets players place and remove objects on the map grid. It
 ## How it works
 
 1. **Select:** UI or keyboard input selects a `MapObject`. The placer gets its placement settings from the Almanach and starts a session.
-2. **Preview:** The placer follows the cursor. A ghost shows the object; an overlay shows where it can be placed. Domain controls can change its imprint or style.
+2. **Preview:** The placer follows the cursor. A ghost shows the object; an overlay shows where it can be placed. Domain controls can change its imprint, style, or direction.
 3. **Act:** A click sends `PlaceRequest` or `RemoveRequest`. The object's domain decides whether to place or remove it.
 4. **End:** Switching objects or leaving placement ends the session and removes its controls.
 
@@ -21,7 +21,7 @@ grid_object_placer_request.set(MapObject::Wall);
 
 ### `ObjectPlacementInfo`
 
-Each `MapObject` that can be placed must register its placement info via the app extension. The info is stored in the `Almanach`; the placer retrieves it when starting a new placement session.
+Each placeable `MapObject` registers its placement settings through `AlmanachAppExt`. The placer retrieves those settings from `Almanach` when a session begins.
 
 ```rust
 pub struct ObjectPlacementInfo {
@@ -34,23 +34,23 @@ pub struct ObjectPlacementInfo {
 
 ### `PlaceRequest` / `RemoveRequest`
 
-Emitted when the user confirms their intent to place or remove a `MapObject`.
+The placer emits these events on mouse input, according to the object's `PlacementModes`. Domain handlers match the object type, validate the request, and apply it.
 
-Example of how to handle it:
+For example, the wall placement handler reads `GridArea`, `PlacementStyle`, and `PlacementDirection` from the placer:
+
 ```rust
-// Match to confirm it is your domain
 let PlaceRequest(MapObject::Wall) = *trigger else { return };
-// Access placer data
-let (area, style) = placer.into_inner();
-// Perform all domain validations
+let (area, style, direction) = placer.into_inner();
 if (almanach.walls.validate)(MapObject::Wall, *area, &grids) == PlacementValidity::Invalid { return; }
-// Finally, perform the placement or removal in your domain
-commands.spawn(BuilderWall::new(area.origin, *style));
+commands.spawn(BuilderWall::new(area.origin, *style).with_ramp_high_side(direction.0));
+grids.reserved_coords.reserve(*area);
 ```
+
+The reservation prevents overlapping placement requests before the deferred spawn updates the obstacle grid.
 
 ### `BeginPlacing` / `StopPlacing`
 
-Emitted at the beginning and end of a placement session. Use them to create and clean up any domain-specific configurators, like a style picker for walls or a size picker for quantum fields.
+Emitted at the beginning and end of a placement session. Use them to create and remove controls such as the wall style picker or quantum-field size selector. Property changes within a session do not emit these events.
 
 ```rust
 let BeginPlacing(MapObject::Wall) = *trigger else { return };
@@ -59,23 +59,27 @@ commands.spawn(GridPlacerUiForWall);
 
 ### `GridPlacerOverridePropertyRequest`
 
-A set of overrides for the currently active placement session. Mostly used by domain-specific configurators, like overriding `GridImprint` when using a quantum-field size selector.
+Requests a property change within the active session. Domain controls send these events when the player selects an imprint, style, or direction.
 
 ```rust
-commands.trigger(GridPlacerOverridePropertyRequest::OverrideStyle(selected.0));
+commands.trigger(GridPlacerOverridePropertyRequest::Style(selected.0));
 ```
 
 Available overrides:
-- `OverrideImprint(GridImprint)` — set new imprint shape.
-- `OverrideStyle(u32)` — set domain-defined style.
+
+- `Imprint(GridImprint)` — change the object's footprint.
+- `Style(u8)` — select a variant interpreted by the object's domain.
+- `Direction(Option<EdgeSide>)` — set or clear a direction interpreted by the object's domain. For walls, this is the ramp's high side; `None` selects a flat wall.
+
+Each override rebuilds the ghost and refreshes placement feedback. A new session restores the object's default imprint, sets style to `0`, and clears direction.
 
 ### `ObjectFaceRequest`
 
-The placer emits it when it needs to repaint the ghost. The domain must observe it if it wants to provide a custom ghost look. This is a generic repaint event; see `ObjectFaceRequest`.
+The placer sends `ObjectFaceRequest::ghost` to the ghost entity after creating it. The entity carries `GridImprint`, `PlacementStyle`, and `PlacementDirection`; the object's domain reads them to render the preview.
 
 ### `GridPlacerChanged`
 
-Emitted whenever the state of the placer changes, including on a grid-cell change when following the mouse.
+Requests a refresh of placement validity and cell highlights. The placer emits it when the cursor enters another cell, a property changes, or a session begins.
 
 ## Flows
 
@@ -86,7 +90,7 @@ flowchart TB
     request["GridObjectPlacerRequest is non-empty"] --> previous{"Session already active?"}
     previous -- Yes --> stop["StopPlacing"] --> info["Get ObjectPlacementInfo from Almanach"]
     previous -- No --> info
-    info --> session["Set imprint, reset style, store active MapObject"]
+    info --> session["Set imprint, reset style and direction, store active MapObject"]
     session --> begin["BeginPlacing(MapObject)"]
     session --> ghost["Rebuild ghost"]
     session --> changed["GridPlacerChanged refreshes feedback"]
@@ -102,11 +106,11 @@ flowchart TB
     cursor["Update placer GridArea"] --> changed["GridPlacerChanged"] --> validate["Validator returns validity"] --> annotate["Annotator returns cell highlights"] --> pack["build_cell_data()"] --> overlay["Update validity overlay"]
 ```
 
-**Imprint or style override**
+**Imprint, style or direction override**
 
 ```mermaid
 flowchart TB
-    override["On GridPlacerOverridePropertyRequest"] --> update["Set GridArea imprint or PlacementStyle"]
+    override["On GridPlacerOverridePropertyRequest"] --> update["Set GridArea imprint, PlacementStyle or PlacementDirection"]
     update --> ghost["Rebuild ghost via ObjectFaceRequest::ghost()"]
     update --> changed["GridPlacerChanged → update validity overlay as above"]
 ```
@@ -135,11 +139,11 @@ flowchart LR
 2. Register placement settings via `AlmanachAppExt`, convert the domain info to `ObjectPlacementInfo`, and extend `Almanach::get_placement_info_for`.
 3. Observe `PlaceRequest` and, if supported, `RemoveRequest`; match the variant and validate before acting.
 4. Handle `ObjectFaceRequest` for the ghost and any other supported surfaces.
-5. If needed, add controls for `BeginPlacing` / `StopPlacing` and send imprint or style overrides.
+5. If needed, create controls on `BeginPlacing`, remove them on `StopPlacing`, and send imprint, style, or direction overrides.
 6. Handle `MapObjectTooltipRequest` and add the appropriate menu offering, if the object is offered in the side menu.
 
 The placement code is split across three modules:
 
-- [`grids/src/placement.rs`](../../grids/src/placement.rs): shared events, input modes, styles, and reservations.
+- [`grids/src/placement.rs`](../../grids/src/placement.rs): shared events, input modes, style and direction selections, and reservations.
 - [`indexes/src/placement.rs`](../../indexes/src/placement.rs): placer state, validation callbacks, and cell highlight callbacks.
 - [`indexes_internal/src/placement.rs`](../../indexes_internal/src/placement.rs): placement systems and observers.

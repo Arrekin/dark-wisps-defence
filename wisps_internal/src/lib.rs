@@ -9,7 +9,7 @@ use bevy::prelude::*;
 
 use almanach::{WispInfo, prelude::*};
 use game_core::motion::MotionSystems;
-use grids::placement::PlacementModes;
+use grids::{ObstacleChangeSystems, placement::PlacementModes};
 use indexes::placement::annotate_non_empty;
 use persistence::prelude::{AppGameLoadSaveExtension, CollectSave};
 use states::prelude::*;
@@ -33,11 +33,11 @@ impl Plugin for WispsPlugin {
             ))
             .add_systems(PreUpdate, systems::remove_dead_wisps.run_if(in_state(GameState::Running)))
             .add_systems(Update, (
-                systems::move_wisps,
                 systems::target_wisps,
+                systems::move_wisps,
                 systems::wisp_charge_attack,
                 systems::collide_wisps,
-            ).run_if(in_state(GameState::Running)))
+            ).chain_ignore_deferred().after(ObstacleChangeSystems).run_if(in_state(GameState::Running)))
             .add_systems(Update, (
                 sync_effect_visuals::<looks::WispFireVisual>,
                 sync_effect_visuals::<looks::WispWaterVisual>,
@@ -45,8 +45,6 @@ impl Plugin for WispsPlugin {
                 sync_effect_visuals::<looks::WispElectricVisual>,
             ))
             // Read locomotion after tracking so visuals use this frame's motion.
-            // before render extract; ordered after MotionSystems::Track so each reads this
-            // frame's motion.
             .add_systems(PostUpdate, (
                 systems::drive_wisp_water_look,
                 systems::drive_wisp_motion_look::<looks::WispElectricVisual>,
