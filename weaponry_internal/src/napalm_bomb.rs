@@ -1,15 +1,15 @@
 //! # Napalm bomb
 //!
-//! The Napalm Battery's lobbed projectile. On landing, a bomb damages wisps on its cell.
-//! It also ignites napalm unless a wall or building occupies the cell. Dark ore does not
-//! prevent ignition.
+//! The Napalm Battery's lobbed projectile. On landing, a bomb damages wisps at the top of its cell.
+//! It also ignites napalm on the cell's top floor unless a building occupies the cell. Dark ore
+//! does not prevent ignition.
 //!
 //! `Lob` stores the flight and scheduled launch time for saving and loading.
 //! `NAPALM_BOMB_IMPACT_DAMAGE` sets impact damage independently of tower upgrades.
 
 use bevy::prelude::*;
 
-use game_core::prelude::{AltitudeLevel, CELL_SIZE, DamageMessage, GridCoords, OptionalCommands};
+use game_core::prelude::{CELL_SIZE, DamageMessage, GridCoords, OptionalCommands};
 use indexes::{prelude::ObstacleGrid, wisps::WispsGrid};
 use logging::prelude::*;
 use persistence::prelude::*;
@@ -112,13 +112,14 @@ fn napalm_bomb_hit_system(
         let landing_coords = GridCoords::from_world_position(lob.target());
         // TODO: Add a napalm impact visual.
         if wisps_grid.bounds.contains(landing_coords) {
-            for wisp in wisps_grid.wisps_in_cell(landing_coords) {
+            let top = obstacle_grid.top_position(landing_coords);
+            for &wisp in wisps_grid.wisps_at(top) {
                 // A deferred spawn can enter the grid before its components are available to queries.
                 if !wisps.contains(wisp) { continue; }
                 damage_messages.write(DamageMessage { target: wisp, amount: NAPALM_BOMB_IMPACT_DAMAGE });
             }
-            if !obstacle_grid.cell(landing_coords).has_structure() {
-                commands.spawn(BuilderNapalm::new(landing_coords.at(AltitudeLevel::GroundFloor), TimeBound::lasting(&clock, NAPALM_BURN_DURATION)));
+            if !obstacle_grid[top].is_building() {
+                commands.spawn(BuilderNapalm::new(landing_coords.at(top.level.floor_below()).into(), TimeBound::lasting(&clock, NAPALM_BURN_DURATION)));
             }
         }
         commands.entity(entity).despawn();

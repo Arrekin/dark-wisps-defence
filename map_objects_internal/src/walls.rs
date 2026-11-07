@@ -5,6 +5,7 @@ use game_core::prelude::{EdgeSide, GridArea, GridImprint, GridPosition, MapObjec
 use grids::placement::{PlacementDirection, PlacementModes, PlacementStyle, PlacementValidity, PlaceRequest, RemoveRequest};
 use hud::prelude::BuilderSideMenuItemTooltip;
 use indexes::{
+    floor_cover::FloorCoverGrid,
     obstacles::GridStructure,
     placement::{annotate_non_empty, GridObjectPlacer, GridsCollectionParam, validator_all_empty},
     prelude::ObstacleGrid,
@@ -197,6 +198,7 @@ fn on_wall_remove_request_do_so(
     trigger: On<RemoveRequest>,
     mut commands: Commands,
     mut wisps_grid: ResMut<WispsGrid>,
+    floor_cover_grid: Res<FloorCoverGrid>,
     obstacle_grid: Res<ObstacleGrid>,
     placer: Single<&GridArea, With<GridObjectPlacer>>,
 ) {
@@ -211,6 +213,11 @@ fn on_wall_remove_request_do_so(
         for wisp in wisps_grid.wisps_at(top).to_vec() {
             wisps_grid.wisp_remove(top, wisp);
             commands.entity(wisp).despawn();
+        }
+
+        // Remove floor covers lying on the wall.
+        for entry in floor_cover_grid.entries_at(coords).iter().filter(|entry| entry.level == top.level.floor_below()) {
+            commands.entity(entry.entity).despawn();
         }
     }
 }

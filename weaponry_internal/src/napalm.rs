@@ -1,7 +1,7 @@
 //! # Napalm
 //!
-//! Burning ground left by napalm bombs. Each patch damages wisps on one cell until its `TimeBound`
-//! expires. Overlapping patches deal damage independently.
+//! Burning floors left by napalm bombs. Each patch damages wisps standing on its floor cell until
+//! its `TimeBound` expires. Overlapping patches deal damage independently.
 //!
 //! Expired napalm leaves a visual char mark that fades over its own `TimeBound`.
 //! Burning patches are saved; char marks are not.
@@ -11,7 +11,7 @@
 use bevy::prelude::*;
 
 use game_core::prelude::{DamageMessage, GridArea, GridPosition, SSS};
-use indexes::{floor_cover::{FloorCover, FloorCoverKind}, wisps::WispsGrid};
+use indexes::{floor_cover::{FloorCover, FloorCoverKind}, prelude::ObstacleGrid, wisps::WispsGrid};
 use logging::prelude::*;
 use persistence::prelude::*;
 use session::{GameClock, TimeBound};
@@ -110,9 +110,10 @@ fn napalm_damage_system(
     let damage = NAPALM_DAMAGE_PER_SECOND * time.delta_secs();
     for area in napalms.iter() {
         let floor = area.origin.floor();
-        for wisp in wisps_grid.wisps_at(floor.coords.at(floor.level.volume_above())) {
-            if !wisps.contains(*wisp) { continue; } // Grid entries may not yet be visible to the query.
-            damage_messages.write(DamageMessage { target: *wisp, amount: damage });
+        for &wisp in wisps_grid.wisps_at(floor.coords.at(floor.level.volume_above())) {
+            // A deferred spawn can enter the grid before its components are available to queries.
+            if !wisps.contains(wisp) { continue; }
+            damage_messages.write(DamageMessage { target: wisp, amount: damage });
         }
     }
 }
@@ -121,9 +122,13 @@ fn on_remove_napalm_spawn_char(
     trigger: On<Remove<Napalm>>,
     mut commands: Commands,
     clock: Res<GameClock>,
+    obstacle_grid: Res<ObstacleGrid>,
     napalms: Query<&GridArea, With<Napalm>>,
 ) {
     let Ok(area) = napalms.get(trigger.entity) else { return; };
+    let floor = area.origin.floor();
+    // Napalm goes with a floor that disappears, and leaves no char behind.
+    if !obstacle_grid.cell(floor.coords).has_floor(floor.level) { return; }
     commands.spawn((
         FloorCover(FloorCoverKind::Char),
         *area,

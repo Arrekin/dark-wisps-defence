@@ -6,14 +6,14 @@
 //!   additive ground light.
 //! - `ImpactFireVisual` — splash, clinging flames, cell fire, and sparks on the hit tile, driven by
 //!   the burn state in `ImpactFire`.
-//! - `FlameScorch` — transient ground decal spawned when a tile stops burning.
+//! - `FlameScorch` — transient floor decal spawned when a tile stops burning.
 //! - `PilotFlame` — small nozzle flame visible while the stream is armed.
 //!
 //! `Flame`, the impact fire, and `PilotFlame` are spawned as children of `FlameStream`.
 
 use bevy::{prelude::*, reflect::TypePath, render::render_resource::{BlendState, ShaderType}};
 
-use game_core::prelude::{DrawLevel, GridCoords, MapBound, ZDepth};
+use game_core::prelude::{DrawLevel, GridVolumePosition, MapBound, ZDepth};
 use session::{GameClock, TimeBound};
 use states::prelude::GameState;
 use visuals::{
@@ -77,7 +77,7 @@ const PILOT_OFFSET: f32 = 1.5;
 /// Stream jet quad. Child of `FlameStream`. Field order and types mirror `Instance` in
 /// `assets/shaders/weaponry/flame_stream.wesl`.
 #[derive(Component, ShaderType, TypePath, Clone, Default, PartialEq)]
-#[require(ZDepth::FlameJet, DrawLevel::Elevation)]
+#[require(ZDepth::FlameJet, DrawLevel::OnElevation)]
 struct Flame {
     seed: f32,
     length: f32,
@@ -128,18 +128,18 @@ struct ImpactFire {
     /// Normalized intensity in `0.0..=1.0`.
     intensity: f32,
     /// Last burned tile, retained while fading out.
-    coords: Option<GridCoords>,
-    /// Cumulative burn time (seconds) on `coords`.
+    position: Option<GridVolumePosition>,
+    /// Cumulative burn time (seconds) on `position`.
     burning_for: f32,
 }
 impl ImpactFire {
-    /// Advances burn state on `coords` by `delta` seconds. If `coords` changed, resets intensity
+    /// Advances burn state on `position` by `delta` seconds. If `position` changed, resets intensity
     /// and returns the previous tile's `BurntTile` data.
-    fn burn(&mut self, coords: GridCoords, delta: f32) -> Option<BurntTile> {
+    fn burn(&mut self, position: GridVolumePosition, delta: f32) -> Option<BurntTile> {
         let mut burnt = None;
-        if self.coords != Some(coords) {
+        if self.position != Some(position) {
             burnt = self.stop_burning();
-            self.coords = Some(coords);
+            self.position = Some(position);
             self.intensity = 0.;
         }
         self.burning_for += delta;
@@ -155,15 +155,15 @@ impl ImpactFire {
 
     fn stop_burning(&mut self) -> Option<BurntTile> {
         if self.burning_for <= 0. { return None; }
-        let coords = self.coords?;
+        let position = self.position?;
         let strength = (self.burning_for / SCORCH_BUILDUP).min(1.);
         self.burning_for = 0.;
-        Some(BurntTile { coords, strength })
+        Some(BurntTile { position, strength })
     }
 }
 
 struct BurntTile {
-    coords: GridCoords,
+    position: GridVolumePosition,
     /// Normalized scorch strength in `0.0..=1.0`.
     strength: f32,
 }
@@ -195,7 +195,7 @@ impl LaneVisual for ImpactFireVisual {
 /// Temporary scorch decal spawned when a tile stops burning.
 /// Field order and types mirror `Instance` in `assets/shaders/weaponry/flame_stream_scorch.wesl`.
 #[derive(Component, ShaderType, TypePath, Clone)]
-#[require(MapBound, ZDepth::FlameScorch, DrawLevel::GroundFloor)]
+#[require(MapBound, ZDepth::FlameScorch)]
 struct FlameScorch {
     /// Wrapped game time the tile stopped burning.
     start_time: f32,
@@ -204,6 +204,8 @@ struct FlameScorch {
     strength: f32,
     seed: f32,
     half_size: f32,
+    /// Floor code (`FloorLevel::gpu_index`).
+    floor: u32,
 }
 impl LaneVisual for FlameScorch {
     const LABEL: &'static str = "flame_scorch";
@@ -213,7 +215,7 @@ impl LaneVisual for FlameScorch {
         Vec2::splat(2. * SCORCH_MESH_HALF_SIZE)
     }
 
-    /// Premultiplied alpha: darkens ground via alpha while cinders add light.
+    /// Premultiplied alpha: darkens the floor via alpha while cinders add light.
     fn blend() -> BlendState {
         BlendState::PREMULTIPLIED_ALPHA_BLENDING
     }
@@ -327,21 +329,25 @@ fn update_impact_fires(
     mut commands: Commands,
     time: Res<Time>,
     clock: Res<GameClock>,
-    mut impact_fires: Query<(&ChildOf, &mut ImpactFire, &mut ImpactFireVisual, &mut Transform, &mut Visibility)>,
+    mut impact_fires: Query<(Entity, &ChildOf, &DrawLevel, &mut ImpactFire, &mut ImpactFireVisual, &mut Transform, &mut Visibility)>,
     streams: Query<&FlameStream>,
 ) {
     let delta = time.delta_secs();
-    for (child_of, mut impact_fire, mut visual, mut transform, mut visibility) in impact_fires.iter_mut() {
+    for (entity, child_of, draw_level, mut impact_fire, mut visual, mut transform, mut visibility) in impact_fires.iter_mut() {
         let Ok(stream) = streams.get(child_of.parent()) else { continue; };
         let mut next = visual.clone();
 
         let burnt = match &stream.hit {
             Some(hit) => {
-                let tile_center = hit.coords.world_center();
+                let tile_center = hit.position.coords.world_center();
                 transform.set_if_neq(Transform { translation: tile_center.extend(transform.translation.z), ..*transform });
                 next.hit_point = stream.nozzle + stream.direction * hit.distance - tile_center;
                 next.direction = stream.direction;
-                impact_fire.burn(hit.coords, delta)
+                let hit_level = DrawLevel::from(hit.position.level);
+                if *draw_level != hit_level {
+                    commands.entity(entity).insert(hit_level);
+                }
+                impact_fire.burn(hit.position, delta)
             }
             None => impact_fire.fade(delta),
         };
@@ -349,18 +355,21 @@ fn update_impact_fires(
         visual.set_if_neq(next);
         visibility.set_if_neq(if impact_fire.intensity > 0. { Visibility::Inherited } else { Visibility::Hidden });
 
-        if let Some(burnt) = burnt {
+        if let Some(BurntTile { position, strength }) = burnt {
             let time_bound = TimeBound::lasting(&clock, SCORCH_DURATION);
+            let floor = position.level.floor_below();
             commands.spawn((
                 FlameScorch {
                     start_time: GameClock::wrap(time_bound.starts_at),
                     duration: time_bound.duration() as f32,
-                    strength: burnt.strength,
-                    seed: (burnt.coords.x * 31 + burnt.coords.y) as f32 % 97.,
+                    strength,
+                    seed: (position.coords.x * 31 + position.coords.y) as f32 % 97.,
                     half_size: SCORCH_MESH_HALF_SIZE,
+                    floor: floor.gpu_index(),
                 },
+                DrawLevel::from(floor),
                 time_bound,
-                Transform::from_translation(burnt.coords.world_center().extend(0.)),
+                Transform::from_translation(position.coords.world_center().extend(0.)),
             ));
         }
     }

@@ -6,7 +6,7 @@ import bevy_sprite_render::mesh2d::view_bindings::globals;
 import package::shaders::common::fire_ramp::{FIRE_HEAT_CAP, fire_ramp};
 import package::shaders::common::game_time::game_time_span;
 import package::shaders::common::value_noise::value_fbm_2d_octaves;
-import package::shaders::grids::floor_cover::{FLOOR_COVER_CHAR, FLOOR_COVER_NAPALM, floor_cover_cell_entries, floor_cover_entries_at, floor_cover_shows_kind_at};
+import package::shaders::grids::floor_cover::{FLOOR_COVER_CHAR, FLOOR_COVER_NAPALM, floor_cover_cell_entries, floor_cover_entries_at, floor_cover_has_kind_at};
 import package::shaders::weaponry::ground_fire::{
     GROUND_FIRE_OPEN_BOTTOM, GROUND_FIRE_OPEN_BOTTOM_LEFT, GROUND_FIRE_OPEN_BOTTOM_RIGHT, GROUND_FIRE_OPEN_LEFT,
     GROUND_FIRE_OPEN_RIGHT, GROUND_FIRE_OPEN_TOP, GROUND_FIRE_OPEN_TOP_LEFT, GROUND_FIRE_OPEN_TOP_RIGHT,
@@ -27,26 +27,26 @@ const NAPALM_STACK_HEAT: f32 = 0.12;
 const NAPALM_STACK_HEAT_CAP: f32 = 0.3;
 
 // ── Char ─────────────────────────────────────────────────────────────────────
-// Ground darkening of one fresh char mark.
+// Floor darkening of one fresh char mark.
 const CHAR_DARKNESS: f32 = 0.5;
 // Exponential cinder decay rate over the mark's normalized age.
 const CHAR_CINDER_DECAY: f32 = 6.0;
 
-// Opens boundaries toward visible neighbouring cells of the same kind.
-fn open_sides(cell: vec2<i32>, kind: u32) -> u32 {
-    let right = floor_cover_shows_kind_at(cell + vec2<i32>(1, 0), kind);
-    let top = floor_cover_shows_kind_at(cell + vec2<i32>(0, 1), kind);
-    let left = floor_cover_shows_kind_at(cell + vec2<i32>(-1, 0), kind);
-    let bottom = floor_cover_shows_kind_at(cell + vec2<i32>(0, -1), kind);
+// Opens boundaries toward neighbouring cells with the same kind on the same floor.
+fn open_sides(cell: vec2<i32>, kind: u32, floor_level: u32) -> u32 {
+    let right = floor_cover_has_kind_at(cell + vec2<i32>(1, 0), kind, floor_level);
+    let top = floor_cover_has_kind_at(cell + vec2<i32>(0, 1), kind, floor_level);
+    let left = floor_cover_has_kind_at(cell + vec2<i32>(-1, 0), kind, floor_level);
+    let bottom = floor_cover_has_kind_at(cell + vec2<i32>(0, -1), kind, floor_level);
     var open = 0u;
     if right { open |= GROUND_FIRE_OPEN_RIGHT; }
     if top { open |= GROUND_FIRE_OPEN_TOP; }
     if left { open |= GROUND_FIRE_OPEN_LEFT; }
     if bottom { open |= GROUND_FIRE_OPEN_BOTTOM; }
-    if right && top && floor_cover_shows_kind_at(cell + vec2<i32>(1, 1), kind) { open |= GROUND_FIRE_OPEN_TOP_RIGHT; }
-    if left && top && floor_cover_shows_kind_at(cell + vec2<i32>(-1, 1), kind) { open |= GROUND_FIRE_OPEN_TOP_LEFT; }
-    if left && bottom && floor_cover_shows_kind_at(cell + vec2<i32>(-1, -1), kind) { open |= GROUND_FIRE_OPEN_BOTTOM_LEFT; }
-    if right && bottom && floor_cover_shows_kind_at(cell + vec2<i32>(1, -1), kind) { open |= GROUND_FIRE_OPEN_BOTTOM_RIGHT; }
+    if right && top && floor_cover_has_kind_at(cell + vec2<i32>(1, 1), kind, floor_level) { open |= GROUND_FIRE_OPEN_TOP_RIGHT; }
+    if left && top && floor_cover_has_kind_at(cell + vec2<i32>(-1, 1), kind, floor_level) { open |= GROUND_FIRE_OPEN_TOP_LEFT; }
+    if left && bottom && floor_cover_has_kind_at(cell + vec2<i32>(-1, -1), kind, floor_level) { open |= GROUND_FIRE_OPEN_BOTTOM_LEFT; }
+    if right && bottom && floor_cover_has_kind_at(cell + vec2<i32>(1, -1), kind, floor_level) { open |= GROUND_FIRE_OPEN_BOTTOM_RIGHT; }
     return open;
 }
 
@@ -60,12 +60,13 @@ fn napalm_intensity(starts_at: f32, ends_at: f32) -> f32 {
 }
 
 // `local` is the point relative to the centre of `cell`, `world` the same point in world space.
-fn napalm_look(local: vec2<f32>, world: vec2<f32>, cell: vec2<i32>) -> vec4<f32> {
+// `floor_level` is the floor code (FLOOR_*) of the drawn covers.
+fn napalm_look(local: vec2<f32>, world: vec2<f32>, cell: vec2<i32>, floor_level: u32) -> vec4<f32> {
     var intensity = 0.0;
     let range = floor_cover_entries_at(cell);
     for (var index = range.x; index < range.y; index++) {
         let entry = floor_cover_cell_entries[index];
-        if entry.kind == FLOOR_COVER_NAPALM {
+        if entry.kind == FLOOR_COVER_NAPALM && entry.floor == floor_level {
             intensity += napalm_intensity(entry.starts_at, entry.ends_at);
         }
     }
@@ -73,7 +74,7 @@ fn napalm_look(local: vec2<f32>, world: vec2<f32>, cell: vec2<i32>) -> vec4<f32>
         return vec4<f32>(0.0);
     }
 
-    let fire = ground_fire(local, world, globals.time, open_sides(cell, FLOOR_COVER_NAPALM));
+    let fire = ground_fire(local, world, globals.time, open_sides(cell, FLOOR_COVER_NAPALM, floor_level));
     let strength = min(intensity, 1.0);
     let stack_heat = min(NAPALM_STACK_HEAT * max(intensity - 1.0, 0.0), NAPALM_STACK_HEAT_CAP);
     let heat = min(0.45 + 0.15 * fire.coverage + stack_heat, FIRE_HEAT_CAP);
@@ -84,14 +85,14 @@ fn napalm_look(local: vec2<f32>, world: vec2<f32>, cell: vec2<i32>) -> vec4<f32>
 }
 
 // Char marks fade over their lifetimes, with cinders cooling first.
-// Overlapping marks darken the ground further.
-fn char_look(local: vec2<f32>, world: vec2<f32>, cell: vec2<i32>) -> vec4<f32> {
+// Overlapping marks darken the floor further.
+fn char_look(local: vec2<f32>, world: vec2<f32>, cell: vec2<i32>, floor_level: u32) -> vec4<f32> {
     var transmittance = 1.0;
     var cinder_heat = 0.0;
     let range = floor_cover_entries_at(cell);
     for (var index = range.x; index < range.y; index++) {
         let entry = floor_cover_cell_entries[index];
-        if entry.kind == FLOOR_COVER_CHAR {
+        if entry.kind == FLOOR_COVER_CHAR && entry.floor == floor_level {
             let span = game_time_span(entry.starts_at, entry.ends_at);
             let life = saturate(span.age / max(span.duration, 0.001));
             transmittance *= 1.0 - CHAR_DARKNESS * (1.0 - smoothstep(0.3, 1.0, life));
@@ -102,7 +103,7 @@ fn char_look(local: vec2<f32>, world: vec2<f32>, cell: vec2<i32>) -> vec4<f32> {
         return vec4<f32>(0.0);
     }
 
-    let past = ground_fire_past_boundary(local, open_sides(cell, FLOOR_COVER_CHAR));
+    let past = ground_fire_past_boundary(local, open_sides(cell, FLOOR_COVER_CHAR, floor_level));
     let noise = value_fbm_2d_octaves(world / 4.0, 4);
     let mark = (1.0 - smoothstep(-4.0, 2.0, past + (noise - 0.5) * 8.0)) * smoothstep(0.35, 0.6, noise + 0.15);
     let cinder_noise = value_fbm_2d_octaves(world / 2.5 + vec2<f32>(53.0, 17.0), 3);

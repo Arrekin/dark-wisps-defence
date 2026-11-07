@@ -54,7 +54,7 @@ fn advance_flame_streams(
 fn update_flame_stream_hits(
     wisps_grid: Res<WispsGrid>,
     mut streams: Query<&mut FlameStream>,
-    wisps: Query<&Transform, With<Wisp>>,
+    wisps: Query<(&Transform, &GridArea), With<Wisp>>,
 ) {
     for mut stream in streams.iter_mut() {
         let hit = stream.fuel().and_then(|fuel| nearest_hit(&stream, fuel, &wisps_grid, &wisps));
@@ -72,17 +72,17 @@ fn hit_distance(stream: &FlameStream, position: Vec2) -> Option<f32> {
 }
 
 /// Finds the wisp with the smallest axial distance covered by `fuel` inside the stream cone.
-fn nearest_hit(stream: &FlameStream, fuel: RangeInclusive<f32>, wisps_grid: &WispsGrid, wisps: &Query<&Transform, With<Wisp>>) -> Option<FlameHit> {
+fn nearest_hit(stream: &FlameStream, fuel: RangeInclusive<f32>, wisps_grid: &WispsGrid, wisps: &Query<(&Transform, &GridArea), With<Wisp>>) -> Option<FlameHit> {
     let mut nearest: Option<FlameHit> = None;
     for (column_distance, slice) in columns(stream) {
         if nearest.as_ref().is_some_and(|hit| column_distance > hit.distance) { break; }
         for coords in slice.iter_in_bounds(wisps_grid.bounds) {
             for wisp in wisps_grid.wisps_in_cell(coords) {
-                let Ok(wisp_transform) = wisps.get(wisp) else { continue; };
+                let Ok((wisp_transform, area)) = wisps.get(wisp) else { continue; };
                 let Some(hit_distance) = hit_distance(stream, wisp_transform.translation.xy()) else { continue; };
                 if !fuel.contains(&hit_distance) { continue; }
                 if nearest.as_ref().is_none_or(|hit| hit_distance < hit.distance) {
-                    nearest = Some(FlameHit { coords, distance: hit_distance });
+                    nearest = Some(FlameHit { position: area.origin.volume(), distance: hit_distance });
                 }
             }
         }

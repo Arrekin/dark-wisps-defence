@@ -188,5 +188,6 @@ fn on_building_destroy_request_do_so(
 
     #[info_player("'{}' destroyed at {}", almanach.get_building_info(*building_type).name, area.origin)]
     commands.entity(building_to_destroy).despawn();
-    commands.spawn_batch(area.iter().map(BuilderExplosion));
+    let level = area.origin.level.volume();
+    commands.spawn_batch(area.iter().map(move |coords| BuilderExplosion(coords.at(level))));
 }

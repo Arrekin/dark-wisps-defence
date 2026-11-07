@@ -1,11 +1,13 @@
 import bevy_sprite_render::mesh2d::vertex_output::VertexOutput;
-import package::shaders::common::core::CELL_HALF;
+import package::shaders::common::core::{CELL_HALF, CELL_SIZE};
 import package::shaders::common::fire_ramp::fire_ramp;
 import package::shaders::common::game_time::game_time_since;
 import package::shaders::common::value_noise::value_fbm_3d;
+import package::shaders::grids::floor_cover::FLOOR_ELEVATION;
+import package::shaders::grids::obstacles::{STRUCTURE_WALL, VOLUME_ELEVATION, structure_at};
 
-// `FlameScorch` ground decal shader (world units relative to tile center).
-// Premultiplied output: char darkens the ground via `alpha` while cinders add light (`rgb`).
+// `FlameScorch` floor decal shader (world units relative to tile center).
+// Premultiplied output: char darkens the floor via `alpha` while cinders add light (`rgb`).
 
 // Field order and types mirror `FlameScorch` in weaponry_internal/src/flame_stream_fire.rs.
 struct Instance {
@@ -14,12 +16,19 @@ struct Instance {
     strength: f32,   // normalized char intensity (0..1) from burn duration
     seed: f32,
     half_size: f32,  // quad half-size in world units
+    floor: u32,      // floor code (FLOOR_*)
 };
 
 const DARKNESS: f32 = 0.5;
 const CINDER_DECAY: f32 = 6.0; // exponential decay rate over the normalized age
 
 fn look(mesh: VertexOutput, scorch: Instance) -> vec4<f32> {
+    // The quad extends past its tile. A wall-top scorch stops at the wall's cells.
+    let cell = vec2<i32>(floor(mesh.world_position.xy / CELL_SIZE));
+    if scorch.floor == FLOOR_ELEVATION && structure_at(cell, VOLUME_ELEVATION) != STRUCTURE_WALL {
+        return vec4<f32>(0.0);
+    }
+
     let life = saturate(game_time_since(scorch.start_time) / scorch.duration); // normalized age (0..1)
     let p = (vec2<f32>(mesh.uv.x, 1.0 - mesh.uv.y) - vec2<f32>(0.5)) * 2.0 * scorch.half_size;
     let noise = value_fbm_3d(vec3<f32>(p / 4.0, scorch.seed), 4);

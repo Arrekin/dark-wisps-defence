@@ -3771,6 +3771,7 @@ dependencies = [
  "logging",
  "session",
  "states",
+ "strum",
  "viewport",
  "visuals",
 ]

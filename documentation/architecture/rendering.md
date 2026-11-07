@@ -160,8 +160,8 @@ mechanism. During world rendering, it also supplies the band's beneath snapshot 
 frame data. Screen UI shares world data but does not receive a band's snapshot.
 
 The CPU remains authoritative for gameplay state. GPU copies let shaders interpret that state
-visually: for example, a fire impact can mask its ground flames against current obstacle cells,
-so the mask follows walls built or destroyed during the effect. The impact does not need its
+visually: for example, a scorch on a wall top can mask itself against current obstacle cells,
+so the mask follows walls built or destroyed during the effect. The scorch does not need its
 own obstacle snapshot or upload system.
 
 The owning domain is responsible for the shader-facing layout and for making valid data

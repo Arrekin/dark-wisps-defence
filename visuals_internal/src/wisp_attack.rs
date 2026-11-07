@@ -42,7 +42,7 @@ impl FromWorld for WispAttackEffectAtlas {
 }
 
 #[derive(Component)]
-#[require(MapBound, ZDepth::GroundEffect, DrawLevel::Elevation)]
+#[require(MapBound, ZDepth::GroundEffect)]
 pub(crate) struct WispAttackEffect;
 
 fn on_builder_add_spawn_wisp_attack_effect(
@@ -67,11 +67,12 @@ fn on_builder_add_spawn_wisp_attack_effect(
                 ..default()
             },
             Transform {
-                translation: builder.0.extend(0.),
+                translation: builder.world_position.extend(0.),
                 scale: Vec3::new(0.5, 0.5, 1.0),
                 ..default()
             },
             AnimationController::new(0, 9, 0.025, false),
+            DrawLevel::from(builder.level),
             WispAttackEffect,
         ));
 }

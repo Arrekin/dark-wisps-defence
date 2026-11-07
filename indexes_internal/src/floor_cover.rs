@@ -3,12 +3,13 @@
 //!
 //! Shaders read a flat entry list with offsets for each cell. Entries contain the cover kind,
 //! floor, and wrapped lifetime timestamps, repeated for each covered cell. Each upload scans
-//! the entire grid and hides the canvas if there are no entries.
+//! the entire grid and hides the canvases of floors without entries.
 
 use bevy::prelude::*;
 use bytemuck::{Pod, Zeroable};
+use strum::EnumCount;
 
-use game_core::{prelude::{GridArea, MapInfo}, request_flag::RequestFlag};
+use game_core::{prelude::{FloorLevel, GridArea, MapInfo}, request_flag::RequestFlag};
 use indexes::floor_cover::{FloorCover, FloorCoverGrid};
 use logging::prelude::*;
 use session::{GameClock, TimeBound};
@@ -104,15 +105,17 @@ fn upload_gpu_floor_cover(
     mut upload_requested: ResMut<RequestFlag<FloorCoverGpuUpload>>,
     floor_cover_grid: Res<FloorCoverGrid>,
     time_bounds: Query<&TimeBound, With<FloorCover>>,
-    canvas: Option<Single<&mut Visibility, With<FloorCoverCanvas>>>,
+    mut canvases: Query<(&FloorCoverCanvas, &mut Visibility)>,
 ) {
     upload_requested.clear();
 
     let mut offsets = Vec::with_capacity(floor_cover_grid.grid.len() + 1);
     let mut entries = Vec::new();
+    let mut is_floor_covered = [false; FloorLevel::COUNT];
     for cell in floor_cover_grid.grid.iter() {
         offsets.push(entries.len() as u32);
         entries.extend(cell.iter().map(|entry| {
+            is_floor_covered[entry.level as usize] = true;
             let (starts_at, ends_at) = match time_bounds.get(entry.entity) {
                 Ok(time_bound) => (GameClock::wrap(time_bound.starts_at), GameClock::wrap(time_bound.ends_at)),
                 Err(_) => (0., PERMANENT_END),
@@ -121,8 +124,8 @@ fn upload_gpu_floor_cover(
         }));
     }
     offsets.push(entries.len() as u32);
-    if let Some(mut canvas_visibility) = canvas {
-        canvas_visibility.set_if_neq(if entries.is_empty() { Visibility::Hidden } else { Visibility::Inherited });
+    for (canvas, mut visibility) in canvases.iter_mut() {
+        visibility.set_if_neq(if is_floor_covered[canvas.0 as usize] { Visibility::Inherited } else { Visibility::Hidden });
     }
     shared_gpu.write(SharedGpuBinding::FloorCoverCellOffsets, offsets);
     shared_gpu.write_with_capacity(SharedGpuBinding::FloorCoverCellEntries, entries);

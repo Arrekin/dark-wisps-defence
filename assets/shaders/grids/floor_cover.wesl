@@ -2,7 +2,6 @@
 // Custom materials enable this group through visuals::shared_gpu; lane shaders include it.
 
 import package::shaders::common::map_info::{grid_contains, grid_index};
-import package::shaders::grids::obstacles::{STRUCTURE_BUILDING, STRUCTURE_WALL, VOLUME_ELEVATION, structure_at};
 
 // Field order and types mirror `GpuFloorCoverEntry` in indexes_internal/src/floor_cover.rs.
 struct FloorCoverEntry {
@@ -46,20 +45,12 @@ fn floor_cover_is_permanent(entry: FloorCoverEntry) -> bool {
     return entry.ends_at == FLOOR_COVER_PERMANENT_END;
 }
 
-// Walls and buildings hide floor cover on their cells.
-fn floor_cover_masked_at(coords: vec2<i32>) -> bool {
-    let structure = structure_at(coords, VOLUME_ELEVATION);
-    return structure == STRUCTURE_WALL || structure == STRUCTURE_BUILDING;
-}
-
-// Checks for an entry of `kind` on a cell not hidden by a wall or building.
-fn floor_cover_shows_kind_at(coords: vec2<i32>, kind: u32) -> bool {
-    if floor_cover_masked_at(coords) {
-        return false;
-    }
+// Checks for an entry of `kind` on floor `floor_level` at `coords`.
+fn floor_cover_has_kind_at(coords: vec2<i32>, kind: u32, floor_level: u32) -> bool {
     let range = floor_cover_entries_at(coords);
     for (var index = range.x; index < range.y; index++) {
-        if floor_cover_cell_entries[index].kind == kind {
+        let entry = floor_cover_cell_entries[index];
+        if entry.kind == kind && entry.floor == floor_level {
             return true;
         }
     }

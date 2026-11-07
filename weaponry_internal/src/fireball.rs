@@ -2,7 +2,7 @@
 //!
 //! Blaze Mortar projectile. On landing, it deals full damage to wisps in a 3x3 area centered on
 //! the landing cell and reduced damage in the surrounding one-cell ring, for a 5x5 area.
-//! The damage zones do not overlap.
+//! The damage zones do not overlap. Damage reaches the top of each cell.
 //!
 //! ## Rendering
 //!
@@ -10,8 +10,7 @@
 //! as it falls. An additive glow beneath the projectile spreads and dims with height.
 //!
 //! One impact shader draws two layers: a blast above wisps and a longer-lived scorch mark below
-//! them. Shared obstacle data masks ground fire on walls, buildings and dark ore.
-//! The mask reflects changes to those cells throughout the impact.
+//! them. Ground fire and scorch stay on the map.
 //!
 //! Body, glow and impact use dedicated lane layers for batching. Impact instances store a start
 //! time and duration; the shader derives age from the game clock without per-frame instance updates.
@@ -24,7 +23,7 @@ use bevy::{
 
 use alteration::modifiers::prelude::AttackDamage;
 use game_core::prelude::{AltitudeLevel, CELL_SIZE, DamageMessage, DrawLevel, GridArea, GridCoords, GridImprint, MapBound, OptionalCommands, Property, ZDepth};
-use indexes::wisps::WispsGrid;
+use indexes::{prelude::ObstacleGrid, wisps::WispsGrid};
 use logging::prelude::*;
 use persistence::{prelude::*, rusqlite};
 use session::{GameClock, TimeBound};
@@ -262,6 +261,7 @@ fn fireball_hit_system(
     mut commands: Commands,
     mut damage_messages: MessageWriter<DamageMessage>,
     clock: Res<GameClock>,
+    obstacle_grid: Res<ObstacleGrid>,
     wisps_grid: Res<WispsGrid>,
     fireballs: Query<(Entity, &Lob, &AttackDamage), (With<Fireball>, With<LobInFlight>)>,
     wisps: Query<(), With<Wisp>>,
@@ -273,13 +273,13 @@ fn fireball_hit_system(
         let seed = seed_from_entity(entity);
         let (blast, scorch) = (TimeBound::lasting(&clock, BLAST_DURATION), TimeBound::lasting(&clock, SCORCH_DURATION));
         let transform = Transform::from_translation(landing_coords.world_center().extend(0.));
-        commands.spawn((FireballImpact::new(ImpactLayer::Blast, blast, seed, landing_coords), blast, transform, ZDepth::FireballBlast, DrawLevel::Elevation));
+        commands.spawn((FireballImpact::new(ImpactLayer::Blast, blast, seed, landing_coords), blast, transform, ZDepth::FireballBlast, DrawLevel::OnElevation));
         commands.spawn((FireballImpact::new(ImpactLayer::Scorch, scorch, seed, landing_coords), scorch, transform, ZDepth::FireballScorch, DrawLevel::GroundFloor));
-        let main_blast = GridArea::centered_on(landing_coords.at(AltitudeLevel::Elevation), GridImprint::square_of_reach(MAIN_BLAST_REACH));
-        let blast_zone = GridArea::centered_on(landing_coords.at(AltitudeLevel::Elevation), GridImprint::square_of_reach(RING_REACH));
-        for blast_zone_coords in blast_zone.iter_in_bounds(wisps_grid.bounds) {
-            let damage = if main_blast.contains(blast_zone_coords) { attack_damage.get() } else { attack_damage.get() * RING_DAMAGE_SHARE };
-            for wisp in wisps_grid.wisps_in_cell(blast_zone_coords) {
+        let main_blast = GridArea::centered_on(landing_coords.at(AltitudeLevel::TopLevel), GridImprint::square_of_reach(MAIN_BLAST_REACH));
+        let blast_zone = GridArea::centered_on(landing_coords.at(AltitudeLevel::TopLevel), GridImprint::square_of_reach(RING_REACH));
+        for top in obstacle_grid.tops_in(blast_zone) {
+            let damage = if main_blast.contains(top.coords) { attack_damage.get() } else { attack_damage.get() * RING_DAMAGE_SHARE };
+            for &wisp in wisps_grid.wisps_at(top) {
                 // A deferred spawn can enter the grid before its components are available to queries.
                 if !wisps.contains(wisp) { continue; }
                 damage_messages.write(DamageMessage { target: wisp, amount: damage });

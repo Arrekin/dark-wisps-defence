@@ -5,7 +5,8 @@
 //! napalm; volumes hold structures and units. The terrain model treats a floor as supported by
 //! the volume below it and limits terrain to these three pairs.
 //!
-//! [`AltitudeLevel`] includes these six levels, airborne objects, and effects spanning all levels.
+//! [`AltitudeLevel`] includes these six levels, airborne objects, effects spanning all levels, and
+//! areas that reach the top of each cell.
 //! [`VolumeLevel`] and [`FloorLevel`] restrict APIs to volumes or floors. These types describe
 //! map occupancy; rendering uses [`DrawLevel`](crate::z_depth::DrawLevel) for draw order.
 
@@ -18,7 +19,7 @@ pub enum AltitudeLevel {
     UndergroundFloor,
     /// Underground terrain, passages, and units.
     Underground,
-    /// Floor covers on the ground, such as scorch marks and napalm.
+    /// Floor covers on the ground, such as napalm and char.
     GroundFloor,
     /// Structures and units at ground level, including walls and buildings.
     #[default]
@@ -31,6 +32,8 @@ pub enum AltitudeLevel {
     Airborne,
     /// Effects spanning all levels, such as quantum fields, energy supply, and dome coverage.
     AllEncompassing,
+    /// Areas that reach the top of each cell, such as blasts. Each cell resolves its own top when read.
+    TopLevel,
 }
 
 impl AltitudeLevel {
@@ -38,7 +41,7 @@ impl AltitudeLevel {
     ///
     /// # Panics
     ///
-    /// Panics for floor levels, `Airborne`, and `AllEncompassing`.
+    /// Panics for any level that is not a volume.
     pub fn volume(self) -> VolumeLevel {
         match self {
             Self::Underground => VolumeLevel::Underground,
@@ -52,7 +55,7 @@ impl AltitudeLevel {
     ///
     /// # Panics
     ///
-    /// Panics for volume levels, `Airborne`, and `AllEncompassing`.
+    /// Panics for any level that is not a floor.
     pub fn floor(self) -> FloorLevel {
         match self {
             Self::UndergroundFloor => FloorLevel::UndergroundFloor,

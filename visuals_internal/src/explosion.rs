@@ -42,7 +42,7 @@ impl FromWorld for ExplosionAtlas {
 }
 
 #[derive(Component)]
-#[require(MapBound, ZDepth::GroundEffect, DrawLevel::Elevation)]
+#[require(MapBound, ZDepth::GroundEffect)]
 pub(crate) struct Explosion;
 
 fn on_builder_add_spawn_explosion(
@@ -54,7 +54,8 @@ fn on_builder_add_spawn_explosion(
     let entity = trigger.entity;
     let Ok(builder) = builders.get(entity) else { return; };
 
-    let cell = builder.0.world_rect();
+    let position = builder.0;
+    let cell = position.coords.world_rect();
     commands.entity(entity)
         .remove::<BuilderExplosion>()
         .insert((
@@ -70,6 +71,7 @@ fn on_builder_add_spawn_explosion(
             },
             Transform::from_translation(cell.center().extend(0.)),
             AnimationController::new(0, 3, 0.1, false),
+            DrawLevel::from(position.level),
             Explosion,
         ));
 }

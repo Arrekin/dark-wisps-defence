@@ -12,7 +12,7 @@ use std::ops::Deref;
 
 use bevy::prelude::*;
 
-use game_core::prelude::{Bounds, BuildingType, EdgeSide, FloorLevel, GridArea, VolumeLevel};
+use game_core::prelude::{Bounds, BuildingType, EdgeSide, FloorLevel, GridArea, GridCoords, GridVolumePosition, VolumeLevel};
 use grids::{GridVersion, base::{BaseGrid, GridCell}, slot_index::{Slot, Slots}};
 use map_objects::wall_style::WallStyleKey;
 
@@ -165,6 +165,16 @@ impl ObstacleCell {
             FloorLevel::ElevationFloor => self.elevation.provides_floor(),
         }
     }
+    /// The highest volume with a floor under it.
+    pub fn top_level(&self) -> VolumeLevel {
+        if self.has_floor(FloorLevel::ElevationFloor) {
+            VolumeLevel::OnElevation
+        } else if self.has_floor(FloorLevel::GroundFloor) {
+            VolumeLevel::Elevation
+        } else {
+            VolumeLevel::Underground
+        }
+    }
     /// True for solid earth beneath two empty volumes, with no quantum field.
     pub fn is_empty(&self) -> bool {
         self.elevation == GridStructure::Empty
@@ -208,6 +218,14 @@ impl ObstacleGrid {
     /// Changes do not update cell membership or advance the grid version.
     pub fn entry_mut<D: StructureData>(&mut self, slot: Slot<D>) -> &mut StructureEntry<D> {
         D::table_mut(self).get_mut(slot).expect("a structure's slot stays filled while its cells hold it")
+    }
+    /// The top of the cell at `coords`.
+    pub fn top_position(&self, coords: GridCoords) -> GridVolumePosition {
+        coords.at(self.cell(coords).top_level())
+    }
+    /// The top of every in-bounds cell of `area`.
+    pub fn tops_in(&self, area: GridArea) -> impl Iterator<Item = GridVolumePosition> {
+        area.iter_in_bounds(self.bounds).map(|coords| self.top_position(coords))
     }
     /// The entity of `structure`, or `None` for `Empty` and `Solid`.
     pub fn structure_entity(&self, structure: GridStructure) -> Option<Entity> {

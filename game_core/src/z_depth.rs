@@ -7,7 +7,7 @@ use core::ops::{Index, IndexMut};
 use bevy::prelude::*;
 use strum::{EnumCount, EnumIter, VariantArray};
 
-use crate::altitude::VolumeLevel;
+use crate::altitude::{FloorLevel, VolumeLevel};
 
 /// Number of bits used for the entity's fractional depth within a layer.
 const LAYER_OFFSET_BITS: u32 = 16;
@@ -42,6 +42,15 @@ impl From<VolumeLevel> for DrawLevel {
             VolumeLevel::Underground => Self::Underground,
             VolumeLevel::Elevation => Self::Elevation,
             VolumeLevel::OnElevation => Self::OnElevation,
+        }
+    }
+}
+impl From<FloorLevel> for DrawLevel {
+    fn from(level: FloorLevel) -> Self {
+        match level {
+            FloorLevel::UndergroundFloor => Self::UndergroundFloor,
+            FloorLevel::GroundFloor => Self::GroundFloor,
+            FloorLevel::ElevationFloor => Self::ElevationFloor,
         }
     }
 }

@@ -5,15 +5,14 @@ import package::shaders::common::game_time::game_time_since;
 import package::shaders::common::fire_ramp::fire_ramp;
 import package::shaders::common::gradient_noise::{gradient_fbm_2d, gradient_noise_2d};
 import package::shaders::common::hash::{HASH_GOLDEN, hash_mix, hash_unit};
-import package::shaders::grids::obstacles::{STRUCTURE_BUILDING, STRUCTURE_DARK_ORE, STRUCTURE_OFF_MAP, STRUCTURE_WALL, VOLUME_ELEVATION, VOLUME_UNDERGROUND, structure_at};
+import package::shaders::common::map_info::grid_contains;
 
 // Fireball impact with two layers sharing a square mesh centered on the landing cell:
 // - Blast: flash, expanding fire and smoke, an outward-moving fire ring, splatter, and sparks.
 //   Drawn above wisps.
 // - Scorch: a fading burn mark with cooling cinders. Drawn below wisps.
 //
-// Raised cells (`shaders::grids::obstacles`) keep ground effects (scorch, cinders, splatter and
-// ring) off walls, buildings and dark ore. Airborne effects and light are not masked.
+// Scorch, cinders, splatter and ring stay on the map. Airborne effects and light are not masked.
 // Distances are in cells from the landing cell's center. Premultiplied output combines additive
 // light with alpha-blended fire and smoke.
 
@@ -81,40 +80,33 @@ fn premultiplied_over(below: vec4<f32>, color: vec3<f32>, alpha: f32) -> vec4<f3
     return vec4<f32>(color * alpha + below.rgb * (1.0 - alpha), alpha + below.a * (1.0 - alpha));
 }
 
-// `cell` is relative to the landing cell. Scorch and ground fire stay off cells outside the map,
-// walls, buildings and dark ore.
-fn is_raised_cell(cell: vec2<i32>) -> f32 {
-    let coords = impact.landing_cell + cell;
-    let elevation = structure_at(coords, VOLUME_ELEVATION);
-    let is_blocked = elevation == STRUCTURE_OFF_MAP
-        || elevation == STRUCTURE_WALL
-        || elevation == STRUCTURE_BUILDING
-        || structure_at(coords, VOLUME_UNDERGROUND) == STRUCTURE_DARK_ORE;
-    return f32(is_blocked);
+// `cell` is relative to the landing cell.
+fn is_map_cell(cell: vec2<i32>) -> f32 {
+    return f32(grid_contains(impact.landing_cell + cell));
 }
 
-// Raised-cell coverage: 1 on obstacles, 0 on open ground, with softened edges and rounded corners.
-fn raised(q: vec2<f32>) -> f32 {
+// Map coverage: 1 on the map, 0 outside it, with softened edges and rounded corners.
+fn map_coverage(q: vec2<f32>) -> f32 {
     let base = floor(q);
     let f = q - base;
     let cell = vec2<i32>(base);
-    let bottom = mix(is_raised_cell(cell), is_raised_cell(cell + vec2<i32>(1, 0)), f.x);
-    let top = mix(is_raised_cell(cell + vec2<i32>(0, 1)), is_raised_cell(cell + vec2<i32>(1, 1)), f.x);
+    let bottom = mix(is_map_cell(cell), is_map_cell(cell + vec2<i32>(1, 0)), f.x);
+    let top = mix(is_map_cell(cell + vec2<i32>(0, 1)), is_map_cell(cell + vec2<i32>(1, 1)), f.x);
     return smoothstep(0.3, 0.7, mix(bottom, top, f.y));
 }
 
-fn scorch_layer(q: vec2<f32>, age: f32, ground: f32) -> vec4<f32> {
+fn scorch_layer(q: vec2<f32>, age: f32, on_map: f32) -> vec4<f32> {
     let main_blast = shape_norm(q, SQUARENESS) / (impact.main_half_size * SCORCH_SIZE);
     let edge_noise = gradient_fbm_2d(q * 2.0 + vec2<f32>(13.0, 3.0), 3);
     let scorch = (1.0 - smoothstep(0.7, 1.0, main_blast + (edge_noise - 0.5) * 0.8))
-        * SCORCH * smoothstep(0.0, 0.2, age) * (1.0 - smoothstep(impact.duration * 0.4, impact.duration, age)) * ground;
+        * SCORCH * smoothstep(0.0, 0.2, age) * (1.0 - smoothstep(impact.duration * 0.4, impact.duration, age)) * on_map;
     var out = premultiplied_over(vec4<f32>(0.0), vec3<f32>(0.0), scorch * 0.75);
     let cinders = smoothstep(0.66, 0.72, gradient_fbm_2d(q * 5.0 + vec2<f32>(7.0, 2.0), 3)) * scorch * exp(-age * CINDER_DECAY);
     out = vec4<f32>(out.rgb + fire_ramp(0.6) * cinders * 1.5, out.a);
     return out;
 }
 
-fn blast_layer(q: vec2<f32>, age: f32, time: f32, ground: f32) -> vec4<f32> {
+fn blast_layer(q: vec2<f32>, age: f32, time: f32, on_map: f32) -> vec4<f32> {
     let main_half = impact.main_half_size;
     let ring_half = impact.ring_half_size;
     let m = shape_norm(q, SQUARENESS);
@@ -134,7 +126,7 @@ fn blast_layer(q: vec2<f32>, age: f32, time: f32, ground: f32) -> vec4<f32> {
     let splat_threshold = 0.6 + 0.15 * clamp(age / SPLAT_LIFE, 0.0, 1.0);
     let splat_region = (1.0 - smoothstep(ring_radius - 0.1, ring_radius + 0.05, m)) * (1.0 - smoothstep(ring_half - 0.2, ring_half + 0.1, m));
     let splat = smoothstep(splat_threshold, splat_threshold + 0.04, splat_noise + (flicker - 0.5) * 0.08)
-        * splat_region * SPLAT * (1.0 - smoothstep(SPLAT_LIFE * 0.4, SPLAT_LIFE, age)) * ground;
+        * splat_region * SPLAT * (1.0 - smoothstep(SPLAT_LIFE * 0.4, SPLAT_LIFE, age)) * on_map;
     out = premultiplied_over(out, fire_ramp(0.45 + 0.15 * flicker), splat);
 
     let lick = gradient_fbm_2d(dir * RING_LICKS + vec2<f32>(time * 2.0, impact.seed), 3);
@@ -143,7 +135,7 @@ fn blast_layer(q: vec2<f32>, age: f32, time: f32, ground: f32) -> vec4<f32> {
     let ring_mask = smoothstep(-thickness, 0.0, behind_front) * (1.0 - smoothstep(0.0, thickness * 0.3, behind_front));
     let ring_noise = gradient_fbm_2d(q * 2.5 - dir * age * 6.0 + vec2<f32>(3.0, -8.0 + impact.seed), 4);
     let ring_field = ring_mask + (ring_noise - 0.5) * 1.2;
-    let ring_fire = smoothstep(0.5, 0.65, ring_field) * (1.0 - smoothstep(0.55, 1.0, ring_phase)) * ground;
+    let ring_fire = smoothstep(0.5, 0.65, ring_field) * (1.0 - smoothstep(0.55, 1.0, ring_phase)) * on_map;
     let ring_heat = RING_HEAT + 0.3 * (ring_field - 0.5) + 0.2 * (1.0 - ring_phase);
     out = premultiplied_over(out, fire_ramp(clamp(ring_heat, 0.0, 0.95)), clamp(ring_fire, 0.0, 1.0));
 
@@ -196,15 +188,15 @@ fn look(mesh: VertexOutput, instance: Instance) -> vec4<f32> {
     let age = game_time_since(impact.start_time);
     let mesh_half_size = f32(impact.reach) + 0.5;
     let q = vec2<f32>(mesh.uv.x - 0.5, 0.5 - mesh.uv.y) * 2.0 * mesh_half_size;
-    let ground = 1.0 - raised(q);
+    let on_map = map_coverage(q);
     // Round fade inside the mesh, so its square outline never shows.
     let edge = 1.0 - smoothstep(mesh_half_size - 0.5, mesh_half_size, length(q));
 
     var out: vec4<f32>;
     if impact.layer == LAYER_SCORCH {
-        out = scorch_layer(q, age, ground);
+        out = scorch_layer(q, age, on_map);
     } else {
-        out = blast_layer(q, age, globals.time + impact.seed, ground);
+        out = blast_layer(q, age, globals.time + impact.seed, on_map);
     }
     return out * edge;
 }

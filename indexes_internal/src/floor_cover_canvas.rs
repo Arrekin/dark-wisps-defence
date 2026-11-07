@@ -1,6 +1,6 @@
-//! Draws floor cover on a single quad covering the map, using the shared GPU buffers.
-//! Each domain supplies shaders for its cover kinds. The canvas blends them in `FloorCoverKind`
-//! order, bottom first, and hides floor cover beneath walls and buildings.
+//! Draws floor cover on one quad per floor, each covering the map, using the shared GPU buffers.
+//! Each domain supplies shaders for its cover kinds. A canvas blends them in `FloorCoverKind`
+//! order, bottom first. Draw order decides what stands over a cover.
 
 use bevy::{
     mesh::MeshVertexBufferLayoutRef,
@@ -10,8 +10,9 @@ use bevy::{
     shader::ShaderRef,
     sprite_render::{AlphaMode2d, Material2d, Material2dKey, Material2dPipeline, Material2dPlugin},
 };
+use strum::IntoEnumIterator;
 
-use game_core::prelude::{DrawLevel, MapInfo, ZDepth};
+use game_core::prelude::{DrawLevel, FloorLevel, MapInfo, ZDepth};
 use states::prelude::MapLoadingStage;
 use visuals::{canvas::MapCanvasBundle, shader::set_blend, shared_gpu::add_shared_gpu_layout};
 
@@ -24,8 +25,12 @@ impl Plugin for FloorCoverCanvasPlugin {
     }
 }
 
-#[derive(Asset, AsBindGroup, TypePath, Debug, Clone, Default)]
-struct FloorCoverCanvasMaterial {}
+#[derive(Asset, AsBindGroup, TypePath, Debug, Clone)]
+struct FloorCoverCanvasMaterial {
+    /// Floor code (`FloorLevel::gpu_index`) of the covers this canvas draws.
+    #[uniform(0)]
+    floor: u32,
+}
 impl Material2d for FloorCoverCanvasMaterial {
     fn fragment_shader() -> ShaderRef {
         "shaders/grids/floor_cover_canvas.wesl".into()
@@ -48,10 +53,10 @@ impl Material2d for FloorCoverCanvasMaterial {
     }
 }
 
-/// The map's floor cover canvas. Hidden while the map has no floor cover.
+/// The floor cover canvas of one floor. Hidden while that floor has no floor cover.
 #[derive(Component)]
-#[require(ZDepth::FloorCover, DrawLevel::GroundFloor)]
-pub(crate) struct FloorCoverCanvas;
+#[require(ZDepth::FloorCover)]
+pub(crate) struct FloorCoverCanvas(pub FloorLevel);
 impl FloorCoverCanvas {
     fn create(
         mut commands: Commands,
@@ -60,11 +65,14 @@ impl FloorCoverCanvas {
     ) {
         commands.despawn_all::<With<FloorCoverCanvas>>();
 
-        let material = materials.add(FloorCoverCanvasMaterial {});
-        commands.spawn((
-            MapCanvasBundle::new(material, &map_info),
-            FloorCoverCanvas,
-            Visibility::Hidden,
-        ));
+        for floor in FloorLevel::iter() {
+            let material = materials.add(FloorCoverCanvasMaterial { floor: floor.gpu_index() });
+            commands.spawn((
+                MapCanvasBundle::new(material, &map_info),
+                FloorCoverCanvas(floor),
+                DrawLevel::from(floor),
+                Visibility::Hidden,
+            ));
+        }
     }
 }

@@ -215,7 +215,7 @@ impl GridPosition {
     ///
     /// # Panics
     ///
-    /// Panics for floor levels, `Airborne`, and `AllEncompassing`.
+    /// Panics for any level that is not a volume.
     pub fn volume(self) -> GridVolumePosition {
         self.coords.at(self.level.volume())
     }
@@ -223,7 +223,7 @@ impl GridPosition {
     ///
     /// # Panics
     ///
-    /// Panics for volume levels, `Airborne`, and `AllEncompassing`.
+    /// Panics for any level that is not a floor.
     pub fn floor(self) -> GridFloorPosition {
         self.coords.at(self.level.floor())
     }

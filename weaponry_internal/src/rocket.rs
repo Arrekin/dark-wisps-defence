@@ -8,7 +8,7 @@ use game_core::{
     math::angle_difference,
     prelude::{AltitudeLevel, DamageMessage, GridArea, GridCoords, GridImprint, Property},
 };
-use indexes::wisps::WispsGrid;
+use indexes::{prelude::ObstacleGrid, wisps::WispsGrid};
 use logging::prelude::*;
 use persistence::{prelude::*, rusqlite};
 use states::prelude::{GameState, MapLoadingStage};
@@ -161,6 +161,7 @@ fn rocket_move_system(
 fn rocket_hit_system(
     mut commands: Commands,
     mut damage_messages: MessageWriter<DamageMessage>,
+    obstacle_grid: Res<ObstacleGrid>,
     wisps_grid: Res<WispsGrid>,
     rockets: Query<(Entity, &Transform, &RocketTarget, &AttackDamage), (With<Rocket>, Without<Wisp>)>,
     wisps_transforms: Query<&Transform, (With<Wisp>, Without<Rocket>)>,
@@ -175,11 +176,11 @@ fn rocket_hit_system(
         let Some(Ok(wisp_transform)) = target.0.map(|wisp| wisps_transforms.get(wisp)) else { continue; };
         if rocket_transform.translation.xy().distance(wisp_transform.translation.xy()) > ROCKET_HIT_DISTANCE { continue; }
 
-        let blast_zone = GridArea::centered_on(rocket_coords.at(AltitudeLevel::Elevation), GridImprint::square_of_reach(BLAST_REACH));
-        for blast_zone_coords in blast_zone.iter_in_bounds(wisps_grid.bounds) {
-            commands.spawn(BuilderExplosion(blast_zone_coords));
+        let blast_zone = GridArea::centered_on(rocket_coords.at(AltitudeLevel::TopLevel), GridImprint::square_of_reach(BLAST_REACH));
+        for top in obstacle_grid.tops_in(blast_zone) {
+            commands.spawn(BuilderExplosion(top));
 
-            for wisp in wisps_grid.wisps_in_cell(blast_zone_coords) {
+            for &wisp in wisps_grid.wisps_at(top) {
                 // A deferred spawn can enter the grid before its components are available to queries.
                 if !wisps_transforms.contains(wisp) { continue; }
                 damage_messages.write(DamageMessage { target: wisp, amount: attack_damage.get() });

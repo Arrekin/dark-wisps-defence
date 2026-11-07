@@ -204,7 +204,7 @@ pub(crate) fn wisp_charge_attack(
                 WispChargeAttack::Charge => {
                     // Already close enough, trigger attack
                     *attack = WispChargeAttack::Backoff;
-                    commands.spawn(BuilderWispAttackEffect(world_position));
+                    commands.spawn(BuilderWispAttackEffect { world_position, level: target_position.level });
 
                     // Deal damage to the building
                     damage_messages.write(DamageMessage {
@@ -247,6 +247,6 @@ pub(crate) fn collide_wisps(
         });
         wisps_grid.wisp_remove(position, wisp_entity);
         commands.entity(wisp_entity).despawn();
-        commands.spawn(BuilderWispAttackEffect(transform.translation.xy()));
+        commands.spawn(BuilderWispAttackEffect { world_position: transform.translation.xy(), level: position.level });
     }
 }
