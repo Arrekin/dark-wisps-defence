@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use game_core::prelude::{AreaRange, GridCoords};
+use game_core::prelude::{AreaRange, GridCoords, TargetLevels};
 
 use crate::{prelude::*, wisps::WispsGrid};
 
@@ -8,7 +8,7 @@ use super::scratch::{SEARCH_SCRATCH, SearchScratch, State};
 
 /// Finds the nearest wisp by cardinal path distance from `range.area`.
 ///
-/// Checks all volume levels at each coordinate, regardless of the area's altitude.
+/// Selects only wisps on the levels `levels` allows.
 /// Expects a cell range and uses its limits as path distances. The search traverses cells below
 /// the minimum distance but cannot select targets there. Cells in `range.area` are starting
 /// points and are not checked for targets.
@@ -19,6 +19,7 @@ pub fn target_find_closest_wisp(
     obstacle_grid: &ObstacleGrid,
     wisps_grid: &WispsGrid,
     range: &AreaRange,
+    levels: TargetLevels,
     ignore_obstacles: bool,
 ) -> Option<(GridCoords, Entity)> {
     let min_range = range.min.ceil() as usize;
@@ -39,7 +40,7 @@ pub fn target_find_closest_wisp(
                 }
 
                 let new_distance = distance + 1;
-                if new_distance >= min_range && let Some(wisp) = wisps_grid.wisps_in_cell(new_coords).next() {
+                if new_distance >= min_range && let Some(wisp) = wisps_grid.targetable_wisps(obstacle_grid, levels, new_coords).next() {
                     return Some((new_coords, wisp));
                 }
 

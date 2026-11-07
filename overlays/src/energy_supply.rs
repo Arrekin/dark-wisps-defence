@@ -32,8 +32,8 @@ impl Plugin for EnergySupplyOverlayPlugin {
             .add_systems(OnExit(EnergySupplyOverlayState::Show), |visibility: Single<&mut Visibility, With<EnergySupplyOverlay>>| { *visibility.into_inner() = Visibility::Hidden; })
             .add_systems(OnExit(UiInteraction::PlaceGridObject), |mut config: ResMut<EnergySupplyOverlayConfig>| { config.secondary_mode = EnergySupplyOverlaySecondaryMode::None; })
             .add_systems(Update, (
-                EnergySupplyOverlayConfig::on_config_change_system.run_if(resource_changed::<EnergySupplyOverlayConfig>),
-                refresh_display_system.run_if(in_state(EnergySupplyOverlayState::Show)),
+                EnergySupplyOverlayConfig::apply_config_change.run_if(resource_changed::<EnergySupplyOverlayConfig>),
+                refresh_display.run_if(in_state(EnergySupplyOverlayState::Show)),
                 (|mut config: ResMut<EnergySupplyOverlayConfig>| { config.is_overlay_globally_enabled ^= true; }).run_if(input_just_released(KeyCode::Digit7)),
             ))
             .add_observer(EnergySupplyOverlayConfig::on_insert_focused_map_object_set_highlight)
@@ -57,7 +57,7 @@ pub struct EnergySupplyOverlayConfig {
     pub secondary_mode: EnergySupplyOverlaySecondaryMode,
 }
 impl EnergySupplyOverlayConfig {
-    fn on_config_change_system(
+    fn apply_config_change(
         overlay_config: Res<EnergySupplyOverlayConfig>,
         mut overlay_state: ResMut<NextState<EnergySupplyOverlayState>>,
     ) {
@@ -147,7 +147,7 @@ impl EnergySupplyOverlay {
     }
 }
 
-fn refresh_display_system(
+fn refresh_display(
     mut buffers: ResMut<Assets<ShaderBuffer>>,
     materials: Res<Assets<EnergySupplyHeatmapMaterial>>,
     energy_supply_grid: Res<EnergySupplyGrid>,

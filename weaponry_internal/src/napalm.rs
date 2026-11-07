@@ -22,7 +22,7 @@ pub(crate) struct NapalmPlugin;
 impl Plugin for NapalmPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_systems(Update, napalm_damage_system.run_if(in_state(GameState::Running)))
+            .add_systems(Update, burn_wisps_on_napalm.run_if(in_state(GameState::Running)))
             .add_observer(on_builder_add_spawn_napalm)
             .add_observer(on_remove_napalm_spawn_char.run_if(in_state(InGame)))
             .add_systems(CollectSave, collect_napalms)
@@ -100,7 +100,7 @@ fn on_builder_add_spawn_napalm(
         ));
 }
 
-fn napalm_damage_system(
+fn burn_wisps_on_napalm(
     mut damage_messages: MessageWriter<DamageMessage>,
     time: Res<Time>,
     wisps_grid: Res<WispsGrid>,
@@ -109,7 +109,7 @@ fn napalm_damage_system(
 ) {
     let damage = NAPALM_DAMAGE_PER_SECOND * time.delta_secs();
     for area in napalms.iter() {
-        let floor = area.origin.floor();
+        let floor = area.origin.floor_position();
         for &wisp in wisps_grid.wisps_at(floor.coords.at(floor.level.volume_above())) {
             // A deferred spawn can enter the grid before its components are available to queries.
             if !wisps.contains(wisp) { continue; }
@@ -126,7 +126,7 @@ fn on_remove_napalm_spawn_char(
     napalms: Query<&GridArea, With<Napalm>>,
 ) {
     let Ok(area) = napalms.get(trigger.entity) else { return; };
-    let floor = area.origin.floor();
+    let floor = area.origin.floor_position();
     // Napalm goes with a floor that disappears, and leaves no char behind.
     if !obstacle_grid.cell(floor.coords).has_floor(floor.level) { return; }
     commands.spawn((

@@ -11,11 +11,11 @@ pub mod ripple;
 
 pub mod prelude {
     pub use super::cannonball::{BuilderCannonball, Cannonball};
-    pub use super::components::{FiredProjectiles, Projectile, ProjectileOf};
+    pub use super::components::{FiredProjectiles, Projectile, ProjectileDirection, ProjectileOf};
     pub use super::fireball::{BuilderFireball, Fireball};
     pub use super::flame_stream::FlameStream;
     pub use super::inferno_dome::InfernoDome;
-    pub use super::laser_dart::{BuilderLaserDart, LaserDart, LaserDartTarget};
+    pub use super::laser_dart::{BuilderLaserDart, LaserDart};
     pub use super::napalm_bomb::{BuilderNapalmBomb, NapalmBomb};
     pub use super::ripple::{BuilderRipple, Ripple};
     pub use super::rocket::{BuilderRocket, Rocket, RocketExhaust, RocketTarget};

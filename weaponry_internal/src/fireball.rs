@@ -47,7 +47,7 @@ impl Plugin for FireballPlugin {
                 LanePlugin::<FireballImpact>::default(),
             ))
             .add_systems(Update, (
-                fireball_hit_system.after(advance_lobs).run_if(in_state(GameState::Running)),
+                resolve_fireball_hits.after(advance_lobs).run_if(in_state(GameState::Running)),
                 update_fireball_visuals.after(advance_lobs),
             ))
             .add_observer(on_builder_add_spawn_fireball)
@@ -257,7 +257,7 @@ fn on_builder_add_spawn_fireball(
         ));
 }
 
-fn fireball_hit_system(
+fn resolve_fireball_hits(
     mut commands: Commands,
     mut damage_messages: MessageWriter<DamageMessage>,
     clock: Res<GameClock>,

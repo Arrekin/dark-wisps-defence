@@ -28,8 +28,8 @@ impl Plugin for VisualsPlugin {
             ))
             .add_systems(Startup, |mut meshes: ResMut<Assets<Mesh>>| { meshes.insert(&UNIT_QUAD, Rectangle::new(1., 1.).into()).expect("a uuid mesh id is always valid"); })
             .add_systems(Update, (
-                color_pulsation::pulsate_sprites_system,
-                sprite_animation::animate_sprite_system.run_if(in_state(GameState::Running)),
+                color_pulsation::pulsate_sprites,
+                sprite_animation::animate_sprite.run_if(in_state(GameState::Running)),
             ))
             .add_observer(color_pulsation::on_remove_color_pulsation_reset_sprite_lightness);
     }

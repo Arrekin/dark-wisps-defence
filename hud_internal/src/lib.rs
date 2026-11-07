@@ -23,6 +23,6 @@ impl Plugin for HudPlugin {
                 main_menu::MainMenuPlugin,
                 pause_indicator::PauseIndicatorPlugin,
             ))
-            .add_systems(Update, grid_display::draw_grid_system.run_if(resource_exists::<ShowGrid>));
+            .add_systems(Update, grid_display::draw_grid.run_if(resource_exists::<ShowGrid>));
     }
 }

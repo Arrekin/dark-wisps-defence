@@ -2,7 +2,7 @@ use bevy::{color::palettes::css::GRAY, prelude::*};
 
 use game_core::prelude::*;
 
-pub(crate) fn draw_grid_system(mut gizmos: Gizmos, map_info: Res<MapInfo>) {
+pub(crate) fn draw_grid(mut gizmos: Gizmos, map_info: Res<MapInfo>) {
     let map_bounds = map_info.grid_bounds;
     let world_size = map_info.world_size();
     // Horizontal lines

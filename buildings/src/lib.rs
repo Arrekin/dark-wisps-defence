@@ -3,7 +3,7 @@ use std::time::Duration;
 use bevy::prelude::*;
 
 use alteration::modifiers::prelude::{AttackDamage, AttackSpeed, MaxAttackRange, MaxIntegrityPoints, MinAttackRange, ModifierBank};
-use game_core::prelude::{AutoGridSnap, BuildingType, DrawLevel, MapBound, TowerType, ZDepth};
+use game_core::prelude::{AutoGridSnap, BuildingType, DrawLevel, MapBound, TargetLevels, TowerType, ZDepth};
 use grids::prelude::GridVersion;
 
 #[derive(Component, Default)]
@@ -56,7 +56,7 @@ pub struct TowerCannon;
 pub struct TowerRocketLauncher;
 
 #[derive(Component)]
-#[require(Tower, BuildingType = BuildingType::Tower(TowerType::Emitter), AttackSpeed, AttackDamage, TowerShootingTimer, TowerWispTarget)]
+#[require(Tower, BuildingType = BuildingType::Tower(TowerType::Emitter), AttackSpeed, AttackDamage, TowerShootingTimer, TowerWispTarget, TargetLevels = TargetLevels::EveryLevel)]
 pub struct TowerEmitter;
 
 #[derive(Component)]
@@ -76,7 +76,7 @@ pub struct TowerFlamethrower;
 pub struct TowerBlazeMortar;
 
 #[derive(Component)]
-#[require(Tower, BuildingType = BuildingType::Tower(TowerType::Inferno), AttackSpeed, TowerShootingTimer, TowerWispTarget)]
+#[require(Tower, BuildingType = BuildingType::Tower(TowerType::Inferno), AttackSpeed, TowerShootingTimer, TowerWispTarget, TargetLevels = TargetLevels::EveryLevel)]
 pub struct TowerInferno;
 
 #[derive(Component)]
@@ -96,10 +96,12 @@ impl TowerShootingTimer {
 }
 
 #[derive(Component, Default)]
+#[require(TargetLevels)]
 pub enum TowerWispTarget {
     #[default]
     SearchForNewTarget,
     Wisp(Entity),
+    /// The search found nothing at this `WispsGrid` version.
     NoValidTargets(GridVersion),
     /// The tower wants no target for now. Targeting skips it until the tower sets `SearchForNewTarget`.
     Suspended,

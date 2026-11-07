@@ -1,4 +1,5 @@
 use bevy::{
+    ecs::query::QueryData,
     prelude::*,
     sprite::Anchor,
 };
@@ -21,11 +22,11 @@ impl Plugin for RocketPlugin {
     fn build(&self, app: &mut App) {
         app
             .add_systems(Update, (
-                exhaust_blinking_system,
+                blink_rocket_exhausts,
                 (
-                    rocket_move_system,
-                    rocket_hit_system,
-                ).run_if(in_state(GameState::Running)),
+                    move_rockets,
+                    resolve_rocket_hits,
+                ).chain().run_if(in_state(GameState::Running)),
             ))
             .add_observer(on_builder_add_spawn_rocket)
             .add_systems(CollectSave, collect_rockets)
@@ -81,15 +82,11 @@ fn collect_rockets(
 fn load_rockets(ctx: &mut LoadContext) -> LoadResult {
     ctx.for_each_entity("SELECT id, target_wisp_id, heading, damage FROM rockets", |ctx, old_id, entity, row| {
         let target_wisp_old_id: Option<u32> = row.get(1)?;
-        let heading: f32 = row.get(2)?;
-        let damage: f32 = row.get(3)?;
+        let heading = row.get(2)?;
+        let damage = AttackDamage::new(row.get(3)?);
         let world_position = ctx.world_position(old_id)?;
-
-        let builder = BuilderRocket::new(
-            world_position,
-            heading,
-            AttackDamage::new(damage),
-        ).with_target_wisp(ctx.optional_entity(target_wisp_old_id).unwrap_or_default());
+        let builder = BuilderRocket::new(world_position, heading, damage)
+            .with_target_wisp(ctx.optional_entity(target_wisp_old_id).unwrap_or_default());
         ctx.insert(entity, builder);
         Ok(())
     })
@@ -133,48 +130,66 @@ fn on_builder_add_spawn_rocket(
         ));
 }
 
-fn rocket_move_system(
+#[derive(QueryData)]
+struct RocketTargetWisp {
+    entity: Entity,
+    transform: &'static Transform,
+    area: &'static GridArea,
+}
+
+fn move_rockets(
     time: Res<Time>,
+    obstacle_grid: Res<ObstacleGrid>,
     mut rockets: Query<(&mut Rocket, &mut Transform, &mut RocketTarget)>,
-    wisps: Query<(Entity, &Transform), (With<Wisp>, Without<Rocket>)>,
+    wisps: Query<RocketTargetWisp, (With<Wisp>, Without<Rocket>)>,
 ) {
+    let travel = ROCKET_SPEED * time.delta_secs();
+    let max_turn = ROCKET_TURN_SPEED * time.delta_secs();
+    let at_top = |wisp: &RocketTargetWispItem| obstacle_grid.is_top(wisp.area.origin.volume_position());
     let mut wisps_iter = wisps.iter();
     for (mut rocket, mut transform, mut target) in rockets.iter_mut() {
-        let target_wisp = target.0.and_then(|wisp| wisps.get(wisp).ok()).or_else(|| {
-            let next_wisp = wisps_iter.next();
-            target.0 = next_wisp.map(|(wisp, _)| wisp);
+        // A rocket retargets when its target goes below the top of its cell.
+        let target_wisp = target.0.and_then(|wisp| wisps.get(wisp).ok()).filter(at_top).or_else(|| {
+            let next_wisp = wisps_iter.find(at_top);
+            target.0 = next_wisp.as_ref().map(|wisp| wisp.entity);
             next_wisp
         });
 
         // Turn toward the target. Without one the rocket flies straight on.
-        if let Some((_, wisp_transform)) = target_wisp {
-            let angle_delta = angle_difference((wisp_transform.translation.xy() - transform.translation.xy()).to_angle(), rocket.heading);
-            let max_turn = ROCKET_TURN_SPEED * time.delta_secs();
+        if let Some(wisp) = target_wisp {
+            let angle_delta = angle_difference((wisp.transform.translation.xy() - transform.translation.xy()).to_angle(), rocket.heading);
             rocket.heading += angle_delta.clamp(-max_turn, max_turn);
         }
 
-        transform.translation += (Vec2::from_angle(rocket.heading) * time.delta_secs() * ROCKET_SPEED).extend(0.0);
+        transform.translation += (Vec2::from_angle(rocket.heading) * travel).extend(0.0);
         transform.rotation = Quat::from_rotation_z(rocket.heading);
     }
 }
 
-fn rocket_hit_system(
+/// Sweeps the line each rocket travelled this frame. Passing within reach of its target detonates it.
+fn resolve_rocket_hits(
     mut commands: Commands,
     mut damage_messages: MessageWriter<DamageMessage>,
+    time: Res<Time>,
     obstacle_grid: Res<ObstacleGrid>,
     wisps_grid: Res<WispsGrid>,
-    rockets: Query<(Entity, &Transform, &RocketTarget, &AttackDamage), (With<Rocket>, Without<Wisp>)>,
-    wisps_transforms: Query<&Transform, (With<Wisp>, Without<Rocket>)>,
+    rockets: Query<(Entity, &Rocket, &Transform, &RocketTarget, &AttackDamage)>,
+    wisps: Query<&Transform, With<Wisp>>,
 ) {
-    for (entity, rocket_transform, target, attack_damage) in rockets.iter() {
+    let travel = ROCKET_SPEED * time.delta_secs();
+    for (entity, rocket, rocket_transform, target, attack_damage) in rockets.iter() {
         let rocket_coords = GridCoords::from_transform(rocket_transform);
         if !wisps_grid.bounds.contains(rocket_coords) {
             commands.entity(entity).despawn();
             continue;
         }
 
-        let Some(Ok(wisp_transform)) = target.0.map(|wisp| wisps_transforms.get(wisp)) else { continue; };
-        if rocket_transform.translation.xy().distance(wisp_transform.translation.xy()) > ROCKET_HIT_DISTANCE { continue; }
+        let Some(Ok(wisp_transform)) = target.0.map(|wisp| wisps.get(wisp)) else { continue; };
+        let direction = Vec2::from_angle(rocket.heading);
+        let start = rocket_transform.translation.xy() - direction * travel;
+        let offset = wisp_transform.translation.xy() - start;
+        let along = offset.dot(direction).clamp(0., travel);
+        if offset.distance(direction * along) > ROCKET_HIT_DISTANCE { continue; }
 
         let blast_zone = GridArea::centered_on(rocket_coords.at(AltitudeLevel::TopLevel), GridImprint::square_of_reach(BLAST_REACH));
         for top in obstacle_grid.tops_in(blast_zone) {
@@ -182,7 +197,7 @@ fn rocket_hit_system(
 
             for &wisp in wisps_grid.wisps_at(top) {
                 // A deferred spawn can enter the grid before its components are available to queries.
-                if !wisps_transforms.contains(wisp) { continue; }
+                if !wisps.contains(wisp) { continue; }
                 damage_messages.write(DamageMessage { target: wisp, amount: attack_damage.get() });
             }
         }
@@ -190,7 +205,7 @@ fn rocket_hit_system(
     }
 }
 
-fn exhaust_blinking_system(
+fn blink_rocket_exhausts(
     time: Res<Time>,
     mut exhausts: Query<&mut Sprite, With<RocketExhaust>>,
 ) {

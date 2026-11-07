@@ -9,7 +9,7 @@ use alteration::{
     modifiers::prelude::*,
 };
 use buildings::prelude::*;
-use game_core::prelude::*;
+use game_core::{motion::Locomotion, prelude::*};
 use grids::placement::{PlacementModes, PlaceRequest};
 use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
 use indexes::placement::annotate_non_empty;
@@ -30,7 +30,7 @@ impl Plugin for TowerBlasterPlugin {
         app
             .add_observer(BuilderTowerBlaster::on_builder_add_spawn_tower_blaster)
             .add_observer(on_tower_blaster_place_request_do_so)
-            .add_systems(Update, shooting_system.after(TowerAimingSystems).run_if(in_state(GameState::Running)))
+            .add_systems(Update, shoot_targets.after(TowerAimingSystems).run_if(in_state(GameState::Running)))
             .add_systems(CollectSave, collect_tower_blasters)
             .register_loader(MapLoadingStage::SpawnMapElements, "tower_blasters", load_tower_blasters)
             .register_building(BuildingType::Tower(TowerType::Blaster), almanach_info);
@@ -216,26 +216,23 @@ fn load_tower_blasters(ctx: &mut LoadContext) -> LoadResult {
     })
 }
 
-fn shooting_system(
+fn shoot_targets(
     mut commands: Commands,
     mut tower_blasters: Query<(&GridArea, &Transform, &mut TowerShootingTimer, &TowerWispTarget, &TowerTopRotation, &AttackDamage), (With<TowerBlaster>, With<IsOperational>)>,
-    wisps: Query<(Entity, &Transform), With<Wisp>>,
+    wisps: Query<(&Transform, &Locomotion), With<Wisp>>,
 ) {
     for (area, transform, mut timer, target, top_rotation, attack_damage) in tower_blasters.iter_mut() {
         if !timer.0.is_finished() { continue; }
-        let Some(Ok((target_wisp, wisp_transform))) = target.wisp().map(|wisp| wisps.get(wisp)) else { continue; };
+        let Some(Ok((wisp_transform, wisp_locomotion))) = target.wisp().map(|wisp| wisps.get(wisp)) else { continue; };
         let wisp_position = wisp_transform.translation.xy();
 
         if !top_rotation.is_facing(wisp_position - transform.translation.xy()) { continue; }
 
         let tower_world_width = area.imprint.world_size().x;
         let offset = Vec2::from_angle(top_rotation.current_angle) * tower_world_width * MUZZLE_OFFSET;
-        let spawn_position = transform.translation.xy() + offset;
+        let muzzle = transform.translation.xy() + offset;
 
-        commands.spawn(
-            BuilderLaserDart::new(spawn_position, (wisp_position - spawn_position).normalize(), *attack_damage)
-                .with_target_wisp(target_wisp)
-        );
+        commands.spawn(BuilderLaserDart::aimed_at(muzzle, wisp_position, wisp_locomotion.velocity(), *attack_damage));
         timer.0.reset();
     }
 }

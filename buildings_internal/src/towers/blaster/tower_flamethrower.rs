@@ -1,8 +1,8 @@
 //! # Flamethrower Tower
 //!
 //! Fire evolution of the Blaster. Sprays a continuous `FlameStream` (linked via
-//! `GeneratedFlameStream`) that stops at the nearest wisp in the cone and damages all wisps on that
-//! cell each `TowerShootingTimer` tick.
+//! `GeneratedFlameStream`) that stops at the nearest wisp in the cone. The stream reads this tower's
+//! `AttackDamage` and `TowerShootingTimer` to deal its damage.
 //!
 //! ## Aim
 //!
@@ -30,7 +30,7 @@ use buildings::prelude::*;
 use game_core::prelude::*;
 use grids::placement::{PlacementModes, PlaceRequest};
 use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
-use indexes::{placement::annotate_non_empty, wisps::WispsGrid};
+use indexes::placement::annotate_non_empty;
 use logging::prelude::*;
 use persistence::prelude::*;
 use resources::prelude::*;
@@ -50,12 +50,9 @@ impl Plugin for TowerFlamethrowerPlugin {
         let almanach_info = BuilderTowerFlamethrower::almanach_info(app.world().resource::<AssetServer>());
         app
             .add_systems(Update, (
-                aim_flame_streams.after(TowerAimingSystems).before(FlameStreamSystems),
-                (
-                    update_flame_stream_firing.after(TowerAimingSystems).before(FlameStreamSystems),
-                    damage_flame_hits.after(FlameStreamSystems),
-                ).run_if(in_state(GameState::Running)),
-            ))
+                aim_flame_streams,
+                update_flame_stream_firing.run_if(in_state(GameState::Running)),
+            ).after(TowerAimingSystems).before(FlameStreamSystems))
             .add_observer(BuilderTowerFlamethrower::on_builder_add_spawn_tower_flamethrower)
             .add_observer(on_tower_flamethrower_place_request_do_so)
             .add_observer(on_add_is_operational_arm_flame_stream)
@@ -308,24 +305,6 @@ fn update_flame_stream_firing(
     }
 }
 
-/// Each shooting tick damages every wisp on the tile the stream hits.
-fn damage_flame_hits(
-    mut damage_messages: MessageWriter<DamageMessage>,
-    wisps_grid: Res<WispsGrid>,
-    streams: Query<&FlameStream>,
-    mut towers: Query<(&GeneratedFlameStream, &AttackDamage, &mut TowerShootingTimer), (With<TowerFlamethrower>, With<IsOperational>)>,
-) {
-    for (generated_stream, attack_damage, mut timer) in towers.iter_mut() {
-        let Ok(stream) = streams.get(generated_stream.stream()) else { continue; };
-        let Some(hit) = &stream.hit else { continue; };
-        if !timer.0.is_finished() { continue; }
-        for wisp in wisps_grid.wisps_in_cell(hit.position.coords) {
-            damage_messages.write(DamageMessage { target: wisp, amount: attack_damage.get() });
-        }
-        timer.0.reset();
-    }
-}
-
 fn on_add_is_operational_arm_flame_stream(
     trigger: On<Add<IsOperational>>,
     mut streams: Query<&mut FlameStream>,
@@ -354,6 +333,6 @@ fn on_flame_stream_burnt_out_resume_targeting(
     trigger: On<FlameStreamBurntOut>,
     mut towers: Query<&mut TowerWispTarget, With<TowerFlamethrower>>,
 ) {
-    let Ok(mut target) = towers.get_mut(trigger.tower) else { return; };
+    let Ok(mut target) = towers.get_mut(trigger.generator) else { return; };
     *target = TowerWispTarget::SearchForNewTarget;
 }

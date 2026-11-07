@@ -35,7 +35,7 @@ impl Plugin for ViewportPlugin {
         app
             .init_resource::<MouseInfo>()
             .add_systems(Startup, spawn_main_camera)
-            .add_systems(PreUpdate, update_mouse_info_system.after(PickingSystems::Hover))
+            .add_systems(PreUpdate, update_mouse_info.after(PickingSystems::Hover))
             .add_systems(Update, (
                 camera_zoom,
                 camera_movement,
@@ -255,7 +255,7 @@ pub struct MouseInfo {
     pub is_over_ui: bool,
 }
 
-fn update_mouse_info_system(
+fn update_mouse_info(
     mut mouse_info: ResMut<MouseInfo>,
     ui_nodes: Query<&PickingInteraction, With<ComputedNode>>,
     window: Single<&Window, With<PrimaryWindow>>,

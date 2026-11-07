@@ -22,7 +22,7 @@ impl AnimationController {
     }
 }
 
-pub(crate) fn animate_sprite_system(
+pub(crate) fn animate_sprite(
     time: Res<Time>,
     mut animations: Query<(&mut AnimationController, &mut Sprite)>,
 ) {

@@ -15,7 +15,7 @@ pub(crate) struct SummoningPlugin;
 impl Plugin for SummoningPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_systems(Update, tick_active_summoning_system.run_if(in_state(GameState::Running)))
+            .add_systems(Update, tick_active_summoning.run_if(in_state(GameState::Running)))
             .add_observer(on_insert_summoning_state_sync_markers)
             .add_observer(on_moment_happened_activate_summoning)
             .add_observer(on_builder_add_spawn_summoning)
@@ -269,7 +269,7 @@ fn on_builder_add_spawn_summoning(
 }
 
 #[log_tags(Tag::Wave)]
-fn tick_active_summoning_system(
+fn tick_active_summoning(
     mut commands: Commands,
     obstacle_grid: Res<ObstacleGrid>,
     clock: Res<GameClock>,

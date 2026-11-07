@@ -329,7 +329,6 @@ CREATE TABLE IF NOT EXISTS napalm_bombs (
 
 CREATE TABLE IF NOT EXISTS laser_darts (
     id INTEGER PRIMARY KEY,
-    target_wisp_id INTEGER,
     vector_x REAL NOT NULL,
     vector_y REAL NOT NULL,
     damage REAL NOT NULL,

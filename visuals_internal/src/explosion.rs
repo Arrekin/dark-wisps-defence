@@ -10,7 +10,7 @@ impl Plugin for ExplosionPlugin {
     fn build(&self, app: &mut App) {
         app
             .init_resource::<ExplosionAtlas>()
-            .add_systems(Update, remove_explosions_system)
+            .add_systems(Update, remove_explosions)
             .add_observer(on_builder_add_spawn_explosion);
     }
 }
@@ -76,7 +76,7 @@ fn on_builder_add_spawn_explosion(
         ));
 }
 
-fn remove_explosions_system(
+fn remove_explosions(
     mut commands: Commands,
     explosions: Query<(Entity, &AnimationController), With<Explosion>>,
 ) {

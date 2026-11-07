@@ -24,8 +24,8 @@ impl Plugin for EmissionsOverlayPlugin {
             .add_systems(OnEnter(EmissionsOverlayState::Show), |visibility: Single<&mut Visibility, With<EmissionsOverlay>>| { *visibility.into_inner() = Visibility::Inherited; })
             .add_systems(OnExit(EmissionsOverlayState::Show), |visibility: Single<&mut Visibility, With<EmissionsOverlay>>| { *visibility.into_inner() = Visibility::Hidden; })
             .add_systems(Update, (
-                EmissionsOverlayConfig::on_config_change_system.run_if(resource_changed::<EmissionsOverlayConfig>),
-                refresh_display_system.run_if(in_state(EmissionsOverlayState::Show)),
+                EmissionsOverlayConfig::apply_config_change.run_if(resource_changed::<EmissionsOverlayConfig>),
+                refresh_display.run_if(in_state(EmissionsOverlayState::Show)),
                 (|mut config: ResMut<EmissionsOverlayConfig>| { config.is_overlay_globally_enabled ^= true; }).run_if(input_just_released(KeyCode::Digit6)),
             ));
     }
@@ -52,7 +52,7 @@ impl Default for EmissionsOverlayConfig {
     }
 }
 impl EmissionsOverlayConfig {
-    fn on_config_change_system(
+    fn apply_config_change(
         overlay_config: Res<EmissionsOverlayConfig>,
         mut overlay_state: ResMut<NextState<EmissionsOverlayState>>,
     ) {
@@ -109,7 +109,7 @@ impl EmissionsOverlay {
     }
 }
 
-fn refresh_display_system(
+fn refresh_display(
     mut materials: ResMut<Assets<EmissionsOverlayMaterial>>,
     emissions_grid: Res<EmissionsGrid>,
     overlay_config: Res<EmissionsOverlayConfig>,

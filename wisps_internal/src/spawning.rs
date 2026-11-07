@@ -93,7 +93,9 @@ pub(crate) fn collect_wisps(
     let rows: Vec<(u32, WispType, GridPosition, f32, Vec2)> = wisps
         .iter()
         .map(|(entity, wisp_type, area, integrity_points, transform, wisp_state)| {
-            // TODO: Once the wisps logic is mature, save the full wisp state properly. Right now we are ignoring some states (for example, attacking) and simply allow wisp to retarget on spawn, and continue from there.
+            // TODO: Once the wisps logic is mature, save the full wisp state properly. Right now we
+            // are ignoring some states (for example, attacking) and simply allow wisp to retarget on
+            // spawn, and continue from there.
             let world_position = if matches!(wisp_state, WispState::Attacking) {
                 area.world_center()
             } else {
@@ -126,7 +128,7 @@ pub(crate) fn collect_wisps(
 pub(crate) fn load_wisps(ctx: &mut LoadContext) -> LoadResult {
     ctx.for_each_entity("SELECT id, wisp_type FROM wisps", |ctx, old_id, entity, row| {
         let wisp_type = row.get_parsed::<WispType>(1)?;
-        let grid_position = ctx.grid_position(old_id)?.volume();
+        let grid_position = ctx.grid_position(old_id)?.volume_position();
         let integrity_points = ctx.integrity_points(old_id)?;
         let world_position = ctx.world_position(old_id)?;
         let builder = BuilderWisp::new(wisp_type, grid_position)
@@ -172,7 +174,7 @@ pub(crate) fn on_wisp_place_request_do_so(
 
     let validity = (almanach.wisps.validate)(MapObject::Wisp(wisp_type), area, &grids);
     if validity == PlacementValidity::Invalid { return; }
-    let placer_position = area.origin.volume();
+    let placer_position = area.origin.volume_position();
     let is_on_ramp = grids.obstacle_grid[placer_position].is_ramp();
     let level = if is_on_ramp { placer_position.level.above().expect("the placer sits below the top volume") } else { placer_position.level };
     let position = placer_position.coords.at(level);
@@ -195,7 +197,7 @@ pub(crate) fn on_wisp_remove_request_do_so(
     for wisp_entity in wisp_entities {
         #[debug_player("Wisp removed at {coords}")]
         if let Ok(area) = wisps.get(wisp_entity) {
-            wisps_grid.wisp_remove(area.origin.volume(), wisp_entity);
+            wisps_grid.wisp_remove(area.origin.volume_position(), wisp_entity);
             commands.entity(wisp_entity).despawn();
         }
     }

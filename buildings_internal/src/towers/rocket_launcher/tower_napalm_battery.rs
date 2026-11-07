@@ -38,7 +38,7 @@ impl Plugin for TowerNapalmBatteryPlugin {
     fn build(&self, app: &mut App) {
         let almanach_info = BuilderTowerNapalmBattery::almanach_info(app.world().resource::<AssetServer>());
         app
-            .add_systems(Update, shooting_system.after(TowerAimingSystems).run_if(in_state(GameState::Running)))
+            .add_systems(Update, shoot_targets.after(TowerAimingSystems).run_if(in_state(GameState::Running)))
             .add_observer(BuilderTowerNapalmBattery::on_builder_add_spawn_tower_napalm_battery)
             .add_observer(on_tower_napalm_battery_place_request_do_so)
             .add_systems(CollectSave, collect_tower_napalm_batteries)
@@ -252,7 +252,7 @@ fn load_tower_napalm_batteries(ctx: &mut LoadContext) -> LoadResult {
     })
 }
 
-fn shooting_system(
+fn shoot_targets(
     mut commands: Commands,
     clock: Res<GameClock>,
     map_info: Res<MapInfo>,

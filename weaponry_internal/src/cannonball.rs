@@ -17,7 +17,7 @@ pub(crate) struct CannonballPlugin;
 impl Plugin for CannonballPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_systems(Update, cannonball_hit_system.after(advance_lobs).run_if(in_state(GameState::Running)))
+            .add_systems(Update, resolve_cannonball_hits.after(advance_lobs).run_if(in_state(GameState::Running)))
             .add_observer(on_builder_add_spawn_cannonball)
             .add_systems(CollectSave, collect_cannonballs)
             .register_loader(MapLoadingStage::SpawnMapElements, "cannonballs", load_cannonballs);
@@ -95,7 +95,7 @@ fn on_builder_add_spawn_cannonball(
         ));
 }
 
-fn cannonball_hit_system(
+fn resolve_cannonball_hits(
     mut commands: Commands,
     mut damage_messages: MessageWriter<DamageMessage>,
     clock: Res<GameClock>,

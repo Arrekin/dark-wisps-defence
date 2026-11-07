@@ -30,7 +30,7 @@ impl Plugin for MiningComplexPlugin {
     fn build(&self, app: &mut App) {
         let almanach_info = BuilderMiningComplex::almanach_info(app.world().resource::<AssetServer>());
         app
-            .add_systems(Update, mine_ore_system.run_if(in_state(GameState::Running)))
+            .add_systems(Update, mine_ore.run_if(in_state(GameState::Running)))
             .add_observer(BuilderMiningComplex::on_builder_add_spawn_mining_complex)
             .add_observer(on_mining_complex_place_request_do_so)
             .add_systems(CollectSave, collect_mining_complexes)
@@ -212,7 +212,7 @@ fn load_mining_complexes(ctx: &mut LoadContext) -> LoadResult {
     })
 }
 
-fn mine_ore_system(
+fn mine_ore(
     mut stock: ResMut<Stock>,
     time: Res<Time>,
     mut mining_complexes: Query<(&mut MiningComplexDeliveryTimer, &DarkOreInRange), (With<MiningComplex>, With<IsOperational>)>,

@@ -1,9 +1,11 @@
-use std::ops::Deref;
+use std::{ops::Deref, slice};
 
 use bevy::prelude::*;
 
-use game_core::prelude::{Bounds, GridCoords, GridVolumePosition};
-use grids::{GridVersion, base::{BaseGrid, GridStack}};
+use game_core::prelude::{Bounds, GridCoords, GridVolumePosition, TargetLevels};
+use grids::{GridVersion, base::{BaseGrid, GridCell, GridStack}};
+
+use crate::obstacles::ObstacleGrid;
 
 /// Tracks wisps by coordinate and volume level. Membership changes advance the grid version.
 #[derive(Resource, Default)]
@@ -32,6 +34,18 @@ impl WispsGrid {
     /// Coordinates must be in bounds.
     pub fn wisps_in_cell(&self, coords: GridCoords) -> impl Iterator<Item = Entity> {
         self.cell(coords).iter().flatten().copied()
+    }
+
+    /// Iterates wisps at `coords` on the levels `levels` allows.
+    ///
+    /// Coordinates must be in bounds.
+    pub fn targetable_wisps(&self, obstacle_grid: &ObstacleGrid, levels: TargetLevels, coords: GridCoords) -> impl Iterator<Item = Entity> {
+        let stack = self.cell(coords);
+        let allowed = match levels {
+            TargetLevels::Tops => slice::from_ref(stack.at(obstacle_grid.cell(coords).top_level())),
+            TargetLevels::EveryLevel => stack.as_slice(),
+        };
+        allowed.iter().flatten().copied()
     }
 
     pub fn wisp_add(&mut self, position: GridVolumePosition, wisp: Entity) {

@@ -27,7 +27,7 @@ pub(crate) struct NapalmBombPlugin;
 impl Plugin for NapalmBombPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_systems(Update, napalm_bomb_hit_system.after(advance_lobs).run_if(in_state(GameState::Running)))
+            .add_systems(Update, resolve_napalm_bomb_hits.after(advance_lobs).run_if(in_state(GameState::Running)))
             .add_observer(on_builder_add_spawn_napalm_bomb)
             .add_systems(CollectSave, collect_napalm_bombs)
             .register_loader(MapLoadingStage::SpawnMapElements, "napalm_bombs", load_napalm_bombs);
@@ -97,7 +97,7 @@ fn on_builder_add_spawn_napalm_bomb(
         ));
 }
 
-fn napalm_bomb_hit_system(
+fn resolve_napalm_bomb_hits(
     mut commands: Commands,
     mut damage_messages: MessageWriter<DamageMessage>,
     clock: Res<GameClock>,

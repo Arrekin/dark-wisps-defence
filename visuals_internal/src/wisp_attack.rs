@@ -10,7 +10,7 @@ impl Plugin for WispAttackEffectPlugin {
     fn build(&self, app: &mut App) {
         app
             .init_resource::<WispAttackEffectAtlas>()
-            .add_systems(Update, remove_wisp_attack_effects_system)
+            .add_systems(Update, remove_wisp_attack_effects)
             .add_observer(on_builder_add_spawn_wisp_attack_effect);
     }
 }
@@ -77,7 +77,7 @@ fn on_builder_add_spawn_wisp_attack_effect(
         ));
 }
 
-fn remove_wisp_attack_effects_system(
+fn remove_wisp_attack_effects(
     mut commands: Commands,
     effects: Query<(Entity, &AnimationController), With<WispAttackEffect>>,
 ) {

@@ -19,14 +19,13 @@ impl Plugin for CommonSystemsPlugin {
     fn build(&self, app: &mut App) {
         app
             .add_systems(PreUpdate, (
-                tick_shooting_timers_system,
-                damage_control_system,
+                tick_shooting_timers,
+                destroy_dead_buildings,
             ).run_if(in_state(GameState::Running)))
             .add_systems(Update, (
-                targeting_system,
-                rotational_aiming_system,
-            ).chain().in_set(TowerAimingSystems).run_if(in_state(GameState::Running)))
-            .add_systems(Update, rotate_tower_top_system.after(TowerAimingSystems))
+                (find_tower_targets, rotate_towers_to_targets).chain().run_if(in_state(GameState::Running)),
+                rotate_tower_top,
+            ).chain().in_set(TowerAimingSystems))
             .add_observer(on_building_destroy_request_do_so)
             .add_observer(on_insert_building_imprint_on_obstacle_grid)
             .add_observer(on_discard_building_deprint_from_obstacle_grid)
@@ -56,31 +55,33 @@ fn on_remove_is_operational_reset_shooting_timer(
     timer.0.reset();
 }
 
-fn targeting_system(
+fn find_tower_targets(
     obstacle_grid: Res<ObstacleGrid>,
     wisps_grid: Res<WispsGrid>,
-    mut towers: Query<(AttackAreaRange, &mut TowerWispTarget), (With<Tower>, With<IsOperational>)>,
-    wisps: Query<&Transform, With<Wisp>>,
+    mut towers: Query<(AttackAreaRange, &TargetLevels, &mut TowerWispTarget), (With<Tower>, With<IsOperational>)>,
+    wisps: Query<(&Transform, &GridArea), With<Wisp>>,
 ) {
-    for (attack_range, mut target) in towers.iter_mut() {
+    for (attack_range, &levels, mut target) in towers.iter_mut() {
         let range = attack_range.area_range();
-        let in_range = |wisp: Entity| wisps.get(wisp).is_ok_and(|wisp_transform| range.contains(wisp_transform.translation.xy()));
+        let is_eligible = |wisp: Entity| wisps.get(wisp).is_ok_and(|(wisp_transform, wisp_area)| {
+            range.contains(wisp_transform.translation.xy())
+                && (levels == TargetLevels::EveryLevel || obstacle_grid.is_top(wisp_area.origin.volume_position()))
+        });
         match *target {
-            TowerWispTarget::Wisp(wisp) if in_range(wisp) => continue,
+            TowerWispTarget::Wisp(wisp) if is_eligible(wisp) => continue,
             TowerWispTarget::NoValidTargets(grid_version) if grid_version == wisps_grid.version => continue,
             TowerWispTarget::Suspended => continue,
             TowerWispTarget::Wisp(_) | TowerWispTarget::NoValidTargets(_) | TowerWispTarget::SearchForNewTarget => {}
         }
         let mut wisp_on_edge = false;
         let found = match range.range_type {
-            RangeType::Cells => target_find_closest_wisp(&obstacle_grid, &wisps_grid, &range, true).map(|(_, target_wisp)| target_wisp),
+            RangeType::Cells => target_find_closest_wisp(&obstacle_grid, &wisps_grid, &range, levels, true).map(|(_, target_wisp)| target_wisp),
             // Circular attacks use any wisp in range as the firing trigger.
             RangeType::Circle => range.bounding_box().iter_in_bounds(wisps_grid.bounds).find_map(|coords| {
-                let mut cell_wisps = wisps_grid.wisps_in_cell(coords).peekable();
+                let mut cell_wisps = wisps_grid.targetable_wisps(&obstacle_grid, levels, coords).peekable();
                 cell_wisps.peek()?;
-                let found = cell_wisps.find(|&wisp| in_range(wisp));
-                wisp_on_edge = wisp_on_edge || (found.is_none() && range.crosses_edge(coords, 0.));
-                found
+                wisp_on_edge = wisp_on_edge || range.crosses_edge(coords, 0.);
+                cell_wisps.find(|&wisp| is_eligible(wisp))
             }),
         };
         *target = match found {
@@ -92,14 +93,14 @@ fn targeting_system(
     }
 }
 
-fn tick_shooting_timers_system(
+fn tick_shooting_timers(
     time: Res<Time>,
     mut shooting_timers: Query<&mut TowerShootingTimer, With<IsOperational>>,
 ) {
     shooting_timers.iter_mut().for_each(|mut timer| { timer.0.tick(time.delta()); });
 }
 
-fn damage_control_system(
+fn destroy_dead_buildings(
     mut commands: Commands,
     buildings: Query<(Entity, &IntegrityPoints), With<Building>>,
 ) {
@@ -110,7 +111,7 @@ fn damage_control_system(
     }
 }
 
-fn rotate_tower_top_system(
+fn rotate_tower_top(
     towers: Query<(&TowerTopRotation, &TowerTop), (With<Tower>, Changed<TowerTopRotation>)>,
     mut tower_tops: Query<&mut Transform, With<TowerTopOf>>,
 ) {
@@ -120,7 +121,7 @@ fn rotate_tower_top_system(
     }
 }
 
-fn rotational_aiming_system(
+fn rotate_towers_to_targets(
     time: Res<Time>,
     mut towers: Query<(&mut TowerTopRotation, &TurnSpeed, &TowerWispTarget, &Transform), With<IsOperational>>,
     wisps: Query<&Transform, With<Wisp>>,

@@ -227,6 +227,10 @@ impl ObstacleGrid {
     pub fn tops_in(&self, area: GridArea) -> impl Iterator<Item = GridVolumePosition> {
         area.iter_in_bounds(self.bounds).map(|coords| self.top_position(coords))
     }
+    /// True if `position` is the top of its cell.
+    pub fn is_top(&self, position: GridVolumePosition) -> bool {
+        position == self.top_position(position.coords)
+    }
     /// The entity of `structure`, or `None` for `Empty` and `Solid`.
     pub fn structure_entity(&self, structure: GridStructure) -> Option<Entity> {
         Some(match structure {

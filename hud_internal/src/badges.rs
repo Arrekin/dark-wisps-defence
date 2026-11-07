@@ -9,7 +9,7 @@ pub(crate) struct BadgesPlugin;
 impl Plugin for BadgesPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_systems(Startup, initialize_badges_system)
+            .add_systems(Startup, initialize_badges)
             .add_systems(Update, (
                 ResourceBadgeText::sync_text_with_stock.run_if(resource_changed::<Stock>),
                 EssenceBadges::manage_essence_badges_visibility.run_if(on_message::<StockChangedMessage>),
@@ -65,7 +65,7 @@ impl EssenceBadges {
 #[derive(Component)]
 pub(crate) struct EssenceBadge;
 
-fn initialize_badges_system(
+fn initialize_badges(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
 ) {

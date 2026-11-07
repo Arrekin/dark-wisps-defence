@@ -9,10 +9,10 @@ pub(crate) struct DisplayInfoPanelPlugin;
 impl Plugin for DisplayInfoPanelPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_systems(Startup, initialize_display_info_panel_system)
+            .add_systems(Startup, initialize_display_info_panel)
             .add_systems(Update, (
-                hide_system.run_if(in_state(UiInteraction::DisplayInfoPanel)),
-                show_on_click_system.run_if(in_state(UiInteraction::Free).or_else(in_state(UiInteraction::DisplayInfoPanel))),
+                hide_on_right_click.run_if(in_state(UiInteraction::DisplayInfoPanel)),
+                show_on_click.run_if(in_state(UiInteraction::Free).or_else(in_state(UiInteraction::DisplayInfoPanel))),
             ))
             .add_systems(OnEnter(UiInteraction::DisplayInfoPanel), show_display_info_panel)
             .add_systems(OnExit(UiInteraction::DisplayInfoPanel), hide_display_info_panel)
@@ -48,7 +48,7 @@ fn hide_display_info_panel(
     }
 }
 
-fn hide_system(
+fn hide_on_right_click(
     mouse: Res<ButtonInput<MouseButton>>,
     mut ui_interaction_state: ResMut<NextState<UiInteraction>>,
 ) {
@@ -57,7 +57,7 @@ fn hide_system(
     }
 }
 
-fn show_on_click_system(
+fn show_on_click(
     mut commands: Commands,
     mouse: Res<ButtonInput<MouseButton>>,
     mouse_info: Res<MouseInfo>,
@@ -95,7 +95,7 @@ fn on_despawn_focused_map_object_return_to_free_interaction(
     ui_interaction_state.set(UiInteraction::Free);
 }
 
-fn initialize_display_info_panel_system(
+fn initialize_display_info_panel(
     mut commands: Commands,
 ) {
     let info_panel_entity = commands.spawn_empty().id();

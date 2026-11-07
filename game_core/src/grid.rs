@@ -216,7 +216,7 @@ impl GridPosition {
     /// # Panics
     ///
     /// Panics for any level that is not a volume.
-    pub fn volume(self) -> GridVolumePosition {
+    pub fn volume_position(self) -> GridVolumePosition {
         self.coords.at(self.level.volume())
     }
     /// Converts the altitude to a floor level, preserving the coordinates.
@@ -224,7 +224,7 @@ impl GridPosition {
     /// # Panics
     ///
     /// Panics for any level that is not a floor.
-    pub fn floor(self) -> GridFloorPosition {
+    pub fn floor_position(self) -> GridFloorPosition {
         self.coords.at(self.level.floor())
     }
 }
@@ -469,6 +469,16 @@ pub enum RangeType {
     Cells,
     /// Euclidean distance from the area's world centre.
     Circle,
+}
+
+/// The levels of a cell where a tower searches for targets.
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[component(immutable)]
+pub enum TargetLevels {
+    /// The top of the cell.
+    #[default]
+    Tops,
+    EveryLevel,
 }
 
 /// Region between inclusive `min` and `max` distances from `area`, measured using `range_type`.

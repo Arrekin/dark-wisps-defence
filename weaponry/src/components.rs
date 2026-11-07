@@ -5,6 +5,10 @@ use game_core::prelude::MapBound;
 #[require(MapBound)]
 pub struct Projectile;
 
+/// Unit vector along which a projectile flies straight.
+#[derive(Component, Clone, Copy, Default)]
+pub struct ProjectileDirection(pub Vec2);
+
 /// The entity that fired this projectile.
 #[derive(Component)]
 #[relationship(relationship_target = FiredProjectiles)]

@@ -15,7 +15,7 @@
 //! ## Integration with Drones
 //!
 //! QuantumField has an ExpeditionZone component, making it a valid target for expedition drones.
-//! The `process_expeditions_system` consumes accumulated scan progress and applies it to
+//! The `process_expeditions` consumes accumulated scan progress and applies it to
 //! the current layer. This decouples drone mechanics from field-specific progression.
 
 use bevy::{
@@ -43,12 +43,12 @@ pub(crate) struct QuantumFieldPlugin;
 impl Plugin for QuantumFieldPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_systems(PostStartup, initialize_quantum_field_panel_content_system)
+            .add_systems(PostStartup, initialize_quantum_field_panel_content)
             .add_systems(Update, (
-                process_expeditions_system.run_if(in_state(GameState::Running)),
+                process_expeditions.run_if(in_state(GameState::Running)),
                 (
-                    update_quantum_field_info_panel_system,
-                    update_quantum_field_action_button_system,
+                    update_quantum_field_info_panel,
+                    update_quantum_field_action_button,
                 ).run_if(in_state(UiInteraction::DisplayInfoPanel)),
             ))
             .add_observer(BuilderQuantumField::on_builder_add_spawn_quantum_field)
@@ -307,7 +307,7 @@ fn on_quantum_field_remove_request_do_so(
 }
 
 #[log_tags(Tag::MapObjects)]
-fn process_expeditions_system(
+fn process_expeditions(
     mut commands: Commands,
     mut quantum_fields: Query<(Entity, &mut QuantumFieldLayers, &mut ExpeditionZone), (Changed<ExpeditionZone>, Without<QuantumFieldSolved>)>,
 ) {
@@ -573,7 +573,7 @@ impl QuantumFieldActionButton {
                 let Ok(mut quantum_field) = quantum_fields.get_mut(focused_entity) else { return; };
                 if stock.try_remove_all(quantum_field.get_current_layer_costs()) {
                     // TODO: Paying the last layer solves the field but does not insert `QuantumFieldSolved`.
-                    // Only `process_expeditions_system` (on further scan progress) and the load path insert it,
+                    // Only `process_expeditions` (on further scan progress) and the load path insert it,
                     // so the field stays unmarked until a drone scans it again or the map reloads. The solved
                     // transition needs a single owner.
                     let solved_layer = quantum_field.current_layer + 1;
@@ -590,7 +590,7 @@ impl QuantumFieldActionButton {
     }
 }
 
-fn update_quantum_field_info_panel_system(
+fn update_quantum_field_info_panel(
     focused_quantum_field: Single<&QuantumFieldLayers, With<FocusedMapObject>>,
     action_button: Single<&mut QuantumFieldActionButton>,
     healthbar: Single<&mut Healthbar, With<QuantumFieldLayerHealthbar>>,
@@ -653,7 +653,7 @@ fn on_focused_map_object_insert_update_quantum_field_panel(
         });
 }
 
-fn update_quantum_field_action_button_system(
+fn update_quantum_field_action_button(
     action_button: Single<(&QuantumFieldActionButton, &mut Node)>,
     action_button_text: Single<&mut Text, With<QuantumFieldActionButtonText>>,
 ) {
@@ -674,7 +674,7 @@ fn update_quantum_field_action_button_system(
     }
 }
 
-fn initialize_quantum_field_panel_content_system(
+fn initialize_quantum_field_panel_content(
     mut commands: Commands,
     display_info_panel_main_content_root: Single<Entity, With<DisplayPanelMainContentRoot>>,
 ) {

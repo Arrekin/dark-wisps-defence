@@ -92,14 +92,14 @@ impl Plugin for ExpeditionDronePlugin {
             ))
             .add_systems(Update, (
                 (
-                    refueling_system,
-                    travel_system,
-                    fuel_consumption_system,
+                    refuel_drones,
+                    travel_drones,
+                    consume_drone_fuel,
                     (
-                        patrol_system,
+                        patrol_drones,
                         scan_spot_update,
                         scanning_beam_update,
-                        zone_scan_progress_system,
+                        advance_zone_scans,
                     ).chain(),
                 ).run_if(in_state(GameState::Running)),
             ))
@@ -122,7 +122,7 @@ const SCAN_SPOT_SNAP_FACTOR: f32 = 0.75;
 
 /// Refuels drones at home base. Transitions to Deploying when full (auto-redeploy).
 /// The state observer handles the Deploying→Stationed fallback if there is no valid mission.
-fn refueling_system(
+fn refuel_drones(
     mut commands: Commands,
     time: Res<Time>,
     mut drones: Query<(Entity, &DroneState, &mut DroneFuel, &HomeBase), With<ExpeditionDrone>>,
@@ -235,7 +235,7 @@ fn on_recall_drone_do_so(
 
 /// Moves drones toward destination with smooth turning (DRONE_TURN_RATE).
 #[log_tags(Tag::Units)]
-fn travel_system(
+fn travel_drones(
     mut commands: Commands,
     time: Res<Time>,
     mut drones: Query<(Entity, &DroneState, &mut ExpeditionDrone, &mut Transform, Option<&HomeBase>)>,
@@ -289,7 +289,7 @@ fn travel_system(
 }
 
 /// Drains fuel during active mission. Return flight is free to guarantee drones reach home.
-fn fuel_consumption_system(
+fn consume_drone_fuel(
     mut commands: Commands,
     time: Res<Time>,
     mut drones: Query<(Entity, &DroneState, &mut DroneFuel)>,
@@ -306,7 +306,7 @@ fn fuel_consumption_system(
 }
 
 /// Orbital patrol during Scanning: drone circles target, beam activates when target is ahead.
-fn patrol_system(
+fn patrol_drones(
     mut commands: Commands,
     time: Res<Time>,
     targets: Query<&Transform, (With<ExpeditionZone>, Without<ExpeditionDrone>)>,
@@ -359,7 +359,7 @@ fn patrol_system(
 }
 
 /// Transfers scan progress to target's ExpeditionZone while beam is active.
-fn zone_scan_progress_system(
+fn advance_zone_scans(
     time: Res<Time>,
     drones: Query<&ExpeditionDrone>,
     mut zones: Query<&mut ExpeditionZone>,

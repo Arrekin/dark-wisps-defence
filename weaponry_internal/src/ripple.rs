@@ -31,8 +31,8 @@ impl Plugin for RipplePlugin {
             .add_plugins(LanePlugin::<RippleDisplacement>::default())
             // Chained as otherwise ripples may try to apply effects as they are removed, causing relations issues.
             .add_systems(Update, (
-                ripple_propagate_system,
-                ripple_hit_system,
+                propagate_ripples,
+                resolve_ripple_hits,
             ).chain().run_if(in_state(GameState::Running)))
             .add_systems(Update, update_ripple_displacements)
             .add_observer(on_builder_add_spawn_ripple)
@@ -109,7 +109,7 @@ fn on_builder_add_spawn_ripple(
         ));
 }
 
-fn ripple_propagate_system(
+fn propagate_ripples(
     mut commands: Commands,
     time: Res<Time>,
     mut ripples: Query<(Entity, &mut Ripple, &MovementSpeed)>,
@@ -123,7 +123,7 @@ fn ripple_propagate_system(
     }
 }
 
-fn ripple_hit_system(
+fn resolve_ripple_hits(
     mut commands: Commands,
     clock: Res<GameClock>,
     time: Res<Time>,

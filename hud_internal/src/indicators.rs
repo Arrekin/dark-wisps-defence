@@ -11,7 +11,7 @@ pub(crate) struct IndicatorsPlugin;
 impl Plugin for IndicatorsPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_systems(Update, cycle_indicators_system)
+            .add_systems(Update, cycle_indicators)
             .add_observer(on_insert_indicator_type_configure);
     }
 }
@@ -99,7 +99,7 @@ where
 }
 
 /// Cycles through each display's indicators and animates their fade in and out.
-fn cycle_indicators_system(
+fn cycle_indicators(
     time: Res<Time>,
     parents: Query<&Indicators>,
     sprite_handles: Query<&IndicatorSpriteHandle>,

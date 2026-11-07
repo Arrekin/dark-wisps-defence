@@ -33,13 +33,13 @@ impl GeneratedFlameStream {
 #[derive(EntityEvent, Clone, Copy)]
 pub struct FlameStreamBurntOut {
     #[event_target]
-    pub tower: Entity,
+    pub generator: Entity,
 }
 
 // ── System sets ────────────────────────────────────────────────────────────────────────
 
-/// Advances stream fuel and computes `FlameStream::hit`. Update stream geometry before this set
-/// and read hits after it.
+/// Advances stream fuel, computes `FlameStream::hit` and deals its damage. Update stream geometry
+/// before this set and read hits after it.
 #[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
 pub struct FlameStreamSystems;
 

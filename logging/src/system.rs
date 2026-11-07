@@ -41,7 +41,7 @@ impl Plugin for LoggingPlugin {
         LOG_SENDER.set(sender).ok();
         app
             .insert_resource(LogBuffer::new(receiver, MAX_LOG_ENTRIES))
-            .add_systems(PreUpdate, LogBuffer::drain_system);
+            .add_systems(PreUpdate, LogBuffer::drain_logs);
     }
 }
 
@@ -320,7 +320,7 @@ impl LogBuffer {
         self.entries.push_back(entry);
     }
 
-    fn drain_system(mut log_buffer: ResMut<Self>) {
+    fn drain_logs(mut log_buffer: ResMut<Self>) {
         while let Ok(entry) = log_buffer.receiver.try_recv() {
             entry.emit_to_bevy_log();
             log_buffer.push(entry);

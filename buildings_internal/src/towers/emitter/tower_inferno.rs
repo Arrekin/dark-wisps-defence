@@ -35,7 +35,7 @@ impl Plugin for TowerInfernoPlugin {
     fn build(&self, app: &mut App) {
         let almanach_info = BuilderTowerInferno::almanach_info(app.world().resource::<AssetServer>());
         app
-            .add_systems(Update, shooting_system.after(TowerAimingSystems).run_if(in_state(GameState::Running)))
+            .add_systems(Update, shoot_targets.after(TowerAimingSystems).run_if(in_state(GameState::Running)))
             .add_observer(BuilderTowerInferno::on_builder_add_spawn_tower_inferno)
             .add_observer(on_tower_inferno_place_request_do_so)
             .add_systems(CollectSave, collect_tower_infernos)
@@ -200,7 +200,7 @@ fn load_tower_infernos(ctx: &mut LoadContext) -> LoadResult {
     })
 }
 
-fn shooting_system(
+fn shoot_targets(
     mut commands: Commands,
     mut tower_infernos: Query<(&Transform, &MaxAttackRange, &mut TowerShootingTimer, &TowerWispTarget), (With<TowerInferno>, With<IsOperational>)>,
     wisps: Query<(), With<Wisp>>,

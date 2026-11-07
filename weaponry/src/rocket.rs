@@ -15,7 +15,8 @@ pub struct Rocket {
 #[require(ZDepth::ProjectileUnder, DrawLevel::Airborne)]
 pub struct RocketExhaust;
 
-/// Rocket follows Wisp, and if the wisp no longer exists, looks for another target
+/// The wisp a rocket follows. The rocket retargets when the wisp no longer exists or goes below
+/// the top of its cell.
 #[derive(Component)]
 pub struct RocketTarget(pub Option<Entity>);
 

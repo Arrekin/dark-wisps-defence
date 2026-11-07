@@ -38,8 +38,8 @@ impl Plugin for TowersRangeOverlayPlugin {
             .add_systems(OnExit(TowersRangeOverlayState::Show), |visibility: Single<&mut Visibility, With<TowersRangeOverlay>>| { *visibility.into_inner() = Visibility::Hidden; })
             .add_systems(OnExit(UiInteraction::PlaceGridObject), |mut config: ResMut<TowersRangeOverlayConfig>| { config.secondary_mode = TowersRangeOverlaySecondaryMode::None; })
             .add_systems(Update, (
-                TowersRangeOverlayConfig::on_config_change_system.run_if(resource_changed::<TowersRangeOverlayConfig>),
-                refresh_display_system.run_if(in_state(TowersRangeOverlayState::Show)),
+                TowersRangeOverlayConfig::apply_config_change.run_if(resource_changed::<TowersRangeOverlayConfig>),
+                refresh_display.run_if(in_state(TowersRangeOverlayState::Show)),
                 (|mut config: ResMut<TowersRangeOverlayConfig>| { config.is_overlay_globally_enabled ^= true; }).run_if(input_just_released(KeyCode::Digit8)),
             ))
             .add_observer(TowersRangeOverlayConfig::on_insert_focused_map_object_set_highlight)
@@ -65,7 +65,7 @@ pub struct TowersRangeOverlayConfig {
     pub secondary_mode: TowersRangeOverlaySecondaryMode,
 }
 impl TowersRangeOverlayConfig {
-    fn on_config_change_system(
+    fn apply_config_change(
         overlay_config: Res<TowersRangeOverlayConfig>,
         mut overlay_state: ResMut<NextState<TowersRangeOverlayState>>,
     ) {
@@ -215,7 +215,7 @@ impl TowersRangeOverlay {
     }
 }
 
-fn refresh_display_system(
+fn refresh_display(
     mut buffers: ResMut<Assets<ShaderBuffer>>,
     mut materials: ResMut<Assets<TowersRangeMaterial>>,
     tower_range_index: Res<TowerRangeIndex>,

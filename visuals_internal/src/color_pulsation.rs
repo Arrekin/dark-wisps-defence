@@ -2,7 +2,7 @@ use bevy::prelude::*;
 
 use visuals::prelude::ColorPulsation;
 
-pub(crate) fn pulsate_sprites_system(
+pub(crate) fn pulsate_sprites(
     time: Res<Time>,
     mut sprites: Query<(&mut Sprite, &mut ColorPulsation)>,
 ) {
