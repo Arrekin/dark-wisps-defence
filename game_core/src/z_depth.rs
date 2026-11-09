@@ -130,6 +130,7 @@ impl SlotTable {
 /// A dedicated layer keeps those instances together; a shared layer can split them into several draws.
 ///
 /// An insertion observer sets local z, which gives the correct world depth for root entities.
+/// When local z changes, the observer also marks `Mesh2d` changed to refresh the mesh's draw order.
 /// Each frame, `enforce_zdepth_world_z` runs after transform propagation in `PostUpdate` and
 /// sets the z translation of `GlobalTransform` to [`ZDepth::world_z`].
 ///
@@ -144,7 +145,8 @@ pub enum ZDepth {
     MapGround,
     OverlayEmissions,
     DarkOre,
-    Obstacle,
+    /// Wall contact shadows, entrance recesses, and lower ramp halves, drawn below wisps.
+    WallBottom,
     FloorCover,
     FloorDecal,
     FireballScorch,
@@ -158,6 +160,8 @@ pub enum ZDepth {
     WispWater,
     WispLight,
     WispElectric,
+    /// Wall tops and upper ramp halves, drawn above wisps.
+    WallTop,
     GroundEffect,
     FireballGlow,
     FireballBlast,
@@ -186,14 +190,15 @@ impl ZDepth {
             Self::MapGround
             | Self::OverlayEmissions
             | Self::DarkOre => DrawLevels::only(DrawLevel::GroundFloor),
+            Self::WallBottom
+            | Self::WallTop => DrawLevels::only(DrawLevel::Elevation),
             Self::FloorCover
             | Self::FloorDecal
             | Self::FireballScorch
             | Self::FlameScorch => DrawLevels::FLOORS,
             Self::OverlayEnergySupply
             | Self::OverlayTowerRanges => DrawLevels::only(DrawLevel::Elevation),
-            Self::Obstacle
-            | Self::FlameGlow
+            Self::FlameGlow
             | Self::Building
             | Self::BuildingEffect
             | Self::WispFire
@@ -239,7 +244,7 @@ impl ZDepth {
             Self::MapGround
             | Self::OverlayEmissions
             | Self::DarkOre
-            | Self::Obstacle
+            | Self::WallBottom
             | Self::FloorCover
             | Self::FloorDecal
             | Self::FireballScorch
@@ -253,6 +258,7 @@ impl ZDepth {
             | Self::WispWater
             | Self::WispLight
             | Self::WispElectric
+            | Self::WallTop
             | Self::GroundEffect
             | Self::FireballGlow
             | Self::FireballBlast

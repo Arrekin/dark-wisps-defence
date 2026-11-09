@@ -76,14 +76,14 @@ impl ExpeditionDrone {
 }
 
 #[derive(Component)]
-#[require(MapBound, ZDepth::GroundEffect, DrawLevel::Elevation)]
+#[require(MapBound, ZDepth::GroundEffect, DrawLevel::OnElevation)]
 pub struct ScanningBeam {
     pub drone: Entity,
     pub spot: Entity,  // the scan spot entity
 }
 
 #[derive(Component)]
-#[require(MapBound, ZDepth::GroundEffect, DrawLevel::Elevation)]
+#[require(MapBound, ZDepth::GroundEffect, DrawLevel::OnElevation)]
 pub struct ScanSpot {
     pub destination: Vec2, // where moving toward (world coords)
 }

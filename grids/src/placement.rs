@@ -1,16 +1,16 @@
 use bevy::{platform::collections::HashSet, prelude::*};
 
-use game_core::prelude::{EdgeSide, GridArea, GridCoords, GridImprint, MapObject};
+use game_core::prelude::{GridArea, GridCoords, GridImprint, MapObject};
 
-/// Event emitted when the grid placer's state changes (area, style, etc).
-/// Other systems can observe this to react to placer updates.
+/// Requests updated placement validity and cell highlights after the placer's area or object changes.
 #[derive(Event, Clone, Copy, Debug)]
 pub struct GridPlacerChanged;
 
 /// Emitted when placement begins for an object.
 ///
-/// Domain UI observes this event to create controls such as size or style selectors.
-/// Changing the imprint, style, or direction does not start a new session.
+/// Domain observers initialize parameters on the placer's session entity and create controls such
+/// as size or style selectors. These parameters are available when the placer builds the ghost
+/// after this event. Changing a parameter does not start a new session.
 #[derive(Event, Clone, Copy, Debug)]
 pub struct BeginPlacing(pub MapObject);
 
@@ -19,15 +19,16 @@ pub struct BeginPlacing(pub MapObject);
 #[derive(Event, Clone, Copy, Debug)]
 pub struct StopPlacing;
 
-/// Requests a property change within the active placement session.
+/// Overrides a placement setting for the active session, then rebuilds the ghost and revalidates.
 #[derive(Event, Clone, Copy, Debug)]
 pub enum GridPlacerOverridePropertyRequest {
     Imprint(GridImprint),
-    /// Selects a variant from the object's domain; see [`PlacementStyle`].
-    Style(u8),
-    /// Sets or clears the object's direction; see [`PlacementDirection`].
-    Direction(Option<EdgeSide>),
 }
+
+/// Requests a new ghost preview after domain parameters change on the placer's session entity.
+/// Does not refresh placement validity or cell highlights.
+#[derive(Event, Clone, Copy, Debug)]
+pub struct GridPlacerGhostRebuildRequest;
 
 /// Requests placement of the active object at the placer's current position.
 ///
@@ -94,17 +95,6 @@ pub enum PlacementMode {
     /// Emit while mouse button is held (burst mode for walls, etc.)
     OnPress,
 }
-
-/// Variant selected for placement, interpreted by the object's domain.
-/// The placer resets it to 0 when a session begins.
-#[derive(Component, Clone, Copy, Default)]
-pub struct PlacementStyle(pub u8);
-
-/// Optional direction selected for placement, interpreted by the object's domain.
-/// For walls, it selects the ramp's high side; `None` selects a flat wall.
-/// The placer resets it to `None` when a session begins.
-#[derive(Component, Clone, Copy, Default)]
-pub struct PlacementDirection(pub Option<EdgeSide>);
 
 /// Cells reserved for deferred placement, before the obstacle grid reflects the new objects.
 ///

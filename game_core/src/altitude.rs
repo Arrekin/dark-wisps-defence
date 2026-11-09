@@ -93,8 +93,8 @@ impl VolumeLevel {
         }
     }
 
-    /// The floor directly below this volume.
-    pub const fn floor_below(self) -> FloorLevel {
+    /// The floor at the bottom of this volume.
+    pub const fn floor(self) -> FloorLevel {
         match self {
             Self::Underground => FloorLevel::UndergroundFloor,
             Self::Elevation => FloorLevel::GroundFloor,
@@ -122,7 +122,7 @@ impl FloorLevel {
     }
 
     /// The volume directly above this floor.
-    pub const fn volume_above(self) -> VolumeLevel {
+    pub const fn volume(self) -> VolumeLevel {
         match self {
             Self::UndergroundFloor => VolumeLevel::Underground,
             Self::GroundFloor => VolumeLevel::Elevation,

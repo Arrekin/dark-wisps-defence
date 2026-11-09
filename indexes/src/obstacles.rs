@@ -12,9 +12,9 @@ use std::ops::Deref;
 
 use bevy::prelude::*;
 
-use game_core::prelude::{Bounds, BuildingType, EdgeSide, FloorLevel, GridArea, GridCoords, GridVolumePosition, VolumeLevel};
+use game_core::prelude::{Bounds, BuildingType, FloorLevel, GridArea, GridCoords, GridVolumePosition, VolumeLevel};
 use grids::{GridVersion, base::{BaseGrid, GridCell}, slot_index::{Slot, Slots}};
-use map_objects::wall_style::WallStyleKey;
+use map_objects::{prelude::WallShape, wall_style::WallStyleKey};
 
 /// Contents of one cell volume, including empty space and solid earth.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -24,8 +24,7 @@ pub enum GridStructure {
     /// Packed earth, the default at `Underground`.
     Solid,
     DarkOre { slot: Slot<DarkOreData> },
-    /// A wall whose top is flat when `high_side` is `None`, or slopes up toward the given side.
-    Wall { slot: Slot<WallData>, style: WallStyleKey, high_side: Option<EdgeSide> },
+    Wall { slot: Slot<WallData>, style: WallStyleKey, shape: WallShape },
     Building { slot: Slot<BuildingData>, building_type: BuildingType },
 }
 
@@ -56,13 +55,13 @@ impl GridStructure {
     }
 
     pub const fn is_ramp(self) -> bool {
-        self.high_side().is_some()
+        matches!(self, Self::Wall { shape: WallShape::Ramp { .. }, .. })
     }
 
-    /// Returns the ramp's high side, or `None` for flat walls and other structures.
-    pub const fn high_side(self) -> Option<EdgeSide> {
+    /// Returns the shape of a wall, or `None` for other structures.
+    pub const fn wall_shape(self) -> Option<WallShape> {
         match self {
-            Self::Wall { high_side, .. } => high_side,
+            Self::Wall { shape, .. } => Some(shape),
             _ => None,
         }
     }
@@ -244,8 +243,8 @@ impl ObstacleGrid {
     pub fn imprint_dark_ore(&mut self, area: GridArea, entity: Entity) {
         self.imprint(area, entity, DarkOreData, |slot| GridStructure::DarkOre { slot });
     }
-    pub fn imprint_wall(&mut self, area: GridArea, entity: Entity, style: WallStyleKey, high_side: Option<EdgeSide>) {
-        self.imprint(area, entity, WallData, |slot| GridStructure::Wall { slot, style, high_side });
+    pub fn imprint_wall(&mut self, area: GridArea, entity: Entity, style: WallStyleKey, shape: WallShape) {
+        self.imprint(area, entity, WallData, |slot| GridStructure::Wall { slot, style, shape });
     }
     pub fn imprint_building(&mut self, area: GridArea, entity: Entity, building_type: BuildingType) {
         self.imprint(area, entity, BuildingData::default(), |slot| GridStructure::Building { slot, building_type });

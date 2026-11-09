@@ -4,8 +4,6 @@ use bevy::{prelude::*, render::render_resource::{ShaderSize, ShaderType}};
 use bytemuck::{Pod, Zeroable};
 use strum::{AsRefStr, EnumIter};
 
-use grids::placement::PlacementStyle;
-
 /// World-pixel silhouette geometry shared by every cell drawn with a style.
 #[repr(C)]
 #[derive(ShaderType, Pod, Zeroable, Clone, Copy, Debug)]
@@ -70,13 +68,6 @@ impl WallStyleKey {
     /// The style index shaders use: one-based, so 0 can mean open ground.
     pub fn gpu_index(self) -> u32 {
         u32::from(self.0) + 1
-    }
-}
-
-/// Converts the placer's opaque style index to a wall style key.
-impl From<PlacementStyle> for WallStyleKey {
-    fn from(style: PlacementStyle) -> Self {
-        Self(style.0)
     }
 }
 

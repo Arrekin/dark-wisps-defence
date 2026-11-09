@@ -1,10 +1,10 @@
 //! Placement state and callbacks that read spatial indexes.
-//! Shared placement events, modes, and styles live in `grids::placement`.
+//! Shared placement events and modes live in `grids::placement`.
 
 use bevy::{ecs::system::SystemParam, prelude::*};
 
 use game_core::prelude::{AutoGridSnap, DrawLevel, GridArea, GridCoords, GridImprint, MapObject, ZDepth};
-use grids::placement::{CellHighlight, PlacementDirection, PlacementModes, PlacementStyle, PlacementValidity, ReservedCoords};
+use grids::placement::{CellHighlight, PlacementModes, PlacementValidity, ReservedCoords};
 
 use crate::{energy_supply::EnergySupplyGrid, obstacles::{ObstacleCell, ObstacleGrid}, wisps::WispsGrid};
 
@@ -40,7 +40,7 @@ pub struct ActivePlacement {
 }
 
 #[derive(Component, Default)]
-#[require(GridArea, PlacementStyle, PlacementDirection, ZDepth::GridPlacer, DrawLevel::Airborne, AutoGridSnap)]
+#[require(GridArea, ZDepth::GridPlacer, DrawLevel::Airborne, AutoGridSnap)]
 pub struct GridObjectPlacer {
     pub active_placement: Option<ActivePlacement>,
 }
@@ -50,6 +50,11 @@ impl GridObjectPlacer {
         self.active_placement.as_ref().map(|active_placement| active_placement.map_object)
     }
 }
+
+/// Marks the placer child that stores domain parameters, such as a wall's style and shape.
+/// At the start of each session, the placer removes all components except this marker and `ChildOf`.
+#[derive(Component, Default)]
+pub struct GridPlacerSession;
 
 #[derive(Resource, Default)]
 pub struct GridObjectPlacerRequest(Option<MapObject>);

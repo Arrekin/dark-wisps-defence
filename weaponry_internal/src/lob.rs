@@ -174,9 +174,10 @@ impl LobView {
 #[require(ZDepth::Projectile, DrawLevel::Airborne)]
 pub(crate) struct LobBody;
 
-/// The projectile's shadow on the ground. Child of a `Lob` entity.
+/// Projectile shadow attached to a `Lob` entity.
+/// Draws at `OnElevation` above wall tops and the wisps standing on them.
 #[derive(Component)]
-#[require(ZDepth::GroundEffect, DrawLevel::Elevation)]
+#[require(ZDepth::GroundEffect, DrawLevel::OnElevation)]
 pub(crate) struct LobShadow;
 
 /// Soft round texture shared by lob shadows and preview dots.
@@ -284,7 +285,7 @@ fn on_add_lob_preview_spawn_dots(
     commands.entity(trigger.entity).insert(LobPreviewTarget::default()).with_children(|parent| {
         for index in 0..PREVIEW_MAX_DOTS {
             for (kind, color, diameter, z_depth, draw_level) in [
-                (LobPreviewDotKind::Shadow, SHADOW_COLOR, PREVIEW_SHADOW_DOT_DIAMETER, ZDepth::GroundEffect, DrawLevel::Elevation),
+                (LobPreviewDotKind::Shadow, SHADOW_COLOR, PREVIEW_SHADOW_DOT_DIAMETER, ZDepth::GroundEffect, DrawLevel::OnElevation),
                 (LobPreviewDotKind::Body, PREVIEW_BODY_COLOR, PREVIEW_BODY_DOT_DIAMETER, ZDepth::ProjectileUnder, DrawLevel::Airborne),
             ] {
                 parent.spawn((

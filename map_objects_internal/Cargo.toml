@@ -18,6 +18,7 @@ units = { workspace = true }
 resources = { workspace = true }
 states = { workspace = true }
 persistence = { workspace = true }
+strum = { workspace = true }
 
 [lints]
 workspace = true

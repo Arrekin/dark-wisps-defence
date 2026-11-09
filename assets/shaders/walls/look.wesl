@@ -1,4 +1,4 @@
-// Wall style layout and shading shared by the map canvas and UI swatches.
+// Wall style layout and shading shared by the map canvas, placement previews and UI swatches.
 // Callers supply material bindings.
 
 import package::shaders::common::core::{CELL_HALF, CELL_SIZE};
@@ -52,8 +52,67 @@ const TILT_LIGHT: f32 = 0.15;
 // Brightness change at a connected crest, scaled by the slope's orientation toward the sun.
 const CREST_BREAK: f32 = 0.3;
 
+// Entrance notch dimensions in world pixels. The notch is half an ellipse centered on the cell edge.
+const MOUTH_WIDTH: f32 = 20.0;
+const MOUTH_DEPTH: f32 = 5.0;
+// Recess brightness at the entrance and back, relative to the style's darker body colour.
+const RECESS_LIP: f32 = 0.45;
+const RECESS_DEEP: f32 = 0.05;
+// Exponent controlling how quickly the recess darkens toward the back.
+const RECESS_FALLOFF: f32 = 1.0;
+// Sentinel distance for an absent mouth, beyond the visible edge layers.
+const NO_MOUTH_DISTANCE: f32 = 1e6;
+
+// Geometry of an entrance notch sampled at one point.
+struct Mouth {
+    // Signed distance to the nearest mouth rim in world pixels, positive on the wall top.
+    distance: f32,
+    // Depth into the recess, from 0 at the cell edge to 1 at the curved rim.
+    depth: f32,
+    // Rim normal pointing from the wall top into the notch.
+    rim_normal: vec2<f32>,
+}
+
+fn no_mouth() -> Mouth {
+    return Mouth(NO_MOUTH_DISTANCE, 0.0, vec2<f32>(0.0));
+}
+
+fn has_mouth(mouth: Mouth) -> bool {
+    return mouth.distance < NO_MOUTH_DISTANCE;
+}
+
+// Samples an entrance notch on the edge facing `outward`, a cardinal unit vector.
+// `p` is relative to the cell centre, in [-0.5, 0.5] on each axis.
+fn mouth_toward(p: vec2<f32>, outward: vec2<f32>) -> Mouth {
+    let radii = vec2<f32>(MOUTH_WIDTH * 0.5, MOUTH_DEPTH);
+    let along_axis = vec2<f32>(-outward.y, outward.x);
+    // Local coordinates in world pixels: x runs along the edge, y points into the cell.
+    let local = vec2<f32>(dot(p, along_axis), 0.5 - dot(p, outward)) * CELL_SIZE;
+
+    // Approximate signed distance to the ellipse, zero on its rim.
+    let k0 = length(local / radii);
+    let k1 = max(length(local / (radii * radii)), 1e-5);
+    let distance = k0 * (k0 - 1.0) / k1;
+
+    let across = local.x / radii.x;
+    let profile = radii.y * sqrt(max(1.0 - across * across, 1e-4));
+    let gradient = local / (radii * radii);
+    let rim_normal = -normalize(gradient.x * along_axis - gradient.y * outward + vec2<f32>(0.0, 1e-6));
+    return Mouth(distance, saturate(local.y / profile), rim_normal);
+}
+
+fn nearer_mouth(a: Mouth, b: Mouth) -> Mouth {
+    if b.distance < a.distance { return b; }
+    return a;
+}
+
+// Recess colour, darkening with depth into the entrance.
+fn recess_colour(mouth: Mouth, style: WallStyle) -> vec3<f32> {
+    return style.body_low.rgb * mix(RECESS_LIP, RECESS_DEEP, pow(mouth.depth, RECESS_FALLOFF));
+}
+
 // Converts a nonzero ramp code to its uphill grid direction; positive y points up.
-// Mirrors `Wall::ramp_gpu_code` in map_objects/src/lib.rs.
+// Mirrors the ramp codes of `WallShape::gpu_code` in map_objects/src/lib.rs.
 fn ramp_up(ramp: u32) -> vec2<i32> {
     switch ramp {
         case 1u: { return vec2<i32>(1, 0); }
@@ -137,14 +196,28 @@ fn wall_shading(d: f32, lit: f32, plate: f32, texel: f32, tone: f32, edge_step: 
 
 // Shades an isolated flat wall cell, returning color and coverage as alpha, without a contact shadow.
 // `world` is in world pixels from the cell's bottom-left corner; `texel` is world pixels per screen pixel.
-fn single_cell_wall(world: vec2<f32>, texel: f32, style: WallStyle) -> vec4<f32> {
+// Shades the entrance rim as a wall edge and fills the notch with the recess colour.
+fn single_cell_wall(world: vec2<f32>, texel: f32, mouth: Mouth, style: WallStyle) -> vec4<f32> {
     let raw_distance = single_cell_distance(world);
     let d = eroded_distance(raw_distance, world, 1.0, style);
+    var rim_distance = mouth.distance;
+    if has_mouth(mouth) {
+        rim_distance = eroded_distance(rim_distance, world, 1.0, style);
+    }
+    let rim_is_nearer = rim_distance < d;
 
-    let probe = max(LIGHT_PROBE, texel);
-    let lit = -(single_cell_distance(world + MAP_SUN_GROUND_DIRECTION * probe) - raw_distance) / probe;
+    var lit: f32;
+    if rim_is_nearer {
+        lit = dot(mouth.rim_normal, MAP_SUN_GROUND_DIRECTION);
+    } else {
+        let probe = max(LIGHT_PROBE, texel);
+        lit = -(single_cell_distance(world + MAP_SUN_GROUND_DIRECTION * probe) - raw_distance) / probe;
+    }
 
-    let colour = wall_shading(d, lit, plate_noise(world, style), texel, 1.0, 1.0, style);
+    var colour = wall_shading(min(d, rim_distance), lit, plate_noise(world, style), texel, 1.0, 1.0, style);
+    if rim_is_nearer {
+        colour = mix(colour, recess_colour(mouth, style), 1.0 - smoothstep(-texel, texel, rim_distance));
+    }
     return vec4<f32>(colour, smoothstep(-texel, texel, d));
 }
 

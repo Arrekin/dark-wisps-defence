@@ -119,8 +119,22 @@ CREATE TABLE IF NOT EXISTS disabled_by_player (
 CREATE TABLE IF NOT EXISTS walls (
     id INTEGER PRIMARY KEY,
     style TEXT NOT NULL,
-    high_side TEXT,
     FOREIGN KEY(id) REFERENCES entities(id)
+);
+
+-- One row per ramp, recording its uphill side.
+CREATE TABLE IF NOT EXISTS wall_ramps (
+    id INTEGER PRIMARY KEY,
+    high_side TEXT NOT NULL,
+    FOREIGN KEY(id) REFERENCES walls(id)
+);
+
+-- One row per tunnel opening in a flat wall. Solid walls and ramps have no opening rows.
+CREATE TABLE IF NOT EXISTS wall_openings (
+    id INTEGER NOT NULL,
+    side TEXT NOT NULL,
+    PRIMARY KEY (id, side),
+    FOREIGN KEY(id) REFERENCES walls(id)
 );
 
 CREATE TABLE IF NOT EXISTS main_bases (

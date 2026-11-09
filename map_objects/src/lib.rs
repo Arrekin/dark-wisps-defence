@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use game_core::prelude::{AutoGridSnap, EdgeSide, GridArea, MapBound};
+use game_core::prelude::{AutoGridSnap, EdgeSide, EdgeSides, GridArea, MapBound};
 use grids::EmissionsGridSpreadAffector;
 
 pub mod wall_style;
@@ -12,7 +12,7 @@ pub mod prelude {
         HasOreInScannerRange,
         QuantumField,
         QuantumFieldSolved,
-        Wall,
+        Wall, WallShape,
     };
 }
 
@@ -24,22 +24,48 @@ pub struct DarkOre {
 }
 
 /// Drawn by the wall canvas from `GridArea`, so the entity itself carries no transform or render layer.
+/// [`WallShape`] defines its slope and tunnel openings.
 #[derive(Component)]
 #[require(MapBound, EmissionsGridSpreadAffector)]
-pub struct Wall {
-    /// The ramp's high side, or `None` for a flat wall.
-    pub high_side: Option<EdgeSide>,
+pub struct Wall;
+
+/// A wall's surface shape and tunnel openings.
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[component(immutable)]
+pub enum WallShape {
+    /// A flat wall with tunnel openings on the specified sides. An empty set makes it solid.
+    Flat { openings: EdgeSides },
+    /// A solid ramp rising toward `high_side`, with no tunnel openings.
+    Ramp { high_side: EdgeSide },
 }
-impl Wall {
-    /// Encodes the ramp direction for shaders; 0 represents a flat wall.
-    /// Mirrors `ramp_up` in `assets/shaders/walls/look.wesl`.
-    pub const fn ramp_gpu_code(high_side: Option<EdgeSide>) -> u32 {
-        match high_side {
-            None => 0,
-            Some(EdgeSide::Right) => 1,
-            Some(EdgeSide::Left) => 2,
-            Some(EdgeSide::Top) => 3,
-            Some(EdgeSide::Bottom) => 4,
+impl Default for WallShape {
+    fn default() -> Self {
+        Self::Flat { openings: EdgeSides::NONE }
+    }
+}
+impl WallShape {
+    /// Whether the wall has a tunnel opening on `side`.
+    pub const fn is_open_toward(self, side: EdgeSide) -> bool {
+        match self {
+            Self::Flat { openings } => openings.contains(side),
+            Self::Ramp { .. } => false,
+        }
+    }
+
+    /// Encodes the shape for shaders in seven bits.
+    ///
+    /// Bits 0–2 hold the ramp code: 0 for flat, 1–4 for right, left, top, and bottom.
+    /// Bits 3–6 hold the tunnel openings from [`EdgeSides::bits`], or zero for a ramp.
+    /// This layout must match `assets/shaders/walls/styles.wesl` and the `ramp_up` mapping in
+    /// `assets/shaders/walls/look.wesl`.
+    pub const fn gpu_code(self) -> u32 {
+        const OPENINGS_SHIFT: u32 = 3;
+        match self {
+            Self::Flat { openings } => (openings.bits() as u32) << OPENINGS_SHIFT,
+            Self::Ramp { high_side: EdgeSide::Right } => 1,
+            Self::Ramp { high_side: EdgeSide::Left } => 2,
+            Self::Ramp { high_side: EdgeSide::Top } => 3,
+            Self::Ramp { high_side: EdgeSide::Bottom } => 4,
         }
     }
 }

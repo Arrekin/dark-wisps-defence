@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use serde::Serialize;
-use strum::{AsRefStr, EnumIter, EnumString};
+use strum::{AsRefStr, EnumIter, EnumString, IntoEnumIterator};
 
 use crate::{altitude::{AltitudeLevel, FloorLevel, VolumeLevel}, prelude::SSS};
 
@@ -176,6 +176,38 @@ impl EdgeSide {
             Self::Bottom => (0, -1),
             Self::Left => (-1, 0),
         }
+    }
+
+    /// The bit representing this side in [`EdgeSides`].
+    const fn bit(self) -> u8 {
+        1 << self as u8
+    }
+}
+
+/// A set of cardinal sides of a grid cell.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub struct EdgeSides(u8);
+impl EdgeSides {
+    pub const NONE: Self = Self(0);
+
+    pub const fn contains(self, side: EdgeSide) -> bool {
+        self.0 & side.bit() != 0
+    }
+    /// Returns this set with `side` added.
+    pub const fn with(self, side: EdgeSide) -> Self {
+        Self(self.0 | side.bit())
+    }
+    /// Returns this set with `side` added if absent or removed if present.
+    pub const fn toggled(self, side: EdgeSide) -> Self {
+        Self(self.0 ^ side.bit())
+    }
+    /// Iterates over the included sides clockwise from the top.
+    pub fn iter(self) -> impl Iterator<Item = EdgeSide> {
+        EdgeSide::iter().filter(move |side| self.contains(*side))
+    }
+    /// A bitmask with bits 0–3 representing top, right, bottom, and left.
+    pub const fn bits(self) -> u8 {
+        self.0
     }
 }
 

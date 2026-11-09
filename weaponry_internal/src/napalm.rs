@@ -110,7 +110,7 @@ fn burn_wisps_on_napalm(
     let damage = NAPALM_DAMAGE_PER_SECOND * time.delta_secs();
     for area in napalms.iter() {
         let floor = area.origin.floor_position();
-        for &wisp in wisps_grid.wisps_at(floor.coords.at(floor.level.volume_above())) {
+        for &wisp in wisps_grid.wisps_at(floor.coords.at(floor.level.volume())) {
             // A deferred spawn can enter the grid before its components are available to queries.
             if !wisps.contains(wisp) { continue; }
             damage_messages.write(DamageMessage { target: wisp, amount: damage });

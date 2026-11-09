@@ -1,19 +1,19 @@
 use bevy::prelude::*;
 
 use almanach::{Almanach, AlmanachAppExt, WallInfo};
-use game_core::prelude::{EdgeSide, GridArea, GridImprint, GridPosition, MapObject, MapObjectTooltipRequest, SSS, VolumeLevel};
-use grids::placement::{PlacementDirection, PlacementModes, PlacementStyle, PlacementValidity, PlaceRequest, RemoveRequest};
+use game_core::prelude::{EdgeSide, EdgeSides, GridArea, GridImprint, GridPosition, MapObject, MapObjectTooltipRequest, SSS, VolumeLevel};
+use grids::placement::{PlacementModes, PlacementValidity, PlaceRequest, RemoveRequest};
 use hud::prelude::BuilderSideMenuItemTooltip;
 use indexes::{
     floor_cover::FloorCoverGrid,
     obstacles::GridStructure,
-    placement::{annotate_non_empty, GridObjectPlacer, GridsCollectionParam, validator_all_empty},
+    placement::{annotate_non_empty, GridObjectPlacer, GridPlacerSession, GridsCollectionParam, validator_all_empty},
     prelude::ObstacleGrid,
     wisps::WispsGrid,
 };
 use logging::prelude::*;
 use map_objects::{
-    prelude::Wall,
+    prelude::{Wall, WallShape},
     wall_style::{WallStyleKey, WallStyles},
 };
 use persistence::{prelude::*, rusqlite};
@@ -43,9 +43,9 @@ pub(crate) enum WallStyleSource {
     Key(WallStyleKey),
     Name(String),
 }
-impl From<PlacementStyle> for WallStyleSource {
-    fn from(style: PlacementStyle) -> Self {
-        Self::Key(style.into())
+impl From<WallStyleKey> for WallStyleSource {
+    fn from(key: WallStyleKey) -> Self {
+        Self::Key(key)
     }
 }
 impl From<String> for WallStyleSource {
@@ -58,8 +58,7 @@ impl From<String> for WallStyleSource {
 pub(crate) struct BuilderWall {
     pub grid_position: GridPosition,
     pub style: WallStyleSource,
-    /// The ramp's high side, or `None` for a flat wall.
-    pub ramp_high_side: Option<EdgeSide>,
+    pub shape: WallShape,
 }
 impl BuilderWall {
     pub fn almanach_info() -> WallInfo {
@@ -74,11 +73,11 @@ impl BuilderWall {
     }
 
     pub fn new(grid_position: GridPosition, style: impl Into<WallStyleSource>) -> Self {
-        Self { grid_position, style: style.into(), ramp_high_side: None }
+        Self { grid_position, style: style.into(), shape: WallShape::default() }
     }
 
-    pub fn with_ramp_high_side(mut self, ramp_high_side: Option<EdgeSide>) -> Self {
-        self.ramp_high_side = ramp_high_side;
+    pub fn with_shape(mut self, shape: WallShape) -> Self {
+        self.shape = shape;
         self
     }
 
@@ -104,7 +103,8 @@ impl BuilderWall {
             .remove::<BuilderWall>()
             .insert((
                 GridArea::new(builder.grid_position, WALL_GRID_IMPRINT),
-                Wall { high_side: builder.ramp_high_side },
+                Wall,
+                builder.shape,
                 style,
             ));
     }
@@ -112,33 +112,42 @@ impl BuilderWall {
 
 #[log_tags(Tag::GameSave)]
 fn collect_walls(
-    walls: Query<(Entity, &Wall, &GridArea, &WallStyleKey)>,
+    walls: Query<(Entity, &WallShape, &GridArea, &WallStyleKey), With<Wall>>,
     styles: Res<WallStyles>,
     mut save: SaveWriter,
 ) {
     if walls.is_empty() { return; }
 
     #[debug_dev("Saving {} walls", rows.len())]
-    let rows: Vec<(u32, GridPosition, String, Option<EdgeSide>)> = walls
+    let rows: Vec<(u32, GridPosition, String, WallShape)> = walls
         .iter()
-        .map(|(entity, wall, area, key)| {
+        .map(|(entity, shape, area, key)| {
             (
                 entity.index_u32(),
                 area.origin,
                 // Save an empty name for an invalid key; loading uses the default style and logs a warning.
                 styles.name_of(*key).unwrap_or_default().to_string(),
-                wall.high_side,
+                *shape,
             )
         })
         .collect();
     save.submit(move |ctx| {
-        for (id, grid_position, style, high_side) in rows {
+        for (id, grid_position, style, shape) in rows {
             ctx.register_entity(id)?;
-            let high_side: Option<&str> = high_side.as_ref().map(|side| side.as_ref());
-            ctx.tx.execute(
-                "INSERT OR REPLACE INTO walls (id, style, high_side) VALUES (?1, ?2, ?3)",
-                rusqlite::params![id, style, high_side],
-            )?;
+            ctx.tx.prepare_cached("INSERT OR REPLACE INTO walls (id, style) VALUES (?1, ?2)")?
+                .execute(rusqlite::params![id, style])?;
+            match shape {
+                WallShape::Ramp { high_side } => {
+                    ctx.tx.prepare_cached("INSERT INTO wall_ramps (id, high_side) VALUES (?1, ?2)")?
+                        .execute(rusqlite::params![id, high_side.as_ref()])?;
+                }
+                WallShape::Flat { openings } => {
+                    for side in openings.iter() {
+                        ctx.tx.prepare_cached("INSERT INTO wall_openings (id, side) VALUES (?1, ?2)")?
+                            .execute(rusqlite::params![id, side.as_ref()])?;
+                    }
+                }
+            }
             ctx.save_grid_position(id, grid_position)?;
         }
         Ok(())
@@ -146,11 +155,24 @@ fn collect_walls(
 }
 
 fn load_walls(ctx: &mut LoadContext) -> LoadResult {
-    ctx.for_each_entity("SELECT id, style, high_side FROM walls", |ctx, old_id, entity, row| {
+    let query = "SELECT walls.id, walls.style, wall_ramps.high_side FROM walls LEFT JOIN wall_ramps ON wall_ramps.id = walls.id";
+    ctx.for_each_entity(query, |ctx, old_id, entity, row| {
         let style: String = row.get(1)?;
-        let high_side = row.get_parsed_optional::<EdgeSide>(2)?;
+        // Load openings only for flat walls; ramps cannot have tunnels.
+        let shape = match row.get_parsed_optional::<EdgeSide>(2)? {
+            Some(high_side) => WallShape::Ramp { high_side },
+            None => {
+                let mut statement = ctx.conn.prepare_cached("SELECT side FROM wall_openings WHERE id = ?1")?;
+                let mut opening_rows = statement.query([old_id])?;
+                let mut openings = EdgeSides::NONE;
+                while let Some(opening_row) = opening_rows.next()? {
+                    openings = openings.with(opening_row.get_parsed(0)?);
+                }
+                WallShape::Flat { openings }
+            }
+        };
         let grid_position = ctx.grid_position(old_id)?;
-        ctx.insert(entity, BuilderWall::new(grid_position, style).with_ramp_high_side(high_side));
+        ctx.insert(entity, BuilderWall::new(grid_position, style).with_shape(shape));
         Ok(())
     })
 }
@@ -159,12 +181,12 @@ fn load_walls(ctx: &mut LoadContext) -> LoadResult {
 fn on_insert_wall_imprint_on_obstacle_grid(
     trigger: On<Insert<Wall>>,
     mut obstacle_grid: ResMut<ObstacleGrid>,
-    walls: Query<(&Wall, &GridArea, &WallStyleKey)>,
+    walls: Query<(&WallShape, &GridArea, &WallStyleKey), With<Wall>>,
 ) {
     let entity = trigger.entity;
-    #[warn_dev("Wall {entity} has no area or style; not imprinted on the obstacle grid")]
-    let Ok((wall, area, style)) = walls.get(entity) else { return; };
-    obstacle_grid.imprint_wall(*area, entity, *style, wall.high_side);
+    #[warn_dev("Wall {entity} has no shape, area or style; not imprinted on the obstacle grid")]
+    let Ok((shape, area, style)) = walls.get(entity) else { return; };
+    obstacle_grid.imprint_wall(*area, entity, *style, *shape);
 }
 
 fn on_discard_wall_deprint_from_obstacle_grid(
@@ -182,14 +204,16 @@ fn on_wall_place_request_do_so(
     mut commands: Commands,
     almanach: Res<Almanach>,
     mut grids: GridsCollectionParam,
-    placer: Single<(&GridArea, &PlacementStyle, &PlacementDirection), With<GridObjectPlacer>>,
+    placer: Single<&GridArea, With<GridObjectPlacer>>,
+    placer_session: Single<(&WallStyleKey, &WallShape), With<GridPlacerSession>>,
 ) {
     let PlaceRequest(MapObject::Wall) = *trigger else { return };
-    let (area, placement_style, placement_direction) = placer.into_inner();
+    let area = placer.into_inner();
+    let (style, shape) = placer_session.into_inner();
     let validity = (almanach.walls.validate)(MapObject::Wall, *area, &grids);
     if validity == PlacementValidity::Invalid { return; }
     #[debug_player("Wall placed at {}", area.origin)]
-    commands.spawn(BuilderWall::new(area.origin, *placement_style).with_ramp_high_side(placement_direction.0));
+    commands.spawn(BuilderWall::new(area.origin, *style).with_shape(*shape));
     grids.reserved_coords.reserve(*area);
 }
 
@@ -216,7 +240,7 @@ fn on_wall_remove_request_do_so(
         }
 
         // Remove floor covers lying on the wall.
-        for entry in floor_cover_grid.entries_at(coords).iter().filter(|entry| entry.level == top.level.floor_below()) {
+        for entry in floor_cover_grid.entries_at(coords).iter().filter(|entry| entry.level == top.level.floor()) {
             commands.entity(entry.entity).despawn();
         }
     }

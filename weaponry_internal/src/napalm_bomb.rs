@@ -119,7 +119,7 @@ fn resolve_napalm_bomb_hits(
                 damage_messages.write(DamageMessage { target: wisp, amount: NAPALM_BOMB_IMPACT_DAMAGE });
             }
             if !obstacle_grid[top].is_building() {
-                commands.spawn(BuilderNapalm::new(landing_coords.at(top.level.floor_below()).into(), TimeBound::lasting(&clock, NAPALM_BURN_DURATION)));
+                commands.spawn(BuilderNapalm::new(landing_coords.at(top.level.floor()).into(), TimeBound::lasting(&clock, NAPALM_BURN_DURATION)));
             }
         }
         commands.entity(entity).despawn();

@@ -4238,6 +4238,7 @@ dependencies = [
  "persistence",
  "resources",
  "states",
+ "strum",
  "units",
  "visuals",
  "widgets",

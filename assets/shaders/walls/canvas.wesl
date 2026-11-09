@@ -1,6 +1,6 @@
-// Draws walls and ramps in one pass over a quad covering the map. Packed cell data from
-// `shaders::walls::styles` supplies each wall's style and ramp direction. Cells outside the map
-// count as open ground, giving walls at the map boundary visible edges.
+// Renders one of two wall passes on a quad covering the map. Packed cell data from
+// `shaders::walls::styles` supplies each wall's style and shape. Cells outside the map count as
+// open ground, giving walls at the map boundary visible edges.
 //
 // Neighboring cells define a signed distance field for surface edges. Surfaces connect where
 // their heights and styles match; a ramp's low edge can also connect to open ground.
@@ -9,17 +9,25 @@
 //
 // Open ground uses the nearest wall's style for contact shadows. Flat walls estimate edge normals
 // from the distance field; ramps use explicit normals. `shaders::walls::look` shades the surfaces.
+//
+// Tunnel entrances appear as notches ("mouths") in the wall top, with shaded rims and dark recesses.
+// Mouths have a separate distance field, so they do not affect the wall's contact shadows.
+//
+// The bottom pass draws contact shadows, entrance recesses, and surfaces below TOP_PASS_HEIGHT.
+// The top pass draws surfaces at or above that height. Drawing wisps between these passes lets
+// wall tops hide them while entrance recesses remain underneath.
 
 import bevy_sprite_render::mesh2d::vertex_output::VertexOutput;
 import package::shaders::common::core::CELL_SIZE;
-import package::shaders::common::map_info::grid_bounds;
+import package::shaders::common::map_info::{grid_bounds, grid_contains};
 import package::shaders::common::map_light::MAP_SUN_GROUND_DIRECTION;
-import package::shaders::walls::look::{BASE_INSET, CREST_BREAK, LIGHT_PROBE, edge_layers_reach, eroded_distance, plate_noise, ramp_height, ramp_tone, ramp_up, wall_shading};
-import package::shaders::walls::styles::{cell_ramp, cell_style, wall_cell_at, wall_style, wall_style_index_at};
+import package::shaders::walls::look::{BASE_INSET, CREST_BREAK, LIGHT_PROBE, Mouth, edge_layers_reach, eroded_distance, has_mouth, mouth_toward, nearer_mouth, no_mouth, plate_noise, ramp_height, ramp_tone, ramp_up, recess_colour, wall_shading};
+import package::shaders::walls::styles::{cell_ramp, cell_shape, cell_style, opens_toward, shape_openings, wall_cell_at, wall_style, wall_style_index_at};
 
 // Field order and types mirror `WallCanvasSettings` in map_objects_internal/src/wall_canvas.rs.
 struct WallCanvasSettings {
     debug_mode: u32, // `WallCanvasDebug` discriminant.
+    canvas_pass: u32, // PASS_* value.
 }
 
 @group(2) @binding(0) var<uniform> settings: WallCanvasSettings;
@@ -31,6 +39,12 @@ const SHADOW_STRENGTH: f32 = 0.85;
 const SHADOW_OFFSET: f32 = 0.7;
 // Maximum shadow reach, as a multiple of the style's shadow length.
 const SHADOW_REACH: f32 = 1.0 + SHADOW_OFFSET;
+
+// Canvas passes; values mirror `WallCanvasPass::gpu_index` in map_objects_internal/src/wall_canvas.rs.
+const PASS_BOTTOM: u32 = 0u;
+const PASS_TOP: u32 = 1u;
+// Minimum height for the top pass, on a scale from 0 at ground level to 1 at the wall top.
+const TOP_PASS_HEIGHT: f32 = 0.5;
 
 // Diagnostic output modes; values mirror the `WallCanvasDebug` discriminants in map_objects/src/wall_style.rs.
 const DEBUG_OFF: u32 = 0u;
@@ -149,10 +163,10 @@ fn wall_surface(coords: vec2<i32>, cell: u32, p: vec2<f32>) -> WallSurface {
 
     for (var i = 0; i < 4; i++) {
         let offset = cardinals[i];
-        // Identical flat cells connect directly; ramp neighbors also need an edge-height check.
+        // Flat cells of the same style connect directly; ramp neighbors also need an edge-height check.
         let neighbour_cell = wall_cell_at(coords + offset);
-        if neighbour_cell == cell { continue; }
         let neighbour_ramp = cell_ramp(neighbour_cell);
+        if neighbour_ramp == 0u && cell_style(neighbour_cell) == region { continue; }
         if neighbour_ramp != 0u && connects(cell, neighbour_cell, offset) { continue; }
         let neighbour = cell_style(neighbour_cell);
         let edges = select(toward_negative, toward_positive, offset > vec2<i32>(0));
@@ -193,6 +207,33 @@ fn wall_surface(coords: vec2<i32>, cell: u32, p: vec2<f32>) -> WallSurface {
     return best;
 }
 
+// An opening is visible as an entrance when the neighboring cell is inside the map and contains
+// either no wall or a ramp with its low edge facing the opening.
+fn is_entrance(coords: vec2<i32>, side: vec2<i32>) -> bool {
+    let across = coords + side;
+    if !grid_contains(across) { return false; }
+    let across_cell = wall_cell_at(across);
+    if cell_style(across_cell) == 0u { return true; }
+    let ramp = cell_ramp(across_cell);
+    return ramp != 0u && all(ramp_up(ramp) == side);
+}
+
+// Samples the nearest entrance mouth for the flat wall at `coords`.
+// `p` is relative to the cell centre, in [-0.5, 0.5] on each axis.
+fn mouth_at(coords: vec2<i32>, cell: u32, p: vec2<f32>) -> Mouth {
+    var nearest = no_mouth();
+    let openings = shape_openings(cell_shape(cell));
+    if openings == 0u { return nearest; }
+
+    var sides = array<vec2<i32>, 4>(vec2<i32>(0, 1), vec2<i32>(1, 0), vec2<i32>(0, -1), vec2<i32>(-1, 0));
+    for (var i = 0; i < 4; i++) {
+        let side = sides[i];
+        if !opens_toward(openings, side) || !is_entrance(coords, side) { continue; }
+        nearest = nearer_mouth(nearest, mouth_toward(p, vec2<f32>(side)));
+    }
+    return nearest;
+}
+
 fn surface_at(world: vec2<f32>) -> WallSurface {
     let f = world / CELL_SIZE;
     let base = floor(f);
@@ -222,6 +263,18 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
     if style_index == 0u { return vec4<f32>(0.0); }
     let style = wall_style(style_index);
 
+    // Use the local surface height to select the pass. Outside a wall, use the nearest edge's
+    // height so its antialiased border stays in the same pass as the surface.
+    var height = surface.height;
+    if ramp != 0u {
+        height = ramp_height(ramp, p);
+    } else if region != 0u {
+        height = 1.0;
+    }
+    let top_pass = settings.canvas_pass == PASS_TOP;
+    let draws_surface = (height >= TOP_PASS_HEIGHT) == top_pass;
+    if top_pass && !draws_surface { return vec4<f32>(0.0); }
+
     let raw_distance = surface.distance * CELL_SIZE;
 
     // Diagnostics evaluate erosion and lighting even outside the visible edge layers.
@@ -236,6 +289,20 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     var coverage = smoothstep(-texel, texel, d);
+
+    // Sample entrance notches separately from the outer wall edge.
+    var mouth = no_mouth();
+    if region != 0u && ramp == 0u {
+        mouth = mouth_at(coords, cell, p);
+        if has_mouth(mouth) && erosion > 0.0 {
+            mouth.distance = eroded_distance(mouth.distance, world, 1.0, style);
+        }
+    }
+    let rim_is_nearer = mouth.distance < d;
+    var recess = 0.0;
+    if rim_is_nearer {
+        recess = 1.0 - smoothstep(-texel, texel, mouth.distance);
+    }
 
     // Limit transparency to the gap's width within the antialiasing span.
     coverage = 1.0 - (1.0 - coverage) * saturate(surface.gap / (texel * 2.0));
@@ -262,11 +329,19 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
     // reducing the shadow to zero at a ramp's foot.
     var shadow = 0.0;
     let shadow_length = style.surface.shadow_length;
-    if coverage < 1.0 && raw_distance > -shadow_length * SHADOW_REACH {
+    if !top_pass && coverage < 1.0 && raw_distance > -shadow_length * SHADOW_REACH {
         let shadow_offset = MAP_SUN_GROUND_DIRECTION * shadow_length * SHADOW_OFFSET;
         let caster = surface_at(world + shadow_offset);
         let shadow_distance = min(caster.distance * CELL_SIZE, 0.0) - shadow_length * (1.0 - caster.height);
         shadow = pow(saturate(1.0 + shadow_distance / shadow_length), 1.5) * SHADOW_STRENGTH * (1.0 - coverage);
+    }
+
+    // Beneath an upper surface, the bottom pass keeps only the recess and contact shadow.
+    // The top pass cuts out the recess to expose the entrance below.
+    if !draws_surface {
+        coverage *= recess;
+    } else if top_pass {
+        coverage *= 1.0 - recess;
     }
 
     let alpha = coverage + shadow * (1.0 - coverage);
@@ -287,10 +362,16 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
         let probe = max(LIGHT_PROBE, texel);
         lit = -(surface_at(world + MAP_SUN_GROUND_DIRECTION * probe).distance * CELL_SIZE - raw_distance) / probe;
     }
+    if rim_is_nearer {
+        lit = dot(mouth.rim_normal, MAP_SUN_GROUND_DIRECTION);
+    }
     lit *= surface.edge_step;
 
     let plate = plate_noise(world, style);
-    let colour = wall_shading(d, lit, plate, texel, tone, surface.edge_step, style);
+    var colour = wall_shading(min(d, mouth.distance), lit, plate, texel, tone, surface.edge_step, style);
+    if rim_is_nearer && !top_pass {
+        colour = recess_colour(mouth, style);
+    }
 
     if debugging {
         switch settings.debug_mode {

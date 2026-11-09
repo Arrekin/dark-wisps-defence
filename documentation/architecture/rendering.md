@@ -131,7 +131,9 @@ parameters into that instance.
 **Use a map canvas for continuous grid surfaces.** A canvas draws one quad over the map and
 looks up cell data in the shader. This suits walls, ore and grid overlays, where appearance
 depends on neighbouring cells and boundaries. The domain still owns the entities and gameplay
-state; the canvas is their visual representation.
+state; the canvas is their visual representation. To draw other visuals between parts of a surface,
+use a separate quad for each depth. Walls use two passes: contact shadows, tunnel recesses and lower
+ramp halves draw below wisps; wall tops and upper ramp halves draw above them.
 
 **Use a custom material when instances need different rendering configuration.** Different
 textures, shader definitions or blend modes may justify independent materials. A single

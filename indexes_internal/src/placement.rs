@@ -32,7 +32,7 @@ impl Plugin for GridObjectPlacerPlugin {
             .add_systems(OnExit(UiInteraction::PlaceGridObject), hide_placer)
             .add_observer(on_grid_placer_changed_revalidate_placement)
             .add_observer(on_grid_placer_override_property_request_do_so)
-            .add_observer(on_placement_ghost_stale_respawn_ghost);
+            .add_observer(on_grid_placer_ghost_rebuild_request_do_so);
     }
 }
 
@@ -94,6 +94,11 @@ fn build_cell_data(area: GridArea, annotations: &[(GridCoords, CellHighlight)]) 
     UVec4::new(words[0], words[1], words[2], words[3])
 }
 
+/// Marks the placer child used for the object preview.
+/// The object's domain supplies its appearance in response to `ObjectFaceRequest::ghost`.
+#[derive(Component)]
+pub(crate) struct GridPlacerGhost;
+
 // ============================================================================
 // SYSTEMS
 // ============================================================================
@@ -113,48 +118,38 @@ fn follow_mouse(
 fn on_grid_placer_override_property_request_do_so(
     trigger: On<GridPlacerOverridePropertyRequest>,
     mut commands: Commands,
-    placer: Single<(Entity, &GridArea, &mut PlacementStyle, &mut PlacementDirection), With<GridObjectPlacer>>,
+    placer: Single<(Entity, &GridArea), With<GridObjectPlacer>>,
 ) {
-    let (placer_entity, placer_area, mut placement_style, mut placement_direction) = placer.into_inner();
+    let (placer_entity, placer_area) = placer.into_inner();
     match *trigger.event() {
         GridPlacerOverridePropertyRequest::Imprint(imprint) => {
             commands.entity(placer_entity).insert(GridArea::new(placer_area.origin, imprint));
         }
-        GridPlacerOverridePropertyRequest::Style(style) => {
-            placement_style.0 = style;
-        }
-        GridPlacerOverridePropertyRequest::Direction(direction) => {
-            placement_direction.0 = direction;
-        }
     }
 
-    commands.trigger(PlacementGhostStale);
+    commands.trigger(GridPlacerGhostRebuildRequest);
     commands.trigger(GridPlacerChanged);
 }
 
-/// Requests a ghost rebuild after the object, imprint, style, or direction changes.
-#[derive(Event)]
-struct PlacementGhostStale;
-
 /// Replaces the placer's ghost and requests its world-space appearance.
 ///
-/// Copies the current imprint, style, and direction to the new ghost for domain renderers.
-fn on_placement_ghost_stale_respawn_ghost(
-    _trigger: On<PlacementGhostStale>,
+/// Copies the current imprint to the new ghost. Domain renderers read object-specific parameters
+/// from the session entity.
+fn on_grid_placer_ghost_rebuild_request_do_so(
+    _trigger: On<GridPlacerGhostRebuildRequest>,
     mut commands: Commands,
-    placer: Single<(Entity, &GridObjectPlacer, &GridArea, &PlacementStyle, &PlacementDirection)>,
+    placer: Single<(Entity, &GridObjectPlacer, &GridArea)>,
 ) {
-    let (placer_entity, grid_object_placer, placer_area, placement_style, placement_direction) = placer.into_inner();
-    let mut placer_commands = commands.entity(placer_entity);
-    // The ghost must be the placer's only child: rebuilding removes every child.
-    placer_commands.despawn_children();
+    let (placer_entity, grid_object_placer, placer_area) = placer.into_inner();
+    commands.despawn_all::<With<GridPlacerGhost>>();
 
-    let Some(map_object) = grid_object_placer.map_object() else { return; };
-    placer_commands.with_children(|placer| {
-        placer
-            .spawn((ZDepth::GridPlacerGhost, DrawLevel::Airborne, placer_area.imprint, *placement_style, *placement_direction))
-            .trigger(|ghost| ObjectFaceRequest::ghost(ghost, map_object));
-    });
+    if let Some(map_object) = grid_object_placer.map_object() {
+        commands.entity(placer_entity).with_children(|placer| {
+            placer
+                .spawn((GridPlacerGhost, ZDepth::GridPlacerGhost, DrawLevel::Airborne, placer_area.imprint))
+                .trigger(|ghost| ObjectFaceRequest::ghost(ghost, map_object));
+        });
+    }
 }
 
 fn on_grid_placer_changed_revalidate_placement(
@@ -194,6 +189,7 @@ fn spawn_placer(
         Mesh2d(mesh),
         MeshMaterial2d(material),
         Visibility::Hidden,
+        children![GridPlacerSession],
     ));
 }
 
@@ -244,24 +240,25 @@ fn begin_placement(
     almanach: Res<Almanach>,
     mut placer_request: ResMut<GridObjectPlacerRequest>,
     mut ui_interaction_state: ResMut<NextState<UiInteraction>>,
-    placer: Single<(Entity, &mut GridObjectPlacer, &GridArea, &mut PlacementStyle, &mut PlacementDirection)>,
+    placer: Single<(Entity, &mut GridObjectPlacer, &GridArea)>,
+    placer_session: Single<Entity, With<GridPlacerSession>>,
 ) {
     let Some(map_object) = placer_request.take() else { return; };
-    let (placer_entity, mut grid_object_placer, placer_area, mut placement_style, mut placement_direction) = placer.into_inner();
+    let (placer_entity, mut grid_object_placer, placer_area) = placer.into_inner();
 
     if grid_object_placer.active_placement.is_some() {
         commands.trigger(StopPlacing);
     }
+    // Clear session parameters while preserving the marker and the parent relationship.
+    commands.entity(*placer_session).retain::<(GridPlacerSession, ChildOf)>();
 
     let placement_info = almanach.get_placement_info_for(map_object);
     commands.entity(placer_entity).insert(GridArea::new(placer_area.origin, placement_info.imprint));
-    *placement_style = PlacementStyle::default();
-    *placement_direction = PlacementDirection::default();
 
     grid_object_placer.active_placement = Some(ActivePlacement { map_object, placement_info });
 
-    commands.trigger(PlacementGhostStale);
     commands.trigger(BeginPlacing(map_object));
+    commands.trigger(GridPlacerGhostRebuildRequest);
     commands.trigger(GridPlacerChanged);
 
     ui_interaction_state.set_if_different(UiInteraction::PlaceGridObject);

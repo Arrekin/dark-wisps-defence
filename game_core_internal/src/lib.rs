@@ -19,7 +19,7 @@ impl Plugin for GameCorePlugin {
                 update_power_state.after(EnergySupplySystems),
                 upload_gpu_map_info.run_if(resource_changed::<MapInfo>),
             ))
-            .add_observer(on_insert_zdepth_or_draw_level_set_local_z)
+            .add_observer(on_insert_zdepth_or_draw_level_apply_depth)
             .add_observer(on_insert_grid_area_snap_transform)
             // Technical-state global observers: fold primitive component
             // events into one shared `TechnicalStateChanged` event. They fire
@@ -66,13 +66,20 @@ fn on_moment_happened_propagate_to_watchers(
     }
 }
 
-fn on_insert_zdepth_or_draw_level_set_local_z(
+/// Applies the assigned depth to local z and refreshes mesh draw order when z changes.
+fn on_insert_zdepth_or_draw_level_apply_depth(
     trigger: On<Insert<(ZDepth, DrawLevel)>>,
-    mut transforms: Query<(&mut Transform, &ZDepth, &DrawLevel)>,
+    mut visuals: Query<(&mut Transform, &ZDepth, &DrawLevel, Option<&mut Mesh2d>)>,
 ) {
     let entity = trigger.entity;
-    let Ok((mut transform, z_depth, draw_level)) = transforms.get_mut(entity) else { return; };
-    transform.translation.z = z_depth.world_z(*draw_level, entity);
+    let Ok((mut transform, z_depth, draw_level, mesh)) = visuals.get_mut(entity) else { return; };
+    let world_z = z_depth.world_z(*draw_level, entity);
+    if transform.translation.z == world_z { return; }
+    transform.translation.z = world_z;
+    if let Some(mut mesh) = mesh {
+        // Mark the mesh changed so Bevy queues it again with the updated depth sort key.
+        mesh.set_changed();
+    }
 }
 
 fn on_insert_grid_area_snap_transform(

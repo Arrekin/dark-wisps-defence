@@ -357,7 +357,7 @@ fn update_impact_fires(
 
         if let Some(BurntTile { position, strength }) = burnt {
             let time_bound = TimeBound::lasting(&clock, SCORCH_DURATION);
-            let floor = position.level.floor_below();
+            let floor = position.level.floor();
             commands.spawn((
                 FlameScorch {
                     start_time: GameClock::wrap(time_bound.starts_at),

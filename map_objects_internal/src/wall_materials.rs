@@ -11,9 +11,9 @@ use bevy::{
 };
 
 use game_core::prelude::{FaceSurface, GridImprint, MapObject, ObjectFaceRequest};
-use grids::placement::{PlacementDirection, PlacementStyle};
+use indexes::placement::GridPlacerSession;
 use logging::prelude::*;
-use map_objects::{prelude::Wall, wall_style::{WallStyleKey, WallStyles}};
+use map_objects::{prelude::WallShape, wall_style::{WallStyleKey, WallStyles}};
 use visuals::{specialize_ui_with_shared_gpu, specialize_with_shared_gpu};
 
 pub(crate) struct WallMaterialsPlugin;
@@ -49,9 +49,9 @@ pub(crate) struct WallQuadMaterial {
     style_index: u32,
     #[uniform(0)]
     alpha: f32,
-    /// Ramp direction encoded by [`Wall::ramp_gpu_code`]; 0 selects a flat wall.
+    /// Shape encoded by [`WallShape::gpu_code`].
     #[uniform(0)]
-    ramp: u32,
+    shape: u32,
 }
 impl Material2d for WallQuadMaterial {
     fn fragment_shader() -> ShaderRef {
@@ -67,7 +67,8 @@ impl Material2d for WallQuadMaterial {
 
 /// Attaches a wall face for UI or placement preview use.
 ///
-/// Placed walls are rendered separately by the grid-wide wall canvas.
+/// UI swatches use the target's `WallStyleKey`, falling back to the default style if it is absent.
+/// Placement previews use `WallStyleKey` and `WallShape` from the placer's session entity.
 #[log_tags(Tag::MapObjects)]
 fn on_object_face_request_draw_wall(
     trigger: On<ObjectFaceRequest>,
@@ -76,30 +77,31 @@ fn on_object_face_request_draw_wall(
     mut meshes: ResMut<Assets<Mesh>>,
     mut swatch_materials: ResMut<Assets<WallSwatchMaterial>>,
     mut quad_materials: ResMut<Assets<WallQuadMaterial>>,
+    placer_session: Option<Single<(&WallStyleKey, &WallShape), With<GridPlacerSession>>>,
     grid_imprints: Query<&GridImprint>,
-    placement_styles: Query<&PlacementStyle>,
-    placement_directions: Query<&PlacementDirection>,
+    style_keys: Query<&WallStyleKey>,
 ) {
     let ObjectFaceRequest { entity, object: MapObject::Wall, surface, alpha } = *trigger else { return; };
 
-    // Targets may select a wall style through `PlacementStyle`; otherwise use the default.
-    let key = placement_styles.get(entity).map_or_else(|_| WallStyleKey::default(), |style| (*style).into());
-    #[warn_dev("Wall face requested for {entity} with style {}, which is not in this map's table", key.0)]
-    if !styles.contains(key) { return; }
-    let style_index = key.gpu_index();
-
     match surface {
         FaceSurface::Ui => {
-            commands.entity(entity).insert(MaterialNode(swatch_materials.add(WallSwatchMaterial { style_index })));
+            let key = style_keys.get(entity).copied().unwrap_or_default();
+            #[warn_dev("Wall face requested for {entity} with style {}, which is not in this map's table", key.0)]
+            if !styles.contains(key) { return; }
+            commands.entity(entity).insert(MaterialNode(swatch_materials.add(WallSwatchMaterial { style_index: key.gpu_index() })));
         }
         FaceSurface::World => {
+            #[warn_dev("Wall face requested in the world for {entity} outside a wall placement session")]
+            let Some(placer_session) = placer_session else { return; };
+            let (&key, &shape) = placer_session.into_inner();
+            #[warn_dev("Wall face requested for {entity} with style {}, which is not in this map's table", key.0)]
+            if !styles.contains(key) { return; }
             #[warn_dev("Wall face requested in the world for {entity}, which has no GridImprint or no longer exists")]
             let Ok(grid_imprint) = grid_imprints.get(entity) else { return; };
-            let high_side = placement_directions.get(entity).ok().and_then(|direction| direction.0);
-            let ramp = Wall::ramp_gpu_code(high_side);
+
             commands.entity(entity).insert((
                 Mesh2d(meshes.add(Rectangle::from_size(grid_imprint.world_size()))),
-                MeshMaterial2d(quad_materials.add(WallQuadMaterial { style_index, alpha, ramp })),
+                MeshMaterial2d(quad_materials.add(WallQuadMaterial { style_index: key.gpu_index(), alpha, shape: shape.gpu_code() })),
             ));
         }
     }
