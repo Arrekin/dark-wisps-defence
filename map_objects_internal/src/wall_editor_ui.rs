@@ -6,7 +6,7 @@
 use bevy::{input::common_conditions::input_just_pressed, prelude::*, ui_widgets::Button};
 use strum::IntoEnumIterator;
 
-use game_core::prelude::{CELL_SIZE, EdgeSide, EdgeSides, MapObject, ObjectFaceRequest};
+use game_core::prelude::{CELL_SIZE, EdgeSide, MapObject, ObjectFaceRequest};
 use grids::placement::{BeginPlacing, GridPlacerGhostRebuildRequest, StopPlacing};
 use indexes::placement::GridPlacerSession;
 use map_objects::{prelude::WallShape, wall_style::{WallStyleKey, WallStyles}};
@@ -242,10 +242,7 @@ impl OpeningEdgeButton {
     ) {
         let Ok(&OpeningEdgeButton(side)) = edges.get(trigger.entity) else { return; };
         let (placer_session, shape) = placer_session.into_inner();
-        let openings = match *shape {
-            WallShape::Flat { openings } => openings.toggled(side),
-            WallShape::Ramp { .. } => EdgeSides::NONE.with(side),
-        };
+        let openings = shape.openings().toggled(side);
         commands.entity(placer_session).insert(WallShape::Flat { openings });
         commands.trigger(GridPlacerGhostRebuildRequest);
     }

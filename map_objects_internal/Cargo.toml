@@ -15,6 +15,7 @@ widgets = { workspace = true }
 visuals = { workspace = true }
 hud = { workspace = true }
 units = { workspace = true }
+viewport = { workspace = true }
 resources = { workspace = true }
 states = { workspace = true }
 persistence = { workspace = true }

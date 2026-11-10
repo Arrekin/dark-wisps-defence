@@ -13,21 +13,25 @@
 // Tunnel entrances appear as notches ("mouths") in the wall top, with shaded rims and dark recesses.
 // Mouths have a separate distance field, so they do not affect the wall's contact shadows.
 //
-// The bottom pass draws contact shadows, entrance recesses, and surfaces below TOP_PASS_HEIGHT.
-// The top pass draws surfaces at or above that height. Drawing wisps between these passes lets
-// wall tops hide them while entrance recesses remain underneath.
+// The bottom pass draws contact shadows, entrance recesses, tunnel interiors, and surfaces below
+// TOP_PASS_HEIGHT. The top pass draws surfaces at or above that height. Drawing wisps between these
+// passes lets wall tops hide them while entrance recesses remain underneath.
+//
+// A tunnel interior is stone around a passage that runs from the cell centre to each open side.
+// The opaque top hides it; the tunnel reveal makes hollow walls' tops semi-transparent.
 
 import bevy_sprite_render::mesh2d::vertex_output::VertexOutput;
 import package::shaders::common::core::CELL_SIZE;
 import package::shaders::common::map_info::{grid_bounds, grid_contains};
 import package::shaders::common::map_light::MAP_SUN_GROUND_DIRECTION;
-import package::shaders::walls::look::{BASE_INSET, CREST_BREAK, LIGHT_PROBE, Mouth, edge_layers_reach, eroded_distance, has_mouth, mouth_toward, nearer_mouth, no_mouth, plate_noise, ramp_height, ramp_tone, ramp_up, recess_colour, wall_shading};
-import package::shaders::walls::styles::{cell_ramp, cell_shape, cell_style, opens_toward, shape_openings, wall_cell_at, wall_style, wall_style_index_at};
+import package::shaders::walls::look::{BASE_INSET, CREST_BREAK, LIGHT_PROBE, Mouth, edge_layers_reach, eroded_distance, has_mouth, interior_shading, mouth_toward, nearer_mouth, no_mouth, passage_arm_distance, plate_noise, ramp_height, ramp_tone, ramp_up, recess_colour, shadow_falloff, wall_shading};
+import package::shaders::walls::styles::{cell_openings, cell_ramp, cell_style, opens_toward, wall_cell_at, wall_style, wall_style_index_at};
 
 // Field order and types mirror `WallCanvasSettings` in map_objects_internal/src/wall_canvas.rs.
 struct WallCanvasSettings {
     debug_mode: u32, // `WallCanvasDebug` discriminant.
     canvas_pass: u32, // PASS_* value.
+    tunnel_reveal: f32, // From 0 (hollow wall tops opaque) to 1 (fully revealed).
 }
 
 @group(2) @binding(0) var<uniform> settings: WallCanvasSettings;
@@ -45,6 +49,8 @@ const PASS_BOTTOM: u32 = 0u;
 const PASS_TOP: u32 = 1u;
 // Minimum height for the top pass, on a scale from 0 at ground level to 1 at the wall top.
 const TOP_PASS_HEIGHT: f32 = 0.5;
+// Opacity of a hollow wall's top at full reveal.
+const REVEALED_TOP_OPACITY: f32 = 0.3;
 
 // Diagnostic output modes; values mirror the `WallCanvasDebug` discriminants in map_objects/src/wall_style.rs.
 const DEBUG_OFF: u32 = 0u;
@@ -218,18 +224,29 @@ fn is_entrance(coords: vec2<i32>, side: vec2<i32>) -> bool {
     return ramp != 0u && all(ramp_up(ramp) == side);
 }
 
-// Samples the nearest entrance mouth for the flat wall at `coords`.
+// Samples the nearest entrance mouth for the flat wall at `coords` with the opening mask `openings`.
 // `p` is relative to the cell centre, in [-0.5, 0.5] on each axis.
-fn mouth_at(coords: vec2<i32>, cell: u32, p: vec2<f32>) -> Mouth {
+fn mouth_at(coords: vec2<i32>, openings: u32, p: vec2<f32>) -> Mouth {
     var nearest = no_mouth();
-    let openings = shape_openings(cell_shape(cell));
-    if openings == 0u { return nearest; }
-
     var sides = array<vec2<i32>, 4>(vec2<i32>(0, 1), vec2<i32>(1, 0), vec2<i32>(0, -1), vec2<i32>(-1, 0));
     for (var i = 0; i < 4; i++) {
         let side = sides[i];
         if !opens_toward(openings, side) || !is_entrance(coords, side) { continue; }
         nearest = nearer_mouth(nearest, mouth_toward(p, vec2<f32>(side)));
+    }
+    return nearest;
+}
+
+// Signed distance in world pixels to the passage inside a hollow flat wall with the opening mask
+// `openings`, negative inside. One arm runs from the cell centre across each open side.
+// `p` is relative to the cell centre, in [-0.5, 0.5] on each axis.
+fn passage_at(openings: u32, p: vec2<f32>) -> f32 {
+    var nearest = 1e6;
+    var sides = array<vec2<i32>, 4>(vec2<i32>(0, 1), vec2<i32>(1, 0), vec2<i32>(0, -1), vec2<i32>(-1, 0));
+    for (var i = 0; i < 4; i++) {
+        let side = sides[i];
+        if !opens_toward(openings, side) { continue; }
+        nearest = min(nearest, passage_arm_distance(p, vec2<f32>(side)));
     }
     return nearest;
 }
@@ -254,6 +271,8 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
     let cell = wall_cell_at(coords);
     let region = cell_style(cell);
     let ramp = cell_ramp(cell);
+    let openings = cell_openings(cell);
+    let hollow = openings != 0u;
     let p = f - base - vec2<f32>(0.5);
     let surface = wall_surface(coords, cell, p);
 
@@ -292,8 +311,8 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
 
     // Sample entrance notches separately from the outer wall edge.
     var mouth = no_mouth();
-    if region != 0u && ramp == 0u {
-        mouth = mouth_at(coords, cell, p);
+    if hollow {
+        mouth = mouth_at(coords, openings, p);
         if has_mouth(mouth) && erosion > 0.0 {
             mouth.distance = eroded_distance(mouth.distance, world, 1.0, style);
         }
@@ -333,7 +352,18 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
         let shadow_offset = MAP_SUN_GROUND_DIRECTION * shadow_length * SHADOW_OFFSET;
         let caster = surface_at(world + shadow_offset);
         let shadow_distance = min(caster.distance * CELL_SIZE, 0.0) - shadow_length * (1.0 - caster.height);
-        shadow = pow(saturate(1.0 + shadow_distance / shadow_length), 1.5) * SHADOW_STRENGTH * (1.0 - coverage);
+        shadow = shadow_falloff(shadow_distance, shadow_length) * SHADOW_STRENGTH * (1.0 - coverage);
+    }
+
+    // Beneath a hollow wall's top, the bottom pass draws the interior, with the recess over it.
+    if hollow && !top_pass && !debugging {
+        let interior = interior_shading(passage_at(openings, p), plate_noise(world, style), texel, style);
+        let inside = recess + interior.a * (1.0 - recess);
+        let inside_colour = (recess_colour(mouth, style) * recess + interior.rgb * interior.a * (1.0 - recess)) / max(inside, 1e-4);
+        let inside_coverage = inside * coverage;
+        let inside_alpha = inside_coverage + shadow * (1.0 - inside_coverage);
+        if inside_alpha < 0.002 { return vec4<f32>(0.0); }
+        return vec4<f32>(inside_colour * inside_coverage / inside_alpha, inside_alpha);
     }
 
     // Beneath an upper surface, the bottom pass keeps only the recess and contact shadow.
@@ -383,7 +413,10 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
         }
     }
 
+    // A revealed hollow wall's top lets the interior beneath show through.
+    let opacity = select(1.0, mix(1.0, REVEALED_TOP_OPACITY, settings.tunnel_reveal), hollow && top_pass);
+
     // The shadow contributes black at `shadow` alpha, the wall contributes `colour` at
     // `coverage`. Both fold into one non-premultiplied result.
-    return vec4<f32>(colour * coverage / alpha, alpha);
+    return vec4<f32>(colour * coverage / alpha, alpha * opacity);
 }

@@ -145,7 +145,7 @@ pub enum ZDepth {
     MapGround,
     OverlayEmissions,
     DarkOre,
-    /// Wall contact shadows, entrance recesses, and lower ramp halves, drawn below wisps.
+    /// Wall contact shadows, entrance recesses, tunnel interiors, and lower ramp halves, drawn below wisps.
     WallBottom,
     FloorCover,
     FloorDecal,

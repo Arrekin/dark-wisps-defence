@@ -63,6 +63,17 @@ const RECESS_FALLOFF: f32 = 1.0;
 // Sentinel distance for an absent mouth, beyond the visible edge layers.
 const NO_MOUTH_DISTANCE: f32 = 1e6;
 
+// Width of the passage inside a hollow wall, in world pixels.
+const PASSAGE_WIDTH: f32 = 21.0;
+// Interior stone brightness, relative to the style's body colours.
+const STONE_TONE: f32 = 0.5;
+// Lit line where the stone meets the passage: width in world pixels and brightness.
+const STONE_EDGE_WIDTH: f32 = 1.5;
+const STONE_EDGE_LIGHT: f32 = 0.5;
+// Shadow the stone casts onto the passage floor: reach in world pixels and peak strength.
+const PASSAGE_SHADOW_REACH: f32 = 4.0;
+const PASSAGE_SHADOW_STRENGTH: f32 = 0.6;
+
 // Geometry of an entrance notch sampled at one point.
 struct Mouth {
     // Signed distance to the nearest mouth rim in world pixels, positive on the wall top.
@@ -111,6 +122,27 @@ fn recess_colour(mouth: Mouth, style: WallStyle) -> vec3<f32> {
     return style.body_low.rgb * mix(RECESS_LIP, RECESS_DEEP, pow(mouth.depth, RECESS_FALLOFF));
 }
 
+// Signed distance in world pixels to the passage arm running from the cell centre across the
+// edge facing `outward`, a cardinal unit vector. Negative inside the passage.
+// `p` is relative to the cell centre, in [-0.5, 0.5] on each axis.
+fn passage_arm_distance(p: vec2<f32>, outward: vec2<f32>) -> f32 {
+    let local = p * CELL_SIZE;
+    let along = clamp(dot(local, outward), 0.0, CELL_SIZE);
+    return length(local - outward * along) - PASSAGE_WIDTH * 0.5;
+}
+
+// Shades a hollow wall's interior, returning colour and coverage as alpha. Stone is opaque;
+// the passage floor is left to the ground beneath, darkened by the stone's shadow.
+// `distance` is the signed distance to the passage in world pixels, positive in stone.
+fn interior_shading(distance: f32, plate: f32, texel: f32, style: WallStyle) -> vec4<f32> {
+    let stone = smoothstep(-texel, texel, distance);
+    let edge = saturate(1.0 - distance / max(STONE_EDGE_WIDTH, texel));
+    let colour = body_colour(plate, style) * (STONE_TONE + STONE_EDGE_LIGHT * edge);
+    let shadow = shadow_falloff(distance, PASSAGE_SHADOW_REACH) * PASSAGE_SHADOW_STRENGTH;
+    let alpha = stone + shadow * (1.0 - stone);
+    return vec4<f32>(colour * stone / max(alpha, 1e-4), alpha);
+}
+
 // Converts a nonzero ramp code to its uphill grid direction; positive y points up.
 // Mirrors the ramp codes of `WallShape::gpu_code` in map_objects/src/lib.rs.
 fn ramp_up(ramp: u32) -> vec2<i32> {
@@ -144,6 +176,16 @@ fn plate_noise(world: vec2<f32>, style: WallStyle) -> f32 {
     return gradient_fbm_2d(world / style.surface.plate_noise_scale, 4);
 }
 
+// The style's body colour, blended by plate noise.
+fn body_colour(plate: f32, style: WallStyle) -> vec3<f32> {
+    return mix(style.body_low.rgb, style.body_high.rgb, saturate(plate));
+}
+
+// Shadow strength from 0 to 1 at signed `distance` from the caster, fading over `reach`.
+fn shadow_falloff(distance: f32, reach: f32) -> f32 {
+    return pow(saturate(1.0 + distance / reach), 1.5);
+}
+
 // Perturbs signed distance with noise scaled by the style's erosion amount and edge-step height.
 fn eroded_distance(raw_distance: f32, world: vec2<f32>, edge_step: f32, style: WallStyle) -> f32 {
     return raw_distance + (gradient_fbm_2d(world / GRAIN_SCALE, 3) - 0.5) * style.geometry.erosion_amount * edge_step;
@@ -173,7 +215,7 @@ fn wall_shading(d: f32, lit: f32, plate: f32, texel: f32, tone: f32, edge_step: 
     let bevel_width = max(style.geometry.bevel_width * edge_step, 0.0001);
     // Fade directional body lighting into the interior without a visible transition line.
     let facet = lit * (1.0 - smoothstep(0.0, bevel_width * 2.0, d));
-    var colour = mix(style.body_low.rgb, style.body_high.rgb, saturate(plate)) * (1.0 + BODY_LIGHT * facet) * tone;
+    var colour = body_colour(plate, style) * (1.0 + BODY_LIGHT * facet) * tone;
 
     // Bevel: the chamfer between the contour and the flat top face.
     let bevel_progress = smoothstep(0.0, bevel_width, d);

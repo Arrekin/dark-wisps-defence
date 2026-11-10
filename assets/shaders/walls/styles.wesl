@@ -72,6 +72,11 @@ fn cell_ramp(cell: u32) -> u32 {
     return shape_ramp(cell_shape(cell));
 }
 
+// Returns the OPENING_* bits of a flat wall, or 0 for open ground and ramps.
+fn cell_openings(cell: u32) -> u32 {
+    return shape_openings(cell_shape(cell));
+}
+
 // Returns the one-based style index at `coords`, or 0 for open ground and coordinates outside the map.
 fn wall_style_index_at(coords: vec2<i32>) -> u32 {
     return cell_style(wall_cell_at(coords));

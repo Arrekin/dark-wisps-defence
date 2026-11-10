@@ -132,8 +132,8 @@ parameters into that instance.
 looks up cell data in the shader. This suits walls, ore and grid overlays, where appearance
 depends on neighbouring cells and boundaries. The domain still owns the entities and gameplay
 state; the canvas is their visual representation. To draw other visuals between parts of a surface,
-use a separate quad for each depth. Walls use two passes: contact shadows, tunnel recesses and lower
-ramp halves draw below wisps; wall tops and upper ramp halves draw above them.
+use a separate quad for each depth. Walls use two passes: contact shadows, tunnel recesses, tunnel
+interiors and lower ramp halves draw below wisps; wall tops and upper ramp halves draw above them.
 
 **Use a custom material when instances need different rendering configuration.** Different
 textures, shader definitions or blend modes may justify independent materials. A single

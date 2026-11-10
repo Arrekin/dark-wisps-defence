@@ -190,6 +190,9 @@ pub struct EdgeSides(u8);
 impl EdgeSides {
     pub const NONE: Self = Self(0);
 
+    pub const fn is_empty(self) -> bool {
+        self.0 == 0
+    }
     pub const fn contains(self, side: EdgeSide) -> bool {
         self.0 & side.bit() != 0
     }

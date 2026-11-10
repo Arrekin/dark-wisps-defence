@@ -44,12 +44,22 @@ impl Default for WallShape {
     }
 }
 impl WallShape {
+    /// The wall's tunnel openings; none for a ramp.
+    pub const fn openings(self) -> EdgeSides {
+        match self {
+            Self::Flat { openings } => openings,
+            Self::Ramp { .. } => EdgeSides::NONE,
+        }
+    }
+
     /// Whether the wall has a tunnel opening on `side`.
     pub const fn is_open_toward(self, side: EdgeSide) -> bool {
-        match self {
-            Self::Flat { openings } => openings.contains(side),
-            Self::Ramp { .. } => false,
-        }
+        self.openings().contains(side)
+    }
+
+    /// Whether the wall has at least one tunnel opening.
+    pub const fn is_hollow(self) -> bool {
+        !self.openings().is_empty()
     }
 
     /// Encodes the shape for shaders in seven bits.

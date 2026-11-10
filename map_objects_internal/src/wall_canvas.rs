@@ -3,6 +3,10 @@
 //!
 //! Shared GPU buffers supply the wall shaders with each cell's style and shape and the map's
 //! wall style table.
+//!
+//! The tunnel reveal makes the tops of all hollow walls semi-transparent, showing the tunnel
+//! interiors beneath, while the cursor is over a hollow wall or walls are being placed. It is
+//! purely visual and fades on real time, so it also works while the game is paused.
 
 use bevy::{
     prelude::*,
@@ -13,9 +17,11 @@ use bevy::{
 };
 use strum::{EnumIter, IntoEnumIterator};
 
-use game_core::{prelude::{DrawLevel, GridArea, MapInfo, ZDepth}, request_flag::RequestFlag};
+use game_core::{prelude::{DrawLevel, GridArea, MapInfo, MapObject, ZDepth}, request_flag::RequestFlag};
+use indexes::{placement::GridObjectPlacer, prelude::ObstacleGrid};
 use map_objects::{prelude::{Wall, WallShape}, wall_style::{WallCanvasDebug, WallStyleKey, WallStyles}};
 use states::prelude::MapLoadingStage;
+use viewport::MouseInfo;
 use visuals::{canvas::MapCanvasBundle, shared_gpu::{SharedGpuBinding, SharedGpuWriter}, specialize_with_shared_gpu};
 
 pub(crate) struct WallCanvasPlugin;
@@ -27,6 +33,7 @@ impl Plugin for WallCanvasPlugin {
             .init_resource::<WallCanvasDebug>()
             .add_systems(OnEnter(MapLoadingStage::Init), |mut commands: Commands| { commands.insert_resource(WallStyles::presets()); })
             .add_systems(OnEnter(MapLoadingStage::LoadResources), WallCanvas::create)
+            .add_systems(Update, fade_tunnel_reveal)
             .add_systems(PostUpdate, (
                 upload_gpu_wall_cells.run_if(RequestFlag::<WallCellsGpuUpload>::is_requested),
                 upload_gpu_wall_styles.run_if(resource_changed::<WallStyles>),
@@ -41,12 +48,18 @@ impl Plugin for WallCanvasPlugin {
 /// Mirrors `SHAPE_SHIFT` in `assets/shaders/walls/styles.wesl`.
 const SHAPE_SHIFT: u32 = 8;
 
+// Tunnel reveal
+/// Seconds the tunnel reveal takes to fade fully in or out.
+const TUNNEL_REVEAL_FADE_SECONDS: f32 = 0.13;
+
 /// Field order and types mirror `WallCanvasSettings` in `assets/shaders/walls/canvas.wesl`.
 #[derive(Clone, Copy, Debug, PartialEq, ShaderType, Default)]
 struct WallCanvasSettings {
     debug_mode: u32,
     /// Pass selected by [`WallCanvasPass::gpu_index`].
     canvas_pass: u32,
+    /// From 0 (hollow wall tops opaque) to 1 (fully revealed).
+    tunnel_reveal: f32,
 }
 
 #[derive(Asset, AsBindGroup, TypePath, Debug, Clone, Default)]
@@ -69,7 +82,7 @@ impl Material2d for WallCanvasMaterial {
 /// Separates wall surfaces into layers below and above wisps.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, EnumIter)]
 enum WallCanvasPass {
-    /// Contact shadows, entrance recesses, and lower ramp halves.
+    /// Contact shadows, entrance recesses, tunnel interiors, and lower ramp halves.
     Bottom,
     /// Flat wall tops and upper ramp halves, starting at half the wall height.
     Top,
@@ -108,7 +121,7 @@ impl WallCanvas {
 
         for pass in WallCanvasPass::iter() {
             let material = materials.add(WallCanvasMaterial {
-                settings: WallCanvasSettings { debug_mode: debug.gpu_index(), canvas_pass: pass.gpu_index() },
+                settings: WallCanvasSettings { debug_mode: debug.gpu_index(), canvas_pass: pass.gpu_index(), tunnel_reveal: 0.0 },
             });
             commands.spawn((
                 MapCanvasBundle::new(material, &map_info),
@@ -160,12 +173,40 @@ fn upload_gpu_wall_styles(
     shared_gpu.write(SharedGpuBinding::WallStyles, styles.entries.iter().map(|entry| entry.style));
 }
 
+/// Moves every wall canvas's reveal amount toward 1 while the cursor is over a hollow wall outside
+/// UI or walls are being placed, and toward 0 otherwise.
+fn fade_tunnel_reveal(
+    mut materials: ResMut<Assets<WallCanvasMaterial>>,
+    mouse_info: Res<MouseInfo>,
+    obstacle_grid: Res<ObstacleGrid>,
+    time: Res<Time<Real>>,
+    placer: Single<&GridObjectPlacer>,
+    wall_canvases: Query<&MeshMaterial2d<WallCanvasMaterial>, With<WallCanvas>>,
+) {
+    let placing_walls = placer.map_object() == Some(MapObject::Wall);
+    let over_hollow_wall = !mouse_info.is_over_ui
+        && obstacle_grid.get(mouse_info.grid_coords)
+            .and_then(|cell| cell.elevation.wall_shape())
+            .is_some_and(WallShape::is_hollow);
+    let target = if placing_walls || over_hollow_wall { 1.0 } else { 0.0 };
+    let step = time.delta_secs() / TUNNEL_REVEAL_FADE_SECONDS;
+
+    for material in wall_canvases.iter() {
+        let Some(mut material) = materials.get_mut(material) else { continue; };
+        let current = material.settings.tunnel_reveal;
+        if current != target {
+            material.settings.tunnel_reveal = current + (target - current).clamp(-step, step);
+        }
+    }
+}
+
 fn apply_wall_canvas_debug(
     mut materials: ResMut<Assets<WallCanvasMaterial>>,
     debug: Res<WallCanvasDebug>,
     wall_canvases: Query<&MeshMaterial2d<WallCanvasMaterial>, With<WallCanvas>>,
 ) {
     for material in wall_canvases.iter() {
-        materials.get_mut(material).unwrap().settings.debug_mode = debug.gpu_index();
+        let Some(mut material) = materials.get_mut(material) else { continue; };
+        material.settings.debug_mode = debug.gpu_index();
     }
 }
