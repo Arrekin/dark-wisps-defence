@@ -3,7 +3,8 @@
 // open ground, giving walls at the map boundary visible edges.
 //
 // Neighboring cells define a signed distance field for surface edges. Surfaces connect where
-// their heights and styles match; a ramp's low edge can also connect to open ground.
+// their heights and styles match. A ramp's low edge lies at ground level and has no boundary of
+// its own; a higher neighbour there draws its own edge.
 // Ramps taper toward their low edge, exposing ground on either side. Heights range from 0
 // at ground level to 1 at a wall top.
 //
@@ -108,7 +109,7 @@ fn connects(cell: u32, neighbour_cell: u32, offset: vec2<i32>) -> bool {
 
 // Builds the surface field within a ramp cell. Beside a flat wall of the same style, the gap
 // and edge details narrow toward the crest. Adjacent ramps of the same style and direction
-// merge into one continuous slope.
+// merge into one continuous slope. The crest has an edge unless it connects; the foot has none.
 fn ramp_surface(coords: vec2<i32>, cell: u32, p: vec2<f32>) -> WallSurface {
     let region = cell_style(cell);
     let ramp = cell_ramp(cell);
@@ -146,9 +147,6 @@ fn ramp_surface(coords: vec2<i32>, cell: u32, p: vec2<f32>) -> WallSurface {
 
     if !connects(cell, wall_cell_at(coords + up_cell), up_cell) {
         best = closer(best, WallSurface(0.5 - along, region, 1.0, 1.0, OPEN_GAP, up));
-    }
-    if !connects(cell, wall_cell_at(coords - up_cell), -up_cell) {
-        best = closer(best, WallSurface(along + 0.5, region, 1.0, 1.0, OPEN_GAP, -up));
     }
     return best;
 }
