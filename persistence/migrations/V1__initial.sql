@@ -551,3 +551,35 @@ CREATE TABLE IF NOT EXISTS unlock_shard_blueprint_outcomes (
     shard_type TEXT NOT NULL,
     FOREIGN KEY(id) REFERENCES entities(id)
 );
+
+-- One row per underground cell excavated into an open pit.
+CREATE TABLE IF NOT EXISTS excavation_pits (
+    x INTEGER NOT NULL,
+    y INTEGER NOT NULL,
+    PRIMARY KEY (x, y)
+);
+
+-- One row per underground cell excavated into a ramp or a tunnel.
+CREATE TABLE IF NOT EXISTS excavation_shapes (
+    x INTEGER NOT NULL,
+    y INTEGER NOT NULL,
+    PRIMARY KEY (x, y)
+);
+
+-- One row per excavated ramp, recording its uphill side.
+CREATE TABLE IF NOT EXISTS excavation_ramps (
+    x INTEGER NOT NULL,
+    y INTEGER NOT NULL,
+    high_side TEXT NOT NULL,
+    PRIMARY KEY (x, y),
+    FOREIGN KEY(x, y) REFERENCES excavation_shapes(x, y)
+);
+
+-- One row per open side of an underground tunnel.
+CREATE TABLE IF NOT EXISTS excavation_openings (
+    x INTEGER NOT NULL,
+    y INTEGER NOT NULL,
+    side TEXT NOT NULL,
+    PRIMARY KEY (x, y, side),
+    FOREIGN KEY(x, y) REFERENCES excavation_shapes(x, y)
+);

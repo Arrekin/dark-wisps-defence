@@ -32,7 +32,8 @@ Older previews:
 
 ## Building Placement (Quick Keys)
 - **W**: Place walls to block wisp paths
-- **R**: While placing walls, cycle between a flat wall and ramps rising toward the top, right, bottom, or left
+- **R**: While placing walls or excavations, cycle ramps through top, right, bottom and left uphill directions, then return to a flat wall or pit
+- **U**: Excavate pits, ramps and tunnels
 - **O**: Place dark ore deposits for mining
 - **Q**: Place quantum fields 
 - **M**: Place mining complex (extracts resources from dark ore)
@@ -52,8 +53,8 @@ Older previews:
 ## Mouse Controls
 - **Left Click**: Place selected building/tower or interact with objects
 - **Right Click**: Context actions (varies by object type)
-- **Left Click + Drag**: Multi-place walls, dark ore, and quantum fields
-- **Right Click + Drag**: Multi-remove walls, dark ore, and quantum fields
+- **Left Click + Drag**: Multi-place walls, excavations, dark ore, and quantum fields
+- **Right Click + Drag**: Multi-remove walls, excavations, dark ore, and quantum fields
 
 ## Persistance
 - **Z**: Save current map as SQL Database

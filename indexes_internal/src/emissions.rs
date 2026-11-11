@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use game_core::{prelude::{GridArea, IsOperational, MapInfo, VolumeLevel}, request_flag::RequestFlag};
 use grids::{EmissionsGridSpreadAffector, GridVersion, base::GridCell};
 use indexes::{
-    emissions::{EmissionsGrid, EmitterChangedMessage, EmitterEnergy},
+    emissions::{EmissionsGrid, EmissionsRecalculation, EmitterChangedMessage, EmitterEnergy},
     obstacles::ObstacleGrid,
     search::flooding::flood_emissions,
 };
@@ -28,9 +28,6 @@ impl Plugin for EmissionsPlugin {
             .add_observer(on_remove_emissions_spread_affector_flag_for_recalculation);
     }
 }
-
-/// Request marker for rebuilding the emissions grid.
-struct EmissionsRecalculation;
 
 fn on_add_emitter_energy_register_emitter(
     trigger: On<Add<EmitterEnergy>>,

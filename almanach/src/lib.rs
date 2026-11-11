@@ -32,6 +32,7 @@ pub struct AlmanachRegistrations {
     pub shards: HashMap<Shard, ShardInfo>,
     pub researches: HashMap<ContentId, ResearchSpawnFn>,
     pub walls: Option<WallInfo>,
+    pub excavations: Option<ExcavationInfo>,
     pub dark_ore: Option<DarkOreInfo>,
     pub quantum_fields: Option<QuantumFieldInfo>,
     pub wisps: Option<WispInfo>,
@@ -44,6 +45,7 @@ pub trait AlmanachAppExt {
     fn register_shard(&mut self, shard: Shard, resource_info: ResourceInfo, shard_info: ShardInfo) -> &mut Self;
     fn register_research(&mut self, content_id: impl Into<ContentId>, spawn_fn: ResearchSpawnFn) -> &mut Self;
     fn register_walls(&mut self, info: WallInfo) -> &mut Self;
+    fn register_excavations(&mut self, info: ExcavationInfo) -> &mut Self;
     fn register_dark_ore(&mut self, info: DarkOreInfo) -> &mut Self;
     fn register_quantum_field(&mut self, info: QuantumFieldInfo) -> &mut Self;
     fn register_wisps(&mut self, info: WispInfo) -> &mut Self;
@@ -81,6 +83,12 @@ impl AlmanachAppExt for App {
     fn register_walls(&mut self, info: WallInfo) -> &mut Self {
         self.init_resource::<AlmanachRegistrations>();
         self.world_mut().resource_mut::<AlmanachRegistrations>().walls = Some(info);
+        self
+    }
+
+    fn register_excavations(&mut self, info: ExcavationInfo) -> &mut Self {
+        self.init_resource::<AlmanachRegistrations>();
+        self.world_mut().resource_mut::<AlmanachRegistrations>().excavations = Some(info);
         self
     }
 
@@ -124,6 +132,7 @@ pub struct Almanach {
     shards: HashMap<Shard, ShardInfo>,
     pub researches: HashMap<ContentId, ResearchSpawnFn>,
     pub walls: WallInfo,
+    pub excavations: ExcavationInfo,
     pub dark_ore: DarkOreInfo,
     pub quantum_fields: QuantumFieldInfo,
     pub wisps: WispInfo,
@@ -137,6 +146,7 @@ impl Almanach {
             shards: registrations.shards.clone(),
             researches: registrations.researches.clone(),
             walls: registrations.walls.clone().expect("WallInfo not registered in AlmanachRegistrations"),
+            excavations: registrations.excavations.clone().expect("ExcavationInfo not registered in AlmanachRegistrations"),
             dark_ore: registrations.dark_ore.clone().expect("DarkOreInfo not registered in AlmanachRegistrations"),
             quantum_fields: registrations.quantum_fields.clone().expect("QuantumFieldInfo not registered in AlmanachRegistrations"),
             wisps: registrations.wisps.clone().expect("WispInfo not registered in AlmanachRegistrations"),
@@ -201,6 +211,7 @@ impl Almanach {
         match map_object {
             MapObject::Building(building_type) => self.get_building_info(building_type).into(),
             MapObject::Wall => (&self.walls).into(),
+            MapObject::Excavation => (&self.excavations).into(),
             MapObject::DarkOre => (&self.dark_ore).into(),
             MapObject::QuantumField => (&self.quantum_fields).into(),
             MapObject::Wisp(_) => (&self.wisps).into(),
@@ -268,6 +279,31 @@ pub struct WallInfo {
 
 impl From<&WallInfo> for ObjectPlacementInfo {
     fn from(info: &WallInfo) -> Self {
+        Self {
+            imprint: info.grid_imprint,
+            validate: info.validate,
+            annotate: info.annotate,
+            placement: info.placement,
+        }
+    }
+}
+
+// ============================================================================
+// EXCAVATION INFO
+// ============================================================================
+
+#[derive(Clone)]
+pub struct ExcavationInfo {
+    pub name: String,
+    pub description: String,
+    pub grid_imprint: GridImprint,
+    pub validate: PlacementValidatorFn,
+    pub annotate: PlacementAnnotatorFn,
+    pub placement: PlacementModes,
+}
+
+impl From<&ExcavationInfo> for ObjectPlacementInfo {
+    fn from(info: &ExcavationInfo) -> Self {
         Self {
             imprint: info.grid_imprint,
             validate: info.validate,

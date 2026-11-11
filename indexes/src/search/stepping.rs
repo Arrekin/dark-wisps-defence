@@ -1,17 +1,18 @@
 //! # Grid movement rules
 //!
-//! Pathfinding and emission floods share the same rules for floor support, wall styles, ramps,
-//! and tunnels.
+//! Pathfinding and emission floods use the same floor support, surface style, ramp and tunnel rules.
+//! Reading shapes through [`GridStructure`] applies these rules to both walls at `Elevation` and
+//! excavations at `Underground`.
 //!
 //! Positions on ramps use the volume above the ramp, even at the low end. Positions inside tunnels
-//! use the wall's volume. Movement into or out of a tunnel must cross an open cardinal side;
+//! use the tunnel's volume. Movement into or out of a tunnel must cross an open cardinal side;
 //! diagonal steps cannot enter or leave a tunnel.
 
 use strum::IntoEnumIterator;
 
 use game_core::prelude::{EdgeSide, GridVolumePosition, VolumeLevel};
 use grids::base::GridCell;
-use map_objects::{prelude::WallShape, wall_style::WallStyleKey};
+use map_objects::wall_style::WallStyleKey;
 
 use crate::obstacles::{GridStructure, ObstacleCell, ObstacleGrid};
 
@@ -33,22 +34,22 @@ pub fn walkable_neighbors(obstacle_grid: &ObstacleGrid, position: GridVolumePosi
 /// Returns reachable diagonal neighbors in [`EdgeSide::DIAGONALS`] order.
 ///
 /// Diagonal moves stay on the same level and cannot enter or leave ramps or tunnels. Both cells
-/// beside the diagonal must be empty, with floor support and a compatible wall style.
+/// beside the diagonal must be empty, with floor support and a compatible surface style.
 /// The starting coordinates must be in bounds.
 pub fn walkable_diagonals(obstacle_grid: &ObstacleGrid, position: GridVolumePosition) -> impl Iterator<Item = GridVolumePosition> {
     let level = position.level;
     let from_cell = obstacle_grid.cell(position.coords);
     let from_support_below = structure_under(from_cell, level);
-    let is_inside_wall = from_cell.at(level).wall_shape().is_some();
+    let is_inside_tunnel = blocks_movement(*from_cell.at(level));
     let from_style = from_support_below.style();
-    let diagonals: &[_] = if from_support_below.is_ramp() || is_inside_wall { &[] } else { &EdgeSide::DIAGONALS };
+    let diagonals: &[_] = if from_support_below.is_ramp() || is_inside_tunnel { &[] } else { &EdgeSide::DIAGONALS };
     diagonals.iter().filter_map(move |&(first_side, second_side)| {
         let first_coords = position.coords.neighbor(first_side);
         let second_coords = position.coords.neighbor(second_side);
         let target_coords = first_coords.neighbor(second_side);
         let target_cell = obstacle_grid.get(target_coords)?;
 
-        let is_open = |cell: &ObstacleCell| *cell.at(level) == GridStructure::Empty && is_flat_surface(cell, level, from_style);
+        let is_open = |cell: &ObstacleCell| cell.at(level).is_empty() && is_flat_surface(cell, level, from_style);
         let can_move = is_flat_surface(target_cell, level, from_style) && is_open(obstacle_grid.cell(first_coords)) && is_open(obstacle_grid.cell(second_coords));
         can_move.then(|| target_coords.at(level))
     })
@@ -57,15 +58,15 @@ pub fn walkable_diagonals(obstacle_grid: &ObstacleGrid, position: GridVolumePosi
 /// Returns the landing level for a step across `side`, or `None` if blocked.
 /// `from_occupant` occupies the starting volume; `from_support_below` lies directly beneath it.
 fn level_after_step(from_level: VolumeLevel, from_occupant: GridStructure, from_support_below: GridStructure, side: EdgeSide, target_cell: &ObstacleCell) -> Option<VolumeLevel> {
-    // Leaving a wall requires an opening on the exit side.
-    if from_occupant.wall_shape().is_some_and(|shape| !shape.is_open_toward(side)) {
+    // Leaving a tunnel requires an opening on the exit side.
+    if blocks_movement(from_occupant) && !from_occupant.openings().contains(side) {
         return None;
     }
 
     let mut landing = from_level;
 
     // A ramp exit descends at the low edge and stays level at the high edge.
-    if let Some(WallShape::Ramp { high_side }) = from_support_below.wall_shape() {
+    if let Some(high_side) = from_support_below.ramp_high_side() {
         if side == high_side.opposite() {
             landing = landing.below()?;
         } else if side != high_side {
@@ -74,13 +75,13 @@ fn level_after_step(from_level: VolumeLevel, from_occupant: GridStructure, from_
     }
 
     // Enter a ramp in the landing volume through its low edge, then use the volume above it.
-    if let Some(WallShape::Ramp { high_side }) = target_cell.at(landing).wall_shape() {
+    if let Some(high_side) = target_cell.at(landing).ramp_high_side() {
         if side != high_side {
             return None;
         }
         landing = landing.above()?;
     // A ramp below the landing volume can only be entered through its high edge.
-    } else if let Some(WallShape::Ramp { high_side }) = structure_under(target_cell, landing).wall_shape() && side != high_side.opposite() {
+    } else if let Some(high_side) = structure_under(target_cell, landing).ramp_high_side() && side != high_side.opposite() {
         return None;
     }
 
@@ -89,12 +90,9 @@ fn level_after_step(from_level: VolumeLevel, from_occupant: GridStructure, from_
 }
 
 /// Checks whether a step in direction `side` can enter the target volume.
-/// Entering a wall requires an opening on the side facing the starting cell.
+/// Entering a blocking volume requires an opening on the side facing the starting cell.
 fn can_enter_across(structure: GridStructure, side: EdgeSide) -> bool {
-    match structure.wall_shape() {
-        Some(shape) => shape.is_open_toward(side.opposite()),
-        None => !blocks_movement(structure),
-    }
+    !blocks_movement(structure) || structure.openings().contains(side.opposite())
 }
 
 /// Checks for a passable volume with floor support, no ramp, and a compatible surface style.
@@ -107,11 +105,11 @@ fn has_joining_floor(cell: &ObstacleCell, level: VolumeLevel, from_style: Option
     cell.has_floor(level.floor()) && styles_join(from_style, structure_under(cell, level).style())
 }
 
-/// Solid earth, ore, and walls block entry into their volume.
-/// Buildings allow entry so a path can reach an attack target.
+/// Identifies occupied volumes that need an opening check before entry or exit.
+/// Buildings remain passable so paths can reach attack targets.
 fn blocks_movement(structure: GridStructure) -> bool {
     match structure {
-        GridStructure::Solid | GridStructure::DarkOre { .. } | GridStructure::Wall { .. } => true,
+        GridStructure::Solid | GridStructure::DarkOre { .. } | GridStructure::Wall { .. } | GridStructure::Excavation { .. } => true,
         GridStructure::Empty | GridStructure::Building { .. } => false,
     }
 }

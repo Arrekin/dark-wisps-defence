@@ -17,7 +17,7 @@ use buildings::prelude::*;
 use game_core::prelude::*;
 use grids::placement::{PlacementModes, PlaceRequest};
 use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
-use indexes::placement::annotate_non_empty;
+use indexes::placement::annotate_not_placeable_ground;
 use logging::prelude::*;
 use persistence::prelude::*;
 use resources::prelude::*;
@@ -75,7 +75,7 @@ impl BuilderTowerInferno {
                 ("attack_range".into(), ShardSocket::new(ShardType::Reach, "Attack range", ModifierType::MaxAttackRange, [1., 2., 3.])),
             ],
             validate: building_validator,
-            annotate: annotate_non_empty,
+            annotate: annotate_not_placeable_ground,
             placement: PlacementModes::default(),
         }
     }

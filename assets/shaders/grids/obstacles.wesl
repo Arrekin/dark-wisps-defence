@@ -10,6 +10,7 @@ import package::shaders::common::map_info::{grid_contains, grid_index};
 //   bits 8-11   on-elevation structure kind
 //   bit 12      quantum field present
 //   bits 16-23  building type (BUILDING_* or TOWER_*) at Elevation, or 0 if absent
+//   bits 24-30  underground excavation shape (`VolumeShape::gpu_code`), or 0 if absent
 @group(3) @binding(103) var<storage, read> obstacle_cells: array<u32>;
 
 // Bit offsets of each volume's structure code in the packed cell.
@@ -23,12 +24,15 @@ const STRUCTURE_SOLID: u32 = 1u;
 const STRUCTURE_DARK_ORE: u32 = 2u;
 const STRUCTURE_WALL: u32 = 3u;
 const STRUCTURE_BUILDING: u32 = 4u;
+const STRUCTURE_EXCAVATION: u32 = 5u;
 // Structure code returned for queries outside the map; never stored in the buffer.
 const STRUCTURE_OFF_MAP: u32 = 15u;
 
 const STRUCTURE_MASK: u32 = 15u;
 const QUANTUM_FIELD_BIT: u32 = 4096u;
 const BUILDING_TYPE_SHIFT: u32 = 16u;
+const UNDERGROUND_SHAPE_SHIFT: u32 = 24u;
+const UNDERGROUND_SHAPE_MASK: u32 = 127u;
 // Packed sentinel with STRUCTURE_OFF_MAP in all three volumes.
 const OFF_MAP_CELL: u32 = 0x0FFFu;
 
@@ -66,6 +70,12 @@ fn structure_at(coords: vec2<i32>, volume: u32) -> u32 {
 
 fn building_type_at(coords: vec2<i32>) -> u32 {
     return (obstacle_cell_at(coords) >> BUILDING_TYPE_SHIFT) & 0xFFu;
+}
+
+// Extracts the underground shape bits, encoded by `VolumeShape::gpu_code`.
+// Decode with `shape_ramp` and `shape_openings` from `shaders::walls::styles`.
+fn underground_shape(cell: u32) -> u32 {
+    return (cell >> UNDERGROUND_SHAPE_SHIFT) & UNDERGROUND_SHAPE_MASK;
 }
 
 fn is_tower_at(coords: vec2<i32>) -> bool {

@@ -8,6 +8,11 @@ use grids::{GridVersion, base::{BaseGrid, GridStack}};
 #[derive(Component)]
 pub struct EmitterEnergy(pub FloodEmissionsDetails);
 
+/// Marker for `RequestFlag<EmissionsRecalculation>`, which requests an emissions grid rebuild.
+/// Set the flag after terrain changes, such as excavation, that have no
+/// `EmissionsGridSpreadAffector` to report them.
+pub struct EmissionsRecalculation;
+
 #[derive(Message, Debug)]
 pub struct EmitterChangedMessage {
     pub emitter_entity: Entity,

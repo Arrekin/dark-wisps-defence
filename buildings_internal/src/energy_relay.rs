@@ -15,7 +15,7 @@ use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
 use indexes::{
     emissions::{EmissionsType, EmitterEnergy, FloodEmissionsDetails, FloodEmissionsEvaluator, FloodEmissionsMode},
     energy_supply::SupplierEnergy,
-    placement::annotate_non_empty,
+    placement::annotate_not_placeable_ground,
 };
 use logging::prelude::*;
 use persistence::prelude::*;
@@ -62,7 +62,7 @@ impl BuilderEnergyRelay {
             ]),
             sockets: vec![],
             validate: building_validator,
-            annotate: annotate_non_empty,
+            annotate: annotate_not_placeable_ground,
             placement: PlacementModes::default(),
         }
     }

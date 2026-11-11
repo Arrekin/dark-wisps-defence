@@ -42,6 +42,8 @@ impl SideMenu {
                     --
                     ~{PlacementTile(MapObject::Wall)}
                     --
+                    ~{PlacementTile(MapObject::Excavation)}
+                    --
                     ~{PlacementTile(MapObject::QuantumField)}
                 }, bsn!{ AdminSection })
                 --

@@ -5,7 +5,7 @@ The grid object placer lets players place and remove objects on the map grid. It
 ## How it works
 
 1. **Select:** UI or keyboard input selects a `MapObject`. The placer gets its placement settings from the Almanach and starts a session.
-2. **Preview:** A ghost follows the cursor, and an overlay shows placement validity. Domain controls can change the footprint or object-specific settings, such as wall style and tunnel openings.
+2. **Preview:** A ghost follows the cursor, and an overlay shows placement validity. Domain controls can change the imprint or object-specific settings, such as wall style and tunnel openings.
 3. **Act:** A click sends `PlaceRequest` or `RemoveRequest`. The object's domain decides whether to place or remove it.
 4. **End:** Switching objects or leaving placement ends the session and removes its controls.
 
@@ -36,7 +36,7 @@ pub struct ObjectPlacementInfo {
 
 The placer emits these events on mouse input, according to the object's `PlacementModes`. Domain handlers match the object type, validate the request, and apply it.
 
-For example, the wall placement handler reads `GridArea` from the placer and `WallStyleKey` and `WallShape` from the session entity:
+For example, the wall placement handler reads `GridArea` from the placer and `WallStyleKey` and `VolumeShape` from the session entity:
 
 ```rust
 let PlaceRequest(MapObject::Wall) = *trigger else { return };
@@ -51,7 +51,7 @@ The reservation prevents overlapping placement requests before the deferred spaw
 
 ### `GridPlacerSession`
 
-Marks a child of the placer that stores parameters for the active object's domain. Wall placement, for example, stores `WallStyleKey` and `WallShape` here. Reusing the components carried by placed objects keeps these settings in the domain's API.
+Marks the placer's child entity that holds the active object's settings. Wall placement stores `WallStyleKey` and `VolumeShape` here, using the same API components as placed walls.
 
 The entity persists across sessions. Before each `BeginPlacing`, the placer removes all its components except `GridPlacerSession` and `ChildOf`, clearing the previous settings while preserving the parent relationship.
 
@@ -61,7 +61,7 @@ These events mark the start and end of a placement session. On `BeginPlacing`, i
 
 ```rust
 let BeginPlacing(MapObject::Wall) = *trigger else { return };
-commands.entity(*placer_session).insert((WallStyleKey::default(), WallShape::default()));
+commands.entity(*placer_session).insert((WallStyleKey::default(), VolumeShape::default()));
 commands.spawn(GridPlacerUiForWall);
 ```
 
@@ -71,7 +71,7 @@ On `StopPlacing`, remove the domain's controls. Switching objects or leaving pla
 
 ### `GridPlacerOverridePropertyRequest`
 
-Overrides a placer setting for the active session. The supported override is `Imprint(GridImprint)`, which changes the object's footprint. For example, a quantum field's size selector sends:
+Overrides a placer setting for the active session. The supported override is `Imprint(GridImprint)`, which changes the object's imprint. For example, a quantum field's size selector sends:
 
 ```rust
 commands.trigger(GridPlacerOverridePropertyRequest::Imprint(imprint));
@@ -159,7 +159,7 @@ flowchart LR
 3. Observe `PlaceRequest` and, if supported, `RemoveRequest`; match the variant and validate before acting.
 4. Handle `ObjectFaceRequest` for the ghost and any other supported surfaces.
 5. If the object has configurable settings, initialize them on the session entity and create controls on `BeginPlacing`. Remove the controls on `StopPlacing`.
-6. Have those controls send `GridPlacerOverridePropertyRequest::Imprint` for footprint changes. For domain settings, update the session components and send `GridPlacerGhostRebuildRequest`.
+6. Have those controls send `GridPlacerOverridePropertyRequest::Imprint` for imprint changes. For domain settings, update the session components and send `GridPlacerGhostRebuildRequest`.
 7. Handle `MapObjectTooltipRequest` and add a menu offering if the object belongs in the side menu.
 
 The placement code is split across three modules:

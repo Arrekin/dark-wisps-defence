@@ -19,7 +19,7 @@ use fields::{
 use game_core::prelude::*;
 use grids::placement::{PlacementModes, PlaceRequest};
 use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
-use indexes::placement::annotate_non_empty;
+use indexes::placement::annotate_not_placeable_ground;
 use logging::prelude::*;
 use persistence::prelude::*;
 use resources::prelude::*;
@@ -77,7 +77,7 @@ impl BuilderTowerField {
                 ("slow_strength".into(), ShardSocket::without_contributions(ShardType::Strength, "Slow strength (no effect yet)")),
             ],
             validate: building_validator,
-            annotate: annotate_non_empty,
+            annotate: annotate_not_placeable_ground,
             placement: PlacementModes::default(),
         }
     }

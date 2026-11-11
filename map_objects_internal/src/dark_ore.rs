@@ -6,7 +6,7 @@ use grids::{ObstacleChangeSystems, placement::{PlacementModes, PlacementValidity
 use hud::prelude::BuilderSideMenuItemTooltip;
 use indexes::{
     obstacles::GridStructure,
-    placement::{annotate_non_empty, GridObjectPlacer, GridsCollectionParam, validator_all_empty},
+    placement::{annotate_not_open_ground, GridObjectPlacer, GridsCollectionParam, validator_open_ground},
     prelude::ObstacleGrid,
 };
 use logging::prelude::*;
@@ -48,8 +48,8 @@ impl BuilderDarkOre {
             description: "A deposit of dark ore. A mining complex in range extracts it over time.".to_string(),
             grid_imprint: DARK_ORE_GRID_IMPRINT,
             max_field_saturation: 1000,
-            validate: validator_all_empty,
-            annotate: annotate_non_empty,
+            validate: validator_open_ground,
+            annotate: annotate_not_open_ground,
             placement: PlacementModes::on_press(),
         }
     }

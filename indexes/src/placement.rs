@@ -69,36 +69,87 @@ impl GridObjectPlacerRequest {
     }
 }
 
-/// Accepts an area only if every cell is in bounds, unreserved, and empty in the obstacle grid.
-pub fn validator_all_empty(
+/// Accepts an area when every cell is in bounds, unreserved, and satisfies [`ObstacleCell::is_open_ground`].
+pub fn validator_open_ground(
     _: MapObject,
     area: GridArea,
     grids: &GridsCollectionParam,
 ) -> PlacementValidity {
+    validate_every_cell(area, grids, ObstacleCell::is_open_ground)
+}
+
+/// Accepts an area when every cell is in bounds, unreserved, and satisfies [`ObstacleCell::is_placeable_ground`].
+pub fn validator_placeable_ground(
+    _: MapObject,
+    area: GridArea,
+    grids: &GridsCollectionParam,
+) -> PlacementValidity {
+    validate_every_cell(area, grids, ObstacleCell::is_placeable_ground)
+}
+
+/// Accepts an area when every cell is in bounds, unreserved, and satisfies [`ObstacleCell::can_be_excavated`].
+pub fn validator_excavatable(
+    _: MapObject,
+    area: GridArea,
+    grids: &GridsCollectionParam,
+) -> PlacementValidity {
+    validate_every_cell(area, grids, ObstacleCell::can_be_excavated)
+}
+
+/// On invalid placement, highlights cells outside the map or failing [`ObstacleCell::is_open_ground`].
+pub fn annotate_not_open_ground(
+    _: MapObject,
+    area: GridArea,
+    validity: PlacementValidity,
+    grids: &GridsCollectionParam,
+) -> Vec<(GridCoords, CellHighlight)> {
+    annotate_failing_cells(area, validity, grids, ObstacleCell::is_open_ground)
+}
+
+/// On invalid placement, highlights cells outside the map or failing [`ObstacleCell::is_placeable_ground`].
+pub fn annotate_not_placeable_ground(
+    _: MapObject,
+    area: GridArea,
+    validity: PlacementValidity,
+    grids: &GridsCollectionParam,
+) -> Vec<(GridCoords, CellHighlight)> {
+    annotate_failing_cells(area, validity, grids, ObstacleCell::is_placeable_ground)
+}
+
+/// On invalid placement, highlights cells outside the map or failing [`ObstacleCell::can_be_excavated`].
+pub fn annotate_not_excavatable(
+    _: MapObject,
+    area: GridArea,
+    validity: PlacementValidity,
+    grids: &GridsCollectionParam,
+) -> Vec<(GridCoords, CellHighlight)> {
+    annotate_failing_cells(area, validity, grids, ObstacleCell::can_be_excavated)
+}
+
+fn validate_every_cell(area: GridArea, grids: &GridsCollectionParam, accepts: fn(&ObstacleCell) -> bool) -> PlacementValidity {
     if !area.fits_in(grids.obstacle_grid.bounds) {
         return PlacementValidity::Invalid;
     }
     if grids.reserved_coords.any_reserved(area) {
         return PlacementValidity::Invalid;
     }
-    if !grids.obstacle_grid.cells_in(area).all(ObstacleCell::is_empty) {
+    if !grids.obstacle_grid.cells_in(area).all(accepts) {
         return PlacementValidity::Invalid;
     }
     PlacementValidity::Valid
 }
 
-/// Highlights occupied cells and cells outside the map when placement is invalid.
-pub fn annotate_non_empty(
-    _: MapObject,
+fn annotate_failing_cells(
     area: GridArea,
     validity: PlacementValidity,
     grids: &GridsCollectionParam,
+    accepts: fn(&ObstacleCell) -> bool,
 ) -> Vec<(GridCoords, CellHighlight)> {
     if validity != PlacementValidity::Invalid {
         return vec![];
     }
     area.iter()
-        .filter(|coords| !grids.obstacle_grid.get(*coords).is_some_and(ObstacleCell::is_empty))
+        .filter(|coords| !grids.obstacle_grid.get(*coords).is_some_and(accepts))
         .map(|coords| (coords, CellHighlight::Negative))
         .collect()
 }

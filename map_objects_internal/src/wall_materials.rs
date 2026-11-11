@@ -13,7 +13,7 @@ use bevy::{
 use game_core::prelude::{FaceSurface, GridImprint, MapObject, ObjectFaceRequest};
 use indexes::placement::GridPlacerSession;
 use logging::prelude::*;
-use map_objects::{prelude::WallShape, wall_style::{WallStyleKey, WallStyles}};
+use map_objects::{prelude::VolumeShape, wall_style::{WallStyleKey, WallStyles}};
 use visuals::{specialize_ui_with_shared_gpu, specialize_with_shared_gpu};
 
 pub(crate) struct WallMaterialsPlugin;
@@ -49,7 +49,7 @@ pub(crate) struct WallQuadMaterial {
     style_index: u32,
     #[uniform(0)]
     alpha: f32,
-    /// Shape encoded by [`WallShape::gpu_code`].
+    /// Shape encoded by [`VolumeShape::gpu_code`].
     #[uniform(0)]
     shape: u32,
 }
@@ -68,7 +68,7 @@ impl Material2d for WallQuadMaterial {
 /// Attaches a wall face for UI or placement preview use.
 ///
 /// UI swatches use the target's `WallStyleKey`, falling back to the default style if it is absent.
-/// Placement previews use `WallStyleKey` and `WallShape` from the placer's session entity.
+/// Placement previews use `WallStyleKey` and `VolumeShape` from the placer's session entity.
 #[log_tags(Tag::MapObjects)]
 fn on_object_face_request_draw_wall(
     trigger: On<ObjectFaceRequest>,
@@ -77,7 +77,7 @@ fn on_object_face_request_draw_wall(
     mut meshes: ResMut<Assets<Mesh>>,
     mut swatch_materials: ResMut<Assets<WallSwatchMaterial>>,
     mut quad_materials: ResMut<Assets<WallQuadMaterial>>,
-    placer_session: Option<Single<(&WallStyleKey, &WallShape), With<GridPlacerSession>>>,
+    placer_session: Option<Single<(&WallStyleKey, &VolumeShape), With<GridPlacerSession>>>,
     grid_imprints: Query<&GridImprint>,
     style_keys: Query<&WallStyleKey>,
 ) {

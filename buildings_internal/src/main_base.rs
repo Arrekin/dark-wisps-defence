@@ -14,7 +14,7 @@ use grids::placement::{PlacementModes, PlaceRequest};
 use indexes::{
     emissions::{EmissionsType, EmitterEnergy, FloodEmissionsDetails, FloodEmissionsEvaluator, FloodEmissionsMode},
     energy_supply::{GeneratorEnergy, SupplierEnergy},
-    placement::annotate_non_empty,
+    placement::annotate_not_placeable_ground,
     prelude::ObstacleGrid,
 };
 use persistence::{creating_new_map, prelude::*};
@@ -84,7 +84,7 @@ impl BuilderMainBase {
             ]),
             sockets: vec![],
             validate: building_validator,
-            annotate: annotate_non_empty,
+            annotate: annotate_not_placeable_ground,
             placement: PlacementModes::default(),
         }
     }

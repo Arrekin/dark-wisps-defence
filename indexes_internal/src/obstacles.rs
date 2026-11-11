@@ -24,6 +24,7 @@ const ELEVATION_SHIFT: u32 = 4;
 const ON_ELEVATION_SHIFT: u32 = 8;
 const QUANTUM_FIELD_BIT: u32 = 1 << 12;
 const BUILDING_TYPE_SHIFT: u32 = 16;
+const UNDERGROUND_SHAPE_SHIFT: u32 = 24;
 
 fn clear_reserved_coords(mut reserved_coords: ResMut<ReservedCoords>) {
     reserved_coords.for_structures.clear();
@@ -46,4 +47,5 @@ fn pack_obstacle_cell(cell: &ObstacleCell) -> u32 {
         | cell.on_elevation.gpu_index() << ON_ELEVATION_SHIFT
         | if cell.is_within_quantum_field() { QUANTUM_FIELD_BIT } else { 0 }
         | building_type << BUILDING_TYPE_SHIFT
+        | cell.underground.shape().map_or(0, |shape| shape.gpu_code()) << UNDERGROUND_SHAPE_SHIFT
 }

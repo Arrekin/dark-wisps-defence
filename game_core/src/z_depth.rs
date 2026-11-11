@@ -142,7 +142,10 @@ impl SlotTable {
 #[component(immutable)]
 #[require(Transform)]
 pub enum ZDepth {
-    MapGround,
+    /// Pit floors, ramps, cliffs and tunnel interiors, below underground wisps and floor covers.
+    UndergroundBottom,
+    /// Ground and excavation rims, above underground wisps and floor covers.
+    UndergroundTop,
     OverlayEmissions,
     DarkOre,
     /// Wall contact shadows, entrance recesses, tunnel interiors, and lower ramp halves, drawn below wisps.
@@ -187,7 +190,8 @@ impl ZDepth {
     /// Draw levels supported by this layer.
     pub const fn draw_levels(self) -> DrawLevels {
         match self {
-            Self::MapGround
+            Self::UndergroundBottom => DrawLevels::only(DrawLevel::UndergroundFloor),
+            Self::UndergroundTop
             | Self::OverlayEmissions
             | Self::DarkOre => DrawLevels::only(DrawLevel::GroundFloor),
             Self::WallBottom
@@ -241,7 +245,8 @@ impl ZDepth {
 
     pub const fn band(self) -> Band {
         match self {
-            Self::MapGround
+            Self::UndergroundBottom
+            | Self::UndergroundTop
             | Self::OverlayEmissions
             | Self::DarkOre
             | Self::WallBottom

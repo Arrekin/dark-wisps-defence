@@ -34,7 +34,7 @@ pub fn target_find_closest_wisp(
         while let Some(State { cost, distance, key: coords }) = step_queue.pop() {
             for new_coords in obstacle_grid.bounds.cardinal_neighbors(coords) {
                 if coords_visited.is_visited(new_coords)
-                    || (!ignore_obstacles && !obstacle_grid.cell(new_coords).is_empty())
+                    || (!ignore_obstacles && !obstacle_grid.cell(new_coords).is_open_ground())
                 {
                     continue;
                 }

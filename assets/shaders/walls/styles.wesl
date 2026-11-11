@@ -5,7 +5,7 @@ import package::shaders::common::map_info::{grid_contains, grid_index};
 import package::shaders::walls::look::WallStyle;
 
 // One u32 per cell in row-major order. Bits 0–7 hold the one-based style index, or 0 for open ground.
-// Bits 8–14 hold the shape code from `WallShape::gpu_code`.
+// Bits 8–14 hold the shape code from `VolumeShape::gpu_code`.
 // The layout mirrors `upload_gpu_wall_cells` in map_objects_internal/src/wall_canvas.rs.
 //
 // Within the shape code, bits 0–2 hold the ramp code: 0 for flat, 1–4 for right, left, top, and bottom.

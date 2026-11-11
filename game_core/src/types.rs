@@ -82,6 +82,7 @@ pub enum WispType {
 pub enum MapObject {
     Building(BuildingType),
     Wall,
+    Excavation,
     DarkOre,
     QuantumField,
     Wisp(WispType),

@@ -144,7 +144,7 @@ fn interior_shading(distance: f32, plate: f32, texel: f32, style: WallStyle) -> 
 }
 
 // Converts a nonzero ramp code to its uphill grid direction; positive y points up.
-// Mirrors the ramp codes of `WallShape::gpu_code` in map_objects/src/lib.rs.
+// Mirrors the ramp codes of `VolumeShape::gpu_code` in map_objects/src/lib.rs.
 fn ramp_up(ramp: u32) -> vec2<i32> {
     switch ramp {
         case 1u: { return vec2<i32>(1, 0); }

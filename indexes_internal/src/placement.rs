@@ -213,6 +213,8 @@ fn handle_keyboard_input(
 ) {
     let map_object = if keys.just_pressed(KeyCode::KeyW) {
         MapObject::Wall
+    } else if keys.just_pressed(KeyCode::KeyU) {
+        MapObject::Excavation
     } else if keys.just_pressed(KeyCode::KeyO) {
         MapObject::DarkOre
     } else if keys.just_pressed(KeyCode::KeyQ) {

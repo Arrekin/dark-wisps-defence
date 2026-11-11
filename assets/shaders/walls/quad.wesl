@@ -9,7 +9,7 @@ import package::shaders::walls::styles::{opens_toward, shape_openings, shape_ram
 struct WallQuad {
     style_index: u32, // one-based index into the shared wall style table
     alpha: f32,
-    shape: u32, // `WallShape::gpu_code`
+    shape: u32, // `VolumeShape::gpu_code`
 }
 @group(2) @binding(0) var<uniform> settings: WallQuad;
 

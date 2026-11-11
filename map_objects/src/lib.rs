@@ -8,11 +8,13 @@ pub mod wall_style;
 pub mod prelude {
     pub use super::{
         DarkOre, DarkOreAreaScanner, DarkOreInRange,
+        ExcavationShape,
         ExpeditionZone,
         HasOreInScannerRange,
         QuantumField,
         QuantumFieldSolved,
-        Wall, WallShape,
+        VolumeShape,
+        Wall,
     };
 }
 
@@ -24,27 +26,27 @@ pub struct DarkOre {
 }
 
 /// Drawn by the wall canvas from `GridArea`, so the entity itself carries no transform or render layer.
-/// [`WallShape`] defines its slope and tunnel openings.
+/// [`VolumeShape`] defines its slope and tunnel openings.
 #[derive(Component)]
 #[require(MapBound, EmissionsGridSpreadAffector)]
 pub struct Wall;
 
-/// A wall's surface shape and tunnel openings.
+/// Surface slope and tunnel openings shared by walls and underground excavations.
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[component(immutable)]
-pub enum WallShape {
-    /// A flat wall with tunnel openings on the specified sides. An empty set makes it solid.
+pub enum VolumeShape {
+    /// A flat top with tunnel openings on the specified sides. An empty set makes it solid.
     Flat { openings: EdgeSides },
     /// A solid ramp rising toward `high_side`, with no tunnel openings.
     Ramp { high_side: EdgeSide },
 }
-impl Default for WallShape {
+impl Default for VolumeShape {
     fn default() -> Self {
         Self::Flat { openings: EdgeSides::NONE }
     }
 }
-impl WallShape {
-    /// The wall's tunnel openings; none for a ramp.
+impl VolumeShape {
+    /// The tunnel openings; none for a ramp.
     pub const fn openings(self) -> EdgeSides {
         match self {
             Self::Flat { openings } => openings,
@@ -52,12 +54,7 @@ impl WallShape {
         }
     }
 
-    /// Whether the wall has a tunnel opening on `side`.
-    pub const fn is_open_toward(self, side: EdgeSide) -> bool {
-        self.openings().contains(side)
-    }
-
-    /// Whether the wall has at least one tunnel opening.
+    /// Whether the shape has at least one tunnel opening.
     pub const fn is_hollow(self) -> bool {
         !self.openings().is_empty()
     }
@@ -78,6 +75,15 @@ impl WallShape {
             Self::Ramp { high_side: EdgeSide::Bottom } => 4,
         }
     }
+}
+
+/// Underground terrain created by excavation: an open pit, ramp or tunnel.
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[component(immutable)]
+pub enum ExcavationShape {
+    #[default]
+    Pit,
+    Shaped(VolumeShape),
 }
 
 /// Progressive obstacle requiring drone scanning to solve.

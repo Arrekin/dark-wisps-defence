@@ -1,7 +1,6 @@
 pub(crate) mod color_pulsation;
 pub(crate) mod cut;
 pub(crate) mod explosion;
-pub(crate) mod map_ground;
 pub(crate) mod render_schedule;
 pub(crate) mod shared_gpu;
 pub(crate) mod sprite_animation;
@@ -22,7 +21,6 @@ impl Plugin for VisualsPlugin {
                 cut::CutPlugin,
                 shared_gpu::SharedGpuPlugin,
                 explosion::ExplosionPlugin,
-                map_ground::MapGroundPlugin,
                 void_sea::VoidSeaPlugin,
                 wisp_attack::WispAttackEffectPlugin,
             ))

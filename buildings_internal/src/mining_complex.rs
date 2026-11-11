@@ -13,7 +13,7 @@ use buildings::prelude::*;
 use game_core::prelude::*;
 use grids::placement::{CellHighlight, PlacementModes, PlacementValidity, PlaceRequest};
 use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
-use indexes::placement::GridsCollectionParam;
+use indexes::{obstacles::ObstacleCell, placement::GridsCollectionParam};
 use logging::prelude::*;
 use map_objects::{
     DarkOre,
@@ -49,7 +49,7 @@ fn mining_complex_validator(_: MapObject, area: GridArea, grids: &GridsCollectio
     let mut has_ore = false;
     for coords in area {
         let cell = grids.obstacle_grid.cell(coords);
-        if cell.has_structure() || cell.is_within_quantum_field() {
+        if blocks_mining_complex(cell) {
             return PlacementValidity::Invalid;
         }
         if cell.has_dark_ore() { has_ore = true; }
@@ -63,10 +63,15 @@ fn mining_complex_validator(_: MapObject, area: GridArea, grids: &GridsCollectio
     PlacementValidity::Valid
 }
 
+/// Rejects structures, quantum fields and uneven or missing ground. Allows ore beneath the complex.
+fn blocks_mining_complex(cell: &ObstacleCell) -> bool {
+    cell.has_structure() || cell.is_within_quantum_field() || !cell.has_flat_ground()
+}
+
 fn mining_complex_annotator(_: MapObject, area: GridArea, validity: PlacementValidity, grids: &GridsCollectionParam) -> Vec<(GridCoords, CellHighlight)> {
     match validity {
         PlacementValidity::Invalid => area.iter()
-            .filter(|coords| grids.obstacle_grid.get(*coords).is_none_or(|cell| cell.has_structure() || cell.is_within_quantum_field()))
+            .filter(|coords| grids.obstacle_grid.get(*coords).is_none_or(blocks_mining_complex))
             .map(|coords| (coords, CellHighlight::Negative))
             .collect(),
         _ => area.iter_in_bounds(grids.obstacle_grid.bounds)

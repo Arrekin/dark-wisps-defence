@@ -3,7 +3,7 @@ use bevy::{ecs::system::SystemParam, prelude::*};
 use almanach::prelude::Almanach;
 use game_core::{math::angle_difference, prelude::*};
 use grids::placement::PlacementValidity;
-use indexes::placement::{GridObjectPlacer, GridsCollectionParam, validator_all_empty};
+use indexes::placement::{GridObjectPlacer, GridsCollectionParam, validator_placeable_ground};
 use logging::prelude::*;
 use persistence::{prelude::*, rusqlite};
 use resources::prelude::Stock;
@@ -14,7 +14,7 @@ pub(crate) fn building_validator(map_object: MapObject, area: GridArea, grids: &
         return PlacementValidity::Invalid;
     };
 
-    if validator_all_empty(map_object, area, grids) == PlacementValidity::Invalid {
+    if validator_placeable_ground(map_object, area, grids) == PlacementValidity::Invalid {
         return PlacementValidity::Invalid;
     }
 

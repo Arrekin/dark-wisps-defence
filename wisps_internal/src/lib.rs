@@ -10,7 +10,7 @@ use bevy::prelude::*;
 use almanach::{WispInfo, prelude::*};
 use game_core::motion::MotionSystems;
 use grids::{ObstacleChangeSystems, placement::PlacementModes};
-use indexes::placement::annotate_non_empty;
+use indexes::placement::annotate_not_open_ground;
 use persistence::prelude::{AppGameLoadSaveExtension, CollectSave};
 use states::prelude::*;
 use visuals::{effect_visuals::sync_effect_visuals, lane::LanePlugin};
@@ -60,7 +60,7 @@ impl Plugin for WispsPlugin {
                 description: "A hostile wisp. Advances on your buildings and attacks what it reaches.".to_string(),
                 grid_imprint: WISP_GRID_IMPRINT,
                 validate: spawning::wisp_validator,
-                annotate: annotate_non_empty,
+                annotate: annotate_not_open_ground,
                 placement: PlacementModes::on_press(),
             });
     }

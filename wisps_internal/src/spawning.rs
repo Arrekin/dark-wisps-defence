@@ -147,10 +147,13 @@ pub(crate) fn wisp_validator(
     if !area.fits_in(grids.obstacle_grid.bounds) {
         return PlacementValidity::Invalid;
     }
-    let level = area.origin.level.volume();
+
     let can_hold_wisp = |coords| {
         let cell = grids.obstacle_grid.cell(coords);
-        cell.is_empty() || cell.at(level).is_ramp()
+        let top = cell.top_level();
+        cell.is_placeable_ground()
+            || top == VolumeLevel::Underground
+            || top.below().is_some_and(|below| cell.at(below).is_ramp())
     };
     if !area.iter().all(can_hold_wisp) {
         return PlacementValidity::Invalid;
@@ -174,10 +177,7 @@ pub(crate) fn on_wisp_place_request_do_so(
 
     let validity = (almanach.wisps.validate)(MapObject::Wisp(wisp_type), area, &grids);
     if validity == PlacementValidity::Invalid { return; }
-    let placer_position = area.origin.volume_position();
-    let is_on_ramp = grids.obstacle_grid[placer_position].is_ramp();
-    let level = if is_on_ramp { placer_position.level.above().expect("the placer sits below the top volume") } else { placer_position.level };
-    let position = placer_position.coords.at(level);
+    let position = grids.obstacle_grid.top_position(area.origin.coords);
     #[debug_player("{} wisp placed at {}", wisp_type.as_ref(), position)]
     commands.spawn(BuilderWisp::new(wisp_type, position));
 }
