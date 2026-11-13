@@ -5,6 +5,7 @@ pub(crate) mod pause_indicator;
 
 pub(crate) mod display_info_panel;
 pub(crate) mod grid_display;
+pub(crate) mod grid_placer;
 pub(crate) mod indicators;
 
 use bevy::prelude::*;
@@ -18,6 +19,7 @@ impl Plugin for HudPlugin {
             .add_plugins((
                 badges::BadgesPlugin,
                 display_info_panel::DisplayInfoPanelPlugin,
+                grid_placer::GridObjectPlacerPlugin,
                 indicators::IndicatorsPlugin,
                 side_menu::SideMenuPlugin,
                 main_menu::MainMenuPlugin,

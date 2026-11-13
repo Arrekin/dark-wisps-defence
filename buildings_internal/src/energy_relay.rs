@@ -1,4 +1,5 @@
 use bevy::{
+    ecs::system::SystemParam,
     platform::collections::HashMap,
     prelude::*,
 };
@@ -10,12 +11,12 @@ use alteration::{
 };
 use buildings::prelude::*;
 use game_core::prelude::*;
-use grids::placement::{PlacementModes, PlaceRequest};
+use grids::placement::{PlacementFeedback, PlacementObject, PlacementSession, PlacementValidity, PlacementFeedbackSystems, PlaceRequest};
 use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
 use indexes::{
     emissions::{EmissionsType, EmitterEnergy, FloodEmissionsDetails, FloodEmissionsEvaluator, FloodEmissionsMode},
     energy_supply::SupplierEnergy,
-    placement::annotate_not_placeable_ground,
+    search::flooding::would_supply_reach_power,
 };
 use logging::prelude::*;
 use persistence::prelude::*;
@@ -30,8 +31,9 @@ impl Plugin for EnergyRelayPlugin {
     fn build(&self, app: &mut App) {
         let almanach_info = BuilderEnergyRelay::almanach_info(app.world().resource::<AssetServer>());
         app
+            .add_systems(Update, EnergyRelayPlacementRules::update_feedback.in_set(PlacementFeedbackSystems))
             .add_observer(BuilderEnergyRelay::on_builder_add_spawn_energy_relay)
-            .add_observer(on_energy_relay_place_request_do_so)
+            .add_observer(EnergyRelayPlacementRules::on_place_request_do_so)
             .add_systems(CollectSave, collect_energy_relays)
             .register_loader(MapLoadingStage::SpawnMapElements, "energy_relays", load_energy_relays)
             .register_building(BuildingType::EnergyRelay, almanach_info);
@@ -61,9 +63,6 @@ impl BuilderEnergyRelay {
                 (ModifierType::EnergySupplyRange, 12.),
             ]),
             sockets: vec![],
-            validate: building_validator,
-            annotate: annotate_not_placeable_ground,
-            placement: PlacementModes::default(),
         }
     }
 
@@ -127,14 +126,44 @@ impl BuilderEnergyRelay {
     }
 }
 
-fn on_energy_relay_place_request_do_so(
-    trigger: On<PlaceRequest>,
-    mut commands: Commands,
-    mut placement: BuildingPlacementManager,
-) {
-    let PlaceRequest(MapObject::Building(BuildingType::EnergyRelay)) = *trigger else { return };
-    let Some(coords) = placement.claim(BuildingType::EnergyRelay) else { return };
-    commands.spawn(BuilderEnergyRelay::new(coords));
+/// Validates and places energy relays using their supply range to check power connectivity.
+#[derive(SystemParam)]
+pub(crate) struct EnergyRelayPlacementRules<'w, 's> {
+    building_rules: BuildingPlacementRules<'w, 's>,
+}
+impl EnergyRelayPlacementRules<'_, '_> {
+    /// Checks ground, reservations, and cost, then tests the relay's proposed supply coverage.
+    /// A valid site is `ValidUnpowered` if that coverage cannot connect to powered cells.
+    fn feedback(&self) -> PlacementFeedback {
+        let rules = &self.building_rules;
+        let feedback = rules.with_cost_check(rules.placeable_ground_feedback());
+        if feedback.validity != PlacementValidity::Valid { return feedback; }
+
+        let range = EnergySupplyRange::new(rules.almanach.get_building_info(BuildingType::EnergyRelay).baseline[&ModifierType::EnergySupplyRange]);
+        if !would_supply_reach_power(&rules.energy_supply_grid, rules.placement_area(), range) {
+            return feedback.with_validity(PlacementValidity::ValidUnpowered);
+        }
+        feedback
+    }
+
+    fn update_feedback(
+        mut rules: EnergyRelayPlacementRules,
+        placement_session: Single<(Entity, &PlacementObject), With<PlacementSession>>,
+    ) {
+        let (placement_session, object) = *placement_session;
+        if object.0 != MapObject::Building(BuildingType::EnergyRelay) { return; }
+        let feedback = rules.feedback();
+        rules.building_rules.commands.entity(placement_session).insert_if_neq(feedback);
+    }
+
+    fn on_place_request_do_so(
+        trigger: On<PlaceRequest>,
+        mut rules: EnergyRelayPlacementRules,
+    ) {
+        let PlaceRequest(MapObject::Building(BuildingType::EnergyRelay)) = *trigger else { return };
+        let Some(coords) = rules.building_rules.claim(rules.feedback().validity) else { return };
+        rules.building_rules.commands.spawn(BuilderEnergyRelay::new(coords));
+    }
 }
 
 #[log_tags(Tag::GameSave)]

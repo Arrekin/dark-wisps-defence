@@ -14,9 +14,9 @@ use bevy::{
 use almanach::prelude::Almanach;
 use alteration::modifiers::prelude::ModifierType;
 use game_core::prelude::{BuildingType, DrawLevel, GridArea, MapInfo, MapObject, ZDepth};
-use grids::{placement::GridPlacerChanged, prelude::GridVersion};
+use grids::{placement::{GridPlacerChanged, PlacementObject, PlacementSession}, prelude::GridVersion};
 use hud::prelude::FocusedMapObject;
-use indexes::{energy_supply::{self, EnergySupplyGrid}, placement::GridObjectPlacer, search::scratch::{SEARCH_SCRATCH, SearchScratch}};
+use indexes::{energy_supply::{self, EnergySupplyGrid}, search::scratch::{SEARCH_SCRATCH, SearchScratch}};
 use states::prelude::{MapLoadingStage, UiInteraction};
 use visuals::{canvas::MapCanvasBundle, specialize_with_shared_gpu};
 
@@ -190,27 +190,19 @@ fn on_grid_placer_changed_preview_placement(
     _trigger: On<GridPlacerChanged>,
     almanach: Res<Almanach>,
     mut overlay_config: ResMut<EnergySupplyOverlayConfig>,
-    grid_object_placer: Single<(&GridObjectPlacer, &GridArea)>,
+    placement_session: Single<(&PlacementObject, &GridArea), With<PlacementSession>>,
 ) {
-    let (grid_object_placer, placer_area) = grid_object_placer.into_inner();
-    let map_object = grid_object_placer.map_object();
-    if let Some(MapObject::Building(building_type)) = map_object {
-        let building_info = almanach.get_building_info(building_type);
-        if building_type.is_energy_supplier() {
-            overlay_config.secondary_mode = EnergySupplyOverlaySecondaryMode::PlacingSupplier {
-                area: *placer_area,
-                range: building_info.baseline[&ModifierType::EnergySupplyRange] as usize,
-            };
-        } else if building_type.is_energy_consumer() {
-            overlay_config.secondary_mode = EnergySupplyOverlaySecondaryMode::PlacingConsumer {
-                area: *placer_area,
-            };
-        } else {
-            overlay_config.secondary_mode = EnergySupplyOverlaySecondaryMode::None;
-        }
-    } else {
-        overlay_config.secondary_mode = EnergySupplyOverlaySecondaryMode::None;
-    }
+    let (&PlacementObject(map_object), placement_area) = placement_session.into_inner();
+    overlay_config.secondary_mode = match map_object {
+        MapObject::Building(building_type) if building_type.is_energy_supplier() => EnergySupplyOverlaySecondaryMode::PlacingSupplier {
+            area: *placement_area,
+            range: almanach.get_building_info(building_type).baseline[&ModifierType::EnergySupplyRange] as usize,
+        },
+        MapObject::Building(building_type) if building_type.is_energy_consumer() => EnergySupplyOverlaySecondaryMode::PlacingConsumer {
+            area: *placement_area,
+        },
+        _ => EnergySupplyOverlaySecondaryMode::None,
+    };
 }
 
 /// Field order and types mirror `EnergySupplyCell` in `assets/shaders/overlays/energy_supply_map.wesl`.

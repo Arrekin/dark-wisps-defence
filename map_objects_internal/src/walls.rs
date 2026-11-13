@@ -1,14 +1,10 @@
-use bevy::prelude::*;
+use bevy::{ecs::system::SystemParam, prelude::*};
 
 use almanach::{Almanach, AlmanachAppExt, WallInfo};
-use game_core::prelude::{EdgeSide, EdgeSides, GridArea, GridImprint, GridPosition, MapObject, MapObjectTooltipRequest, SSS, VolumeLevel};
-use grids::placement::{PlacementModes, PlacementValidity, PlaceRequest, RemoveRequest};
+use game_core::prelude::{EdgeSide, EdgeSides, GridArea, GridCoords, GridImprint, GridPosition, MapObject, MapObjectTooltipRequest, SSS, VolumeLevel};
+use grids::placement::{PlacementFeedback, PlacementObject, PlacementSession, PlacementValidity, PlacementFeedbackSystems, PlaceRequest, RemoveRequest, ReplaceExisting, ReservedCoords};
 use hud::prelude::BuilderSideMenuItemTooltip;
-use indexes::{
-    obstacles::GridStructure,
-    placement::{annotate_not_placeable_ground, GridObjectPlacer, GridPlacerSession, GridsCollectionParam, validator_placeable_ground},
-    prelude::ObstacleGrid,
-};
+use indexes::{obstacles::GridStructure, prelude::{ObstacleCell, ObstacleGrid}};
 use logging::prelude::*;
 use map_objects::{
     prelude::{Wall, VolumeShape},
@@ -23,19 +19,20 @@ pub(crate) struct WallPlugin;
 impl Plugin for WallPlugin {
     fn build(&self, app: &mut App) {
         app
+            .add_systems(Update, WallPlacementRules::update_feedback.in_set(PlacementFeedbackSystems))
             .add_systems(CollectSave, collect_walls)
             .register_loader(MapLoadingStage::SpawnMapElements, "walls", load_walls)
             .add_observer(BuilderWall::on_builder_add_spawn_wall)
             .add_observer(on_insert_wall_imprint_on_obstacle_grid)
             .add_observer(on_discard_wall_deprint_from_obstacle_grid)
-            .add_observer(on_wall_place_request_do_so)
-            .add_observer(on_wall_remove_request_do_so)
+            .add_observer(WallPlacementRules::on_place_request_do_so)
+            .add_observer(WallPlacementRules::on_remove_request_do_so)
             .add_observer(on_map_object_tooltip_request_spawn_wall_tooltip)
             .register_walls(BuilderWall::almanach_info());
     }
 }
 
-const WALL_GRID_IMPRINT: GridImprint = GridImprint::square(1);
+pub(crate) const WALL_GRID_IMPRINT: GridImprint = GridImprint::square(1);
 
 /// Wall style supplied as a table key by placement or as a saved name by loading.
 /// Names resolve against the current style table when the wall spawns.
@@ -66,9 +63,6 @@ impl BuilderWall {
             name: "Wall".to_string(),
             description: "Blocks ground movement and shapes the paths wisps take.".to_string(),
             grid_imprint: WALL_GRID_IMPRINT,
-            validate: validator_placeable_ground,
-            annotate: annotate_not_placeable_ground,
-            placement: PlacementModes::on_press(),
         }
     }
 
@@ -198,40 +192,80 @@ fn on_discard_wall_deprint_from_obstacle_grid(
     obstacle_grid.deprint(*area);
 }
 
-#[log_tags(Tag::MapObjects)]
-fn on_wall_place_request_do_so(
-    trigger: On<PlaceRequest>,
-    mut commands: Commands,
-    almanach: Res<Almanach>,
-    mut grids: GridsCollectionParam,
-    placer: Single<&GridArea, With<GridObjectPlacer>>,
-    placer_session: Single<(&WallStyleKey, &VolumeShape), With<GridPlacerSession>>,
-) {
-    let PlaceRequest(MapObject::Wall) = *trigger else { return };
-    let area = placer.into_inner();
-    let (style, shape) = placer_session.into_inner();
-    let validity = (almanach.walls.validate)(MapObject::Wall, *area, &grids);
-    if validity == PlacementValidity::Invalid { return; }
-    #[debug_player("Wall placed at {}", area.origin)]
-    commands.spawn(BuilderWall::new(area.origin, *style).with_shape(*shape));
-    grids.reserved_coords.reserve(*area);
+/// Validates, places, replaces, and removes walls at the session's target area.
+#[derive(SystemParam)]
+pub(crate) struct WallPlacementRules<'w, 's> {
+    commands: Commands<'w, 's>,
+    obstacle_grid: Res<'w, ObstacleGrid>,
+    reserved_coords: ResMut<'w, ReservedCoords>,
+    placement_session: Single<'w, 's, (&'static GridArea, Has<ReplaceExisting>), With<PlacementSession>>,
 }
+impl WallPlacementRules<'_, '_> {
+    /// Requires unreserved, placeable ground. With `ReplaceExisting`, also accepts existing walls
+    /// and reports `Replaces` if the area contains any.
+    fn feedback(&self) -> PlacementFeedback {
+        let (&area, replace) = *self.placement_session;
+        let replaceable = |coords| replace && self.wall_at(coords).is_some();
+        PlacementFeedback::every_cell(area, &self.reserved_coords, |coords| {
+            replaceable(coords) || self.obstacle_grid.get(coords).is_some_and(ObstacleCell::is_placeable_ground)
+        }).replacing(area, replaceable)
+    }
 
-#[log_tags(Tag::MapObjects)]
-fn on_wall_remove_request_do_so(
-    trigger: On<RemoveRequest>,
-    mut commands: Commands,
-    mut cell_clearing: CellClearing,
-    obstacle_grid: Res<ObstacleGrid>,
-    placer: Single<&GridArea, With<GridObjectPlacer>>,
-) {
-    let RemoveRequest(MapObject::Wall) = *trigger else { return };
-    let coords = placer.origin.coords;
-    #[debug_player("Wall removed at {coords}")]
-    if let Some(GridStructure::Wall { slot, .. }) = obstacle_grid.get(coords).map(|cell| cell.elevation) {
-        commands.entity(obstacle_grid.entry(slot).entity).despawn();
-        // Clear the removed wall's upper floor; tunnel occupants still have ground beneath them.
-        cell_clearing.clear_from(coords, VolumeLevel::OnElevation);
+    fn wall_at(&self, coords: GridCoords) -> Option<Entity> {
+        match self.obstacle_grid.get(coords)?.elevation {
+            GridStructure::Wall { slot, .. } => Some(self.obstacle_grid.entry(slot).entity),
+            _ => None,
+        }
+    }
+
+    fn update_feedback(
+        mut rules: WallPlacementRules,
+        placement_session: Single<(Entity, &PlacementObject), With<PlacementSession>>,
+    ) {
+        let (placement_session, object) = *placement_session;
+        if object.0 != MapObject::Wall { return; }
+        let feedback = rules.feedback();
+        rules.commands.entity(placement_session).insert_if_neq(feedback);
+    }
+
+    #[log_tags(Tag::MapObjects)]
+    fn on_place_request_do_so(
+        trigger: On<PlaceRequest>,
+        mut rules: WallPlacementRules,
+        wall_settings: Single<(&WallStyleKey, &VolumeShape), With<PlacementSession>>,
+    ) {
+        let PlaceRequest(MapObject::Wall) = *trigger else { return };
+        let (&area, _) = *rules.placement_session;
+        let (&style, &shape) = *wall_settings;
+        let validity = rules.feedback().validity;
+        if validity == PlacementValidity::Invalid { return; }
+        if validity == PlacementValidity::Replaces {
+            for coords in area {
+                if let Some(wall) = rules.wall_at(coords) {
+                    rules.commands.entity(wall).despawn();
+                }
+            }
+        }
+        #[debug_player("Wall placed at {}", area.origin)]
+        rules.commands.spawn(BuilderWall::new(area.origin, style).with_shape(shape));
+        rules.reserved_coords.reserve(area);
+    }
+
+    #[log_tags(Tag::MapObjects)]
+    fn on_remove_request_do_so(
+        trigger: On<RemoveRequest>,
+        mut rules: WallPlacementRules,
+        mut cell_clearing: CellClearing,
+    ) {
+        let RemoveRequest(MapObject::Wall) = *trigger else { return };
+        let (area, _) = *rules.placement_session;
+        let coords = area.origin.coords;
+        #[debug_player("Wall removed at {coords}")]
+        if let Some(wall) = rules.wall_at(coords) {
+            rules.commands.entity(wall).despawn();
+            // Remove occupants of the wall's upper floor; lower levels keep their supporting floors.
+            cell_clearing.clear_from(coords, VolumeLevel::OnElevation);
+        }
     }
 }
 

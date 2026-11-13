@@ -1,4 +1,5 @@
 use bevy::{
+    ecs::system::SystemParam,
     platform::collections::HashMap,
     prelude::*,
 };
@@ -11,9 +12,8 @@ use alteration::{
 };
 use buildings::prelude::*;
 use game_core::prelude::*;
-use grids::placement::{CellHighlight, PlacementModes, PlacementValidity, PlaceRequest};
+use grids::placement::{CellHighlight, PlacementFeedback, PlacementObject, PlacementSession, PlacementValidity, PlacementFeedbackSystems, PlaceRequest};
 use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
-use indexes::{obstacles::ObstacleCell, placement::GridsCollectionParam};
 use logging::prelude::*;
 use map_objects::{
     DarkOre,
@@ -30,54 +30,59 @@ impl Plugin for MiningComplexPlugin {
     fn build(&self, app: &mut App) {
         let almanach_info = BuilderMiningComplex::almanach_info(app.world().resource::<AssetServer>());
         app
-            .add_systems(Update, mine_ore.run_if(in_state(GameState::Running)))
+            .add_systems(Update, (
+                mine_ore.run_if(in_state(GameState::Running)),
+                MiningComplexPlacementRules::update_feedback.in_set(PlacementFeedbackSystems),
+            ))
             .add_observer(BuilderMiningComplex::on_builder_add_spawn_mining_complex)
-            .add_observer(on_mining_complex_place_request_do_so)
+            .add_observer(MiningComplexPlacementRules::on_place_request_do_so)
             .add_systems(CollectSave, collect_mining_complexes)
             .register_loader(MapLoadingStage::SpawnMapElements, "mining_complexes", load_mining_complexes)
             .register_building(BuildingType::MiningComplex, almanach_info);
     }
 }
 
-fn mining_complex_validator(_: MapObject, area: GridArea, grids: &GridsCollectionParam) -> PlacementValidity {
-    if !area.fits_in(grids.obstacle_grid.bounds) {
-        return PlacementValidity::Invalid;
-    }
-    if grids.reserved_coords.any_reserved(area) {
-        return PlacementValidity::Invalid;
-    }
-    let mut has_ore = false;
-    for coords in area {
-        let cell = grids.obstacle_grid.cell(coords);
-        if blocks_mining_complex(cell) {
-            return PlacementValidity::Invalid;
-        }
-        if cell.has_dark_ore() { has_ore = true; }
-    }
-    if !has_ore {
-        return PlacementValidity::Invalid;
-    }
-    if !grids.energy_supply_grid.is_area_powered(area) {
-        return PlacementValidity::ValidUnpowered;
-    }
-    PlacementValidity::Valid
+/// Validates and places mining complexes on sites containing dark ore.
+#[derive(SystemParam)]
+pub(crate) struct MiningComplexPlacementRules<'w, 's> {
+    building_rules: BuildingPlacementRules<'w, 's>,
 }
+impl MiningComplexPlacementRules<'_, '_> {
+    /// Requires unreserved flat ground without structures or quantum fields, and at least one
+    /// dark ore cell. Highlights ore on valid sites and checks power and affordability.
+    fn feedback(&self) -> PlacementFeedback {
+        let rules = &self.building_rules;
+        let area = rules.placement_area();
+        let feedback = rules.with_cost_check(PlacementFeedback::every_cell(area, &rules.reserved_coords, |coords| {
+            rules.obstacle_grid.get(coords).is_some_and(|cell| !cell.has_structure() && !cell.is_within_quantum_field() && cell.has_flat_ground())
+        }));
+        if feedback.validity == PlacementValidity::Invalid { return feedback; }
 
-/// Rejects structures, quantum fields and uneven or missing ground. Allows ore beneath the complex.
-fn blocks_mining_complex(cell: &ObstacleCell) -> bool {
-    cell.has_structure() || cell.is_within_quantum_field() || !cell.has_flat_ground()
-}
-
-fn mining_complex_annotator(_: MapObject, area: GridArea, validity: PlacementValidity, grids: &GridsCollectionParam) -> Vec<(GridCoords, CellHighlight)> {
-    match validity {
-        PlacementValidity::Invalid => area.iter()
-            .filter(|coords| grids.obstacle_grid.get(*coords).is_none_or(blocks_mining_complex))
-            .map(|coords| (coords, CellHighlight::Negative))
-            .collect(),
-        _ => area.iter_in_bounds(grids.obstacle_grid.bounds)
-            .filter(|coords| grids.obstacle_grid.cell(*coords).has_dark_ore())
+        let ore_cells: Vec<_> = area.iter()
+            .filter(|coords| rules.obstacle_grid.cell(*coords).has_dark_ore())
             .map(|coords| (coords, CellHighlight::Positive))
-            .collect(),
+            .collect();
+        if ore_cells.is_empty() { return feedback.with_validity(PlacementValidity::Invalid); }
+        rules.with_power_check(feedback.with_highlights(ore_cells))
+    }
+
+    fn update_feedback(
+        mut rules: MiningComplexPlacementRules,
+        placement_session: Single<(Entity, &PlacementObject), With<PlacementSession>>,
+    ) {
+        let (placement_session, object) = *placement_session;
+        if object.0 != MapObject::Building(BuildingType::MiningComplex) { return; }
+        let feedback = rules.feedback();
+        rules.building_rules.commands.entity(placement_session).insert_if_neq(feedback);
+    }
+
+    fn on_place_request_do_so(
+        trigger: On<PlaceRequest>,
+        mut rules: MiningComplexPlacementRules,
+    ) {
+        let PlaceRequest(MapObject::Building(BuildingType::MiningComplex)) = *trigger else { return };
+        let Some(coords) = rules.building_rules.claim(rules.feedback().validity) else { return };
+        rules.building_rules.commands.spawn(BuilderMiningComplex::new(coords));
     }
 }
 
@@ -104,9 +109,6 @@ impl BuilderMiningComplex {
             cost: vec![ResourceAmount::new(ResourceType::DarkOre, 100)],
             baseline: HashMap::from([(ModifierType::MaxIntegrityPoints, 100.)]),
             sockets: vec![],
-            validate: mining_complex_validator,
-            annotate: mining_complex_annotator,
-            placement: PlacementModes::default(),
         }
     }
 
@@ -160,16 +162,6 @@ impl BuilderMiningComplex {
             .observe(on_technical_state_changed_recompute_operational);
         commands.trigger(TechnicalStateChanged { entity, kind: TechnicalChange::JustSpawned });
     }
-}
-
-fn on_mining_complex_place_request_do_so(
-    trigger: On<PlaceRequest>,
-    mut commands: Commands,
-    mut placement: BuildingPlacementManager,
-) {
-    let PlaceRequest(MapObject::Building(BuildingType::MiningComplex)) = *trigger else { return };
-    let Some(coords) = placement.claim(BuildingType::MiningComplex) else { return };
-    commands.spawn(BuilderMiningComplex::new(coords));
 }
 
 #[log_tags(Tag::GameSave)]

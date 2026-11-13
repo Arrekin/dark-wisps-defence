@@ -6,8 +6,6 @@ edition.workspace = true
 [dependencies]
 bevy = { workspace = true }
 game_core = { workspace = true }
-grids = { workspace = true }
-indexes = { workspace = true }
 resources = { workspace = true }
 shards = { workspace = true }
 alteration = { workspace = true }

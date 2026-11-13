@@ -196,7 +196,11 @@ saves are corrupted by this — for released builds, don't.
 2. Use `CREATE TABLE IF NOT EXISTS` everywhere so V1 is idempotent on existing databases.
 3. Delete the later migration files.
 4. Set `LaunchAction::RebuildSQLMigrationsMetadata` as the default launch action in `src/main.rs`.
-   It clears `refinery_schema_history` and re-runs V1 on every `.dwd` file, then exits. Run the
-   app once, then switch back to `LaunchAction::StartMap`.
+   It clears `refinery_schema_history` and re-runs V1 on every `.dwd` file, then exits.
+5. Rebuild the `persistence` crate before running the app: `embed_migrations!` embeds the migration
+   files at compile time. Run `cargo clean -p persistence` to force the next build to embed the
+   consolidated migration set.
+6. Run the app once, then switch back to `LaunchAction::StartMap`.
 
-Since all saves already have the final schema, re-running V1 with `IF NOT EXISTS` is a data no-op.
+All saves must already use the final schema. Under that condition, re-running V1 with
+`IF NOT EXISTS` rebuilds migration metadata without changing saved data.

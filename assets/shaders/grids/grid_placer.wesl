@@ -4,47 +4,56 @@ import package::shaders::common::core::{CELL_HALF, CELL_SIZE, bounds_contains, b
 // Draws placement validity around the imprint and highlights relevant cells. The object preview
 // is rendered separately by a child entity below this quad.
 
-// Cell states packed 2 bits per cell in cell_data. Mirrors `build_cell_data` in
-// indexes_internal/src/placement.rs.
+// Two-bit cell states packed into cell_data. Must match the `CELL_*` constants in
+// hud_internal/src/grid_placer.rs.
 const CELL_OUTSIDE:  u32 = 0u;
 const CELL_PLAIN:    u32 = 1u;
 const CELL_NEGATIVE: u32 = 2u;
-const CELL_POSITIVE: u32 = 3u;
+const CELL_FRAMED:   u32 = 3u;
 
-// Mirrors `PlacementValidity::gpu_index` in grids/src/placement.rs.
+// Must match the `VALIDITY_*` constants in hud_internal/src/grid_placer.rs.
 const VALIDITY_VALID:           u32 = 0u;
 const VALIDITY_VALID_UNPOWERED: u32 = 1u;
 const VALIDITY_INVALID:         u32 = 2u;
+const VALIDITY_REPLACES:        u32 = 3u;
 
 // Linear values for the sRGB hexes named beside them; the 2d pipeline renders HDR and tonemaps,
 // so a colour written here is radiance, not a swatch.
-const VALID_COLOR:     vec3<f32> = vec3<f32>(0.036, 0.479, 0.195);  // #35B87A
-const UNPOWERED_COLOR: vec3<f32> = vec3<f32>(1.000, 0.558, 0.047);  // #FFC53D
-const INVALID_COLOR:   vec3<f32> = vec3<f32>(1.000, 0.033, 0.033);  // #FF3333
+const VALID_COLOR:        vec3<f32> = vec3<f32>(0.036, 0.479, 0.195);  // #35B87A
+const UNPOWERED_COLOR:    vec3<f32> = vec3<f32>(1.000, 0.558, 0.047);  // #FFC53D
+const INVALID_COLOR:      vec3<f32> = vec3<f32>(1.000, 0.033, 0.033);  // #FF3333
+const REPLACES_COLOR:     vec3<f32> = vec3<f32>(0.022, 0.571, 1.000);  // #29C7FF
+const UNAFFORDABLE_COLOR: vec3<f32> = vec3<f32>(0.216, 0.216, 0.216);  // #808080
 
-// Invalid and positive cell marks use HDR values so bloom keeps them visible over the ghost.
+// Invalid marks and cell frames use HDR values so bloom keeps them visible over the ghost.
 // Valid imprint outlines stay within the display range.
 const INVALID_EXPOSURE: f32 = 1.8;
-const POSITIVE_EXPOSURE: f32 = 2.6;
+const FRAME_EXPOSURE: f32 = 2.6;
 
 // Stroke widths, stripe spacing and frame inset in world pixels.
 const OUTLINE_WIDTH: f32 = 2.0;
 const HATCH_SPACING: f32 = 10.0;
 const HATCH_WIDTH_PLAIN: f32 = 1.5;
-const HATCH_WIDTH_BLOCKING: f32 = 4.0;
+const HATCH_WIDTH_NEGATIVE: f32 = 4.0;
 const FRAME_INSET: f32 = 5.0;
 const FRAME_WIDTH: f32 = 1.5;
 
-// Opacity of the stripes over cells that are not themselves blocking.
+// Opacity of the stripes over cells without a negative highlight.
 const HATCH_DIM: f32 = 0.5;
+
+// Unaffordable outlines alternate grey and validity colors.
+// The period is measured in world pixels; the grey share is a fraction of each period.
+const UNAFFORDABLE_DASH_PERIOD: f32 = 16.0;
+const UNAFFORDABLE_GREY_SHARE: f32 = 0.7;
 
 const INV_SQRT_2: f32 = 0.70710678;
 
-// Field order and types mirror `GridPlacerUniform` in indexes_internal/src/placement.rs.
+// Field order and types mirror `GridPlacerUniform` in hud_internal/src/grid_placer.rs.
 struct GridPlacerData {
-    cell_data: vec4<u32>,  // 2 bits/cell, up to 64 cells (8×8 bounding box)
+    cell_data: vec4<u32>,  // 2 bits/cell, the first 64 cells of the bounding box
     bounds: vec2<u32>,
     validity: u32,
+    is_affordable: u32,
 }
 
 @group(2) @binding(0) var<uniform> data: GridPlacerData;
@@ -72,7 +81,15 @@ fn is_covered(cell: vec2<i32>) -> bool {
 fn validity_color() -> vec3<f32> {
     if data.validity == VALIDITY_INVALID { return INVALID_COLOR * INVALID_EXPOSURE; }
     if data.validity == VALIDITY_VALID_UNPOWERED { return UNPOWERED_COLOR; }
+    if data.validity == VALIDITY_REPLACES { return REPLACES_COLOR; }
     return VALID_COLOR;
+}
+
+// Alternates grey and validity colors along the outline. Using x + y keeps the dash phase
+// continuous around corners.
+fn unaffordable_outline_color(world: vec2<f32>, validity_color: vec3<f32>) -> vec3<f32> {
+    let phase = fract((world.x + world.y) / UNAFFORDABLE_DASH_PERIOD);
+    return select(validity_color, UNAFFORDABLE_COLOR, phase < UNAFFORDABLE_GREY_SHARE);
 }
 
 // The boundary turns at a cell corner when both sides of the corner are covered and the cell
@@ -139,16 +156,22 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
         return vec4<f32>(0.0);
     }
 
-    let outline_color = validity_color();
-    var mark_color = outline_color;
+    let cell_color = validity_color();
+    var mark_color = cell_color;
     var mark_coverage = 0.0;
     if data.validity == VALIDITY_INVALID {
-        let blocking = state == CELL_NEGATIVE;
-        let half_width = select(HATCH_WIDTH_PLAIN, HATCH_WIDTH_BLOCKING, blocking) * 0.5;
-        mark_coverage = hatch_coverage(world, half_width, texel) * select(HATCH_DIM, 1.0, blocking);
-    } else if state == CELL_POSITIVE {
+        let negative = state == CELL_NEGATIVE;
+        let half_width = select(HATCH_WIDTH_PLAIN, HATCH_WIDTH_NEGATIVE, negative) * 0.5;
+        mark_coverage = hatch_coverage(world, half_width, texel) * select(HATCH_DIM, 1.0, negative);
+    } else if state == CELL_FRAMED {
         mark_coverage = cell_frame_coverage(world, cell, texel);
-        mark_color = outline_color * POSITIVE_EXPOSURE;
+        mark_color = cell_color * FRAME_EXPOSURE;
+    }
+
+    // Invalid placements keep a solid red outline regardless of affordability.
+    var outline_color = cell_color;
+    if data.is_affordable == 0u && data.validity != VALIDITY_INVALID {
+        outline_color = unaffordable_outline_color(world, cell_color);
     }
 
     let edge_distance = imprint_edge_distance(world, cell);

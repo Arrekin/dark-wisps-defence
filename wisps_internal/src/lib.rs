@@ -9,8 +9,7 @@ use bevy::prelude::*;
 
 use almanach::{WispInfo, prelude::*};
 use game_core::motion::MotionSystems;
-use grids::{ObstacleChangeSystems, placement::PlacementModes};
-use indexes::placement::annotate_not_open_ground;
+use grids::{ObstacleChangeSystems, placement::PlacementFeedbackSystems};
 use persistence::prelude::{AppGameLoadSaveExtension, CollectSave};
 use states::prelude::*;
 use visuals::{effect_visuals::sync_effect_visuals, lane::LanePlugin};
@@ -44,6 +43,7 @@ impl Plugin for WispsPlugin {
                 sync_effect_visuals::<looks::WispLightVisual>,
                 sync_effect_visuals::<looks::WispElectricVisual>,
             ))
+            .add_systems(Update, spawning::WispPlacementRules::update_feedback.in_set(PlacementFeedbackSystems))
             // Read locomotion after tracking so visuals use this frame's motion.
             .add_systems(PostUpdate, (
                 systems::drive_wisp_water_look,
@@ -52,16 +52,14 @@ impl Plugin for WispsPlugin {
                 systems::drive_wisp_motion_look::<looks::WispFireVisual>,
             ).after(MotionSystems::Track))
             .add_observer(spawning::BuilderWisp::on_builder_add_spawn_wisp)
-            .add_observer(spawning::on_wisp_place_request_do_so)
-            .add_observer(spawning::on_wisp_remove_request_do_so)
+            .add_observer(spawning::on_begin_placing_start_wisp_session)
+            .add_observer(spawning::WispPlacementRules::on_place_request_do_so)
+            .add_observer(spawning::WispPlacementRules::on_remove_request_do_so)
             .add_systems(CollectSave, spawning::collect_wisps)
             .register_loader(MapLoadingStage::SpawnMapElements, "wisps", spawning::load_wisps)
             .register_wisps(WispInfo {
                 description: "A hostile wisp. Advances on your buildings and attacks what it reaches.".to_string(),
                 grid_imprint: WISP_GRID_IMPRINT,
-                validate: spawning::wisp_validator,
-                annotate: annotate_not_open_ground,
-                placement: PlacementModes::on_press(),
             });
     }
 }

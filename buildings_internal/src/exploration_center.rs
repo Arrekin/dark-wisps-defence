@@ -33,9 +33,8 @@ use alteration::{
 };
 use buildings::prelude::*;
 use game_core::prelude::*;
-use grids::placement::{PlacementModes, PlaceRequest};
+use grids::placement::PlaceRequest;
 use hud::prelude::*;
-use indexes::placement::annotate_not_placeable_ground;
 use logging::prelude::*;
 use map_objects::prelude::*;
 use persistence::prelude::*;
@@ -119,9 +118,6 @@ impl BuilderExplorationCenter {
             cost: vec![ResourceAmount::new(ResourceType::DarkOre, 500)],
             baseline: HashMap::from([(ModifierType::MaxIntegrityPoints, 100.)]),
             sockets: vec![],
-            validate: building_validator,
-            annotate: annotate_not_placeable_ground,
-            placement: PlacementModes::default(),
         }
     }
 
@@ -175,12 +171,11 @@ impl BuilderExplorationCenter {
 
 fn on_exploration_center_place_request_do_so(
     trigger: On<PlaceRequest>,
-    mut commands: Commands,
-    mut placement: BuildingPlacementManager,
+    mut rules: BuildingPlacementRules,
 ) {
     let PlaceRequest(MapObject::Building(BuildingType::ExplorationCenter)) = *trigger else { return };
-    let Some(coords) = placement.claim(BuildingType::ExplorationCenter) else { return };
-    commands.spawn(BuilderExplorationCenter::new(coords));
+    let Some(coords) = rules.claim(rules.feedback().validity) else { return };
+    rules.commands.spawn(BuilderExplorationCenter::new(coords));
 }
 
 #[log_tags(Tag::GameSave)]

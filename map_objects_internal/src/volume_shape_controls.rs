@@ -1,8 +1,10 @@
 //! # Volume shape controls
 //!
-//! Shared tunnel opening buttons and ramp cycling for wall and excavation placement.
-//! Controls replace a [`SelectableShape`] component on the placer's session entity, then send
-//! `GridPlacerGhostRebuildRequest` to update both the preview and the opening buttons.
+//! Shared controls for wall and excavation placement: tunnel openings, ramp orientation,
+//! and replacement of existing walls or excavations.
+//! The shape controls replace a [`SelectableShape`] component on the session, then send
+//! `GridPlacerGhostRebuildRequest` to update both the preview and the opening buttons. The replace
+//! switch toggles `ReplaceExisting` and updates only its own border.
 //!
 //! Each placement tool registers [`cycle_shape`] and
 //! [`on_ghost_rebuild_request_refresh_opening_selector`] for its shape type.
@@ -11,9 +13,15 @@ use bevy::{prelude::*, ui_widgets::Button};
 use strum::IntoEnumIterator;
 
 use game_core::prelude::{CELL_SIZE, EdgeSide, EdgeSides};
-use grids::placement::GridPlacerGhostRebuildRequest;
-use indexes::placement::GridPlacerSession;
+use grids::placement::{GridPlacerGhostRebuildRequest, PlacementSession, ReplaceExisting};
 use map_objects::prelude::VolumeShape;
+
+pub(crate) struct VolumeShapeControlsPlugin;
+impl Plugin for VolumeShapeControlsPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_observer(ReplaceToggleButton::on_add_construct_replace_toggle);
+    }
+}
 
 pub(crate) const SHAPE_KEY: KeyCode = KeyCode::KeyR;
 
@@ -113,20 +121,20 @@ pub(crate) fn spawn_opening_selector<S: SelectableShape>(parent: &mut ChildSpawn
 /// Replaces the session's shape with the next one in the ramp cycle.
 pub(crate) fn cycle_shape<S: SelectableShape>(
     mut commands: Commands,
-    placer_session: Single<(Entity, &S), With<GridPlacerSession>>,
+    placement_session: Single<(Entity, &S), With<PlacementSession>>,
 ) {
-    let (placer_session, &shape) = placer_session.into_inner();
-    commands.entity(placer_session).insert(shape.next_in_cycle());
+    let (placement_session, &shape) = placement_session.into_inner();
+    commands.entity(placement_session).insert(shape.next_in_cycle());
     commands.trigger(GridPlacerGhostRebuildRequest);
 }
 
 /// Updates the opening buttons to match the session's shape.
 pub(crate) fn on_ghost_rebuild_request_refresh_opening_selector<S: SelectableShape>(
     _trigger: On<GridPlacerGhostRebuildRequest>,
-    placer_session: Single<&S, With<GridPlacerSession>>,
+    placement_session: Single<&S, With<PlacementSession>>,
     mut edges: Query<(&OpeningEdgeButton, &mut BackgroundColor)>,
 ) {
-    let openings = placer_session.openings();
+    let openings = placement_session.openings();
     for (&OpeningEdgeButton(side), mut color) in edges.iter_mut() {
         color.0 = OpeningEdgeButton::color(side, openings);
     }
@@ -169,12 +177,56 @@ impl OpeningEdgeButton {
     fn on_click_toggle_opening<S: SelectableShape>(
         trigger: On<PointerClick>,
         mut commands: Commands,
-        placer_session: Single<(Entity, &S), With<GridPlacerSession>>,
+        placement_session: Single<(Entity, &S), With<PlacementSession>>,
         edges: Query<&OpeningEdgeButton>,
     ) {
         let Ok(&OpeningEdgeButton(side)) = edges.get(trigger.entity) else { return; };
-        let (placer_session, &shape) = placer_session.into_inner();
-        commands.entity(placer_session).insert(shape.with_opening_toggled(side));
+        let (placement_session, &shape) = placement_session.into_inner();
+        commands.entity(placement_session).insert(shape.with_opening_toggled(side));
         commands.trigger(GridPlacerGhostRebuildRequest);
+    }
+}
+
+/// Toggles `ReplaceExisting` on the placement session and updates its border to show the selection.
+///
+/// The border starts unselected; create this button for a session without `ReplaceExisting`.
+#[derive(Component)]
+#[require(Button)]
+pub(crate) struct ReplaceToggleButton;
+impl ReplaceToggleButton {
+    fn on_add_construct_replace_toggle(
+        trigger: On<Add<ReplaceToggleButton>>,
+        mut commands: Commands,
+    ) {
+        commands
+            .entity(trigger.entity)
+            .insert((
+                Node {
+                    align_items: AlignItems::Center,
+                    padding: UiRect::all(Val::Px(4.0)),
+                    border: UiRect::all(Val::Px(1.0)),
+                    ..default()
+                },
+                BorderColor::from(CONTROL_FRAME_IDLE),
+                BackgroundColor(Color::BLACK),
+                children![(Text::new("replace"), TextFont::from_font_size(10.0))],
+            ))
+            .observe(Self::on_click_toggle_replace_existing);
+    }
+
+    fn on_click_toggle_replace_existing(
+        trigger: On<PointerClick>,
+        mut commands: Commands,
+        placement_session: Single<(Entity, Has<ReplaceExisting>), With<PlacementSession>>,
+        mut frames: Query<&mut BorderColor, With<ReplaceToggleButton>>,
+    ) {
+        let (placement_session, was_replacing) = placement_session.into_inner();
+        if was_replacing {
+            commands.entity(placement_session).remove::<ReplaceExisting>();
+        } else {
+            commands.entity(placement_session).insert(ReplaceExisting);
+        }
+        let Ok(mut frame) = frames.get_mut(trigger.entity) else { return; };
+        *frame = BorderColor::from(if was_replacing { CONTROL_FRAME_IDLE } else { CONTROL_FRAME_SELECTED });
     }
 }

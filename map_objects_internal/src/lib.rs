@@ -38,6 +38,7 @@ impl Plugin for MapObjectsPlugin {
                 wall_editor_ui::WallEditorUiPlugin,
                 wall_materials::WallMaterialsPlugin,
                 walls::WallPlugin,
-            ));
+            ))
+            .add_plugins(volume_shape_controls::VolumeShapeControlsPlugin);
     }
 }

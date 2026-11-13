@@ -85,6 +85,12 @@ pub enum ExcavationShape {
     Pit,
     Shaped(VolumeShape),
 }
+impl ExcavationShape {
+    /// Returns whether this shape is a tunnel beneath an intact ground floor.
+    pub const fn is_tunnel(self) -> bool {
+        matches!(self, Self::Shaped(VolumeShape::Flat { .. }))
+    }
+}
 
 /// Progressive obstacle requiring drone scanning to solve.
 #[derive(Component, Default)]

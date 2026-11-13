@@ -20,9 +20,9 @@ use almanach::prelude::Almanach;
 use alteration::modifiers::prelude::{AttackRangeType, ModifierType};
 use buildings::prelude::Tower;
 use game_core::prelude::{AreaRange, CELL_SIZE, DrawLevel, GridArea, GridCoords, GridImprint, MapInfo, MapObject, RangeType, ZDepth};
-use grids::{placement::GridPlacerChanged, prelude::GridVersion};
+use grids::{placement::{GridPlacerChanged, PlacementObject, PlacementSession}, prelude::GridVersion};
 use hud::prelude::FocusedMapObject;
-use indexes::{placement::GridObjectPlacer, tower_ranges::TowerRangeIndex};
+use indexes::tower_ranges::TowerRangeIndex;
 use states::prelude::{MapLoadingStage, UiInteraction};
 use visuals::{canvas::MapCanvasBundle, specialize_with_shared_gpu};
 
@@ -249,15 +249,15 @@ fn on_grid_placer_changed_preview_placement(
     _trigger: On<GridPlacerChanged>,
     almanach: Res<Almanach>,
     mut overlay_config: ResMut<TowersRangeOverlayConfig>,
-    grid_object_placer: Single<(&GridObjectPlacer, &GridArea)>,
+    placement_session: Single<(&PlacementObject, &GridArea), With<PlacementSession>>,
 ) {
-    let (grid_object_placer, placer_area) = grid_object_placer.into_inner();
-    let preview_range = match grid_object_placer.map_object() {
-        Some(MapObject::Building(building_type)) => {
+    let (&PlacementObject(map_object), placement_area) = placement_session.into_inner();
+    let preview_range = match map_object {
+        MapObject::Building(building_type) => {
             let building_info = almanach.get_building_info(building_type);
             building_info.attack_range.map(|AttackRangeType(range_type)| AreaRange {
                 range_type,
-                area: *placer_area,
+                area: *placement_area,
                 min: building_info.baseline.get(&ModifierType::MinAttackRange).copied().unwrap_or(0.),
                 max: building_info.baseline[&ModifierType::MaxAttackRange],
             })

@@ -17,9 +17,8 @@ use fields::{
     prelude::*,
 };
 use game_core::prelude::*;
-use grids::placement::{PlacementModes, PlaceRequest};
+use grids::placement::PlaceRequest;
 use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
-use indexes::placement::annotate_not_placeable_ground;
 use logging::prelude::*;
 use persistence::prelude::*;
 use resources::prelude::*;
@@ -76,9 +75,6 @@ impl BuilderTowerField {
                 ("field_range".into(), ShardSocket::new(ShardType::Reach, "Field range", ModifierType::MaxAttackRange, [2., 4., 6.])),
                 ("slow_strength".into(), ShardSocket::without_contributions(ShardType::Strength, "Slow strength (no effect yet)")),
             ],
-            validate: building_validator,
-            annotate: annotate_not_placeable_ground,
-            placement: PlacementModes::default(),
         }
     }
 
@@ -194,12 +190,11 @@ impl BuilderTowerField {
 
 fn on_tower_field_place_request_do_so(
     trigger: On<PlaceRequest>,
-    mut commands: Commands,
-    mut placement: BuildingPlacementManager,
+    mut rules: BuildingPlacementRules,
 ) {
     let PlaceRequest(MapObject::Building(BuildingType::Tower(TowerType::Field))) = *trigger else { return };
-    let Some(coords) = placement.claim(BuildingType::Tower(TowerType::Field)) else { return };
-    commands.spawn(BuilderTowerField::new(coords));
+    let Some(coords) = rules.claim(rules.feedback().validity) else { return };
+    rules.commands.spawn(BuilderTowerField::new(coords));
 }
 
 #[log_tags(Tag::GameSave)]

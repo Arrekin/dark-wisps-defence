@@ -1,10 +1,9 @@
-use bevy::{platform::collections::HashMap, prelude::*};
+use bevy::{ecs::system::SystemParam, platform::collections::HashMap, prelude::*};
 
-use almanach::prelude::*;
 use alteration::{effects::prelude::*, modifiers::prelude::*};
 use game_core::prelude::*;
-use grids::{base::GridCell, placement::{PlacementValidity, PlaceRequest, RemoveRequest}};
-use indexes::{placement::{GridObjectPlacer, GridsCollectionParam}, wisps::WispsGrid};
+use grids::{base::GridCell, placement::{BeginPlacing, PlacementFeedback, PlacementModes, PlacementObject, PlacementSession, PlacementValidity, PlaceRequest, RemoveRequest, ReservedCoords}};
+use indexes::{prelude::ObstacleGrid, wisps::WispsGrid};
 use logging::prelude::*;
 use persistence::{prelude::*, rusqlite};
 use resources::prelude::*;
@@ -139,66 +138,82 @@ pub(crate) fn load_wisps(ctx: &mut LoadContext) -> LoadResult {
     })
 }
 
-pub(crate) fn wisp_validator(
-    _: MapObject,
-    area: GridArea,
-    grids: &GridsCollectionParam,
-) -> PlacementValidity {
-    if !area.fits_in(grids.obstacle_grid.bounds) {
-        return PlacementValidity::Invalid;
+pub(crate) fn on_begin_placing_start_wisp_session(
+    trigger: On<BeginPlacing>,
+    mut commands: Commands,
+    placement_session: Single<Entity, With<PlacementSession>>,
+) {
+    let BeginPlacing { object: MapObject::Wisp(_), origin } = *trigger else { return };
+    commands.entity(*placement_session).insert((GridArea::new(origin, WISP_GRID_IMPRINT), PlacementModes::on_press()));
+}
+
+/// Validates manual wisp placement and handles placement and removal requests.
+#[derive(SystemParam)]
+pub(crate) struct WispPlacementRules<'w, 's> {
+    commands: Commands<'w, 's>,
+    obstacle_grid: Res<'w, ObstacleGrid>,
+    wisps_grid: ResMut<'w, WispsGrid>,
+    reserved_coords: Res<'w, ReservedCoords>,
+    placement_session: Single<'w, 's, &'static GridArea, With<PlacementSession>>,
+}
+impl WispPlacementRules<'_, '_> {
+    fn placement_area(&self) -> GridArea {
+        **self.placement_session
     }
 
-    let can_hold_wisp = |coords| {
-        let cell = grids.obstacle_grid.cell(coords);
+    /// Requires every cell to be unreserved, support a wisp and contain none.
+    fn feedback(&self) -> PlacementFeedback {
+        PlacementFeedback::every_cell(self.placement_area(), &self.reserved_coords, |coords| self.can_take_wisp(coords))
+    }
+
+    /// Checks for a supported top position and no existing wisp at any level in the cell.
+    fn can_take_wisp(&self, coords: GridCoords) -> bool {
+        let Some(cell) = self.obstacle_grid.get(coords) else { return false; };
         let top = cell.top_level();
-        cell.is_placeable_ground()
+        let can_hold_wisp = cell.is_placeable_ground()
             || top == VolumeLevel::Underground
-            || top.below().is_some_and(|below| cell.at(below).is_ramp())
-    };
-    if !area.iter().all(can_hold_wisp) {
-        return PlacementValidity::Invalid;
+            || top.below().is_some_and(|below| cell.at(below).is_ramp());
+        can_hold_wisp && self.wisps_grid.wisps_in_cell(coords).next().is_none()
     }
-    if area.iter().any(|coords| grids.wisps_grid.wisps_in_cell(coords).next().is_some()) {
-        return PlacementValidity::Invalid;
+
+    pub(crate) fn update_feedback(
+        mut rules: WispPlacementRules,
+        placement_session: Single<(Entity, &PlacementObject), With<PlacementSession>>,
+    ) {
+        let (placement_session, object) = *placement_session;
+        if !matches!(object.0, MapObject::Wisp(_)) { return; }
+        let feedback = rules.feedback();
+        rules.commands.entity(placement_session).insert_if_neq(feedback);
     }
-    PlacementValidity::Valid
-}
 
-#[log_tags(Tag::Wave)]
-pub(crate) fn on_wisp_place_request_do_so(
-    trigger: On<PlaceRequest>,
-    mut commands: Commands,
-    almanach: Res<Almanach>,
-    grids: GridsCollectionParam,
-    placer: Single<&GridArea, With<GridObjectPlacer>>,
-) {
-    let PlaceRequest(MapObject::Wisp(wisp_type)) = *trigger else { return };
-    let area = *placer.into_inner();
+    #[log_tags(Tag::Wave)]
+    pub(crate) fn on_place_request_do_so(
+        trigger: On<PlaceRequest>,
+        mut rules: WispPlacementRules,
+    ) {
+        let PlaceRequest(MapObject::Wisp(wisp_type)) = *trigger else { return };
+        if rules.feedback().validity == PlacementValidity::Invalid { return; }
+        let position = rules.obstacle_grid.top_position(rules.placement_session.origin.coords);
+        #[debug_player("{} wisp placed at {}", wisp_type.as_ref(), position)]
+        rules.commands.spawn(BuilderWisp::new(wisp_type, position));
+    }
 
-    let validity = (almanach.wisps.validate)(MapObject::Wisp(wisp_type), area, &grids);
-    if validity == PlacementValidity::Invalid { return; }
-    let position = grids.obstacle_grid.top_position(area.origin.coords);
-    #[debug_player("{} wisp placed at {}", wisp_type.as_ref(), position)]
-    commands.spawn(BuilderWisp::new(wisp_type, position));
-}
-
-#[log_tags(Tag::Wave)]
-pub(crate) fn on_wisp_remove_request_do_so(
-    trigger: On<RemoveRequest>,
-    mut commands: Commands,
-    mut wisps_grid: ResMut<WispsGrid>,
-    wisps: Query<&GridArea, With<Wisp>>,
-    placer: Single<&GridArea, With<GridObjectPlacer>>,
-) {
-    let RemoveRequest(MapObject::Wisp(_)) = *trigger else { return };
-    let coords = placer.origin.coords;
-    if !wisps_grid.bounds.contains(coords) { return; }
-    let wisp_entities: Vec<Entity> = wisps_grid.wisps_in_cell(coords).collect();
-    for wisp_entity in wisp_entities {
-        #[debug_player("Wisp removed at {coords}")]
-        if let Ok(area) = wisps.get(wisp_entity) {
-            wisps_grid.wisp_remove(area.origin.volume_position(), wisp_entity);
-            commands.entity(wisp_entity).despawn();
+    #[log_tags(Tag::Wave)]
+    pub(crate) fn on_remove_request_do_so(
+        trigger: On<RemoveRequest>,
+        mut rules: WispPlacementRules,
+        wisps: Query<&GridArea, With<Wisp>>,
+    ) {
+        let RemoveRequest(MapObject::Wisp(_)) = *trigger else { return };
+        let coords = rules.placement_session.origin.coords;
+        if !rules.wisps_grid.bounds.contains(coords) { return; }
+        let wisp_entities: Vec<Entity> = rules.wisps_grid.wisps_in_cell(coords).collect();
+        for wisp_entity in wisp_entities {
+            #[debug_player("Wisp removed at {coords}")]
+            if let Ok(wisp_area) = wisps.get(wisp_entity) {
+                rules.wisps_grid.wisp_remove(wisp_area.origin.volume_position(), wisp_entity);
+                rules.commands.entity(wisp_entity).despawn();
+            }
         }
     }
 }

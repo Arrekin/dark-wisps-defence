@@ -149,7 +149,7 @@ pub(crate) fn on_begin_placing_latch_owning_section(
     strips: Query<&Children, With<SideMenuStrip>>,
     tiles: Query<&PlacementTile>,
 ) {
-    let BeginPlacing(placed) = *trigger;
+    let BeginPlacing { object: placed, .. } = *trigger;
 
     for (section_entity, latch, children) in sections.iter() {
         let holds_tile = children.first()

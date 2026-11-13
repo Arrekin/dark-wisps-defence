@@ -6,6 +6,7 @@ use almanach::prelude::*;
 use alteration::modifiers::prelude::*;
 use buildings::prelude::*;
 use game_core::prelude::*;
+use grids::placement::PlacementFeedbackSystems;
 use indexes::{prelude::*, search::targetfinding::target_find_closest_wisp, wisps::WispsGrid};
 use logging::prelude::*;
 use states::prelude::*;
@@ -26,6 +27,8 @@ impl Plugin for CommonSystemsPlugin {
                 (find_tower_targets, rotate_towers_to_targets).chain().run_if(in_state(GameState::Running)),
                 rotate_tower_top,
             ).chain().in_set(TowerAimingSystems))
+            .add_systems(Update, BuildingPlacementRules::update_feedback.in_set(PlacementFeedbackSystems))
+            .add_observer(on_begin_placing_start_building_session)
             .add_observer(on_building_destroy_request_do_so)
             .add_observer(on_insert_building_imprint_on_obstacle_grid)
             .add_observer(on_discard_building_deprint_from_obstacle_grid)

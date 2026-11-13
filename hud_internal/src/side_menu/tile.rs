@@ -3,8 +3,9 @@
 use bevy::{prelude::*, ui::FocusPolicy, ui_widgets::Button};
 
 use game_core::prelude::*;
-use indexes::placement::GridObjectPlacerRequest;
 use widgets::prelude::{BuilderVoidPanel, VoidPanelBorderSurge};
+
+use crate::grid_placer::GridObjectPlacerRequest;
 
 // Tile frame
 const FACE_SIZE: f32 = 46.;

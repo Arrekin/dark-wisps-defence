@@ -11,7 +11,6 @@ pub mod energy_supply;
 pub mod fields;
 pub mod floor_cover;
 pub mod obstacles;
-pub mod placement;
 pub mod search;
 pub mod tower_ranges;
 pub mod wisps;

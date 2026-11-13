@@ -229,10 +229,6 @@ impl ObstacleCell {
             _ => None,
         }
     }
-    /// Whether underground is solid earth with no wall or building in the `Elevation` volume.
-    pub fn can_be_excavated(&self) -> bool {
-        self.underground == GridStructure::Solid && !self.has_structure()
-    }
     /// True if a wall or building occupies the cell's `Elevation` volume.
     pub fn has_structure(&self) -> bool {
         matches!(self.elevation, GridStructure::Wall { .. } | GridStructure::Building { .. })

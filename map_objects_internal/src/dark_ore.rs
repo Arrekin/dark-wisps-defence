@@ -1,14 +1,10 @@
-use bevy::prelude::*;
+use bevy::{ecs::system::SystemParam, prelude::*};
 
 use almanach::{Almanach, DarkOreInfo, prelude::AlmanachAppExt};
 use game_core::prelude::{AltitudeLevel, GridArea, GridImprint, GridPosition, MapObject, MapObjectTooltipRequest, SSS};
-use grids::{ObstacleChangeSystems, placement::{PlacementModes, PlacementValidity, PlaceRequest, RemoveRequest}};
+use grids::{ObstacleChangeSystems, placement::{BeginPlacing, PlacementFeedback, PlacementModes, PlacementObject, PlacementSession, PlacementValidity, PlacementFeedbackSystems, PlaceRequest, RemoveRequest, ReservedCoords}};
 use hud::prelude::BuilderSideMenuItemTooltip;
-use indexes::{
-    obstacles::GridStructure,
-    placement::{annotate_not_open_ground, GridObjectPlacer, GridsCollectionParam, validator_open_ground},
-    prelude::ObstacleGrid,
-};
+use indexes::{obstacles::GridStructure, prelude::{ObstacleCell, ObstacleGrid}};
 use logging::prelude::*;
 use map_objects::prelude::*;
 use persistence::prelude::*;
@@ -18,15 +14,19 @@ pub(crate) struct DarkOrePlugin;
 impl Plugin for DarkOrePlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_systems(Update, despawn_depleted_dark_ores.in_set(ObstacleChangeSystems))
+            .add_systems(Update, (
+                despawn_depleted_dark_ores.in_set(ObstacleChangeSystems),
+                DarkOrePlacementRules::update_feedback.in_set(PlacementFeedbackSystems),
+            ))
             .add_observer(BuilderDarkOre::on_builder_add_spawn_dark_ore)
             .add_observer(on_insert_dark_ore_imprint_on_obstacle_grid)
             .add_observer(on_discard_dark_ore_deprint_from_obstacle_grid)
             .add_observer(dark_ore_area_scanner::on_insert_dark_ore_area_scanner_rescan)
             .add_observer(dark_ore_area_scanner::on_remove_dark_ore_sync_scanners.run_if(in_state(InGame)))
             .add_observer(dark_ore_area_scanner::on_add_dark_ore_sync_scanners)
-            .add_observer(on_dark_ore_place_request_do_so)
-            .add_observer(on_dark_ore_remove_request_do_so)
+            .add_observer(on_begin_placing_start_dark_ore_session)
+            .add_observer(DarkOrePlacementRules::on_place_request_do_so)
+            .add_observer(DarkOrePlacementRules::on_remove_request_do_so)
             .add_observer(on_map_object_tooltip_request_spawn_dark_ore_tooltip)
             .add_systems(CollectSave, collect_dark_ores)
             .register_loader(MapLoadingStage::SpawnMapElements, "dark_ores", load_dark_ores)
@@ -48,9 +48,6 @@ impl BuilderDarkOre {
             description: "A deposit of dark ore. A mining complex in range extracts it over time.".to_string(),
             grid_imprint: DARK_ORE_GRID_IMPRINT,
             max_field_saturation: 1000,
-            validate: validator_open_ground,
-            annotate: annotate_not_open_ground,
-            placement: PlacementModes::on_press(),
         }
     }
 
@@ -149,35 +146,69 @@ fn despawn_depleted_dark_ores(
     }
 }
 
-#[log_tags(Tag::MapObjects)]
-fn on_dark_ore_place_request_do_so(
-    trigger: On<PlaceRequest>,
+fn on_begin_placing_start_dark_ore_session(
+    trigger: On<BeginPlacing>,
     mut commands: Commands,
-    almanach: Res<Almanach>,
-    mut grids: GridsCollectionParam,
-    placer: Single<&GridArea, With<GridObjectPlacer>>,
+    placement_session: Single<Entity, With<PlacementSession>>,
 ) {
-    let PlaceRequest(MapObject::DarkOre) = *trigger else { return };
-    let area = *placer.into_inner();
-    let validity = (almanach.dark_ore.validate)(MapObject::DarkOre, area, &grids);
-    if validity == PlacementValidity::Invalid { return; }
-    #[debug_player("Dark ore placed at {}", area.origin)]
-    commands.spawn(BuilderDarkOre::new(area.origin.coords.at(AltitudeLevel::Underground), almanach.dark_ore.max_field_saturation));
-    grids.reserved_coords.reserve(area);
+    let BeginPlacing { object: MapObject::DarkOre, origin } = *trigger else { return };
+    commands.entity(*placement_session).insert((GridArea::new(origin, DARK_ORE_GRID_IMPRINT), PlacementModes::on_press()));
 }
 
-#[log_tags(Tag::MapObjects)]
-fn on_dark_ore_remove_request_do_so(
-    trigger: On<RemoveRequest>,
-    mut commands: Commands,
-    grids: GridsCollectionParam,
-    placer: Single<&GridArea, With<GridObjectPlacer>>,
-) {
-    let RemoveRequest(MapObject::DarkOre) = *trigger else { return };
-    let coords = placer.origin.coords;
-    #[debug_player("Dark ore removed at {coords}")]
-    if let Some(GridStructure::DarkOre { slot }) = grids.obstacle_grid.get(coords).map(|cell| cell.underground) {
-        commands.entity(grids.obstacle_grid.entry(slot).entity).despawn();
+/// Validates, places, and removes dark ore at the session's target area.
+#[derive(SystemParam)]
+pub(crate) struct DarkOrePlacementRules<'w, 's> {
+    commands: Commands<'w, 's>,
+    obstacle_grid: Res<'w, ObstacleGrid>,
+    reserved_coords: ResMut<'w, ReservedCoords>,
+    placement_session: Single<'w, 's, &'static GridArea, With<PlacementSession>>,
+}
+impl DarkOrePlacementRules<'_, '_> {
+    fn placement_area(&self) -> GridArea {
+        **self.placement_session
+    }
+
+    /// Requires unreserved, open ground throughout the session's area.
+    fn feedback(&self) -> PlacementFeedback {
+        PlacementFeedback::every_cell(self.placement_area(), &self.reserved_coords, |coords| self.obstacle_grid.get(coords).is_some_and(ObstacleCell::is_open_ground))
+    }
+
+    fn update_feedback(
+        mut rules: DarkOrePlacementRules,
+        placement_session: Single<(Entity, &PlacementObject), With<PlacementSession>>,
+    ) {
+        let (placement_session, object) = *placement_session;
+        if object.0 != MapObject::DarkOre { return; }
+        let feedback = rules.feedback();
+        rules.commands.entity(placement_session).insert_if_neq(feedback);
+    }
+
+    #[log_tags(Tag::MapObjects)]
+    fn on_place_request_do_so(
+        trigger: On<PlaceRequest>,
+        almanach: Res<Almanach>,
+        mut rules: DarkOrePlacementRules,
+    ) {
+        let PlaceRequest(MapObject::DarkOre) = *trigger else { return };
+        let area = rules.placement_area();
+        if rules.feedback().validity == PlacementValidity::Invalid { return; }
+        #[debug_player("Dark ore placed at {}", area.origin)]
+        rules.commands.spawn(BuilderDarkOre::new(area.origin.coords.at(AltitudeLevel::Underground), almanach.dark_ore.max_field_saturation));
+        rules.reserved_coords.reserve(area);
+    }
+
+    #[log_tags(Tag::MapObjects)]
+    fn on_remove_request_do_so(
+        trigger: On<RemoveRequest>,
+        mut rules: DarkOrePlacementRules,
+    ) {
+        let RemoveRequest(MapObject::DarkOre) = *trigger else { return };
+        let coords = rules.placement_session.origin.coords;
+        #[debug_player("Dark ore removed at {coords}")]
+        if let Some(GridStructure::DarkOre { slot }) = rules.obstacle_grid.get(coords).map(|cell| cell.underground) {
+            let dark_ore = rules.obstacle_grid.entry(slot).entity;
+            rules.commands.entity(dark_ore).despawn();
+        }
     }
 }
 

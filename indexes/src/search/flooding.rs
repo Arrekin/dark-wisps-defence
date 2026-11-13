@@ -111,6 +111,39 @@ pub fn flood_energy_supply(
     });
 }
 
+/// Tests whether a supplier placed on `area` with `range` would connect to existing power.
+///
+/// Power spreads between cardinally adjacent cells with supply. The proposed coverage connects
+/// if it overlaps a powered cell or shares an edge with one.
+pub fn would_supply_reach_power(energy_supply_grid: &EnergySupplyGrid, area: GridArea, range: EnergySupplyRange) -> bool {
+    let range = range.get() as usize;
+    SEARCH_SCRATCH.with_borrow_mut(|SearchScratch { coords_visited, coords_distance_queue, .. }| {
+        coords_visited.resize_and_clear(energy_supply_grid.bounds);
+        coords_distance_queue.clear();
+        for coords in area.iter_in_bounds(energy_supply_grid.bounds) {
+            if energy_supply_grid[coords].has_power() { return true; }
+            coords_distance_queue.push_back((0, coords));
+            coords_visited.set_visited(coords);
+        }
+        // Check one step beyond `range` for powered neighbors touching the coverage boundary.
+        while let Some((distance, coords)) = coords_distance_queue.pop_front() {
+            for new_coords in energy_supply_grid.bounds.cardinal_neighbors(coords) {
+                if coords_visited.is_visited(new_coords) {
+                    continue;
+                }
+
+                coords_visited.set_visited(new_coords);
+                if energy_supply_grid[new_coords].has_power() { return true; }
+                let new_distance = distance + 1;
+                if new_distance <= range {
+                    coords_distance_queue.push_back((new_distance, new_coords));
+                }
+            }
+        }
+        false
+    })
+}
+
 /// Rebuilds power coverage from generator cells, following cardinal neighbors with active supply.
 pub fn flood_power_coverage(
     energy_supply_grid: &mut EnergySupplyGrid,

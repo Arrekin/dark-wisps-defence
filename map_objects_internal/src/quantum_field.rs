@@ -20,15 +20,16 @@
 
 use bevy::{
     color::palettes::css::{AQUA, BLUE},
+    ecs::system::SystemParam,
     prelude::*,
     ui_widgets::Button,
 };
 
 use almanach::{Almanach, QuantumFieldInfo, prelude::AlmanachAppExt};
-use game_core::prelude::{AltitudeLevel, GridArea, GridCoords, GridImprint, MapObject, MapObjectTooltipRequest, SSS};
-use grids::placement::{BeginPlacing, CellHighlight, GridPlacerOverridePropertyRequest, PlacementModes, PlacementValidity, PlaceRequest, RemoveRequest, StopPlacing};
+use game_core::prelude::{AltitudeLevel, GridArea, GridImprint, MapObject, MapObjectTooltipRequest, SSS};
+use grids::placement::{BeginPlacing, GridPlacerChanged, GridPlacerGhostRebuildRequest, PlacementFeedback, PlacementObject, PlacementSession, PlacementValidity, PlacementFeedbackSystems, PlaceRequest, RemoveRequest, ReservedCoords, StopPlacing};
 use hud::prelude::{BuilderSideMenuItemTooltip, DisplayPanelMainContentRoot, FocusedMapObject};
-use indexes::{placement::{GridObjectPlacer, GridsCollectionParam}, prelude::{ObstacleCell, ObstacleGrid}};
+use indexes::prelude::ObstacleGrid;
 use logging::prelude::*;
 use map_objects::prelude::*;
 use persistence::{prelude::*, rusqlite};
@@ -46,6 +47,7 @@ impl Plugin for QuantumFieldPlugin {
             .add_systems(PostStartup, initialize_quantum_field_panel_content)
             .add_systems(Update, (
                 process_expeditions.run_if(in_state(GameState::Running)),
+                QuantumFieldPlacementRules::update_feedback.in_set(PlacementFeedbackSystems),
                 (
                     update_quantum_field_info_panel,
                     update_quantum_field_action_button,
@@ -55,13 +57,13 @@ impl Plugin for QuantumFieldPlugin {
             .add_observer(on_insert_quantum_field_imprint_on_obstacle_grid)
             .add_observer(on_discard_quantum_field_deprint_from_obstacle_grid)
             .add_observer(GridPlacerUiForQuantumField::on_add_construct_grid_placer_ui)
-            .add_observer(GridPlacerUiForQuantumField::on_begin_placing_spawn_grid_placer_ui)
+            .add_observer(GridPlacerUiForQuantumField::on_begin_placing_start_quantum_field_session)
             .add_observer(GridPlacerUiForQuantumField::on_stop_placing_despawn_grid_placer_ui)
             .add_observer(ArrowButton::on_add_construct_arrow_button)
             .add_observer(QuantumFieldActionButton::on_add_construct_action_button)
             .add_observer(on_focused_map_object_insert_update_quantum_field_panel)
-            .add_observer(on_quantum_field_place_request_do_so)
-            .add_observer(on_quantum_field_remove_request_do_so)
+            .add_observer(QuantumFieldPlacementRules::on_place_request_do_so)
+            .add_observer(QuantumFieldPlacementRules::on_remove_request_do_so)
             .add_observer(on_map_object_tooltip_request_spawn_quantum_field_tooltip)
             .add_systems(CollectSave, collect_quantum_fields)
             .register_loader(MapLoadingStage::SpawnMapElements, "quantum_fields", load_quantum_fields)
@@ -71,9 +73,6 @@ impl Plugin for QuantumFieldPlugin {
                 min_size: 3,
                 max_size: 6,
                 default_size: 3,
-                validate: quantum_field_validator,
-                annotate: quantum_field_annotator,
-                placement: PlacementModes::default(),
             });
     }
 }
@@ -242,67 +241,54 @@ fn load_quantum_fields(ctx: &mut LoadContext) -> LoadResult {
     })
 }
 
-fn quantum_field_validator(
-    _: MapObject,
-    area: GridArea,
-    grids: &GridsCollectionParam,
-) -> PlacementValidity {
-    if !area.fits_in(grids.obstacle_grid.bounds) {
-        return PlacementValidity::Invalid;
-    }
-    if grids.reserved_coords.any_reserved(area) {
-        return PlacementValidity::Invalid;
-    }
-    if !grids.obstacle_grid.cells_in(area).all(|cell| !cell.is_within_quantum_field()) {
-        return PlacementValidity::Invalid;
-    }
-    PlacementValidity::Valid
+/// Validates, places, and removes quantum fields at the session's target area.
+#[derive(SystemParam)]
+pub(crate) struct QuantumFieldPlacementRules<'w, 's> {
+    commands: Commands<'w, 's>,
+    obstacle_grid: Res<'w, ObstacleGrid>,
+    reserved_coords: ResMut<'w, ReservedCoords>,
+    placement_session: Single<'w, 's, &'static GridArea, With<PlacementSession>>,
 }
-
-fn quantum_field_annotator(
-    _: MapObject,
-    area: GridArea,
-    validity: PlacementValidity,
-    grids: &GridsCollectionParam,
-) -> Vec<(GridCoords, CellHighlight)> {
-    if validity != PlacementValidity::Invalid {
-        return vec![];
+impl QuantumFieldPlacementRules<'_, '_> {
+    /// Requires unreserved cells within the map that do not overlap an existing quantum field.
+    fn feedback(&self) -> PlacementFeedback {
+        PlacementFeedback::every_cell(**self.placement_session, &self.reserved_coords, |coords| self.obstacle_grid.get(coords).is_some_and(|cell| !cell.is_within_quantum_field()))
     }
-    area.iter()
-        .filter(|coords| grids.obstacle_grid.get(*coords).is_none_or(ObstacleCell::is_within_quantum_field))
-        .map(|coords| (coords, CellHighlight::Negative))
-        .collect()
-}
 
-#[log_tags(Tag::MapObjects)]
-fn on_quantum_field_place_request_do_so(
-    trigger: On<PlaceRequest>,
-    mut commands: Commands,
-    almanach: Res<Almanach>,
-    mut grids: GridsCollectionParam,
-    placer: Single<&GridArea, With<GridObjectPlacer>>,
-) {
-    let PlaceRequest(MapObject::QuantumField) = *trigger else { return };
-    let area = *placer.into_inner();
-    let validity = (almanach.quantum_fields.validate)(MapObject::QuantumField, area, &grids);
-    if validity == PlacementValidity::Invalid { return; }
-    #[debug_player("Quantum field placed at {}", area.origin)]
-    commands.spawn(BuilderQuantumField::new(area.at_level(AltitudeLevel::AllEncompassing)));
-    grids.reserved_coords.reserve(area);
-}
+    fn update_feedback(
+        mut rules: QuantumFieldPlacementRules,
+        placement_session: Single<(Entity, &PlacementObject), With<PlacementSession>>,
+    ) {
+        let (placement_session, object) = *placement_session;
+        if object.0 != MapObject::QuantumField { return; }
+        let feedback = rules.feedback();
+        rules.commands.entity(placement_session).insert_if_neq(feedback);
+    }
 
-#[log_tags(Tag::MapObjects)]
-fn on_quantum_field_remove_request_do_so(
-    trigger: On<RemoveRequest>,
-    mut commands: Commands,
-    grids: GridsCollectionParam,
-    placer: Single<&GridArea, With<GridObjectPlacer>>,
-) {
-    let RemoveRequest(MapObject::QuantumField) = *trigger else { return };
-    let coords = placer.origin.coords;
-    #[debug_player("Quantum field removed at {coords}")]
-    if let Some(entity) = grids.obstacle_grid.get(coords).and_then(|cell| cell.quantum_field) {
-        commands.entity(entity).despawn();
+    #[log_tags(Tag::MapObjects)]
+    fn on_place_request_do_so(
+        trigger: On<PlaceRequest>,
+        mut rules: QuantumFieldPlacementRules,
+    ) {
+        let PlaceRequest(MapObject::QuantumField) = *trigger else { return };
+        let area = **rules.placement_session;
+        if rules.feedback().validity == PlacementValidity::Invalid { return; }
+        #[debug_player("Quantum field placed at {}", area.origin)]
+        rules.commands.spawn(BuilderQuantumField::new(area.at_level(AltitudeLevel::AllEncompassing)));
+        rules.reserved_coords.reserve(area);
+    }
+
+    #[log_tags(Tag::MapObjects)]
+    fn on_remove_request_do_so(
+        trigger: On<RemoveRequest>,
+        mut rules: QuantumFieldPlacementRules,
+    ) {
+        let RemoveRequest(MapObject::QuantumField) = *trigger else { return };
+        let coords = rules.placement_session.origin.coords;
+        #[debug_player("Quantum field removed at {coords}")]
+        if let Some(quantum_field) = rules.obstacle_grid.get(coords).and_then(|cell| cell.quantum_field) {
+            rules.commands.entity(quantum_field).despawn();
+        }
     }
 }
 
@@ -331,10 +317,6 @@ pub(crate) struct QuantumFieldImprintSelector {
 impl QuantumFieldImprintSelector {
     pub fn new(min: i32, max: i32, default: i32) -> Self {
         Self { current: default, min, max }
-    }
-    #[expect(dead_code)]
-    pub fn get_size(&self) -> i32 {
-        self.current
     }
     pub fn imprint(&self) -> GridImprint {
         GridImprint::square(self.current)
@@ -414,20 +396,21 @@ impl GridPlacerUiForQuantumField {
         ));
     }
 
-    fn on_begin_placing_spawn_grid_placer_ui(
+    fn on_begin_placing_start_quantum_field_session(
         trigger: On<BeginPlacing>,
         mut commands: Commands,
         almanach: Res<Almanach>,
+        placement_session: Single<Entity, With<PlacementSession>>,
     ) {
-        let BeginPlacing(MapObject::QuantumField) = *trigger else { return };
+        let BeginPlacing { object: MapObject::QuantumField, origin } = *trigger else { return };
         let quantum_field_info = &almanach.quantum_fields;
         let imprint_selector = QuantumFieldImprintSelector::new(
             quantum_field_info.min_size,
             quantum_field_info.max_size,
             quantum_field_info.default_size,
         );
+        commands.entity(*placement_session).insert(GridArea::new(origin, imprint_selector.imprint()));
         commands.spawn(GridPlacerUiForQuantumField { imprint_selector });
-        commands.trigger(GridPlacerOverridePropertyRequest::Imprint(imprint_selector.imprint()));
     }
 
     fn on_stop_placing_despawn_grid_placer_ui(
@@ -485,6 +468,7 @@ impl ArrowButton {
     fn on_click_adjust_quantum_field_size(
         trigger: On<PointerClick>,
         mut commands: Commands,
+        placement_session: Single<(Entity, &GridArea), With<PlacementSession>>,
         grid_placer_ui: Single<&mut GridPlacerUiForQuantumField>,
         size_label: Single<&mut Text, With<QuantumFieldSizeLabel>>,
         arrows: Query<&ArrowButton>,
@@ -500,8 +484,10 @@ impl ArrowButton {
 
         size_label.into_inner().0 = grid_placer_ui.imprint_label();
 
-        let imprint = grid_placer_ui.imprint_selector.imprint();
-        commands.trigger(GridPlacerOverridePropertyRequest::Imprint(imprint));
+        let (placement_session, area) = placement_session.into_inner();
+        commands.entity(placement_session).insert(GridArea::new(area.origin, grid_placer_ui.imprint_selector.imprint()));
+        commands.trigger(GridPlacerGhostRebuildRequest);
+        commands.trigger(GridPlacerChanged);
     }
 }
 

@@ -1,4 +1,5 @@
 use bevy::{
+    ecs::system::SystemParam,
     platform::collections::HashMap,
     prelude::*,
 };
@@ -10,13 +11,13 @@ use alteration::{
 };
 use buildings::prelude::*;
 use game_core::prelude::*;
-use grids::placement::{PlacementModes, PlaceRequest};
+use grids::placement::{PlacementFeedback, PlacementObject, PlacementSession, PlacementValidity, PlacementFeedbackSystems, PlaceRequest, ReservedCoords};
 use indexes::{
     emissions::{EmissionsType, EmitterEnergy, FloodEmissionsDetails, FloodEmissionsEvaluator, FloodEmissionsMode},
     energy_supply::{GeneratorEnergy, SupplierEnergy},
-    placement::annotate_not_placeable_ground,
-    prelude::ObstacleGrid,
+    prelude::{ObstacleCell, ObstacleGrid},
 };
+use logging::prelude::*;
 use persistence::{creating_new_map, prelude::*};
 use states::prelude::*;
 use viewport::MainCamera;
@@ -28,8 +29,9 @@ impl Plugin for MainBasePlugin {
     fn build(&self, app: &mut App) {
         let almanach_info = BuilderMainBase::almanach_info(app.world().resource::<AssetServer>());
         app
+            .add_systems(Update, MainBasePlacementRules::update_feedback.in_set(PlacementFeedbackSystems))
             .add_observer(BuilderMainBase::on_builder_add_spawn_main_base)
-            .add_observer(on_main_base_place_request_do_so)
+            .add_observer(MainBasePlacementRules::on_place_request_do_so)
             .add_systems(CollectSave, collect_main_bases)
             .register_loader(MapLoadingStage::SpawnMapElements, "main_bases", load_main_bases)
             .add_systems(OnEnter(MapLoadingStage::SpawnMapElements), seed_main_base.run_if(creating_new_map))
@@ -83,9 +85,6 @@ impl BuilderMainBase {
                 (ModifierType::EnergySupplyRange, 15.),
             ]),
             sockets: vec![],
-            validate: building_validator,
-            annotate: annotate_not_placeable_ground,
-            placement: PlacementModes::default(),
         }
     }
 
@@ -132,21 +131,54 @@ impl BuilderMainBase {
     }
 }
 
-/// Moves the main base to the placer's area.
-/// Known limitation: validation counts the base's current cells as occupied, so a move that overlaps
-/// its old position is refused.
-fn on_main_base_place_request_do_so(
-    trigger: On<PlaceRequest>,
-    mut commands: Commands,
-    mut placement_and_obstacle_grid: ParamSet<(BuildingPlacementManager, ResMut<ObstacleGrid>)>,
-    main_base: Single<(Entity, &GridArea), With<MainBase>>,
-) {
-    let PlaceRequest(MapObject::Building(BuildingType::MainBase)) = *trigger else { return };
-    let Some(grid_position) = placement_and_obstacle_grid.p0().claim_free(BuildingType::MainBase) else { return };
-    let (main_base, &area) = main_base.into_inner();
-    let new_area = GridArea::new(grid_position, area.imprint);
-    placement_and_obstacle_grid.p1().relocate(area, new_area);
-    commands.entity(main_base).insert(new_area);
+/// Validates and moves the existing main base to the session's target area.
+#[derive(SystemParam)]
+pub(crate) struct MainBasePlacementRules<'w, 's> {
+    commands: Commands<'w, 's>,
+    obstacle_grid: ResMut<'w, ObstacleGrid>,
+    reserved_coords: ResMut<'w, ReservedCoords>,
+    placement_session: Single<'w, 's, &'static GridArea, With<PlacementSession>>,
+    main_base: Single<'w, 's, (Entity, &'static GridArea), With<MainBase>>,
+}
+impl MainBasePlacementRules<'_, '_> {
+    fn placement_area(&self) -> GridArea {
+        **self.placement_session
+    }
+
+    /// Requires unreserved cells that are placeable ground or already occupied by the base.
+    /// This allows a move to overlap the base's current area.
+    fn feedback(&self) -> PlacementFeedback {
+        let (_, current_area) = *self.main_base;
+        PlacementFeedback::every_cell(self.placement_area(), &self.reserved_coords, |coords| {
+            current_area.contains(coords) || self.obstacle_grid.get(coords).is_some_and(ObstacleCell::is_placeable_ground)
+        })
+    }
+
+    fn update_feedback(
+        mut rules: MainBasePlacementRules,
+        placement_session: Single<(Entity, &PlacementObject), With<PlacementSession>>,
+    ) {
+        let (placement_session, object) = *placement_session;
+        if object.0 != MapObject::Building(BuildingType::MainBase) { return; }
+        let feedback = rules.feedback();
+        rules.commands.entity(placement_session).insert_if_neq(feedback);
+    }
+
+    #[log_tags(Tag::Build)]
+    fn on_place_request_do_so(
+        trigger: On<PlaceRequest>,
+        mut rules: MainBasePlacementRules,
+    ) {
+        let PlaceRequest(MapObject::Building(BuildingType::MainBase)) = *trigger else { return };
+        let (main_base, &area) = *rules.main_base;
+        let new_area = rules.placement_area();
+        #[info_player("Main Base cannot be moved to {}", new_area.origin)]
+        if rules.feedback().validity == PlacementValidity::Invalid { return; }
+        #[info_player("Main Base moved to {}", new_area.origin)]
+        rules.obstacle_grid.relocate(area, new_area);
+        rules.reserved_coords.reserve(new_area);
+        rules.commands.entity(main_base).insert(new_area);
+    }
 }
 
 fn collect_main_bases(

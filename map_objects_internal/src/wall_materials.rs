@@ -11,7 +11,7 @@ use bevy::{
 };
 
 use game_core::prelude::{FaceSurface, GridImprint, MapObject, ObjectFaceRequest};
-use indexes::placement::GridPlacerSession;
+use grids::placement::PlacementSession;
 use logging::prelude::*;
 use map_objects::{prelude::VolumeShape, wall_style::{WallStyleKey, WallStyles}};
 use visuals::{specialize_ui_with_shared_gpu, specialize_with_shared_gpu};
@@ -77,7 +77,7 @@ fn on_object_face_request_draw_wall(
     mut meshes: ResMut<Assets<Mesh>>,
     mut swatch_materials: ResMut<Assets<WallSwatchMaterial>>,
     mut quad_materials: ResMut<Assets<WallQuadMaterial>>,
-    placer_session: Option<Single<(&WallStyleKey, &VolumeShape), With<GridPlacerSession>>>,
+    placement_session: Option<Single<(&WallStyleKey, &VolumeShape), With<PlacementSession>>>,
     grid_imprints: Query<&GridImprint>,
     style_keys: Query<&WallStyleKey>,
 ) {
@@ -92,8 +92,8 @@ fn on_object_face_request_draw_wall(
         }
         FaceSurface::World => {
             #[warn_dev("Wall face requested in the world for {entity} outside a wall placement session")]
-            let Some(placer_session) = placer_session else { return; };
-            let (&key, &shape) = placer_session.into_inner();
+            let Some(placement_session) = placement_session else { return; };
+            let (&key, &shape) = placement_session.into_inner();
             #[warn_dev("Wall face requested for {entity} with style {}, which is not in this map's table", key.0)]
             if !styles.contains(key) { return; }
             #[warn_dev("Wall face requested in the world for {entity}, which has no GridImprint or no longer exists")]

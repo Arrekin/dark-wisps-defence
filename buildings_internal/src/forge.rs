@@ -16,9 +16,8 @@ use alteration::{
 };
 use buildings::prelude::*;
 use game_core::prelude::*;
-use grids::placement::{PlacementModes, PlaceRequest};
+use grids::placement::PlaceRequest;
 use hud::prelude::*;
-use indexes::placement::annotate_not_placeable_ground;
 use logging::prelude::*;
 use persistence::prelude::*;
 use resources::prelude::*;
@@ -78,9 +77,6 @@ impl BuilderForge {
             cost: vec![ResourceAmount::new(ResourceType::DarkOre, 100)],
             baseline: HashMap::from([(ModifierType::MaxIntegrityPoints, 100.)]),
             sockets: vec![],
-            validate: building_validator,
-            annotate: annotate_not_placeable_ground,
-            placement: PlacementModes::default(),
         }
     }
 
@@ -129,12 +125,11 @@ impl BuilderForge {
 
 fn on_forge_place_request_do_so(
     trigger: On<PlaceRequest>,
-    mut commands: Commands,
-    mut placement: BuildingPlacementManager,
+    mut rules: BuildingPlacementRules,
 ) {
     let PlaceRequest(MapObject::Building(BuildingType::Forge)) = *trigger else { return };
-    let Some(coords) = placement.claim(BuildingType::Forge) else { return };
-    commands.spawn(BuilderForge::new(coords));
+    let Some(coords) = rules.claim(rules.feedback().validity) else { return };
+    rules.commands.spawn(BuilderForge::new(coords));
 }
 
 #[log_tags(Tag::GameSave)]

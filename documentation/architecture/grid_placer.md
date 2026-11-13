@@ -1,169 +1,146 @@
 # Grid Object Placer
 
-The grid object placer lets players place and remove objects on the map grid. It follows the cursor, shows a preview and placement feedback, and sends requests when the player clicks.
+The grid object placer lets players place and remove map objects on the grid. The tool lives in [`hud_internal/src/grid_placer.rs`](../../hud_internal/src/grid_placer.rs); shared contract types live in [`grids/src/placement.rs`](../../grids/src/placement.rs).
 
-## How it works
+Responsibilities are split between the tool and each object's domain:
 
-1. **Select:** UI or keyboard input selects a `MapObject`. The placer gets its placement settings from the Almanach and starts a session.
-2. **Preview:** A ghost follows the cursor, and an overlay shows placement validity. Domain controls can change the imprint or object-specific settings, such as wall style and tunnel openings.
-3. **Act:** A click sends `PlaceRequest` or `RemoveRequest`. The object's domain decides whether to place or remove it.
-4. **End:** Switching objects or leaving placement ends the session and removes its controls.
+- **The placer tool** tracks the cursor, manages the active `PlacementSession` entity, renders the ghost preview and cell-validity overlay, and translates mouse input into `PlaceRequest` and `RemoveRequest` events.
+- **Each object's domain** owns its placement rules, session settings, and optional UI controls. It publishes `PlacementFeedback` on the session for display, re-validates live world state on `PlaceRequest`, and checks for removable content on `RemoveRequest`.
 
-## Integration contracts
+`PlacementFeedback` is strictly visual—the placer never uses it to block input, and request handlers never trust stored session feedback, which may be stale or absent.
 
-### `GridObjectPlacerRequest`
+## Entity Hierarchy & Session State
 
-A resource. Set it from UI or keyboard input to start or switch placement:
+At startup, the placer spawns a persistent `GridObjectPlacer` entity with a persistent `PlacementSession` child. While active, it also parents a transient `GridPlacerGhost` child:
 
-```rust
-grid_object_placer_request.set(MapObject::Wall);
+```text
+GridObjectPlacer (entity)
+ │  components: Transform (at area.world_center()), Mesh2d, MeshMaterial2d<GridPlacerMaterial>
+ │
+ ├── PlacementSession (persistent child entity)
+ │      components: PlacementObject(MapObject), PlacementModes,
+ │                  GridArea (inserted by domain on BeginPlacing),
+ │                  PlacementFeedback (inserted by domain validation),
+ │                  ReplaceExisting (optional marker),
+ │                  <domain settings> (e.g. WallStyleKey, VolumeShape, ExcavationShape)
+ │
+ └── GridPlacerGhost (transient child entity, rebuilt on GridPlacerGhostRebuildRequest)
+        components: GridImprint + domain-rendered world preview (via ObjectFaceRequest::ghost)
 ```
 
-### `ObjectPlacementInfo`
+Tower range and energy supply overlays also observe `GridPlacerChanged` and read `(&PlacementObject, &GridArea)` from `PlacementSession` to preview coverage at the cursor.
 
-Each placeable `MapObject` registers its placement settings through `AlmanachAppExt`. The placer retrieves those settings from `Almanach` when a session begins.
+## Lifecycle & Event Flow
+
+### 1. Starting or switching a session (`begin_placement`)
+
+UI buttons and hotkeys request placement by calling `grid_object_placer_request.set(map_object)`. In `Update` (ordered `.before(PlacementFeedbackSystems)`), `begin_placement` consumes `GridObjectPlacerRequest` and runs:
+
+```text
+GridObjectPlacerRequest::take()
+  ├─ if already in UiInteraction::PlaceGridObject → trigger StopPlacing (placer despawns PlacementControls)
+  ├─ session.retain::<(PlacementSession, ChildOf)>()
+  │    .insert(PlacementObject(map_object))        → also inserts default PlacementModes via #[require]
+  ├─ trigger BeginPlacing { object, origin }       → domain inserts GridArea, optional PlacementModes,
+  │                                                  default settings on session, & spawns UI controls
+  ├─ trigger GridPlacerGhostRebuildRequest         → despawns old ghost, spawns (GridPlacerGhost, area.imprint),
+  │                                                  triggers ObjectFaceRequest::ghost(ghost, map_object)
+  ├─ trigger GridPlacerChanged                     → moves/resizes overlay quad, redraws it, notifies overlays
+  └─ set UiInteraction::PlaceGridObject
+```
+
+**Ordering constraint:** `BeginPlacing` must flush before `GridPlacerGhostRebuildRequest` and `GridPlacerChanged` because the domain's `BeginPlacing` observer inserts `GridArea` and any domain settings (such as `WallStyleKey` and `VolumeShape`) that the ghost and overlay read from `PlacementSession`.
+
+### 2. Updating area and settings
+
+While in `UiInteraction::PlaceGridObject`, three paths mutate the session without ending it:
+
+- **Cursor movement (`follow_mouse` in `PreUpdate`):** When the cursor enters a different grid cell, the placer updates `GridArea` on the session (preserving altitude level and imprint) and triggers `GridPlacerChanged`.
+- **Imprint change:** A control that changes the imprint after the session has started (e.g. quantum field size buttons) inserts a new `GridArea` at the session's origin and triggers both `GridPlacerGhostRebuildRequest` and `GridPlacerChanged`.
+- **Domain setting change:** Controls that affect the ghost's appearance (such as wall style swatches and ramp/opening selectors) replace their component on `PlacementSession` and trigger `GridPlacerGhostRebuildRequest`, which both rebuilds the ghost and refreshes those controls' selection frames. Settings that only affect validation—such as `ReplaceToggleButton`, which toggles `ReplaceExisting`—update the session component and their own border directly without rebuilding the ghost.
+
+### 3. Per-frame validation (`PlacementFeedbackSystems`)
+
+`PlacementFeedbackSystems` re-evaluates the session every frame in `Update` while in `UiInteraction::PlaceGridObject`, keeping feedback current with setting, stock, and world changes even when the cursor is stationary.
+
+Each domain's `update_feedback` system filters for its `MapObject`, evaluates current world state, and writes `PlacementFeedback` with `insert_if_neq`. Updates to `PlacementFeedback` trigger a feedback redraw only when its value changes (`GridPlacerChanged` also redraws the overlay when the area moves or resizes).
+
+### 4. Mouse input (`handle_placement_click`)
+
+Runs in `ObstacleChangeSystems` during `Update` and ignores clicks over UI. Input behavior is read from `PlacementModes { place, remove }` on `PlacementSession` (defaulting to `OnRelease` unless overridden by the domain on `BeginPlacing`):
+
+| `PlacementMode` | Left click (`PlaceRequest(MapObject)`) | Right click (`RemoveRequest(MapObject)`) |
+|---|---|---|
+| `OnRelease` (default) | Fires once on button release. | Fires once on button release. |
+| `OnPress` | Fires while held, at most once per origin cell per press (including rejected attempts); resets when the button is released. | Fires every frame while held. |
+
+### 5. Leaving placement (`hide_placer`)
+
+On `OnExit(UiInteraction::PlaceGridObject)`, the placer hides itself and triggers `StopPlacing`, on which it despawns every entity marked `PlacementControls`.
+
+## Validation, Reservations, and Domain Rules
+
+### `PlacementFeedback`
 
 ```rust
-pub struct ObjectPlacementInfo {
-    pub imprint: GridImprint,           // Default imprint
-    pub validate: PlacementValidatorFn, // Placement validity
-    pub annotate: PlacementAnnotatorFn, // Per-cell highlights
-    pub placement: PlacementModes,      // Place/remove behavior
+pub struct PlacementFeedback {
+    pub validity: PlacementValidity,                  // Valid, ValidUnpowered, Replaces, or Invalid
+    pub is_affordable: bool,                          // True when stock covers cost (or in AdminMode / free)
+    pub highlights: Vec<(GridCoords, CellHighlight)>, // Negative, Positive, or Removed
 }
 ```
 
-### `PlaceRequest` / `RemoveRequest`
+Combinators in `grids::placement` build feedback across an area:
+- **`PlacementFeedback::every_cell(area, reserved_coords, accepts)`** — Marks cells failing `accepts` with `CellHighlight::Negative`. Returns `Valid` if every cell passes and none is reserved; otherwise `Invalid`.
+- **`.replacing(area, holds_content)`** — When `Valid`, checks whether any cell holds replaceable content of the same kind; if so, changes validity to `Replaces` and replaces highlights with `CellHighlight::Removed` for those cells.
+- **`.with_validity(...)` / `.with_highlights(...)` / `.with_affordability(...)`** — Overrides individual fields.
 
-The placer emits these events on mouse input, according to the object's `PlacementModes`. Domain handlers match the object type, validate the request, and apply it.
+### `ReservedCoords`
 
-For example, the wall placement handler reads `GridArea` from the placer and `WallStyleKey` and `VolumeShape` from the session entity:
+`Builder*` spawns do not imprint onto `ObstacleGrid` until commands flush. Handlers record claimed cells in `ReservedCoords` so same-frame placement requests and `PlacementFeedbackSystems` reject those cells before the flush; reservations clear in the next frame's `First` schedule.
 
-```rust
-let PlaceRequest(MapObject::Wall) = *trigger else { return };
-let area = placer.into_inner();
-let (style, shape) = placer_session.into_inner();
-if (almanach.walls.validate)(MapObject::Wall, *area, &grids) == PlacementValidity::Invalid { return; }
-commands.spawn(BuilderWall::new(area.origin, *style).with_shape(*shape));
-grids.reserved_coords.reserve(*area);
-```
+- **Walls, buildings, dark ore, and quantum fields** check `ReservedCoords` via `every_cell` and call `reserved_coords.reserve(area)` on placement.
+- **Excavations** check `ReservedCoords` via `every_cell` but mutate `ObstacleGrid` immediately instead of reserving.
+- **Wisps** validate against `ObstacleGrid` and `WispsGrid` directly.
 
-The reservation prevents overlapping placement requests before the deferred spawn updates the obstacle grid.
+### Domain `*PlacementRules` (`SystemParam`)
 
-### `GridPlacerSession`
+Each domain groups validation and request handling in a `*PlacementRules` `SystemParam`:
 
-Marks the placer's child entity that holds the active object's settings. Wall placement stores `WallStyleKey` and `VolumeShape` here, using the same API components as placed walls.
+| Rules | File | Notes |
+|---|---|---|
+| `WallPlacementRules` | `map_objects_internal/src/walls.rs` | Supports `ReplaceExisting` and right-click removal (clearing `OnElevation` occupants). |
+| `ExcavationPlacementRules` | `map_objects_internal/src/excavations.rs` | Mutates `ObstacleGrid` directly and requests emissions recalculation; digging pits/ramps or filling excavations clears occupants, while tunnels preserve structures above. |
+| `DarkOrePlacementRules` | `map_objects_internal/src/dark_ore.rs` | Places/removes dark ore on unreserved ground. |
+| `QuantumFieldPlacementRules` | `map_objects_internal/src/quantum_field.rs` | Supports a variable square imprint, resized by its size buttons. |
+| `WispPlacementRules` | `wisps_internal/src/spawning.rs` | Checks `ObstacleGrid` support and `WispsGrid` occupancy. |
+| `BuildingPlacementRules` | `buildings_internal/src/common.rs` | Shared ground, power (`ValidUnpowered`), cost, and site-claiming logic for buildings; used directly by towers, exploration center, and forge. |
+| `MiningComplexPlacementRules` | `buildings_internal/src/mining_complex.rs` | Wraps `BuildingPlacementRules`; requires at least one dark ore cell (`CellHighlight::Positive`). |
+| `EnergyRelayPlacementRules` | `buildings_internal/src/energy_relay.rs` | Wraps `BuildingPlacementRules`; checks whether the relay's supply range reaches powered cells. |
+| `MainBasePlacementRules` | `buildings_internal/src/main_base.rs` | Relocates the existing `MainBase`, allowing overlap with its current area. |
 
-The entity persists across sessions. Before each `BeginPlacing`, the placer removes all its components except `GridPlacerSession` and `ChildOf`, clearing the previous settings while preserving the parent relationship.
+Rule structs expose:
+- `feedback(&self) -> PlacementFeedback` — pure validation used by both `update_feedback` and `on_place_request_do_so`.
+- `on_place_request_do_so` — matches the `MapObject`, recomputes `feedback()`, and applies placement when not `Invalid`. Session components needed only on placement (such as `(&WallStyleKey, &VolumeShape)`) are queried in that observer rather than on the shared `SystemParam`.
+- `on_remove_request_do_so` (where supported) — matches the `MapObject`, checks whether removable content of that kind exists at the target area, and removes it without calling `feedback()`.
 
-### `BeginPlacing` / `StopPlacing`
+For buildings with resource costs, `BuildingPlacementRules::claim(&mut self, validity)` rejects `Invalid`, deducts the Almanach cost from `Stock` (skipped when `AdminMode` is enabled), and reserves `area` in `ReservedCoords`. Each caller passes the validity of its own `feedback()`, computed from current state: `rules.claim(rules.feedback().validity)`.
 
-These events mark the start and end of a placement session. On `BeginPlacing`, initialize domain parameters on the session entity and create any controls:
+## Overlay Shader Encoding
 
-```rust
-let BeginPlacing(MapObject::Wall) = *trigger else { return };
-commands.entity(*placer_session).insert((WallStyleKey::default(), VolumeShape::default()));
-commands.spawn(GridPlacerUiForWall);
-```
+The overlay quad is rendered by [`assets/shaders/grids/grid_placer.wesl`](../../assets/shaders/grids/grid_placer.wesl) using `GridPlacerUniform`, which must stay layout-compatible between Rust and WESL:
 
-The placer builds the ghost after `BeginPlacing` observers have initialized the parameters, so the preview renderer can read them.
+- **`cell_data: UVec4`** packs up to 64 cells of `area.bounding_box()` at 2 bits per cell: `0` = outside imprint (transparent), `1` = plain imprint cell, `2` = `CellHighlight::Negative`, `3` = framed (`CellHighlight::Positive` or `CellHighlight::Removed`).
+- **Outline color** follows `PlacementValidity`: green (`Valid`), amber (`ValidUnpowered`), cyan (`Replaces`), or red (`Invalid`).
+- **Cell fills & frames:** `Invalid` draws diagonal stripes across the imprint, rendered thicker and brighter on `Negative` cells. When valid (`Valid`, `ValidUnpowered`, or `Replaces`), framed cells (`Positive` or `Removed`) draw an inset border.
+- **Affordability:** When `!is_affordable` on a non-`Invalid` site, the outline alternates between grey and the validity color (mostly grey per period). `Invalid` outlines remain solid red regardless of affordability.
 
-On `StopPlacing`, remove the domain's controls. Switching objects or leaving placement ends the session; changing settings within it does not emit either event.
+## Adding a Placeable Object
 
-### `GridPlacerOverridePropertyRequest`
+1. **Identifier:** Add a variant to `MapObject` (`game_core/src/types.rs`).
+2. **Session initialization (`BeginPlacing`):** Observe `BeginPlacing { object, origin }` to insert `GridArea::new(origin, imprint)` onto `PlacementSession` (buildings share `on_begin_placing_start_building_session`), override `PlacementModes` if needed (e.g. `PlacementModes::on_press()`), and initialize any domain settings or UI controls. Mark spawned controls with `PlacementControls` so the placer despawns them on `StopPlacing`.
+3. **Rules & observers:** Implement a `*PlacementRules` `SystemParam` (or reuse `BuildingPlacementRules`), add `update_feedback` to `PlacementFeedbackSystems`, and register `on_place_request_do_so` (plus `on_remove_request_do_so` if removable).
+4. **Faces:** Handle `ObjectFaceRequest` for `FaceSurface::World` (the ghost preview, reading any session settings from `PlacementSession`) and `FaceSurface::Ui` (menus/swatches).
+5. **Control updates (if configurable):** When a control changes the imprint, insert the new `GridArea` on the session and trigger `GridPlacerGhostRebuildRequest` and `GridPlacerChanged`. When a control changes ghost-visible session components, trigger `GridPlacerGhostRebuildRequest`.
+6. **Menu & tooltip:** Register any Almanach metadata, handle `MapObjectTooltipRequest`, and add a side-menu entry or hotkey if player-accessible.
 
-Overrides a placer setting for the active session. The supported override is `Imprint(GridImprint)`, which changes the object's imprint. For example, a quantum field's size selector sends:
-
-```rust
-commands.trigger(GridPlacerOverridePropertyRequest::Imprint(imprint));
-```
-
-The override rebuilds the ghost and refreshes placement validity and cell highlights. Starting a new session restores the object's default imprint.
-
-### `GridPlacerGhostRebuildRequest`
-
-Replaces the ghost with a new preview. Domain controls send this request after updating their parameters on the session entity:
-
-```rust
-commands.entity(*placer_session).insert(selected_style);
-commands.trigger(GridPlacerGhostRebuildRequest);
-```
-
-This request does not refresh placement validity or cell highlights. Validation callbacks receive the object, its area, and spatial indexes; they do not read the session entity.
-
-### `ObjectFaceRequest`
-
-After creating the ghost, the placer sends it `ObjectFaceRequest::ghost`. The preview renderer reads `GridImprint` from the ghost and object-specific parameters from the session entity.
-
-### `GridPlacerChanged`
-
-Requests a refresh of placement validity and cell highlights. The placer emits it when the cursor enters another cell, the imprint is overridden, or a session begins.
-
-## Flows
-
-### Starting a session
-
-```mermaid
-flowchart TB
-    request["GridObjectPlacerRequest is non-empty"] --> previous{"Session already active?"}
-    previous -- Yes --> stop["StopPlacing"] --> info["Get ObjectPlacementInfo from Almanach"]
-    previous -- No --> info
-    info --> session["Clear session parameters, set default imprint, store active MapObject"]
-    session --> begin["BeginPlacing(MapObject): domain inserts its parameters"]
-    begin --> ghost["GridPlacerGhostRebuildRequest rebuilds ghost"]
-    session --> changed["GridPlacerChanged refreshes feedback"]
-    session --> state["Set UiInteraction::PlaceGridObject if needed"]
-```
-
-### While the session is active
-
-**Cursor moves to another grid cell**
-
-```mermaid
-flowchart TB
-    cursor["Update placer GridArea"] --> changed["GridPlacerChanged"] --> validate["Validator returns validity"] --> annotate["Annotator returns cell highlights"] --> pack["build_cell_data()"] --> overlay["Update validity overlay"]
-```
-
-**Imprint override or domain parameter change**
-
-```mermaid
-flowchart TB
-    override["On GridPlacerOverridePropertyRequest"] --> update["Set GridArea imprint"]
-    update --> rebuild["GridPlacerGhostRebuildRequest"]
-    update --> changed["GridPlacerChanged → update validity overlay as above"]
-    domain["Domain control replaces a component on the session entity"] --> rebuild
-    rebuild --> ghost["Rebuild ghost via ObjectFaceRequest::ghost()"]
-```
-
-**Mouse input**
-
-```mermaid
-flowchart TB
-    input["Mouse input per PlacementModes"] --> action{"Action?"}
-    action -- Place --> place["PlaceRequest(MapObject)"] --> domain_place["Domain validates and places if allowed"]
-    action -- Remove --> remove["RemoveRequest(MapObject)"] --> domain_remove["Domain removes if supported"]
-```
-
-For deferred spawns, `ReservedCoords` prevents another placement from using the same cells before the obstacle grid updates. Reservations clear at the start of the next frame.
-
-**Leaving placement**
-
-```mermaid
-flowchart LR
-    exit["Exit UiInteraction::PlaceGridObject"] --> hide["Hide placer and end session"] --> stop["StopPlacing"] --> cleanup["Remove domain controls"]
-```
-
-## Adding a placeable object
-
-1. Add its variant to `MapObject` (`game_core/src/types.rs`).
-2. Register placement settings via `AlmanachAppExt`, convert the domain info to `ObjectPlacementInfo`, and extend `Almanach::get_placement_info_for`.
-3. Observe `PlaceRequest` and, if supported, `RemoveRequest`; match the variant and validate before acting.
-4. Handle `ObjectFaceRequest` for the ghost and any other supported surfaces.
-5. If the object has configurable settings, initialize them on the session entity and create controls on `BeginPlacing`. Remove the controls on `StopPlacing`.
-6. Have those controls send `GridPlacerOverridePropertyRequest::Imprint` for imprint changes. For domain settings, update the session components and send `GridPlacerGhostRebuildRequest`.
-7. Handle `MapObjectTooltipRequest` and add a menu offering if the object belongs in the side menu.
-
-The placement code is split across three modules:
-
-- [`grids/src/placement.rs`](../../grids/src/placement.rs): shared events, input modes, and reservations.
-- [`indexes/src/placement.rs`](../../indexes/src/placement.rs): placer state, the session marker, validation callbacks, and cell highlight callbacks.
-- [`indexes_internal/src/placement.rs`](../../indexes_internal/src/placement.rs): placement systems and observers.

@@ -1,9 +1,7 @@
 use bevy::{platform::collections::HashMap, prelude::*};
 
 use alteration::modifiers::prelude::{AttackRangeType, ModifierType};
-use game_core::prelude::{BuildingType, ContentId, GridImprint, MapObject, Shard};
-use grids::placement::PlacementModes;
-use indexes::placement::{ObjectPlacementInfo, PlacementAnnotatorFn, PlacementValidatorFn};
+use game_core::prelude::{BuildingType, ContentId, GridImprint, Shard};
 use resources::prelude::{ResourceAmount, ResourceType};
 use shards::prelude::ShardSocket;
 use states::prelude::MapLoadingStage;
@@ -204,19 +202,6 @@ impl Almanach {
             .unwrap_or_else(|| panic!("Shard {shard:?} not found in almanach"))
     }
 
-    // === Map objects ===
-
-    /// Extracts generic ObjectPlacementInfo for any MapObject.
-    pub fn get_placement_info_for(&self, map_object: MapObject) -> ObjectPlacementInfo {
-        match map_object {
-            MapObject::Building(building_type) => self.get_building_info(building_type).into(),
-            MapObject::Wall => (&self.walls).into(),
-            MapObject::Excavation => (&self.excavations).into(),
-            MapObject::DarkOre => (&self.dark_ore).into(),
-            MapObject::QuantumField => (&self.quantum_fields).into(),
-            MapObject::Wisp(_) => (&self.wisps).into(),
-        }
-    }
 }
 
 // ============================================================================
@@ -234,11 +219,8 @@ pub struct BuildingInfo {
     pub baseline: HashMap<ModifierType, f32>,
     /// Default sockets with a `ContentId` unique within the building. Empty if it takes no shards.
     pub sockets: Vec<(ContentId, ShardSocket)>,
-    pub validate: PlacementValidatorFn,
-    pub annotate: PlacementAnnotatorFn,
     pub sprite: Handle<Image>,
     pub top_sprite: Option<Handle<Image>>,
-    pub placement: PlacementModes,
 }
 
 impl BuildingInfo {
@@ -252,17 +234,6 @@ impl BuildingInfo {
     }
 }
 
-impl From<&BuildingInfo> for ObjectPlacementInfo {
-    fn from(info: &BuildingInfo) -> Self {
-        Self {
-            imprint: info.grid_imprint,
-            validate: info.validate,
-            annotate: info.annotate,
-            placement: info.placement,
-        }
-    }
-}
-
 // ============================================================================
 // WALL INFO
 // ============================================================================
@@ -272,20 +243,6 @@ pub struct WallInfo {
     pub name: String,
     pub description: String,
     pub grid_imprint: GridImprint,
-    pub validate: PlacementValidatorFn,
-    pub annotate: PlacementAnnotatorFn,
-    pub placement: PlacementModes,
-}
-
-impl From<&WallInfo> for ObjectPlacementInfo {
-    fn from(info: &WallInfo) -> Self {
-        Self {
-            imprint: info.grid_imprint,
-            validate: info.validate,
-            annotate: info.annotate,
-            placement: info.placement,
-        }
-    }
 }
 
 // ============================================================================
@@ -297,20 +254,6 @@ pub struct ExcavationInfo {
     pub name: String,
     pub description: String,
     pub grid_imprint: GridImprint,
-    pub validate: PlacementValidatorFn,
-    pub annotate: PlacementAnnotatorFn,
-    pub placement: PlacementModes,
-}
-
-impl From<&ExcavationInfo> for ObjectPlacementInfo {
-    fn from(info: &ExcavationInfo) -> Self {
-        Self {
-            imprint: info.grid_imprint,
-            validate: info.validate,
-            annotate: info.annotate,
-            placement: info.placement,
-        }
-    }
 }
 
 // ============================================================================
@@ -323,20 +266,6 @@ pub struct DarkOreInfo {
     pub description: String,
     pub grid_imprint: GridImprint,
     pub max_field_saturation: u32,
-    pub validate: PlacementValidatorFn,
-    pub annotate: PlacementAnnotatorFn,
-    pub placement: PlacementModes,
-}
-
-impl From<&DarkOreInfo> for ObjectPlacementInfo {
-    fn from(info: &DarkOreInfo) -> Self {
-        Self {
-            imprint: info.grid_imprint,
-            validate: info.validate,
-            annotate: info.annotate,
-            placement: info.placement,
-        }
-    }
 }
 
 // ============================================================================
@@ -350,26 +279,6 @@ pub struct QuantumFieldInfo {
     pub min_size: i32,
     pub max_size: i32,
     pub default_size: i32,
-    pub validate: PlacementValidatorFn,
-    pub annotate: PlacementAnnotatorFn,
-    pub placement: PlacementModes,
-}
-
-impl From<&QuantumFieldInfo> for ObjectPlacementInfo {
-    fn from(info: &QuantumFieldInfo) -> Self {
-        Self {
-            imprint: info.default_imprint(),
-            validate: info.validate,
-            annotate: info.annotate,
-            placement: info.placement,
-        }
-    }
-}
-
-impl QuantumFieldInfo {
-    pub fn default_imprint(&self) -> GridImprint {
-        GridImprint::square(self.default_size)
-    }
 }
 
 // ============================================================================
@@ -381,20 +290,6 @@ pub struct WispInfo {
     /// Shared by all wisp types; each display name comes from its `WispType`.
     pub description: String,
     pub grid_imprint: GridImprint,
-    pub validate: PlacementValidatorFn,
-    pub annotate: PlacementAnnotatorFn,
-    pub placement: PlacementModes,
-}
-
-impl From<&WispInfo> for ObjectPlacementInfo {
-    fn from(info: &WispInfo) -> Self {
-        Self {
-            imprint: info.grid_imprint,
-            validate: info.validate,
-            annotate: info.annotate,
-            placement: info.placement,
-        }
-    }
 }
 
 // ============================================================================

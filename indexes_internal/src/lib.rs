@@ -9,7 +9,6 @@ pub(crate) mod floor_cover;
 pub(crate) mod floor_cover_canvas;
 pub(crate) mod wisps;
 pub(crate) mod emissions;
-pub(crate) mod placement;
 
 pub struct IndexesPlugin;
 impl Plugin for IndexesPlugin {
@@ -22,7 +21,6 @@ impl Plugin for IndexesPlugin {
             floor_cover_canvas::FloorCoverCanvasPlugin,
             wisps::WispsGridPlugin,
             tower_ranges::TowerRangesPlugin,
-            placement::GridObjectPlacerPlugin,
         ));
     }
 }

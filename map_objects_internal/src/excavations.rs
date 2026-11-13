@@ -1,9 +1,13 @@
 //! # Excavations
 //!
 //! Excavations store pits, ramps and tunnels directly in the obstacle grid's underground layer.
-//! Placement replaces solid earth with an [`ExcavationShape`]; removal restores solid earth.
-//! Both operations clear wisps and floor covers at all levels of the cell and request an emissions
-//! rebuild. This request is explicit because emissions rebuilds do not track the obstacle grid version.
+//! Placement digs an [`ExcavationShape`] into solid earth. With [`ReplaceExisting`], it can also
+//! reshape an existing excavation. Removal fills the excavation with solid earth.
+//!
+//! Tunnels preserve the ground floor, so they can be dug beneath walls and buildings. Digging a
+//! pit or ramp removes that floor and clears wisps and floor covers at every level of the cell.
+//! Filling an excavation also clears every level. Each edit explicitly requests an emissions
+//! rebuild because emissions do not track obstacle grid versions.
 //!
 //! Save collectors read excavations from the grid; loaders restore them during `LoadResources`.
 //! Pits have their own table; shaped excavations store ramp directions and tunnel openings in
@@ -13,13 +17,9 @@ use bevy::{ecs::system::SystemParam, prelude::*};
 
 use almanach::{Almanach, AlmanachAppExt, ExcavationInfo};
 use game_core::{prelude::{EdgeSide, EdgeSides, GridArea, GridCoords, GridImprint, MapObject, MapObjectTooltipRequest, VolumeLevel}, request_flag::RequestFlag};
-use grids::placement::{PlacementModes, PlacementValidity, PlaceRequest, RemoveRequest};
+use grids::placement::{PlacementFeedback, PlacementObject, PlacementSession, PlacementValidity, PlacementFeedbackSystems, PlaceRequest, RemoveRequest, ReplaceExisting, ReservedCoords};
 use hud::prelude::BuilderSideMenuItemTooltip;
-use indexes::{
-    emissions::EmissionsRecalculation,
-    placement::{annotate_not_excavatable, GridObjectPlacer, GridPlacerSession, GridsCollectionParam, validator_excavatable},
-    prelude::ObstacleGrid,
-};
+use indexes::{emissions::EmissionsRecalculation, obstacles::GridStructure, prelude::{ObstacleCell, ObstacleGrid}};
 use logging::prelude::*;
 use map_objects::prelude::{ExcavationShape, VolumeShape};
 use persistence::{prelude::*, rusqlite};
@@ -31,8 +31,9 @@ pub(crate) struct ExcavationPlugin;
 impl Plugin for ExcavationPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_observer(on_excavation_place_request_do_so)
-            .add_observer(on_excavation_remove_request_do_so)
+            .add_systems(Update, ExcavationPlacementRules::update_feedback.in_set(PlacementFeedbackSystems))
+            .add_observer(ExcavationPlacementRules::on_place_request_do_so)
+            .add_observer(ExcavationPlacementRules::on_remove_request_do_so)
             .add_observer(on_map_object_tooltip_request_spawn_excavation_tooltip)
             .add_systems(CollectSave, collect_excavations)
             .register_loader(MapLoadingStage::LoadResources, "excavation_pits", load_excavation_pits)
@@ -41,74 +42,97 @@ impl Plugin for ExcavationPlugin {
     }
 }
 
-const EXCAVATION_GRID_IMPRINT: GridImprint = GridImprint::square(1);
+pub(crate) const EXCAVATION_GRID_IMPRINT: GridImprint = GridImprint::square(1);
 
 fn almanach_info() -> ExcavationInfo {
     ExcavationInfo {
         name: "Excavation".to_string(),
         description: "Opens the ground below: a pit, a ramp down to a pit floor, or a tunnel under the ground. Right-click fills the cell back with earth.".to_string(),
         grid_imprint: EXCAVATION_GRID_IMPRINT,
-        validate: validator_excavatable,
-        annotate: annotate_not_excavatable,
-        placement: PlacementModes::on_press(),
     }
 }
 
-/// Edits underground terrain, clears affected wisps and floor covers, and requests an emissions rebuild.
+/// Validates and applies excavation edits, including occupant cleanup and emissions updates.
 #[derive(SystemParam)]
-struct UndergroundEditing<'w, 's> {
+pub(crate) struct ExcavationPlacementRules<'w, 's> {
+    commands: Commands<'w, 's>,
     obstacle_grid: ResMut<'w, ObstacleGrid>,
+    reserved_coords: Res<'w, ReservedCoords>,
     cell_clearing: CellClearing<'w, 's>,
     emissions_recalculation: ResMut<'w, RequestFlag<EmissionsRecalculation>>,
+    placement_session: Single<'w, 's, (&'static GridArea, &'static ExcavationShape, Has<ReplaceExisting>), With<PlacementSession>>,
 }
-impl UndergroundEditing<'_, '_> {
-    /// Excavates the solid earth at `coords` into `shape`.
+impl ExcavationPlacementRules<'_, '_> {
+    /// Requires unreserved solid earth, or an existing excavation when `ReplaceExisting` is set.
+    /// Pits and ramps also require the cell to have no wall or building above it.
+    /// Reports `Replaces` if the area is valid and contains an excavation to replace.
+    fn feedback(&self) -> PlacementFeedback {
+        let (&area, &shape, replace) = *self.placement_session;
+        let replaceable = |cell: &ObstacleCell| replace && cell.excavation().is_some();
+        PlacementFeedback::every_cell(area, &self.reserved_coords, |coords| {
+            self.obstacle_grid.get(coords).is_some_and(|cell| {
+                let can_be_dug = cell.underground == GridStructure::Solid || replaceable(cell);
+                can_be_dug && (shape.is_tunnel() || !cell.has_structure())
+            })
+        }).replacing(area, |coords| self.obstacle_grid.get(coords).is_some_and(replaceable))
+    }
+
+    fn holds_excavation(&self, coords: GridCoords) -> bool {
+        self.obstacle_grid.get(coords).is_some_and(|cell| cell.excavation().is_some())
+    }
+
+    /// Digs `shape` at `coords` and requests an emissions rebuild.
+    /// Pits and ramps remove the ground floor, so they also clear occupants at every level.
     fn excavate(&mut self, coords: GridCoords, shape: ExcavationShape) {
         self.obstacle_grid.excavate(coords, shape);
-        self.after_change(coords);
+        if !shape.is_tunnel() {
+            self.cell_clearing.clear_from(coords, VolumeLevel::Underground);
+        }
+        self.emissions_recalculation.request();
     }
 
-    /// Replaces the excavation at `coords` with solid earth.
+    /// Fills the excavation, clears occupants at every level, and requests an emissions rebuild.
     fn fill(&mut self, coords: GridCoords) {
         self.obstacle_grid.fill_excavation(coords);
-        self.after_change(coords);
-    }
-
-    fn after_change(&mut self, coords: GridCoords) {
         self.cell_clearing.clear_from(coords, VolumeLevel::Underground);
         self.emissions_recalculation.request();
     }
-}
 
-#[log_tags(Tag::MapObjects)]
-fn on_excavation_place_request_do_so(
-    trigger: On<PlaceRequest>,
-    almanach: Res<Almanach>,
-    mut grids: ParamSet<(GridsCollectionParam, UndergroundEditing)>,
-    placer: Single<&GridArea, With<GridObjectPlacer>>,
-    placer_session: Single<&ExcavationShape, With<GridPlacerSession>>,
-) {
-    let PlaceRequest(MapObject::Excavation) = *trigger else { return };
-    let area = *placer.into_inner();
-    let shape = *placer_session.into_inner();
-    let validity = (almanach.excavations.validate)(MapObject::Excavation, area, &grids.p0());
-    if validity == PlacementValidity::Invalid { return; }
-    let coords = area.origin.coords;
-    #[debug_player("Excavated {coords} into {shape:?}")]
-    grids.p1().excavate(coords, shape);
-}
+    fn update_feedback(
+        mut rules: ExcavationPlacementRules,
+        placement_session: Single<(Entity, &PlacementObject), With<PlacementSession>>,
+    ) {
+        let (placement_session, object) = *placement_session;
+        if object.0 != MapObject::Excavation { return; }
+        let feedback = rules.feedback();
+        rules.commands.entity(placement_session).insert_if_neq(feedback);
+    }
 
-#[log_tags(Tag::MapObjects)]
-fn on_excavation_remove_request_do_so(
-    trigger: On<RemoveRequest>,
-    mut underground_editing: UndergroundEditing,
-    placer: Single<&GridArea, With<GridObjectPlacer>>,
-) {
-    let RemoveRequest(MapObject::Excavation) = *trigger else { return };
-    let coords = placer.origin.coords;
-    #[debug_player("Excavation filled at {coords}")]
-    if underground_editing.obstacle_grid.get(coords).is_some_and(|cell| cell.excavation().is_some()) {
-        underground_editing.fill(coords);
+    #[log_tags(Tag::MapObjects)]
+    fn on_place_request_do_so(
+        trigger: On<PlaceRequest>,
+        mut rules: ExcavationPlacementRules,
+    ) {
+        let PlaceRequest(MapObject::Excavation) = *trigger else { return };
+        let (area, &shape, _) = *rules.placement_session;
+        if rules.feedback().validity == PlacementValidity::Invalid { return; }
+        let coords = area.origin.coords;
+        #[debug_player("Excavated {coords} into {shape:?}")]
+        rules.excavate(coords, shape);
+    }
+
+    #[log_tags(Tag::MapObjects)]
+    fn on_remove_request_do_so(
+        trigger: On<RemoveRequest>,
+        mut rules: ExcavationPlacementRules,
+    ) {
+        let RemoveRequest(MapObject::Excavation) = *trigger else { return };
+        let (area, ..) = *rules.placement_session;
+        let coords = area.origin.coords;
+        #[debug_player("Excavation filled at {coords}")]
+        if rules.holds_excavation(coords) {
+            rules.fill(coords);
+        }
     }
 }
 

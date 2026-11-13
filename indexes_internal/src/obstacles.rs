@@ -27,7 +27,7 @@ const BUILDING_TYPE_SHIFT: u32 = 16;
 const UNDERGROUND_SHAPE_SHIFT: u32 = 24;
 
 fn clear_reserved_coords(mut reserved_coords: ResMut<ReservedCoords>) {
-    reserved_coords.for_structures.clear();
+    reserved_coords.clear();
 }
 
 fn upload_gpu_obstacle_cells(

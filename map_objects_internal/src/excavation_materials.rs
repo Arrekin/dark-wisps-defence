@@ -11,7 +11,7 @@ use bevy::{
 };
 
 use game_core::prelude::{FaceSurface, GridImprint, MapObject, ObjectFaceRequest};
-use indexes::placement::GridPlacerSession;
+use grids::placement::PlacementSession;
 use logging::prelude::*;
 use map_objects::prelude::ExcavationShape;
 use visuals::{specialize_ui_with_shared_gpu, specialize_with_shared_gpu};
@@ -81,7 +81,7 @@ fn on_object_face_request_draw_excavation(
     mut meshes: ResMut<Assets<Mesh>>,
     mut face_materials: ResMut<Assets<ExcavationFaceMaterial>>,
     mut quad_materials: ResMut<Assets<ExcavationQuadMaterial>>,
-    placer_session: Option<Single<&ExcavationShape, With<GridPlacerSession>>>,
+    placement_session: Option<Single<&ExcavationShape, With<PlacementSession>>>,
     grid_imprints: Query<&GridImprint>,
 ) {
     let ObjectFaceRequest { entity, object: MapObject::Excavation, surface, alpha } = *trigger else { return; };
@@ -93,10 +93,10 @@ fn on_object_face_request_draw_excavation(
         }
         FaceSurface::World => {
             #[warn_dev("Excavation face requested in the world for {entity} outside an excavation placement session")]
-            let Some(placer_session) = placer_session else { return; };
+            let Some(placement_session) = placement_session else { return; };
             #[warn_dev("Excavation face requested in the world for {entity}, which has no GridImprint or no longer exists")]
             let Ok(grid_imprint) = grid_imprints.get(entity) else { return; };
-            let (pit, shape) = shape_codes(*placer_session.into_inner());
+            let (pit, shape) = shape_codes(*placement_session.into_inner());
             commands.entity(entity).insert((
                 Mesh2d(meshes.add(Rectangle::from_size(grid_imprint.world_size()))),
                 MeshMaterial2d(quad_materials.add(ExcavationQuadMaterial { alpha, pit, shape })),
