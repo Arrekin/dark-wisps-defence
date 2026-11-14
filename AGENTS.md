@@ -233,7 +233,7 @@ Each domain has two crates: `foo` (API) and `foo_internal` (implementation).
 
 The binary crate depends on `_internal` crates. API crates depend only on other API crates.
 
-Exceptions to the split: `overlays` and `editor` are consumer-only leaves — only the binary depends on them, so there is no shared-types layer to extract; they keep types, systems, and Plugin in one crate with no `_internal` suffix. `almanach` is a hybrid: other crates use it like an api crate, but it also owns its systems and Plugin in the same crate; split it into `almanach`/`almanach_internal` only if its systems grow or start dragging heavy dependencies into consumers' builds.
+Exceptions to the split: `editor` is a consumer-only leaf — only the binary depends on it, so there is no shared-types layer to extract; it keeps types, systems, and Plugin in one crate with no `_internal` suffix. `almanach` is a hybrid: other crates use it like an api crate, but it also owns its systems and Plugin in the same crate; split it into `almanach`/`almanach_internal` only if its systems grow or start dragging heavy dependencies into consumers' builds.
 
 All dependency versions live in `[workspace.dependencies]` in the root `Cargo.toml`; member crates reference them with `workspace = true`, and bevy's `dynamic_linking` is enabled in the workspace definition so every build graph (including per-crate `cargo check -p foo`) resolves the same bevy feature set and shares one bevy build in `target/`. Remove it there if release builds are ever needed.
 

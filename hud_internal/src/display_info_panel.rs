@@ -1,7 +1,8 @@
 use bevy::{color::palettes::css::YELLOW, prelude::*, ui::widget::ViewportNode};
 
 use hud::prelude::{DisplayPanelMainContentRoot, FocusedMapObject};
-use indexes::obstacles::{GridStructure, ObstacleGrid};
+use indexes::{energy_supply::SupplierEnergy, obstacles::{GridStructure, ObstacleGrid}};
+use overlays::energy_supply::{EnergySupplyOverlayConfig, EnergySupplyOverlaySecondaryMode};
 use states::prelude::*;
 use viewport::{BuilderPreviewCamera, CameraAutoFollowEntity, MouseInfo};
 
@@ -16,7 +17,9 @@ impl Plugin for DisplayInfoPanelPlugin {
             ))
             .add_systems(OnEnter(UiInteraction::DisplayInfoPanel), show_display_info_panel)
             .add_systems(OnExit(UiInteraction::DisplayInfoPanel), hide_display_info_panel)
-            .add_observer(on_despawn_focused_map_object_return_to_free_interaction);
+            .add_observer(on_despawn_focused_map_object_return_to_free_interaction)
+            .add_observer(on_insert_focused_map_object_highlight_energy_supply)
+            .add_observer(on_remove_focused_map_object_clear_energy_supply_highlight);
     }
 }
 
@@ -86,6 +89,28 @@ fn show_on_click(
     }
     commands.entity(focused_element).insert(FocusedMapObject);
     next_ui_interaction_state.set_if_different(UiInteraction::DisplayInfoPanel);
+}
+
+/// Wants the energy supply overlay to highlight a focused supplier's coverage, or to show all
+/// supply faded for any other focused object.
+fn on_insert_focused_map_object_highlight_energy_supply(
+    trigger: On<Insert<FocusedMapObject>>,
+    mut energy_supply_overlay_config: ResMut<EnergySupplyOverlayConfig>,
+    suppliers: Query<(), With<SupplierEnergy>>,
+) {
+    let focused_entity = trigger.entity;
+    energy_supply_overlay_config.secondary_mode = Some(if suppliers.contains(focused_entity) {
+        EnergySupplyOverlaySecondaryMode::HighlightSupplier { supplier: focused_entity }
+    } else {
+        EnergySupplyOverlaySecondaryMode::HighlightNone
+    });
+}
+
+fn on_remove_focused_map_object_clear_energy_supply_highlight(
+    _trigger: On<Remove<FocusedMapObject>>,
+    mut energy_supply_overlay_config: ResMut<EnergySupplyOverlayConfig>,
+) {
+    energy_supply_overlay_config.secondary_mode = None;
 }
 
 fn on_despawn_focused_map_object_return_to_free_interaction(

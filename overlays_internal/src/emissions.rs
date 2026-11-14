@@ -13,7 +13,7 @@ use indexes::emissions::{EmissionsGrid, EmissionsType};
 use states::prelude::MapLoadingStage;
 use visuals::{canvas::MapCanvasBundle, specialize_with_shared_gpu};
 
-pub struct EmissionsOverlayPlugin;
+pub(crate) struct EmissionsOverlayPlugin;
 impl Plugin for EmissionsOverlayPlugin {
     fn build(&self, app: &mut App) {
         app
@@ -32,16 +32,16 @@ impl Plugin for EmissionsOverlayPlugin {
 }
 
 #[derive(States, Debug, Clone, PartialEq, Eq, Hash, Default)]
-pub enum EmissionsOverlayState {
+enum EmissionsOverlayState {
     #[default]
     Hide,
     Show,
 }
 
 #[derive(Resource)]
-pub struct EmissionsOverlayConfig {
-    pub is_overlay_globally_enabled: bool,
-    pub emissions_type: EmissionsType,
+struct EmissionsOverlayConfig {
+    is_overlay_globally_enabled: bool,
+    emissions_type: EmissionsType,
 }
 impl Default for EmissionsOverlayConfig {
     fn default() -> Self {
@@ -71,7 +71,7 @@ struct EmissionsUniformData {
 #[derive(Asset, AsBindGroup, TypePath, Debug, Clone, Default)]
 struct EmissionsOverlayMaterial {
     #[uniform(0)]
-    pub uniforms: EmissionsUniformData,
+    uniforms: EmissionsUniformData,
 }
 impl Material2d for EmissionsOverlayMaterial {
     fn fragment_shader() -> ShaderRef {
@@ -87,7 +87,7 @@ impl Material2d for EmissionsOverlayMaterial {
 
 #[derive(Component, Default)]
 #[require(ZDepth::OverlayEmissions, DrawLevel::GroundFloor)]
-pub struct EmissionsOverlay {
+struct EmissionsOverlay {
     /// Grid version used to calculate normalization; `None` before the first refresh.
     shown_version: Option<GridVersion>,
 }

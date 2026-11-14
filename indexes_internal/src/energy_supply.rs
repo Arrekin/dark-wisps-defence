@@ -4,7 +4,7 @@ use alteration::modifiers::prelude::EnergySupplyRange;
 use game_core::{prelude::{DisabledByPlayer, GridArea, MapInfo}, request_flag::RequestFlag};
 use grids::EnergySupplySystems;
 use indexes::{
-    energy_supply::{EnergySupplyGrid, FloodEnergySupplyMode, GeneratorEnergy, SupplierChange, SupplierChangedMessage, SupplierEnergy},
+    energy_supply::{EnergySupply, EnergySupplyPreviewOperations, FloodEnergySupplyMode, GeneratorEnergy, SupplierChange, SupplierChangedMessage, SupplierEnergy},
     search::flooding::{flood_energy_supply, flood_power_coverage},
 };
 use states::prelude::MapLoadingStage;
@@ -13,17 +13,20 @@ pub(crate) struct EnergySupplyPlugin;
 impl Plugin for EnergySupplyPlugin {
     fn build(&self, app: &mut App) {
         app
-            .init_resource::<EnergySupplyGrid>()
+            .init_resource::<EnergySupply>()
             .init_resource::<RequestFlag<PowerCoverageRecalculation>>()
             .add_message::<SupplierChangedMessage>()
-            .add_systems(OnExit(MapLoadingStage::LoadMapInfo), |mut commands: Commands, map_info: Res<MapInfo>| { commands.insert_resource(EnergySupplyGrid::new_with_size(map_info.grid_bounds)); })
+            .add_systems(OnExit(MapLoadingStage::LoadMapInfo), |mut commands: Commands, map_info: Res<MapInfo>| { commands.insert_resource(EnergySupply::new_with_size(map_info.grid_bounds)); })
             .add_systems(PostUpdate, (
                 (
                     apply_supplier_changes,
                     recalculate_power_coverage.run_if(RequestFlag::<PowerCoverageRecalculation>::is_requested),
+                    rebuild_outdated_preview.run_if(EnergySupply::is_preview_outdated),
                 ).chain().in_set(EnergySupplySystems),
             ))
-            .add_observer(on_add_supplier_energy_register_supplier);
+            .add_observer(on_add_supplier_energy_register_supplier)
+            .add_observer(on_insert_preview_operations_rebuild_preview)
+            .add_observer(on_remove_preview_operations_rebuild_preview);
     }
 }
 
@@ -63,7 +66,7 @@ fn emit_supplier_changed<P, const MODE: SupplierChange>(
 }
 
 fn apply_supplier_changes(
-    mut energy_supply_grid: ResMut<EnergySupplyGrid>,
+    mut energy_supply: ResMut<EnergySupply>,
     mut need_recalculate_power: ResMut<RequestFlag<PowerCoverageRecalculation>>,
     mut supplier_changed_messages: MessageReader<SupplierChangedMessage>,
     suppliers: Query<Has<DisabledByPlayer>, With<SupplierEnergy>>,
@@ -80,8 +83,8 @@ fn apply_supplier_changes(
             }
         };
         flood_energy_supply(
-            &mut energy_supply_grid,
-            message.area.iter(),
+            &mut energy_supply.grid,
+            message.area,
             mode,
             message.range,
             message.supplier,
@@ -91,11 +94,39 @@ fn apply_supplier_changes(
 }
 
 fn recalculate_power_coverage(
-    mut energy_supply_grid: ResMut<EnergySupplyGrid>,
+    mut energy_supply: ResMut<EnergySupply>,
     mut need_recalculate_power: ResMut<RequestFlag<PowerCoverageRecalculation>>,
-    generators: Query<&GridArea, With<GeneratorEnergy>>,
+    generators: Query<(Entity, &GridArea), (With<GeneratorEnergy>, Without<DisabledByPlayer>)>,
 ) {
     need_recalculate_power.clear();
 
-    flood_power_coverage(&mut energy_supply_grid, generators.iter().map(|area| area.origin.coords));
+    energy_supply.grid.generators.clear();
+    energy_supply.grid.generators.extend(generators.iter().map(|(generator, area)| (generator, *area)));
+    flood_power_coverage(&mut energy_supply.grid);
+}
+
+fn on_insert_preview_operations_rebuild_preview(
+    _trigger: On<Insert<EnergySupplyPreviewOperations>>,
+    mut energy_supply: ResMut<EnergySupply>,
+    proposals: Query<(Entity, &EnergySupplyPreviewOperations)>,
+) {
+    energy_supply.rebuild_preview(proposals.iter());
+}
+
+/// `Remove` observers run while the component is still present, so the removed operations are
+/// excluded explicitly.
+fn on_remove_preview_operations_rebuild_preview(
+    trigger: On<Remove<EnergySupplyPreviewOperations>>,
+    mut energy_supply: ResMut<EnergySupply>,
+    proposals: Query<(Entity, &EnergySupplyPreviewOperations)>,
+) {
+    let withdrawn = trigger.entity;
+    energy_supply.rebuild_preview(proposals.iter().filter(|(proposer, _)| *proposer != withdrawn));
+}
+
+fn rebuild_outdated_preview(
+    mut energy_supply: ResMut<EnergySupply>,
+    proposals: Query<(Entity, &EnergySupplyPreviewOperations)>,
+) {
+    energy_supply.rebuild_preview(proposals.iter());
 }

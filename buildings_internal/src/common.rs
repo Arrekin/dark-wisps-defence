@@ -2,9 +2,10 @@ use bevy::{ecs::system::SystemParam, prelude::*};
 
 use almanach::prelude::Almanach;
 use game_core::{math::angle_difference, prelude::*};
-use grids::placement::{BeginPlacing, PlacementFeedback, PlacementObject, PlacementSession, PlacementValidity, ReservedCoords};
-use indexes::{energy_supply::EnergySupplyGrid, prelude::{ObstacleCell, ObstacleGrid}};
+use grids::placement::{BeginPlacing, GridPlacerChanged, PlacementFeedback, PlacementObject, PlacementSession, PlacementValidity, ReservedCoords};
+use indexes::{energy_supply::EnergySupply, prelude::{ObstacleCell, ObstacleGrid}};
 use logging::prelude::*;
+use overlays::energy_supply::{EnergySupplyOverlayConfig, EnergySupplyOverlaySecondaryMode};
 use persistence::{prelude::*, rusqlite};
 use resources::prelude::Stock;
 use states::AdminMode;
@@ -49,6 +50,18 @@ pub(crate) fn on_begin_placing_start_building_session(
     commands.entity(*placement_session).insert(GridArea::new(origin, imprint));
 }
 
+/// Wants the energy supply overlay to show which suppliers cover a consumer being placed.
+/// Energy suppliers write their own preview instead.
+pub(crate) fn on_grid_placer_changed_highlight_area_suppliers(
+    _trigger: On<GridPlacerChanged>,
+    mut overlay_config: ResMut<EnergySupplyOverlayConfig>,
+    placement_session: Single<(&PlacementObject, &GridArea), With<PlacementSession>>,
+) {
+    let (&PlacementObject(MapObject::Building(building_type)), &area) = *placement_session else { return };
+    if !building_type.is_energy_consumer() || building_type.is_energy_supplier() { return; }
+    overlay_config.secondary_mode = Some(EnergySupplyOverlaySecondaryMode::HighlightAreaSuppliers { area });
+}
+
 /// Shared ground, power, and cost checks for building placement.
 ///
 /// Valid sites can be claimed by paying the cost and reserving their cells. Missing power is
@@ -58,7 +71,7 @@ pub(crate) struct BuildingPlacementRules<'w, 's> {
     pub(crate) commands: Commands<'w, 's>,
     pub(crate) almanach: Res<'w, Almanach>,
     pub(crate) obstacle_grid: Res<'w, ObstacleGrid>,
-    pub(crate) energy_supply_grid: Res<'w, EnergySupplyGrid>,
+    pub(crate) energy_supply: Res<'w, EnergySupply>,
     pub(crate) reserved_coords: ResMut<'w, ReservedCoords>,
     stock: ResMut<'w, Stock>,
     admin_mode: Res<'w, State<AdminMode>>,
@@ -92,7 +105,7 @@ impl BuildingPlacementRules<'_, '_> {
 
     /// Changes `Valid` to `ValidUnpowered` when the session's area has no power.
     pub(crate) fn with_power_check(&self, feedback: PlacementFeedback) -> PlacementFeedback {
-        if feedback.validity == PlacementValidity::Valid && !self.energy_supply_grid.is_area_powered(self.placement_area()) {
+        if feedback.validity == PlacementValidity::Valid && !self.energy_supply.grid.is_area_powered(self.placement_area()) {
             return feedback.with_validity(PlacementValidity::ValidUnpowered);
         }
         feedback

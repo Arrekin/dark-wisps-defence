@@ -28,25 +28,25 @@ GridObjectPlacer (entity)
         components: GridImprint + domain-rendered world preview (via ObjectFaceRequest::ghost)
 ```
 
-Tower range and energy supply overlays also observe `GridPlacerChanged` and read `(&PlacementObject, &GridArea)` from `PlacementSession` to preview coverage at the cursor.
+The tower range overlay observes `GridPlacerChanged` and reads `(&PlacementObject, &GridArea)` from `PlacementSession` to preview coverage at the cursor. Placing domains write the energy supply overlay's highlight into `EnergySupplyOverlayConfig::secondary_mode`; the placer clears it on `StopPlacing`.
 
 ## Lifecycle & Event Flow
 
 ### 1. Starting or switching a session (`begin_placement`)
 
-UI buttons and hotkeys request placement by calling `grid_object_placer_request.set(map_object)`. In `Update` (ordered `.before(PlacementFeedbackSystems)`), `begin_placement` consumes `GridObjectPlacerRequest` and runs:
+UI buttons and hotkeys request placement by calling `grid_object_placer_request.set(map_object)`. In `Update` (ordered `.before(PlacementFeedbackSystems)`), `begin_placement` handles a pending `GridObjectPlacerRequest`.
 
 ```text
 GridObjectPlacerRequest::take()
-  ├─ if already in UiInteraction::PlaceGridObject → trigger StopPlacing (placer despawns PlacementControls)
-  ├─ session.retain::<(PlacementSession, ChildOf)>()
-  │    .insert(PlacementObject(map_object))        → also inserts default PlacementModes via #[require]
+  ├─ trigger StopPlacing                           → placer despawns PlacementControls, resets the session
+  │                                                  and clears the overlay highlight; valid with no session
+  ├─ session.insert(PlacementObject(map_object))   → also inserts default PlacementModes via #[require]
   ├─ trigger BeginPlacing { object, origin }       → domain inserts GridArea, optional PlacementModes,
   │                                                  default settings on session, & spawns UI controls
   ├─ trigger GridPlacerGhostRebuildRequest         → despawns old ghost, spawns (GridPlacerGhost, area.imprint),
   │                                                  triggers ObjectFaceRequest::ghost(ghost, map_object)
-  ├─ trigger GridPlacerChanged                     → moves/resizes overlay quad, redraws it, notifies overlays
-  └─ set UiInteraction::PlaceGridObject
+  └─ trigger GridPlacerChanged                     → moves/resizes overlay quad, redraws it; placing domains
+                                                     write previews and overlay highlights
 ```
 
 **Ordering constraint:** `BeginPlacing` must flush before `GridPlacerGhostRebuildRequest` and `GridPlacerChanged` because the domain's `BeginPlacing` observer inserts `GridArea` and any domain settings (such as `WallStyleKey` and `VolumeShape`) that the ghost and overlay read from `PlacementSession`.
@@ -76,7 +76,9 @@ Runs in `ObstacleChangeSystems` during `Update` and ignores clicks over UI. Inpu
 
 ### 5. Leaving placement (`hide_placer`)
 
-On `OnExit(UiInteraction::PlaceGridObject)`, the placer hides itself and triggers `StopPlacing`, on which it despawns every entity marked `PlacementControls`.
+On `OnExit(UiInteraction::PlaceGridObject)`, the placer hides itself and triggers `StopPlacing`. On `StopPlacing` it despawns every entity marked `PlacementControls` and resets the session with `retain::<(PlacementSession, ChildOf)>()`, removing everything domains inserted on it. Other `StopPlacing` observers still see the session intact, since the reset is applied after them.
+
+Every session ends with `StopPlacing`, including a switch to another object, so a new session always starts empty. Data that domains publish on the session, such as `EnergySupplyPreviewOperations`, lasts exactly as long as the session; domains do not clean it up themselves.
 
 ## Validation, Reservations, and Domain Rules
 
@@ -143,4 +145,3 @@ The overlay quad is rendered by [`assets/shaders/grids/grid_placer.wesl`](../../
 4. **Faces:** Handle `ObjectFaceRequest` for `FaceSurface::World` (the ghost preview, reading any session settings from `PlacementSession`) and `FaceSurface::Ui` (menus/swatches).
 5. **Control updates (if configurable):** When a control changes the imprint, insert the new `GridArea` on the session and trigger `GridPlacerGhostRebuildRequest` and `GridPlacerChanged`. When a control changes ghost-visible session components, trigger `GridPlacerGhostRebuildRequest`.
 6. **Menu & tooltip:** Register any Almanach metadata, handle `MapObjectTooltipRequest`, and add a side-menu entry or hotkey if player-accessible.
-

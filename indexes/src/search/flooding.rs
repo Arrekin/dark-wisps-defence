@@ -1,7 +1,7 @@
 use bevy::prelude::Entity;
 
 use alteration::modifiers::prelude::EnergySupplyRange;
-use game_core::prelude::{GridArea, GridCoords, GridVolumePosition, Property};
+use game_core::prelude::{GridArea, GridVolumePosition, Property};
 
 use crate::{
     emissions::{EmissionsGrid, EmissionsType, FloodEmissionsDetails, FloodEmissionsEvaluator, FloodEmissionsMode},
@@ -16,10 +16,11 @@ use super::{
 
 /// Spreads emissions from the area's volume level through reachable cardinal neighbors.
 /// Follows [`walkable_neighbors`], including level changes through ramps.
+/// Distance counts steps from the area; the area's own cells are at distance 0.
 pub fn flood_emissions<'a>(
     emissions_grid: &mut EmissionsGrid,
     obstacles_grid: &ObstacleGrid,
-    area: &GridArea,
+    area: GridArea,
     emissions_details: impl IntoIterator<Item = &'a FloodEmissionsDetails> + Copy,
 ) {
     SEARCH_SCRATCH.with_borrow_mut(|SearchScratch { position_visited, position_distance_queue, .. }| {
@@ -29,10 +30,10 @@ pub fn flood_emissions<'a>(
         let start_level = area.origin.level.volume();
         area.iter().for_each(|coords| {
             let position = coords.at(start_level);
-            position_distance_queue.push_back((1, position));
+            position_distance_queue.push_back((0, position));
             position_visited.set_visited(position);
             for details in emissions_details {
-                apply_emissions_details(emissions_grid, position, details, 1);
+                apply_emissions_details(emissions_grid, position, details, 0);
             }
         });
         while let Some((distance, position)) = position_distance_queue.pop_front() {
@@ -64,9 +65,6 @@ fn apply_emissions_details(
 ) {
     let value = match details.evaluator {
         FloodEmissionsEvaluator::Constant(value) => value,
-        FloodEmissionsEvaluator::Linear{growth} => {
-            growth * distance as f32
-        },
         FloodEmissionsEvaluator::ExponentialDecay{start_value, decay} => {
             start_value * (-decay * distance as f32).exp()
         },
@@ -78,37 +76,40 @@ fn apply_emissions_details(
     }
 }
 
-/// Adds or removes supplier coverage by flooding cardinal neighbors from `start_coords`.
+/// Adds or removes supplier coverage by flooding cardinal neighbors from the area's in-bounds cells.
 pub fn flood_energy_supply(
     energy_supply_grid: &mut EnergySupplyGrid,
-    start_coords: impl IntoIterator<Item = GridCoords>,
+    area: GridArea,
     mode: FloodEnergySupplyMode,
     range: EnergySupplyRange,
     supplier: Entity,
 ) {
+    let range = range.get() as usize;
     SEARCH_SCRATCH.with_borrow_mut(|SearchScratch { coords_visited, coords_distance_queue, .. }| {
-        coords_visited.resize_and_clear(energy_supply_grid.bounds);
+        let bounds = energy_supply_grid.bounds;
+        coords_visited.resize_and_clear(bounds);
         coords_distance_queue.clear();
-        start_coords.into_iter().for_each(|coords| {
-            energy_supply_grid.apply_flood(coords, supplier, mode);
+        area.iter_in_bounds(bounds).for_each(|coords| {
+            energy_supply_grid[coords].apply_flood(supplier, mode);
             coords_distance_queue.push_back((0, coords));
             coords_visited.set_visited(coords);
         });
         while let Some((distance, coords)) = coords_distance_queue.pop_front() {
-            for new_coords in energy_supply_grid.bounds.cardinal_neighbors(coords) {
+            for new_coords in bounds.cardinal_neighbors(coords) {
                 if coords_visited.is_visited(new_coords) {
                     continue;
                 }
 
                 coords_visited.set_visited(new_coords);
-                energy_supply_grid.apply_flood(new_coords, supplier, mode);
+                energy_supply_grid[new_coords].apply_flood(supplier, mode);
                 let new_distance = distance + 1;
-                if new_distance < range.get() as usize {
+                if new_distance < range {
                     coords_distance_queue.push_back((new_distance, new_coords));
                 }
             }
         }
     });
+    energy_supply_grid.advance_version();
 }
 
 /// Tests whether a supplier placed on `area` with `range` would connect to existing power.
@@ -144,22 +145,22 @@ pub fn would_supply_reach_power(energy_supply_grid: &EnergySupplyGrid, area: Gri
     })
 }
 
-/// Rebuilds power coverage from generator cells, following cardinal neighbors with active supply.
-pub fn flood_power_coverage(
-    energy_supply_grid: &mut EnergySupplyGrid,
-    start_coords: impl IntoIterator<Item = GridCoords>,
-) {
+/// Rebuilds power coverage from the in-bounds cells of the grid's generators, following cardinal
+/// neighbors with active supply. Generator cells have power regardless of supply.
+pub fn flood_power_coverage(energy_supply_grid: &mut EnergySupplyGrid) {
     energy_supply_grid.reset_all_power_indicators();
     SEARCH_SCRATCH.with_borrow_mut(|SearchScratch { coords_visited, coords_queue, .. }| {
-        coords_visited.resize_and_clear(energy_supply_grid.bounds);
+        let bounds = energy_supply_grid.bounds;
+        coords_visited.resize_and_clear(bounds);
         coords_queue.clear();
-        start_coords.into_iter().for_each(|coords| {
+        for coords in energy_supply_grid.generators.iter().flat_map(|(_, area)| area.iter_in_bounds(bounds)) {
+            if coords_visited.is_visited(coords) { continue; }
             coords_queue.push_back(coords);
             coords_visited.set_visited(coords);
-            energy_supply_grid[coords].set_power(true);
-        });
+        }
         while let Some(coords) = coords_queue.pop_front() {
-            for new_coords in energy_supply_grid.bounds.cardinal_neighbors(coords) {
+            energy_supply_grid[coords].set_power(true);
+            for new_coords in bounds.cardinal_neighbors(coords) {
                 if coords_visited.is_visited(new_coords) {
                     continue;
                 }
@@ -167,7 +168,6 @@ pub fn flood_power_coverage(
                 coords_visited.set_visited(new_coords);
                 if energy_supply_grid[new_coords].has_supply() {
                     coords_queue.push_back(new_coords);
-                    energy_supply_grid[new_coords].set_power(true);
                 }
             }
         }

@@ -44,7 +44,7 @@ fn main() {
         // Player-facing layers and tools
         .add_plugins((
             hud_internal::HudPlugin,
-            overlays::OverlaysPlugin,
+            overlays_internal::OverlaysPlugin,
             editor::EditorPlugin,
             byoaic::ByoaicPlugin,
         ))

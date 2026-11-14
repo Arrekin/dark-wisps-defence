@@ -4,7 +4,7 @@ use bytemuck::{Pod, Zeroable};
 use alteration::modifiers::prelude::IncomingDamageMultiplier;
 use game_core::{motion::{Locomotion, MotionSystems}, prelude::*};
 use grids::prelude::{EnergySupplySystems, GridVersion};
-use indexes::energy_supply::EnergySupplyGrid;
+use indexes::energy_supply::EnergySupply;
 use visuals::shared_gpu::{SharedGpuBinding, SharedGpuWriter};
 
 pub struct GameCorePlugin;
@@ -162,13 +162,13 @@ fn on_remove_disabled_by_player_emit_technical_state_changed(trigger: On<Remove<
 fn on_add_needs_power_init_power_state(
     trigger: On<Add<NeedsPower>>,
     mut commands: Commands,
-    energy_supply_grid: Res<EnergySupplyGrid>,
+    energy_supply: Res<EnergySupply>,
     consumers: Query<&GridArea, With<NeedsPower>>,
 ) {
     let entity = trigger.entity;
     let Ok(area) = consumers.get(entity) else { return; };
 
-    let has_power = energy_supply_grid.is_area_powered(*area);
+    let has_power = energy_supply.grid.is_area_powered(*area);
     if has_power {
         commands.entity(entity).insert(IsPowered);
     }
@@ -179,13 +179,13 @@ fn on_add_needs_power_init_power_state(
 fn on_insert_needs_power_area_refresh_power_state(
     trigger: On<Insert<GridArea>>,
     mut commands: Commands,
-    energy_supply_grid: Res<EnergySupplyGrid>,
+    energy_supply: Res<EnergySupply>,
     consumers: Query<(&GridArea, Has<IsPowered>), With<NeedsPower>>,
 ) {
     let entity = trigger.entity;
     let Ok((area, has_is_powered)) = consumers.get(entity) else { return; };
 
-    let has_power = energy_supply_grid.is_area_powered(*area);
+    let has_power = energy_supply.grid.is_area_powered(*area);
     if has_power != has_is_powered {
         if has_power {
             commands.entity(entity).insert(IsPowered);
@@ -198,15 +198,15 @@ fn on_insert_needs_power_area_refresh_power_state(
 /// Refreshes every consumer's power state when the energy supply grid's version changes.
 fn update_power_state(
     mut commands: Commands,
-    energy_supply_grid: Res<EnergySupplyGrid>,
+    energy_supply: Res<EnergySupply>,
     power_entities: Query<(Entity, &GridArea, Has<IsPowered>), With<NeedsPower>>,
     mut current_energy_supply_grid_version: Local<GridVersion>,
 ) {
-    if *current_energy_supply_grid_version == energy_supply_grid.version { return; }
-    *current_energy_supply_grid_version = energy_supply_grid.version;
+    if *current_energy_supply_grid_version == energy_supply.grid.version { return; }
+    *current_energy_supply_grid_version = energy_supply.grid.version;
 
     for (entity, area, has_is_powered) in power_entities.iter() {
-        let has_power = energy_supply_grid.is_area_powered(*area);
+        let has_power = energy_supply.grid.is_area_powered(*area);
         if has_power != has_is_powered {
             if has_power {
                 commands.entity(entity).insert(IsPowered);

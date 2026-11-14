@@ -1,14 +1,18 @@
 use bevy::{
     color::palettes::css::{BLUE, WHITE},
+    ecs::query::QueryData,
+    picking::hover::Hovered,
     prelude::*,
     ui::FocusPolicy,
     ui_widgets::Button,
 };
 
 use almanach::prelude::*;
+use alteration::modifiers::prelude::EnergySupplyRange;
 use buildings::prelude::*;
 use game_core::prelude::*;
 use hud::prelude::*;
+use indexes::energy_supply::{EnergySupplyPreviewOperation, EnergySupplyPreviewOperations, GeneratorEnergy, SupplierEnergy};
 use logging::prelude::*;
 use resources::prelude::*;
 use shards::{
@@ -697,9 +701,33 @@ impl ShardPickerItem {
     }
 }
 
+#[derive(QueryData)]
+struct FocusedSupplier {
+    entity: Entity,
+    area: &'static GridArea,
+    range: &'static EnergySupplyRange,
+    is_disabled: Has<DisabledByPlayer>,
+    is_generator: Has<GeneratorEnergy>,
+}
+impl FocusedSupplierItem<'_, '_> {
+    /// The supplier taken out of the grid.
+    fn disable_operation(&self) -> EnergySupplyPreviewOperation {
+        EnergySupplyPreviewOperation::Disable { supplier: self.entity, area: *self.area, range: *self.range }
+    }
+    /// The effect of toggling the supplier from the disabled state `is_disabled`.
+    fn toggle_operation(&self, is_disabled: bool) -> EnergySupplyPreviewOperation {
+        if is_disabled {
+            EnergySupplyPreviewOperation::Enable { supplier: self.entity, area: *self.area, range: *self.range, is_generator: self.is_generator }
+        } else {
+            self.disable_operation()
+        }
+    }
+}
+
 /// Toggles whether the player disabled the focused building.
+/// While hovered, previews the toggle's effect on the energy supply of a focused supplier.
 #[derive(Component)]
-#[require(Button)]
+#[require(Button, Hovered)]
 struct BuildingInfoPanelDisableButton;
 #[derive(Component)]
 struct BuildingInfoPanelDisableButtonIcon;
@@ -724,6 +752,7 @@ impl BuildingInfoPanelDisableButton {
                 },
             ))
             .observe(Self::on_click_toggle_building_disabled)
+            .observe(Self::on_hover_preview_toggle)
             .with_children(|parent| {
                 parent.spawn((
                     ImageNode::new(asset_server.load("indicators/disabled.png")).with_color(WHITE.with_alpha(DISABLE_ICON_INACTIVE_ALPHA).into()),
@@ -732,15 +761,38 @@ impl BuildingInfoPanelDisableButton {
             });
     }
 
+    fn on_hover_preview_toggle(
+        trigger: On<Insert<Hovered>>,
+        mut commands: Commands,
+        focused_supplier: Option<Single<FocusedSupplier, (With<FocusedMapObject>, With<SupplierEnergy>)>>,
+        buttons: Query<&Hovered, With<BuildingInfoPanelDisableButton>>,
+    ) {
+        let button = trigger.entity;
+        let Ok(hovered) = buttons.get(button) else { return };
+        if hovered.get() && let Some(supplier) = focused_supplier {
+            commands.entity(button).insert(EnergySupplyPreviewOperations(vec![supplier.toggle_operation(supplier.is_disabled)]));
+        } else {
+            commands.entity(button).remove::<EnergySupplyPreviewOperations>();
+        }
+    }
+
     #[log_tags(Tag::Build)]
     fn on_click_toggle_building_disabled(
-        _trigger: On<PointerClick>,
+        trigger: On<PointerClick>,
         mut commands: Commands,
         almanach: Res<Almanach>,
         focused_building: Single<(Entity, &BuildingType, Has<DisabledByPlayer>), With<FocusedMapObject>>,
         icon: Single<&mut ImageNode, With<BuildingInfoPanelDisableButtonIcon>>,
+        focused_supplier: Option<Single<FocusedSupplier, (With<FocusedMapObject>, With<SupplierEnergy>)>>,
     ) {
+        let button = trigger.entity;
         let (focused_entity, building_type, is_disabled) = focused_building.into_inner();
+
+        // The button stays hovered after the click, so its preview shows the next toggle.
+        if let Some(supplier) = focused_supplier {
+            commands.entity(button).insert(EnergySupplyPreviewOperations(vec![supplier.toggle_operation(!supplier.is_disabled)]));
+        }
+
         let building_name = &almanach.get_building_info(*building_type).name;
         if is_disabled {
             #[info_player("'{building_name}' enabled")]
@@ -756,8 +808,9 @@ impl BuildingInfoPanelDisableButton {
 }
 
 /// Requests destroying the focused building.
+/// While hovered, previews the energy supply with a focused supplier disabled.
 #[derive(Component)]
-#[require(Button)]
+#[require(Button, Hovered)]
 struct BuildingInfoPanelDestroyButton;
 impl BuildingInfoPanelDestroyButton {
     fn on_add_construct_destroy_button(
@@ -780,9 +833,25 @@ impl BuildingInfoPanelDestroyButton {
                 },
             ))
             .observe(Self::on_click_request_building_destroy)
+            .observe(Self::on_hover_preview_destroy)
             .with_children(|parent| {
                 parent.spawn(ImageNode::new(asset_server.load("ui/building_destroy.png")));
             });
+    }
+
+    fn on_hover_preview_destroy(
+        trigger: On<Insert<Hovered>>,
+        mut commands: Commands,
+        focused_supplier: Option<Single<FocusedSupplier, (With<FocusedMapObject>, With<SupplierEnergy>)>>,
+        buttons: Query<&Hovered, With<BuildingInfoPanelDestroyButton>>,
+    ) {
+        let button = trigger.entity;
+        let Ok(hovered) = buttons.get(button) else { return };
+        if hovered.get() && let Some(supplier) = focused_supplier {
+            commands.entity(button).insert(EnergySupplyPreviewOperations(vec![supplier.disable_operation()]));
+        } else {
+            commands.entity(button).remove::<EnergySupplyPreviewOperations>();
+        }
     }
 
     fn on_click_request_building_destroy(

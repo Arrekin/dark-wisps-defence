@@ -29,6 +29,7 @@ impl Plugin for CommonSystemsPlugin {
             ).chain().in_set(TowerAimingSystems))
             .add_systems(Update, BuildingPlacementRules::update_feedback.in_set(PlacementFeedbackSystems))
             .add_observer(on_begin_placing_start_building_session)
+            .add_observer(on_grid_placer_changed_highlight_area_suppliers)
             .add_observer(on_building_destroy_request_do_so)
             .add_observer(on_insert_building_imprint_on_obstacle_grid)
             .add_observer(on_discard_building_deprint_from_obstacle_grid)

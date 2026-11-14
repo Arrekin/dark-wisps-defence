@@ -17,6 +17,7 @@ use bevy::{
 
 use game_core::prelude::{Bounds, BuildingType, CELL_SIZE, DrawLevel, GridArea, GridCoords, GridPosition, MapObject, ObjectFaceRequest, TowerType, ZDepth};
 use grids::{ObstacleChangeSystems, placement::*};
+use overlays::energy_supply::EnergySupplyOverlayConfig;
 use states::prelude::UiInteraction;
 use viewport::MouseInfo;
 
@@ -38,7 +39,7 @@ impl Plugin for GridObjectPlacerPlugin {
             .configure_sets(Update, PlacementFeedbackSystems.run_if(in_state(UiInteraction::PlaceGridObject)))
             .add_systems(OnEnter(UiInteraction::PlaceGridObject), show_placer)
             .add_systems(OnExit(UiInteraction::PlaceGridObject), hide_placer)
-            .add_observer(on_stop_placing_despawn_controls)
+            .add_observer(on_stop_placing_end_session)
             .add_observer(on_grid_placer_changed_fit_overlay)
             .add_observer(on_insert_placement_feedback_redraw_overlay)
             .add_observer(on_grid_placer_ghost_rebuild_request_do_so);
@@ -206,6 +207,10 @@ fn handle_keyboard_input(
     grid_object_placer_request.set(map_object);
 }
 
+/// Starts a session for the requested object, ending the current one first.
+///
+/// Outside placement, only requests `UiInteraction::PlaceGridObject` and keeps the request, so the
+/// session starts once the state has changed.
 fn begin_placement(
     mut commands: Commands,
     mouse_info: Res<MouseInfo>,
@@ -215,24 +220,21 @@ fn begin_placement(
     placer: Single<&mut GridObjectPlacer>,
     placement_session: Single<Entity, With<PlacementSession>>,
 ) {
+    if *ui_interaction.get() != UiInteraction::PlaceGridObject {
+        next_ui_interaction.set(UiInteraction::PlaceGridObject);
+        return;
+    }
     let Some(map_object) = placer_request.take() else { return; };
 
-    if *ui_interaction.get() == UiInteraction::PlaceGridObject {
-        commands.trigger(StopPlacing);
-    }
+    commands.trigger(StopPlacing);
 
     let origin = GridPosition { coords: mouse_info.grid_coords, ..default() };
-    // Reset the previous object's session data without detaching the reusable session entity.
-    commands.entity(*placement_session)
-        .retain::<(PlacementSession, ChildOf)>()
-        .insert(PlacementObject(map_object));
+    commands.entity(*placement_session).insert(PlacementObject(map_object));
     placer.into_inner().cells_requested_this_press.clear();
 
     commands.trigger(BeginPlacing { object: map_object, origin });
     commands.trigger(GridPlacerGhostRebuildRequest);
     commands.trigger(GridPlacerChanged);
-
-    next_ui_interaction.set_if_different(UiInteraction::PlaceGridObject);
 }
 
 fn follow_mouse(
@@ -280,11 +282,17 @@ fn handle_placement_click(
     }
 }
 
-fn on_stop_placing_despawn_controls(
+/// Despawns the session's controls, resets the session entity, keeping it attached to the placer,
+/// and clears the energy supply overlay highlight.
+fn on_stop_placing_end_session(
     _trigger: On<StopPlacing>,
     mut commands: Commands,
+    mut energy_supply_overlay_config: ResMut<EnergySupplyOverlayConfig>,
+    placement_session: Single<Entity, With<PlacementSession>>,
 ) {
     commands.despawn_all::<With<PlacementControls>>();
+    commands.entity(*placement_session).retain::<(PlacementSession, ChildOf)>();
+    energy_supply_overlay_config.secondary_mode = None;
 }
 
 /// Replaces the placer's ghost and requests its world-space appearance.

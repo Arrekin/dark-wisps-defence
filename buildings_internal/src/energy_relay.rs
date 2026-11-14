@@ -11,14 +11,15 @@ use alteration::{
 };
 use buildings::prelude::*;
 use game_core::prelude::*;
-use grids::placement::{PlacementFeedback, PlacementObject, PlacementSession, PlacementValidity, PlacementFeedbackSystems, PlaceRequest};
+use grids::placement::{GridPlacerChanged, PlacementFeedback, PlacementObject, PlacementSession, PlacementValidity, PlacementFeedbackSystems, PlaceRequest};
 use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
 use indexes::{
     emissions::{EmissionsType, EmitterEnergy, FloodEmissionsDetails, FloodEmissionsEvaluator, FloodEmissionsMode},
-    energy_supply::SupplierEnergy,
+    energy_supply::{EnergySupplyPreviewOperation, EnergySupplyPreviewOperations, SupplierEnergy},
     search::flooding::would_supply_reach_power,
 };
 use logging::prelude::*;
+use overlays::energy_supply::{EnergySupplyOverlayConfig, EnergySupplyOverlaySecondaryMode};
 use persistence::prelude::*;
 use resources::prelude::*;
 use states::prelude::*;
@@ -34,6 +35,7 @@ impl Plugin for EnergyRelayPlugin {
             .add_systems(Update, EnergyRelayPlacementRules::update_feedback.in_set(PlacementFeedbackSystems))
             .add_observer(BuilderEnergyRelay::on_builder_add_spawn_energy_relay)
             .add_observer(EnergyRelayPlacementRules::on_place_request_do_so)
+            .add_observer(EnergyRelayPlacementRules::on_grid_placer_changed_write_supply_preview)
             .add_systems(CollectSave, collect_energy_relays)
             .register_loader(MapLoadingStage::SpawnMapElements, "energy_relays", load_energy_relays)
             .register_building(BuildingType::EnergyRelay, almanach_info);
@@ -132,6 +134,11 @@ pub(crate) struct EnergyRelayPlacementRules<'w, 's> {
     building_rules: BuildingPlacementRules<'w, 's>,
 }
 impl EnergyRelayPlacementRules<'_, '_> {
+    /// The supply range a newly placed relay has.
+    fn supply_range(&self) -> EnergySupplyRange {
+        EnergySupplyRange::new(self.building_rules.almanach.get_building_info(BuildingType::EnergyRelay).baseline[&ModifierType::EnergySupplyRange])
+    }
+
     /// Checks ground, reservations, and cost, then tests the relay's proposed supply coverage.
     /// A valid site is `ValidUnpowered` if that coverage cannot connect to powered cells.
     fn feedback(&self) -> PlacementFeedback {
@@ -139,8 +146,7 @@ impl EnergyRelayPlacementRules<'_, '_> {
         let feedback = rules.with_cost_check(rules.placeable_ground_feedback());
         if feedback.validity != PlacementValidity::Valid { return feedback; }
 
-        let range = EnergySupplyRange::new(rules.almanach.get_building_info(BuildingType::EnergyRelay).baseline[&ModifierType::EnergySupplyRange]);
-        if !would_supply_reach_power(&rules.energy_supply_grid, rules.placement_area(), range) {
+        if !would_supply_reach_power(&rules.energy_supply.grid, rules.placement_area(), self.supply_range()) {
             return feedback.with_validity(PlacementValidity::ValidUnpowered);
         }
         feedback
@@ -154,6 +160,25 @@ impl EnergyRelayPlacementRules<'_, '_> {
         if object.0 != MapObject::Building(BuildingType::EnergyRelay) { return; }
         let feedback = rules.feedback();
         rules.building_rules.commands.entity(placement_session).insert_if_neq(feedback);
+    }
+
+    /// Proposes the relay's supply at the session's area and wants the energy supply overlay to
+    /// show it.
+    fn on_grid_placer_changed_write_supply_preview(
+        _trigger: On<GridPlacerChanged>,
+        mut overlay_config: ResMut<EnergySupplyOverlayConfig>,
+        mut rules: EnergyRelayPlacementRules,
+        placement_session: Single<(Entity, &PlacementObject), With<PlacementSession>>,
+    ) {
+        let (placement_session, object) = *placement_session;
+        if object.0 != MapObject::Building(BuildingType::EnergyRelay) { return; }
+        let operations = EnergySupplyPreviewOperations(vec![EnergySupplyPreviewOperation::Add {
+            area: rules.building_rules.placement_area(),
+            range: rules.supply_range(),
+            is_generator: false,
+        }]);
+        rules.building_rules.commands.entity(placement_session).insert(operations);
+        overlay_config.secondary_mode = Some(EnergySupplyOverlaySecondaryMode::HighlightAll);
     }
 
     fn on_place_request_do_so(

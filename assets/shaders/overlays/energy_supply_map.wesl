@@ -20,7 +20,7 @@ import package::shaders::common::map_info::{grid_bounds, grid_contains, grid_ind
 // Dash pattern (disabled edges only): two gaps per cell edge at 1/3 and 2/3 along it.
 // Endpoints stay ON so corners join cleanly across cells.
 
-// Field order and types mirror `EnergySupplyCell` in overlays/src/energy_supply.rs.
+// Field order and types mirror `EnergySupplyCell` in overlays_internal/src/energy_supply.rs.
 struct EnergySupplyCell {
     has_supply: u32,
     has_power: u32,

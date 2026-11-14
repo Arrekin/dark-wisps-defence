@@ -2188,6 +2188,7 @@ dependencies = [
  "logging",
  "map_objects",
  "nanorand",
+ "overlays",
  "persistence",
  "resources",
  "session",
@@ -2622,7 +2623,7 @@ dependencies = [
  "logging",
  "map_objects_internal",
  "narrative_internal",
- "overlays",
+ "overlays_internal",
  "persistence",
  "research_internal",
  "resources_internal",
@@ -3535,6 +3536,7 @@ dependencies = [
  "indexes",
  "logging",
  "map_objects",
+ "overlays",
  "persistence",
  "resources",
  "states",
@@ -3751,6 +3753,7 @@ dependencies = [
  "game_core",
  "grids",
  "map_objects",
+ "smallvec",
  "strum",
 ]
 
@@ -4976,6 +4979,14 @@ dependencies = [
 name = "overlays"
 version = "0.2.0"
 dependencies = [
+ "bevy",
+ "game_core",
+]
+
+[[package]]
+name = "overlays_internal"
+version = "0.2.0"
+dependencies = [
  "almanach",
  "alteration",
  "bevy",
@@ -4985,6 +4996,8 @@ dependencies = [
  "grids",
  "hud",
  "indexes",
+ "overlays",
+ "smallvec",
  "states",
  "visuals",
 ]

@@ -75,6 +75,12 @@ impl<CellType, GridVersionType> BaseGrid<CellType, GridVersionType> where CellTy
     pub fn reset(&mut self) {
         self.grid.fill(Default::default());
     }
+    /// Copies the bounds and cells of `source`, reusing this grid's allocation.
+    /// The version stays as it was.
+    pub fn copy_from(&mut self, source: &Self) {
+        self.bounds = source.bounds;
+        self.grid.clone_from(&source.grid);
+    }
     pub fn index_of(&self, coords: GridCoords) -> usize {
         self.bounds.index(coords)
     }

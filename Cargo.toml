@@ -15,7 +15,7 @@ viewport = { workspace = true }
 alteration_internal = { workspace = true }
 resources_internal = { workspace = true }
 shards_internal = { workspace = true }
-overlays = { workspace = true }
+overlays_internal = { workspace = true }
 units_internal = { workspace = true }
 weaponry_internal = { workspace = true }
 fields_internal = { workspace = true }
@@ -51,6 +51,7 @@ members = [
   "hud",
   "narrative",
   "overlays",
+  "overlays_internal",
   "units_internal",
   "weaponry_internal",
   "fields",
@@ -87,10 +88,6 @@ members = [
 version = "0.2.0"
 edition = "2024"
 
-[workspace.lints.rust]
-# Warning across the stack due to new Rust's trait resolver - try removing after new Bevy version lands.
-recursion_depth_exceeding_limit = "allow"
-
 [workspace.lints.clippy]
 # Lints disabled because they don't fit a Bevy codebase:
 type_complexity = "allow"       # Bevy system param signatures are inherently long; factoring into type aliases hurts readability
@@ -113,6 +110,7 @@ async-channel = "2.*"
 serde = { version = "1.*", features = ["derive"] }
 serde_json = "1.*"
 bytemuck = "1.*"
+smallvec = "1.16"
 syn = { version = "3.0.*", features = ["full"] }
 quote = "1.0"
 proc-macro2 = "1.0"
@@ -132,6 +130,7 @@ weaponry = { path = "weaponry" }
 hud = { path = "hud" }
 narrative = { path = "narrative" }
 overlays = { path = "overlays" }
+overlays_internal = { path = "overlays_internal" }
 units_internal = { path = "units_internal" }
 weaponry_internal = { path = "weaponry_internal" }
 fields = { path = "fields" }

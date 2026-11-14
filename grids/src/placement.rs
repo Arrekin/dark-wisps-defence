@@ -201,7 +201,11 @@ pub struct BeginPlacing {
     pub origin: GridPosition,
 }
 
-/// Emitted when the placement session ends, including when another object is selected.
+/// Emitted when the placement session ends, including when another object is selected, and
+/// before every new session.
+///
+/// Observers still see the session as it was. The placer then removes everything the session
+/// holds, so data published on it lasts exactly as long as the session.
 #[derive(Event, Clone, Copy, Debug)]
 pub struct StopPlacing;
 

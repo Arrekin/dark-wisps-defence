@@ -93,7 +93,7 @@ fn recalculate_emissions(
     recalculation_requested.clear();
     emissions_grid.reset_energy_emissions();
     for (emitter, area) in emitters.iter() {
-        flood_emissions(&mut emissions_grid, &obstacle_grid, area, [&emitter.0]);
+        flood_emissions(&mut emissions_grid, &obstacle_grid, *area, [&emitter.0]);
     }
     emitter_changed_messages.clear();
 }
@@ -104,7 +104,7 @@ fn apply_emitter_changes(
     obstacle_grid: Res<ObstacleGrid>,
 ) {
     for message in emitter_changed_messages.read() {
-        flood_emissions(&mut emissions_grid, &obstacle_grid, &message.area, [&message.emissions_details]);
+        flood_emissions(&mut emissions_grid, &obstacle_grid, message.area, [&message.emissions_details]);
     }
 }
 

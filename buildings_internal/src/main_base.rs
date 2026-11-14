@@ -11,13 +11,14 @@ use alteration::{
 };
 use buildings::prelude::*;
 use game_core::prelude::*;
-use grids::placement::{PlacementFeedback, PlacementObject, PlacementSession, PlacementValidity, PlacementFeedbackSystems, PlaceRequest, ReservedCoords};
+use grids::placement::{GridPlacerChanged, PlacementFeedback, PlacementObject, PlacementSession, PlacementValidity, PlacementFeedbackSystems, PlaceRequest, ReservedCoords};
 use indexes::{
     emissions::{EmissionsType, EmitterEnergy, FloodEmissionsDetails, FloodEmissionsEvaluator, FloodEmissionsMode},
-    energy_supply::{GeneratorEnergy, SupplierEnergy},
+    energy_supply::{EnergySupplyPreviewOperation, EnergySupplyPreviewOperations, GeneratorEnergy, SupplierEnergy},
     prelude::{ObstacleCell, ObstacleGrid},
 };
 use logging::prelude::*;
+use overlays::energy_supply::{EnergySupplyOverlayConfig, EnergySupplyOverlaySecondaryMode};
 use persistence::{creating_new_map, prelude::*};
 use states::prelude::*;
 use viewport::MainCamera;
@@ -32,6 +33,7 @@ impl Plugin for MainBasePlugin {
             .add_systems(Update, MainBasePlacementRules::update_feedback.in_set(PlacementFeedbackSystems))
             .add_observer(BuilderMainBase::on_builder_add_spawn_main_base)
             .add_observer(MainBasePlacementRules::on_place_request_do_so)
+            .add_observer(MainBasePlacementRules::on_grid_placer_changed_write_supply_preview)
             .add_systems(CollectSave, collect_main_bases)
             .register_loader(MapLoadingStage::SpawnMapElements, "main_bases", load_main_bases)
             .add_systems(OnEnter(MapLoadingStage::SpawnMapElements), seed_main_base.run_if(creating_new_map))
@@ -137,18 +139,28 @@ pub(crate) struct MainBasePlacementRules<'w, 's> {
     commands: Commands<'w, 's>,
     obstacle_grid: ResMut<'w, ObstacleGrid>,
     reserved_coords: ResMut<'w, ReservedCoords>,
-    placement_session: Single<'w, 's, &'static GridArea, With<PlacementSession>>,
-    main_base: Single<'w, 's, (Entity, &'static GridArea), With<MainBase>>,
+    placement_session: Single<'w, 's, (Entity, &'static GridArea), With<PlacementSession>>,
+    main_base: Single<'w, 's, (Entity, &'static GridArea, &'static EnergySupplyRange), With<MainBase>>,
 }
 impl MainBasePlacementRules<'_, '_> {
     fn placement_area(&self) -> GridArea {
-        **self.placement_session
+        *self.placement_session.1
+    }
+
+    /// Proposes moving the base from `base_area` to the session's area, keeping its range.
+    fn write_supply_preview(&mut self, base_area: GridArea) {
+        let (placement_session, &placement_area) = *self.placement_session;
+        let (main_base, _, &range) = *self.main_base;
+        self.commands.entity(placement_session).insert(EnergySupplyPreviewOperations(vec![
+            EnergySupplyPreviewOperation::Disable { supplier: main_base, area: base_area, range },
+            EnergySupplyPreviewOperation::Add { area: placement_area, range, is_generator: true },
+        ]));
     }
 
     /// Requires unreserved cells that are placeable ground or already occupied by the base.
     /// This allows a move to overlap the base's current area.
     fn feedback(&self) -> PlacementFeedback {
-        let (_, current_area) = *self.main_base;
+        let (_, current_area, _) = *self.main_base;
         PlacementFeedback::every_cell(self.placement_area(), &self.reserved_coords, |coords| {
             current_area.contains(coords) || self.obstacle_grid.get(coords).is_some_and(ObstacleCell::is_placeable_ground)
         })
@@ -164,13 +176,27 @@ impl MainBasePlacementRules<'_, '_> {
         rules.commands.entity(placement_session).insert_if_neq(feedback);
     }
 
+    /// Proposes the move and wants the energy supply overlay to show it.
+    fn on_grid_placer_changed_write_supply_preview(
+        _trigger: On<GridPlacerChanged>,
+        mut overlay_config: ResMut<EnergySupplyOverlayConfig>,
+        mut rules: MainBasePlacementRules,
+        placement_session: Single<&PlacementObject, With<PlacementSession>>,
+    ) {
+        if placement_session.0 != MapObject::Building(BuildingType::MainBase) { return; }
+        let (_, &base_area, _) = *rules.main_base;
+        rules.write_supply_preview(base_area);
+        overlay_config.secondary_mode = Some(EnergySupplyOverlaySecondaryMode::HighlightAll);
+    }
+
+    /// Moves the base and rewrites the preview, whose `Disable` describes the base's area.
     #[log_tags(Tag::Build)]
     fn on_place_request_do_so(
         trigger: On<PlaceRequest>,
         mut rules: MainBasePlacementRules,
     ) {
         let PlaceRequest(MapObject::Building(BuildingType::MainBase)) = *trigger else { return };
-        let (main_base, &area) = *rules.main_base;
+        let (main_base, &area, _) = *rules.main_base;
         let new_area = rules.placement_area();
         #[info_player("Main Base cannot be moved to {}", new_area.origin)]
         if rules.feedback().validity == PlacementValidity::Invalid { return; }
@@ -178,6 +204,7 @@ impl MainBasePlacementRules<'_, '_> {
         rules.obstacle_grid.relocate(area, new_area);
         rules.reserved_coords.reserve(new_area);
         rules.commands.entity(main_base).insert(new_area);
+        rules.write_supply_preview(new_area);
     }
 }
 

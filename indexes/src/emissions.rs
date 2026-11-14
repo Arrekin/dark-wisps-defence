@@ -66,8 +66,6 @@ impl EmissionsGrid {
 pub enum FloodEmissionsEvaluator {
     /// The same value at every distance.
     Constant(f32),
-    /// `growth × distance`.
-    Linear{growth: f32},
     /// `start_value × e^(−decay × distance)`.
     ExponentialDecay{start_value: f32, decay: f32},
 }

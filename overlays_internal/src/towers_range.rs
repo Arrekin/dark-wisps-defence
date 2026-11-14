@@ -26,7 +26,7 @@ use indexes::tower_ranges::TowerRangeIndex;
 use states::prelude::{MapLoadingStage, UiInteraction};
 use visuals::{canvas::MapCanvasBundle, specialize_with_shared_gpu};
 
-pub struct TowersRangeOverlayPlugin;
+pub(crate) struct TowersRangeOverlayPlugin;
 impl Plugin for TowersRangeOverlayPlugin {
     fn build(&self, app: &mut App) {
         app
@@ -53,16 +53,16 @@ impl Plugin for TowersRangeOverlayPlugin {
 const OUTLINE_RATIO: f32 = 2.0 / 16.0;
 
 #[derive(States, Debug, Clone, PartialEq, Eq, Hash, Default)]
-pub enum TowersRangeOverlayState {
+enum TowersRangeOverlayState {
     #[default]
     Hide,
     Show,
 }
 
 #[derive(Resource, Default)]
-pub struct TowersRangeOverlayConfig {
-    pub is_overlay_globally_enabled: bool,
-    pub secondary_mode: TowersRangeOverlaySecondaryMode,
+struct TowersRangeOverlayConfig {
+    is_overlay_globally_enabled: bool,
+    secondary_mode: TowersRangeOverlaySecondaryMode,
 }
 impl TowersRangeOverlayConfig {
     fn apply_config_change(
@@ -90,7 +90,7 @@ impl TowersRangeOverlayConfig {
 
 /// Highlight shown while a tower is selected or being placed.
 #[derive(Default, Clone, Debug, PartialEq)]
-pub enum TowersRangeOverlaySecondaryMode {
+enum TowersRangeOverlaySecondaryMode {
     #[default]
     None,
     /// Highlights the selected tower's indexed range.
@@ -99,7 +99,7 @@ pub enum TowersRangeOverlaySecondaryMode {
     PlacingTower { range: AreaRange },
 }
 impl TowersRangeOverlaySecondaryMode {
-    pub fn is_none(&self) -> bool {
+    fn is_none(&self) -> bool {
         matches!(self, TowersRangeOverlaySecondaryMode::None)
     }
 }
@@ -107,15 +107,15 @@ impl TowersRangeOverlaySecondaryMode {
 #[derive(Asset, AsBindGroup, TypePath, Debug, Clone, Default)]
 struct TowersRangeMaterial {
     #[storage(0, read_only)]
-    pub cells: Handle<ShaderBuffer>,
+    cells: Handle<ShaderBuffer>,
     /// Circle data keyed by tower range slot.
     #[storage(1, read_only)]
-    pub circles: Handle<ShaderBuffer>,
+    circles: Handle<ShaderBuffer>,
     /// Circle slot indexes grouped by cell, addressed by each cell's start offset and count.
     #[storage(2, read_only)]
-    pub circle_indexes: Handle<ShaderBuffer>,
+    circle_indexes: Handle<ShaderBuffer>,
     #[uniform(3)]
-    pub highlight: TowerRangeHighlight,
+    highlight: TowerRangeHighlight,
 }
 impl Material2d for TowersRangeMaterial {
     fn fragment_shader() -> ShaderRef {
@@ -131,7 +131,7 @@ impl Material2d for TowersRangeMaterial {
 
 #[derive(Component, Default)]
 #[require(ZDepth::OverlayTowerRanges, DrawLevel::Elevation)]
-pub struct TowersRangeOverlay {
+struct TowersRangeOverlay {
     /// Index version used to populate the buffers; `None` before the first refresh.
     shown_version: Option<GridVersion>,
     /// Mode used to populate the highlight uniform; `None` before the first refresh.
