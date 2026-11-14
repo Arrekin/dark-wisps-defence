@@ -2,6 +2,8 @@
 //!
 //! Effects such as burning napalm and char marks persist on map cells. Each effect is an entity
 //! whose domain handles spawning, gameplay, and persistence. An optional `TimeBound` controls expiry.
+//! The drawn lifetime follows the entity's current `TimeBound`, which may be inserted, replaced or
+//! removed at any time. A cover without one is permanent.
 //!
 //! [`FloorCoverGrid`] records each effect's entity, kind, and floor per cell, allowing lookups
 //! without an ECS query. Loading the entities rebuilds the index; the grid itself is not saved.

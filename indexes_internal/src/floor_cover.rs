@@ -28,7 +28,8 @@ impl Plugin for FloorCoverPlugin {
             .add_systems(PostUpdate, upload_gpu_floor_cover.run_if(RequestFlag::<FloorCoverGpuUpload>::is_requested))
             .add_observer(on_insert_floor_cover_imprint_on_grid)
             .add_observer(on_discard_floor_cover_deprint_from_grid)
-            .add_observer(on_insert_time_bound_request_floor_cover_gpu_upload);
+            .add_observer(on_insert_time_bound_request_floor_cover_gpu_upload)
+            .add_observer(on_remove_time_bound_request_floor_cover_gpu_upload);
     }
 }
 
@@ -89,12 +90,23 @@ fn on_discard_floor_cover_deprint_from_grid(
 }
 
 /// Refreshes GPU lifetimes when `TimeBound` is inserted or replaced.
-/// Removing `TimeBound` does not request an upload, so its previous values persist until the next one.
 fn on_insert_time_bound_request_floor_cover_gpu_upload(
     trigger: On<Insert<TimeBound>>,
     mut upload_requested: ResMut<RequestFlag<FloorCoverGpuUpload>>,
     floor_covers: Query<(), With<FloorCover>>,
 ) {
+    if !floor_covers.contains(trigger.entity) { return; }
+    upload_requested.request();
+}
+
+/// Makes a live cover permanent on the GPU when its `TimeBound` is removed.
+/// Does nothing during despawn, where the `FloorCover` discard requests the upload.
+fn on_remove_time_bound_request_floor_cover_gpu_upload(
+    trigger: On<Remove<TimeBound>>,
+    mut upload_requested: ResMut<RequestFlag<FloorCoverGpuUpload>>,
+    floor_covers: Query<(), With<FloorCover>>,
+) {
+    if trigger.trigger().new_archetype.is_none() { return; }
     if !floor_covers.contains(trigger.entity) { return; }
     upload_requested.request();
 }
