@@ -161,19 +161,16 @@ impl WispPlacementRules<'_, '_> {
         **self.placement_session
     }
 
-    /// Requires every cell to be unreserved, support a wisp and contain none.
+    /// Requires every cell to be unreserved with a free top volume.
     fn feedback(&self) -> PlacementFeedback {
         PlacementFeedback::every_cell(self.placement_area(), &self.reserved_coords, |coords| self.can_take_wisp(coords))
     }
 
-    /// Checks for a supported top position and no existing wisp at any level in the cell.
+    /// Checks that no structure and no wisp occupies the cell's top volume.
     fn can_take_wisp(&self, coords: GridCoords) -> bool {
         let Some(cell) = self.obstacle_grid.get(coords) else { return false; };
         let top = cell.top_level();
-        let can_hold_wisp = cell.is_placeable_ground()
-            || top == VolumeLevel::Underground
-            || top.below().is_some_and(|below| cell.at(below).is_ramp());
-        can_hold_wisp && self.wisps_grid.wisps_in_cell(coords).next().is_none()
+        cell.at(top).is_empty() && self.wisps_grid.wisps_at(coords.at(top)).is_empty()
     }
 
     pub(crate) fn update_feedback(

@@ -246,19 +246,11 @@ impl From<GridFloorPosition> for GridPosition {
     }
 }
 impl GridPosition {
-    /// Converts the altitude to a volume level, preserving the coordinates.
-    ///
-    /// # Panics
-    ///
-    /// Panics for any level that is not a volume.
+    /// Converts the altitude with [`AltitudeLevel::volume`], preserving the coordinates.
     pub fn volume_position(self) -> GridVolumePosition {
         self.coords.at(self.level.volume())
     }
-    /// Converts the altitude to a floor level, preserving the coordinates.
-    ///
-    /// # Panics
-    ///
-    /// Panics for any level that is not a floor.
+    /// Converts the altitude with [`AltitudeLevel::floor`], preserving the coordinates.
     pub fn floor_position(self) -> GridFloorPosition {
         self.coords.at(self.level.floor())
     }

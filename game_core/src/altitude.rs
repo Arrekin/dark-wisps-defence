@@ -37,31 +37,35 @@ pub enum AltitudeLevel {
 }
 
 impl AltitudeLevel {
-    /// Converts this altitude to a volume level.
-    ///
-    /// # Panics
-    ///
-    /// Panics for any level that is not a volume.
-    pub fn volume(self) -> VolumeLevel {
+    /// Converts this altitude to the volume that holds it. A floor belongs to the volume above it;
+    /// `Airborne`, `AllEncompassing` and `TopLevel` belong to the highest volume.
+    pub const fn volume(self) -> VolumeLevel {
         match self {
+            Self::UndergroundFloor => VolumeLevel::Underground,
             Self::Underground => VolumeLevel::Underground,
+            Self::GroundFloor => VolumeLevel::Elevation,
             Self::Elevation => VolumeLevel::Elevation,
+            Self::ElevationFloor => VolumeLevel::OnElevation,
             Self::OnElevation => VolumeLevel::OnElevation,
-            other => panic!("{other:?} is not a volume"),
+            Self::Airborne => VolumeLevel::OnElevation,
+            Self::AllEncompassing => VolumeLevel::OnElevation,
+            Self::TopLevel => VolumeLevel::OnElevation,
         }
     }
 
-    /// Converts this altitude to a floor level.
-    ///
-    /// # Panics
-    ///
-    /// Panics for any level that is not a floor.
-    pub fn floor(self) -> FloorLevel {
+    /// Converts this altitude to the floor that holds it. A volume stands on its own floor;
+    /// `Airborne`, `AllEncompassing` and `TopLevel` belong to the highest floor.
+    pub const fn floor(self) -> FloorLevel {
         match self {
             Self::UndergroundFloor => FloorLevel::UndergroundFloor,
+            Self::Underground => FloorLevel::UndergroundFloor,
             Self::GroundFloor => FloorLevel::GroundFloor,
+            Self::Elevation => FloorLevel::GroundFloor,
             Self::ElevationFloor => FloorLevel::ElevationFloor,
-            other => panic!("{other:?} is not a floor"),
+            Self::OnElevation => FloorLevel::ElevationFloor,
+            Self::Airborne => FloorLevel::ElevationFloor,
+            Self::AllEncompassing => FloorLevel::ElevationFloor,
+            Self::TopLevel => FloorLevel::ElevationFloor,
         }
     }
 }
