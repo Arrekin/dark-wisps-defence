@@ -17,7 +17,7 @@ use bevy::{
 
 use game_core::prelude::{Bounds, BuildingType, CELL_SIZE, DrawLevel, GridArea, GridCoords, GridPosition, MapObject, ObjectFaceRequest, TowerType, ZDepth};
 use grids::{ObstacleChangeSystems, placement::*};
-use overlays::energy_supply::EnergySupplyOverlayConfig;
+use overlays::{energy_supply::EnergySupplyOverlayConfig, towers_range::TowersRangeOverlayConfig};
 use states::prelude::UiInteraction;
 use viewport::MouseInfo;
 
@@ -283,16 +283,18 @@ fn handle_placement_click(
 }
 
 /// Despawns the session's controls, resets the session entity, keeping it attached to the placer,
-/// and clears the energy supply overlay highlight.
+/// and clears the overlay highlights that placing domains wrote.
 fn on_stop_placing_end_session(
     _trigger: On<StopPlacing>,
     mut commands: Commands,
     mut energy_supply_overlay_config: ResMut<EnergySupplyOverlayConfig>,
+    mut towers_range_overlay_config: ResMut<TowersRangeOverlayConfig>,
     placement_session: Single<Entity, With<PlacementSession>>,
 ) {
     commands.despawn_all::<With<PlacementControls>>();
     commands.entity(*placement_session).retain::<(PlacementSession, ChildOf)>();
     energy_supply_overlay_config.secondary_mode = None;
+    towers_range_overlay_config.secondary_mode = None;
 }
 
 /// Replaces the placer's ghost and requests its world-space appearance.

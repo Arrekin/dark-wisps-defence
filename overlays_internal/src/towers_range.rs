@@ -1,8 +1,8 @@
 //! # Tower Range Overlay
 //!
 //! Uploads cell coverage and circular boundaries from [`TowerRangeIndex`] for the range shader.
-//! Index versions control buffer refreshes. A separate uniform describes the selected tower or
-//! placement preview, so changing the highlight does not require rebuilding the coverage buffers.
+//! Index versions control buffer refreshes. A separate uniform describes the highlight a caller
+//! wants, so changing the highlight does not require rebuilding the coverage buffers.
 
 use bevy::{
     input::common_conditions::input_just_released,
@@ -16,14 +16,11 @@ use bevy::{
     sprite_render::{AlphaMode2d, Material2d, Material2dPlugin, MeshMaterial2d},
 };
 
-use almanach::prelude::Almanach;
-use alteration::modifiers::prelude::{AttackRangeType, ModifierType};
-use buildings::prelude::Tower;
-use game_core::prelude::{AreaRange, CELL_SIZE, DrawLevel, GridArea, GridCoords, GridImprint, MapInfo, MapObject, RangeType, ZDepth};
-use grids::{placement::{GridPlacerChanged, PlacementObject, PlacementSession}, prelude::GridVersion};
-use hud::prelude::FocusedMapObject;
+use game_core::prelude::{AreaRange, CELL_SIZE, DrawLevel, GridCoords, GridImprint, MapInfo, RangeType, ZDepth};
+use grids::prelude::GridVersion;
 use indexes::tower_ranges::TowerRangeIndex;
-use states::prelude::{MapLoadingStage, UiInteraction};
+use overlays::towers_range::{TowersRangeOverlayConfig, TowersRangeOverlaySecondaryMode};
+use states::prelude::MapLoadingStage;
 use visuals::{canvas::MapCanvasBundle, specialize_with_shared_gpu};
 
 pub(crate) struct TowersRangeOverlayPlugin;
@@ -36,15 +33,11 @@ impl Plugin for TowersRangeOverlayPlugin {
             .add_systems(OnEnter(MapLoadingStage::LoadResources), TowersRangeOverlay::create)
             .add_systems(OnEnter(TowersRangeOverlayState::Show), |visibility: Single<&mut Visibility, With<TowersRangeOverlay>>| { *visibility.into_inner() = Visibility::Inherited; })
             .add_systems(OnExit(TowersRangeOverlayState::Show), |visibility: Single<&mut Visibility, With<TowersRangeOverlay>>| { *visibility.into_inner() = Visibility::Hidden; })
-            .add_systems(OnExit(UiInteraction::PlaceGridObject), |mut config: ResMut<TowersRangeOverlayConfig>| { config.secondary_mode = TowersRangeOverlaySecondaryMode::None; })
             .add_systems(Update, (
-                TowersRangeOverlayConfig::apply_config_change.run_if(resource_changed::<TowersRangeOverlayConfig>),
+                apply_config_change.run_if(resource_changed::<TowersRangeOverlayConfig>),
                 refresh_display.run_if(in_state(TowersRangeOverlayState::Show)),
                 (|mut config: ResMut<TowersRangeOverlayConfig>| { config.is_overlay_globally_enabled ^= true; }).run_if(input_just_released(KeyCode::Digit8)),
-            ))
-            .add_observer(TowersRangeOverlayConfig::on_insert_focused_map_object_set_highlight)
-            .add_observer(TowersRangeOverlayConfig::on_remove_focused_map_object_clear_highlight)
-            .add_observer(on_grid_placer_changed_preview_placement);
+            ));
     }
 }
 
@@ -59,49 +52,13 @@ enum TowersRangeOverlayState {
     Show,
 }
 
-#[derive(Resource, Default)]
-struct TowersRangeOverlayConfig {
-    is_overlay_globally_enabled: bool,
-    secondary_mode: TowersRangeOverlaySecondaryMode,
-}
-impl TowersRangeOverlayConfig {
-    fn apply_config_change(
-        overlay_config: Res<TowersRangeOverlayConfig>,
-        mut overlay_state: ResMut<NextState<TowersRangeOverlayState>>,
-    ) {
-        let shown = overlay_config.is_overlay_globally_enabled || !overlay_config.secondary_mode.is_none();
-        overlay_state.set_if_different(if shown { TowersRangeOverlayState::Show } else { TowersRangeOverlayState::Hide });
-    }
-    fn on_insert_focused_map_object_set_highlight(
-        trigger: On<Insert<FocusedMapObject>>,
-        mut overlay_config: ResMut<TowersRangeOverlayConfig>,
-        towers: Query<(), With<Tower>>,
-    ) {
-        let focused_entity = trigger.entity;
-        overlay_config.secondary_mode = if towers.contains(focused_entity) { TowersRangeOverlaySecondaryMode::Highlight { tower: focused_entity } } else { TowersRangeOverlaySecondaryMode::None };
-    }
-    fn on_remove_focused_map_object_clear_highlight(
-        _trigger: On<Remove<FocusedMapObject>>,
-        mut overlay_config: ResMut<TowersRangeOverlayConfig>,
-    ) {
-        overlay_config.secondary_mode = TowersRangeOverlaySecondaryMode::None;
-    }
-}
-
-/// Highlight shown while a tower is selected or being placed.
-#[derive(Default, Clone, Debug, PartialEq)]
-enum TowersRangeOverlaySecondaryMode {
-    #[default]
-    None,
-    /// Highlights the selected tower's indexed range.
-    Highlight { tower: Entity },
-    /// Previews the planned tower's range.
-    PlacingTower { range: AreaRange },
-}
-impl TowersRangeOverlaySecondaryMode {
-    fn is_none(&self) -> bool {
-        matches!(self, TowersRangeOverlaySecondaryMode::None)
-    }
+/// Shows the overlay while the player enabled it or a caller wants it.
+fn apply_config_change(
+    overlay_config: Res<TowersRangeOverlayConfig>,
+    mut overlay_state: ResMut<NextState<TowersRangeOverlayState>>,
+) {
+    let shown = overlay_config.is_overlay_globally_enabled || overlay_config.secondary_mode.is_some();
+    overlay_state.set_if_different(if shown { TowersRangeOverlayState::Show } else { TowersRangeOverlayState::Hide });
 }
 
 #[derive(Asset, AsBindGroup, TypePath, Debug, Clone, Default)]
@@ -134,7 +91,8 @@ impl Material2d for TowersRangeMaterial {
 struct TowersRangeOverlay {
     /// Index version used to populate the buffers; `None` before the first refresh.
     shown_version: Option<GridVersion>,
-    /// Mode used to populate the highlight uniform; `None` before the first refresh.
+    /// Mode used to populate the highlight uniform. The first refresh always populates it, because
+    /// `shown_version` starts empty.
     shown_mode: Option<TowersRangeOverlaySecondaryMode>,
     /// Staging buffer for circle slot indexes. Retained between refreshes to reuse the allocation.
     circle_indexes: Vec<u32>,
@@ -148,9 +106,9 @@ impl TowersRangeOverlay {
     }
 
     /// Records the mode and returns whether the highlight needs a refresh.
-    fn record_mode(&mut self, mode: &TowersRangeOverlaySecondaryMode) -> bool {
-        if self.shown_mode.as_ref() == Some(mode) { return false; }
-        self.shown_mode = Some(mode.clone());
+    fn record_mode(&mut self, mode: &Option<TowersRangeOverlaySecondaryMode>) -> bool {
+        if self.shown_mode == *mode { return false; }
+        self.shown_mode = mode.clone();
         true
     }
 
@@ -229,9 +187,9 @@ fn refresh_display(
     // Refresh after index changes even when the same tower remains highlighted.
     if version_changed || mode_changed {
         let highlighted_range = match &overlay_config.secondary_mode {
-            TowersRangeOverlaySecondaryMode::None => None,
-            TowersRangeOverlaySecondaryMode::Highlight { tower } => tower_range_index.get(*tower).map(|indexed| indexed.range),
-            TowersRangeOverlaySecondaryMode::PlacingTower { range } => Some(*range),
+            None => None,
+            Some(TowersRangeOverlaySecondaryMode::HighlightTower { tower }) => tower_range_index.get(*tower).map(|indexed| indexed.range),
+            Some(TowersRangeOverlaySecondaryMode::HighlightRange { range }) => Some(*range),
         };
         materials.get_mut(overlay_material).unwrap().highlight = highlighted_range.map(TowerRangeHighlight::from).unwrap_or_default();
     }
@@ -243,28 +201,6 @@ fn refresh_display(
     let mut circle_indexes = buffers.get_mut(&material.circle_indexes).unwrap();
     circle_indexes.clear();
     circle_indexes.extend_from_slice(&overlay.circle_indexes);
-}
-
-fn on_grid_placer_changed_preview_placement(
-    _trigger: On<GridPlacerChanged>,
-    almanach: Res<Almanach>,
-    mut overlay_config: ResMut<TowersRangeOverlayConfig>,
-    placement_session: Single<(&PlacementObject, &GridArea), With<PlacementSession>>,
-) {
-    let (&PlacementObject(map_object), placement_area) = placement_session.into_inner();
-    let preview_range = match map_object {
-        MapObject::Building(building_type) => {
-            let building_info = almanach.get_building_info(building_type);
-            building_info.attack_range.map(|AttackRangeType(range_type)| AreaRange {
-                range_type,
-                area: *placement_area,
-                min: building_info.baseline.get(&ModifierType::MinAttackRange).copied().unwrap_or(0.),
-                max: building_info.baseline[&ModifierType::MaxAttackRange],
-            })
-        }
-        _ => None,
-    };
-    overlay_config.secondary_mode = preview_range.map_or(TowersRangeOverlaySecondaryMode::None, |range| TowersRangeOverlaySecondaryMode::PlacingTower { range });
 }
 
 /// Cell coverage and circle list offsets for the GPU.

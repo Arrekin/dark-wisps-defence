@@ -4987,14 +4987,10 @@ dependencies = [
 name = "overlays_internal"
 version = "0.2.0"
 dependencies = [
- "almanach",
- "alteration",
  "bevy",
- "buildings",
  "bytemuck",
  "game_core",
  "grids",
- "hud",
  "indexes",
  "overlays",
  "smallvec",

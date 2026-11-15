@@ -28,7 +28,7 @@ GridObjectPlacer (entity)
         components: GridImprint + domain-rendered world preview (via ObjectFaceRequest::ghost)
 ```
 
-The tower range overlay observes `GridPlacerChanged` and reads `(&PlacementObject, &GridArea)` from `PlacementSession` to preview coverage at the cursor. Placing domains write the energy supply overlay's highlight into `EnergySupplyOverlayConfig::secondary_mode`; the placer clears it on `StopPlacing`.
+Placing domains write overlay highlights into `EnergySupplyOverlayConfig::secondary_mode` and `TowersRangeOverlayConfig::secondary_mode`; the placer clears both on `StopPlacing`.
 
 ## Lifecycle & Event Flow
 
@@ -39,7 +39,7 @@ UI buttons and hotkeys request placement by calling `grid_object_placer_request.
 ```text
 GridObjectPlacerRequest::take()
   ├─ trigger StopPlacing                           → placer despawns PlacementControls, resets the session
-  │                                                  and clears the overlay highlight; valid with no session
+  │                                                  and clears the overlay highlights; valid with no session
   ├─ session.insert(PlacementObject(map_object))   → also inserts default PlacementModes via #[require]
   ├─ trigger BeginPlacing { object, origin }       → domain inserts GridArea, optional PlacementModes,
   │                                                  default settings on session, & spawns UI controls

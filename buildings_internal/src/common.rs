@@ -1,11 +1,17 @@
 use bevy::{ecs::system::SystemParam, prelude::*};
 
 use almanach::prelude::Almanach;
+use alteration::modifiers::prelude::{AttackRangeType, ModifierType};
+use buildings::prelude::Tower;
 use game_core::{math::angle_difference, prelude::*};
 use grids::placement::{BeginPlacing, GridPlacerChanged, PlacementFeedback, PlacementObject, PlacementSession, PlacementValidity, ReservedCoords};
+use hud::prelude::FocusedMapObject;
 use indexes::{energy_supply::EnergySupply, prelude::{ObstacleCell, ObstacleGrid}};
 use logging::prelude::*;
-use overlays::energy_supply::{EnergySupplyOverlayConfig, EnergySupplyOverlaySecondaryMode};
+use overlays::{
+    energy_supply::{EnergySupplyOverlayConfig, EnergySupplyOverlaySecondaryMode},
+    towers_range::{TowersRangeOverlayConfig, TowersRangeOverlaySecondaryMode},
+};
 use persistence::{prelude::*, rusqlite};
 use resources::prelude::Stock;
 use states::AdminMode;
@@ -60,6 +66,44 @@ pub(crate) fn on_grid_placer_changed_highlight_area_suppliers(
     let (&PlacementObject(MapObject::Building(building_type)), &area) = *placement_session else { return };
     if !building_type.is_energy_consumer() || building_type.is_energy_supplier() { return; }
     overlay_config.secondary_mode = Some(EnergySupplyOverlaySecondaryMode::HighlightAreaSuppliers { area });
+}
+
+/// Wants the tower range overlay to preview the baseline attack range of a building being placed.
+pub(crate) fn on_grid_placer_changed_highlight_attack_range(
+    _trigger: On<GridPlacerChanged>,
+    almanach: Res<Almanach>,
+    mut overlay_config: ResMut<TowersRangeOverlayConfig>,
+    placement_session: Single<(&PlacementObject, &GridArea), With<PlacementSession>>,
+) {
+    let (&PlacementObject(MapObject::Building(building_type)), &area) = *placement_session else { return };
+    let building_info = almanach.get_building_info(building_type);
+    let Some(AttackRangeType(range_type)) = building_info.attack_range else { return };
+    let range = AreaRange {
+        range_type,
+        area,
+        min: building_info.baseline.get(&ModifierType::MinAttackRange).copied().unwrap_or(0.),
+        max: building_info.baseline[&ModifierType::MaxAttackRange],
+    };
+    overlay_config.secondary_mode = Some(TowersRangeOverlaySecondaryMode::HighlightRange { range });
+}
+
+/// Wants the tower range overlay to highlight a focused tower's range.
+pub(crate) fn on_insert_focused_map_object_highlight_tower_range(
+    trigger: On<Insert<FocusedMapObject>>,
+    mut overlay_config: ResMut<TowersRangeOverlayConfig>,
+    towers: Query<(), With<Tower>>,
+) {
+    if !towers.contains(trigger.entity) { return; }
+    overlay_config.secondary_mode = Some(TowersRangeOverlaySecondaryMode::HighlightTower { tower: trigger.entity });
+}
+
+pub(crate) fn on_remove_focused_map_object_clear_tower_range_highlight(
+    trigger: On<Remove<FocusedMapObject>>,
+    mut overlay_config: ResMut<TowersRangeOverlayConfig>,
+    towers: Query<(), With<Tower>>,
+) {
+    if !towers.contains(trigger.entity) { return; }
+    overlay_config.secondary_mode = None;
 }
 
 /// Shared ground, power, and cost checks for building placement.
