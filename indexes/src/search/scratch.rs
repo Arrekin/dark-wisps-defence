@@ -2,7 +2,7 @@
 
 use std::{cell::RefCell, cmp::Ordering, collections::{BinaryHeap, VecDeque}};
 
-use game_core::prelude::{GridCoords, GridVolumePosition};
+use game_core::prelude::{GridCoords, GridPosition};
 use grids::{base::{GridSingle, GridStack}, visited::{TrackingGrid, VisitedGrid}};
 
 thread_local! {
@@ -20,16 +20,16 @@ pub struct SearchScratch {
     pub tracking: TrackingGrid,
     /// Visit stamps per coordinate, shared across altitude levels.
     pub coords_visited: VisitedGrid<GridSingle<u8>>,
-    /// Visit stamps per coordinate and volume level.
+    /// Visit stamps per coordinate and stack level.
     pub position_visited: VisitedGrid<GridStack<u8>>,
     /// Best-first queue ordered by floating-point cost.
-    pub cost_queue: BinaryHeap<State<f32, GridVolumePosition>>,
+    pub cost_queue: BinaryHeap<State<f32, GridPosition>>,
     /// Best-first queue ordered by step count.
     pub step_queue: BinaryHeap<State<usize, GridCoords>>,
     /// FIFO queue of cells and distances for range-limited floods.
     pub coords_distance_queue: VecDeque<(usize, GridCoords)>,
     /// FIFO queue of positions and distances for range-limited floods.
-    pub position_distance_queue: VecDeque<(usize, GridVolumePosition)>,
+    pub position_distance_queue: VecDeque<(usize, GridPosition)>,
     /// FIFO queue of cells for floods without a range limit.
     pub coords_queue: VecDeque<GridCoords>,
 }

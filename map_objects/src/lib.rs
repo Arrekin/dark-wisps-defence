@@ -13,7 +13,7 @@ pub mod prelude {
         HasOreInScannerRange,
         QuantumField,
         QuantumFieldSolved,
-        VolumeShape,
+        StructureShape,
         Wall,
     };
 }
@@ -26,7 +26,7 @@ pub struct DarkOre {
 }
 
 /// Drawn by the wall canvas from `GridArea`, so the entity itself carries no transform or render layer.
-/// [`VolumeShape`] defines its slope and tunnel openings.
+/// [`StructureShape`] defines its slope and tunnel openings.
 #[derive(Component)]
 #[require(MapBound, EmissionsGridSpreadAffector)]
 pub struct Wall;
@@ -34,18 +34,18 @@ pub struct Wall;
 /// Surface slope and tunnel openings shared by walls and underground excavations.
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[component(immutable)]
-pub enum VolumeShape {
+pub enum StructureShape {
     /// A flat top with tunnel openings on the specified sides. An empty set makes it solid.
     Flat { openings: EdgeSides },
     /// A solid ramp rising toward `high_side`, with no tunnel openings.
     Ramp { high_side: EdgeSide },
 }
-impl Default for VolumeShape {
+impl Default for StructureShape {
     fn default() -> Self {
         Self::Flat { openings: EdgeSides::NONE }
     }
 }
-impl VolumeShape {
+impl StructureShape {
     /// The tunnel openings; none for a ramp.
     pub const fn openings(self) -> EdgeSides {
         match self {
@@ -83,12 +83,12 @@ impl VolumeShape {
 pub enum ExcavationShape {
     #[default]
     Pit,
-    Shaped(VolumeShape),
+    Shaped(StructureShape),
 }
 impl ExcavationShape {
     /// Returns whether this shape is a tunnel beneath an intact ground floor.
     pub const fn is_tunnel(self) -> bool {
-        matches!(self, Self::Shaped(VolumeShape::Flat { .. }))
+        matches!(self, Self::Shaped(StructureShape::Flat { .. }))
     }
 }
 

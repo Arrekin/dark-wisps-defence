@@ -81,7 +81,7 @@ impl LaneVisual for InfernoDomeFire {
 /// Ground flash and scorch quad. Child of `InfernoDome`. Field order and types mirror `Instance` in
 /// `assets/shaders/weaponry/inferno_dome_ground.wesl`.
 #[derive(Component, ShaderType, TypePath, Clone)]
-#[require(ZDepth::FloorDecal, DrawLevel::GroundFloor)]
+#[require(ZDepth::FloorDecal, DrawLevel::OnGround)]
 struct InfernoDomeGround {
     /// Wrapped game time of the discharge.
     start_time: f32,

@@ -49,7 +49,7 @@ const HAZE_MARGIN: f32 = CELL_SIZE;
 /// Core and seam glow overlay. Child of `TowerInferno`. Field order and types mirror `Instance` in
 /// `assets/shaders/towers/inferno/core.wesl`.
 #[derive(Component, ShaderType, TypePath, Clone, Default, PartialEq)]
-#[require(ZDepth::BuildingEffect, DrawLevel::Elevation)]
+#[require(ZDepth::BuildingEffect, DrawLevel::OnGround)]
 pub(crate) struct InfernoCore {
     /// Normalized reload progress.
     charge: f32,
@@ -78,7 +78,7 @@ impl MaterialExtension2d for InfernoCoreMaterial {}
 /// Ground ember ring at the tower's range boundary. Child of `TowerInferno`. Field order and types
 /// mirror `Instance` in `assets/shaders/towers/inferno/ember_ring.wesl`.
 #[derive(Component, ShaderType, TypePath, Clone, Default, PartialEq)]
-#[require(ZDepth::FloorDecal, DrawLevel::GroundFloor)]
+#[require(ZDepth::FloorDecal, DrawLevel::OnGround)]
 pub(crate) struct InfernoEmberRing {
     /// Range radius in world units.
     range: f32,

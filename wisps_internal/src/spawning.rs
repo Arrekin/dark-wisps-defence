@@ -2,7 +2,7 @@ use bevy::{ecs::system::SystemParam, platform::collections::HashMap, prelude::*}
 
 use alteration::{effects::prelude::*, modifiers::prelude::*};
 use game_core::prelude::*;
-use grids::{base::GridCell, placement::{BeginPlacing, PlacementFeedback, PlacementModes, PlacementObject, PlacementSession, PlacementValidity, PlaceRequest, RemoveRequest, ReservedCoords}};
+use grids::placement::{BeginPlacing, PlacementFeedback, PlacementModes, PlacementObject, PlacementSession, PlacementValidity, PlaceRequest, RemoveRequest, ReservedCoords};
 use indexes::{prelude::ObstacleGrid, wisps::WispsGrid};
 use logging::prelude::*;
 use persistence::{prelude::*, rusqlite};
@@ -16,7 +16,7 @@ pub(crate) struct DeathLoot(pub Vec<ResourceAmount>);
 #[derive(Component, SSS)]
 pub(crate) struct BuilderWisp {
     pub wisp_type: WispType,
-    pub grid_position: GridVolumePosition,
+    pub grid_position: GridPosition,
     /// Integrity override for loading a saved wisp; `None` uses the baseline.
     pub integrity_points: Option<IntegrityPoints>,
     /// Exact world position for loading a moving wisp; `None` uses the center of its grid area.
@@ -24,7 +24,7 @@ pub(crate) struct BuilderWisp {
 }
 
 impl BuilderWisp {
-    pub fn new(wisp_type: WispType, grid_position: GridVolumePosition) -> Self {
+    pub fn new(wisp_type: WispType, grid_position: GridPosition) -> Self {
         Self { wisp_type, grid_position, integrity_points: None, world_position: None }
     }
     pub fn with_integrity_points(mut self, integrity_points: f32) -> Self {
@@ -127,7 +127,7 @@ pub(crate) fn collect_wisps(
 pub(crate) fn load_wisps(ctx: &mut LoadContext) -> LoadResult {
     ctx.for_each_entity("SELECT id, wisp_type FROM wisps", |ctx, old_id, entity, row| {
         let wisp_type = row.get_parsed::<WispType>(1)?;
-        let grid_position = ctx.grid_position(old_id)?.volume_position();
+        let grid_position = ctx.grid_position(old_id)?;
         let integrity_points = ctx.integrity_points(old_id)?;
         let world_position = ctx.world_position(old_id)?;
         let builder = BuilderWisp::new(wisp_type, grid_position)
@@ -161,16 +161,16 @@ impl WispPlacementRules<'_, '_> {
         **self.placement_session
     }
 
-    /// Requires every cell to be unreserved with a free top volume.
+    /// Requires every cell to be unreserved with a free top level.
     fn feedback(&self) -> PlacementFeedback {
         PlacementFeedback::every_cell(self.placement_area(), &self.reserved_coords, |coords| self.can_take_wisp(coords))
     }
 
-    /// Checks that no structure and no wisp occupies the cell's top volume.
+    /// Checks that no structure and no wisp occupies the cell's top level.
     fn can_take_wisp(&self, coords: GridCoords) -> bool {
-        let Some(cell) = self.obstacle_grid.get(coords) else { return false; };
-        let top = cell.top_level();
-        cell.at(top).is_empty() && self.wisps_grid.wisps_at(coords.at(top)).is_empty()
+        if !self.obstacle_grid.bounds.contains(coords) { return false; }
+        let top = self.obstacle_grid.top_position(coords);
+        self.obstacle_grid[top].is_empty() && self.wisps_grid.wisps_at(top).is_empty()
     }
 
     pub(crate) fn update_feedback(
@@ -208,7 +208,7 @@ impl WispPlacementRules<'_, '_> {
         for wisp_entity in wisp_entities {
             #[debug_player("Wisp removed at {coords}")]
             if let Ok(wisp_area) = wisps.get(wisp_entity) {
-                rules.wisps_grid.wisp_remove(wisp_area.origin.volume_position(), wisp_entity);
+                rules.wisps_grid.wisp_remove(wisp_area.origin, wisp_entity);
                 rules.commands.entity(wisp_entity).despawn();
             }
         }

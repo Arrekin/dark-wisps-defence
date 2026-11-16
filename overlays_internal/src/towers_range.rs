@@ -87,7 +87,7 @@ impl Material2d for TowersRangeMaterial {
 }
 
 #[derive(Component, Default)]
-#[require(ZDepth::OverlayTowerRanges, DrawLevel::Elevation)]
+#[require(ZDepth::OverlayTowerRanges, DrawLevel::OnGround)]
 struct TowersRangeOverlay {
     /// Index version used to populate the buffers; `None` before the first refresh.
     shown_version: Option<GridVersion>,

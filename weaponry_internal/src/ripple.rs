@@ -133,7 +133,7 @@ fn resolve_ripple_hits(
     effect_targets: Query<&EffectTarget>,
 ) {
     for (ripple_entity, ripple, ripple_speed, ripple_transform, sourced_effects) in ripples.iter() {
-        let covered_area = GridArea::covering_circle(ripple_transform.translation.xy(), ripple.current_radius, AltitudeLevel::Elevation);
+        let covered_area = GridArea::covering_circle(ripple_transform.translation.xy(), ripple.current_radius, AltitudeLevel::OnGround);
         for coords in covered_area.iter_in_bounds(wisps_grid.bounds) {
             for wisp in wisps_grid.wisps_in_cell(coords) {
                 if already_hit_this_target(sourced_effects, wisp, &effect_targets) { continue; }

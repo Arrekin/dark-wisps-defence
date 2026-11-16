@@ -222,7 +222,7 @@ pub(crate) struct TowerAimingSystems;
 /// Rotating top sprite of a tower. Displays the tower's `TowerTopRotation`.
 #[derive(Component)]
 #[relationship(relationship_target = TowerTop)]
-#[require(ZDepth::TowerTop, DrawLevel::Elevation)]
+#[require(ZDepth::TowerTop, DrawLevel::OnGround)]
 pub(crate) struct TowerTopOf(pub Entity);
 
 #[derive(Component)]

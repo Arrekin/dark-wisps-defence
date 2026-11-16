@@ -13,7 +13,8 @@
 
 use bevy::{prelude::*, reflect::TypePath, render::render_resource::{BlendState, ShaderType}};
 
-use game_core::prelude::{DrawLevel, GridVolumePosition, MapBound, ZDepth};
+use game_core::prelude::{DrawLevel, GridPosition, MapBound, ZDepth};
+use indexes::obstacles::level_gpu_index;
 use session::{GameClock, TimeBound};
 use states::prelude::GameState;
 use visuals::{
@@ -103,7 +104,7 @@ impl LaneVisual for Flame {
 /// Additive ground light along the stream and around the hit. Child of `Flame`. Field order and
 /// types mirror `Instance` in `assets/shaders/weaponry/flame_stream_glow.wesl`.
 #[derive(Component, ShaderType, TypePath, Clone, Default, PartialEq)]
-#[require(ZDepth::FlameGlow, DrawLevel::Elevation)]
+#[require(ZDepth::FlameGlow, DrawLevel::OnGround)]
 struct FlameGlow {
     intensity: f32,
     near: f32,
@@ -128,14 +129,14 @@ struct ImpactFire {
     /// Normalized intensity in `0.0..=1.0`.
     intensity: f32,
     /// Last burned tile, retained while fading out.
-    position: Option<GridVolumePosition>,
+    position: Option<GridPosition>,
     /// Cumulative burn time (seconds) on `position`.
     burning_for: f32,
 }
 impl ImpactFire {
     /// Advances burn state on `position` by `delta` seconds. If `position` changed, resets intensity
     /// and returns the previous tile's `BurntTile` data.
-    fn burn(&mut self, position: GridVolumePosition, delta: f32) -> Option<BurntTile> {
+    fn burn(&mut self, position: GridPosition, delta: f32) -> Option<BurntTile> {
         let mut burnt = None;
         if self.position != Some(position) {
             burnt = self.stop_burning();
@@ -163,7 +164,7 @@ impl ImpactFire {
 }
 
 struct BurntTile {
-    position: GridVolumePosition,
+    position: GridPosition,
     /// Normalized scorch strength in `0.0..=1.0`.
     strength: f32,
 }
@@ -171,7 +172,7 @@ struct BurntTile {
 /// Fire on the currently hit tile. Field order and types mirror `Instance` in
 /// `assets/shaders/weaponry/flame_stream_impact.wesl`.
 #[derive(Component, ShaderType, TypePath, Clone, Default, PartialEq)]
-#[require(ZDepth::FlameImpact, DrawLevel::Elevation)]
+#[require(ZDepth::FlameImpact, DrawLevel::OnGround)]
 struct ImpactFireVisual {
     intensity: f32,
     seed: f32,
@@ -204,8 +205,8 @@ struct FlameScorch {
     strength: f32,
     seed: f32,
     half_size: f32,
-    /// Floor code (`FloorLevel::gpu_index`).
-    floor: u32,
+    /// Level code (`level_gpu_index`).
+    level: u32,
 }
 impl LaneVisual for FlameScorch {
     const LABEL: &'static str = "flame_scorch";
@@ -224,7 +225,7 @@ impl LaneVisual for FlameScorch {
 /// Nozzle pilot flame shown while the stream is armed. Child of `FlameStream`. Field order and
 /// types mirror `Instance` in `assets/shaders/weaponry/flame_stream_pilot.wesl`.
 #[derive(Component, ShaderType, TypePath, Clone)]
-#[require(ZDepth::FlamePilot, DrawLevel::Elevation)]
+#[require(ZDepth::FlamePilot, DrawLevel::OnGround)]
 struct PilotFlame {
     seed: f32,
     size: f32,
@@ -357,7 +358,6 @@ fn update_impact_fires(
 
         if let Some(BurntTile { position, strength }) = burnt {
             let time_bound = TimeBound::lasting(&clock, SCORCH_DURATION);
-            let floor = position.level.floor();
             commands.spawn((
                 FlameScorch {
                     start_time: GameClock::wrap(time_bound.starts_at),
@@ -365,9 +365,9 @@ fn update_impact_fires(
                     strength,
                     seed: (position.coords.x * 31 + position.coords.y) as f32 % 97.,
                     half_size: SCORCH_MESH_HALF_SIZE,
-                    floor: floor.gpu_index(),
+                    level: level_gpu_index(position.level),
                 },
-                DrawLevel::from(floor),
+                DrawLevel::from(position.level),
                 time_bound,
                 Transform::from_translation(position.coords.world_center().extend(0.)),
             ));

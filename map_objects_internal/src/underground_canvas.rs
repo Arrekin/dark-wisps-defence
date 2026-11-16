@@ -87,8 +87,8 @@ impl UndergroundCanvasPass {
 
     const fn draw_level(self) -> DrawLevel {
         match self {
-            Self::Bottom => DrawLevel::UndergroundFloor,
-            Self::Top => DrawLevel::GroundFloor,
+            Self::Bottom => DrawLevel::Underground,
+            Self::Top => DrawLevel::OnGround,
         }
     }
 }

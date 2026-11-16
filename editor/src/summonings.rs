@@ -185,7 +185,7 @@ fn ui_spawn_area(ui: &mut egui::Ui, area: &mut SpawnArea) {
                 *area = SpawnArea::Coords { coords: vec![GridCoords::default()] };
             }
             if ui.selectable_label(matches!(area, SpawnArea::Rect { .. }), SpawnArea::Rect { area: GridArea::default() }.as_ref()).clicked() {
-                *area = SpawnArea::Rect { area: GridArea::new(GridCoords::default().at(AltitudeLevel::Elevation), GridImprint::square(10)) };
+                *area = SpawnArea::Rect { area: GridArea::new(GridCoords::default().at(AltitudeLevel::OnGround), GridImprint::square(10)) };
             }
             if ui.selectable_label(matches!(area, SpawnArea::Edge { .. }), SpawnArea::Edge { side: EdgeSide::default() }.as_ref()).clicked() {
                 *area = SpawnArea::Edge { side: EdgeSide::default() };

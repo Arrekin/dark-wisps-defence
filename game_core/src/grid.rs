@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use serde::Serialize;
 use strum::{AsRefStr, EnumIter, EnumString, IntoEnumIterator};
 
-use crate::{altitude::{AltitudeLevel, FloorLevel, VolumeLevel}, prelude::SSS};
+use crate::{altitude::AltitudeLevel, prelude::SSS};
 
 pub const CELL_SIZE: f32 = 32.;
 
@@ -101,7 +101,7 @@ impl GridCoords {
         Rect::from_corners(min, min + Vec2::splat(CELL_SIZE))
     }
     /// Combines these coordinates with an altitude level.
-    pub const fn at<L>(self, level: L) -> GridPosition<L> {
+    pub const fn at(self, level: AltitudeLevel) -> GridPosition {
         GridPosition { coords: self, level }
     }
     pub fn shifted(self, (dx, dy): (i32, i32)) -> Self {
@@ -215,47 +215,19 @@ impl EdgeSides {
 }
 
 /// Grid coordinates paired with an altitude level.
-///
-/// The default level type is [`AltitudeLevel`]. Use [`GridVolumePosition`] or
-/// [`GridFloorPosition`] when an API accepts only volumes or floors.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
-pub struct GridPosition<L = AltitudeLevel> {
+pub struct GridPosition {
     pub coords: GridCoords,
-    pub level: L,
+    pub level: AltitudeLevel,
 }
-pub type GridVolumePosition = GridPosition<VolumeLevel>;
-pub type GridFloorPosition = GridPosition<FloorLevel>;
 
-impl<L> GridPosition<L> {
-    pub const fn new(coords: GridCoords, level: L) -> Self {
-        Self { coords, level }
-    }
+impl GridPosition {
     /// Offsets the coordinates while preserving the altitude level.
     pub fn shifted(self, offset: (i32, i32)) -> Self {
         Self { coords: self.coords.shifted(offset), level: self.level }
     }
 }
-impl From<GridVolumePosition> for GridPosition {
-    fn from(position: GridVolumePosition) -> Self {
-        position.coords.at(position.level.into())
-    }
-}
-impl From<GridFloorPosition> for GridPosition {
-    fn from(position: GridFloorPosition) -> Self {
-        position.coords.at(position.level.into())
-    }
-}
-impl GridPosition {
-    /// Converts the altitude with [`AltitudeLevel::volume`], preserving the coordinates.
-    pub fn volume_position(self) -> GridVolumePosition {
-        self.coords.at(self.level.volume())
-    }
-    /// Converts the altitude with [`AltitudeLevel::floor`], preserving the coordinates.
-    pub fn floor_position(self) -> GridFloorPosition {
-        self.coords.at(self.level.floor())
-    }
-}
-impl<L: std::fmt::Debug> std::fmt::Display for GridPosition<L> {
+impl std::fmt::Display for GridPosition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} {:?}", self.coords, self.level)
     }
@@ -334,10 +306,10 @@ pub struct GridArea {
     pub imprint: GridImprint,
 }
 impl GridArea {
-    pub fn new(origin: impl Into<GridPosition>, imprint: GridImprint) -> Self {
-        Self { origin: origin.into(), imprint }
+    pub fn new(origin: GridPosition, imprint: GridImprint) -> Self {
+        Self { origin, imprint }
     }
-    pub fn cell(origin: impl Into<GridPosition>) -> Self {
+    pub fn cell(origin: GridPosition) -> Self {
         Self::new(origin, GridImprint::default())
     }
     /// Places `imprint` at the zero origin, in its own local space.
@@ -345,8 +317,7 @@ impl GridArea {
         Self::new(GridCoords::default().at(level), imprint)
     }
     /// Places `imprint` with `center` as its middle cell. An even side puts `center` just above or right of the middle.
-    pub fn centered_on(center: impl Into<GridPosition>, imprint: GridImprint) -> Self {
-        let center = center.into();
+    pub fn centered_on(center: GridPosition, imprint: GridImprint) -> Self {
         let Bounds { width, height } = imprint.into();
         Self::new(center.shifted((-(width / 2), -(height / 2))), imprint)
     }
@@ -360,8 +331,8 @@ impl GridArea {
         Self::covering(Rect::from_center_half_size(center, Vec2::splat(radius)), level)
     }
     /// Returns this area at a different altitude.
-    pub fn at_level(self, level: impl Into<AltitudeLevel>) -> Self {
-        Self::new(self.origin.coords.at(level.into()), self.imprint)
+    pub fn at_level(self, level: AltitudeLevel) -> Self {
+        Self::new(self.origin.coords.at(level), self.imprint)
     }
 
     /// The rectangle of cells around the area, at the same origin.

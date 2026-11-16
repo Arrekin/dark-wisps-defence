@@ -1,13 +1,13 @@
 //! # Obstacle grid
 //!
-//! Each cell stores one [`GridStructure`] per volume. Underground cells default to `Solid`;
-//! the two volumes above them default to `Empty`. Walls, buildings and ore keep frequently queried
+//! Each cell stores one [`GridStructure`] per level. The `Underground` level defaults to `Solid`;
+//! the two levels above it default to `Empty`. Walls, buildings and ore keep frequently queried
 //! data inline and use typed slots to reference their entity, area and additional data.
 //!
 //! All cells occupied by the same entity reference one slot. Imprint methods create the entry
 //! and fill its cells; [`ObstacleGrid::deprint`] clears the cells and frees the slot.
 //!
-//! Excavations store their state directly in the underground volume: `Empty` for a pit, or
+//! Excavations store their state directly in the `Underground` level: `Empty` for a pit, or
 //! `Excavation` with an inline shape for a ramp or tunnel. [`ObstacleGrid::excavate`] and
 //! [`ObstacleGrid::fill_excavation`] update one cell at a time.
 
@@ -15,27 +15,33 @@ use std::ops::Deref;
 
 use bevy::prelude::*;
 
-use game_core::prelude::{Bounds, BuildingType, EdgeSide, EdgeSides, FloorLevel, GridArea, GridCoords, GridVolumePosition, VolumeLevel};
-use grids::{GridVersion, base::{BaseGrid, GridCell}, slot_index::{Slot, Slots}};
-use map_objects::{prelude::{ExcavationShape, VolumeShape}, wall_style::WallStyleKey};
+use game_core::prelude::{AltitudeLevel, Bounds, BuildingType, EdgeSide, EdgeSides, GridArea, GridCoords, GridPosition};
+use grids::{GridVersion, base::{BaseGrid, GridCell, stack_level_below, stack_slot}, slot_index::{Slot, Slots}};
+use map_objects::{prelude::{ExcavationShape, StructureShape}, wall_style::WallStyleKey};
 
-/// Contents of one cell volume, including empty space and solid earth.
+/// GPU code of the stack level holding `level`, matching `LEVEL_*` in
+/// `assets/shaders/grids/obstacles.wesl`.
+pub const fn level_gpu_index(level: AltitudeLevel) -> u32 {
+    stack_slot(level) as u32
+}
+
+/// Contents of one level of a cell, including empty space and solid earth.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GridStructure {
-    /// Open space. The default at `Elevation` and `OnElevation`; represents a pit at `Underground`.
+    /// Open space. The default at `OnGround` and `OnElevation`; represents a pit at `Underground`.
     Empty,
     /// Packed earth, the default at `Underground`.
     Solid,
     DarkOre { slot: Slot<DarkOreData> },
-    Wall { slot: Slot<WallData>, style: WallStyleKey, shape: VolumeShape },
+    Wall { slot: Slot<WallData>, style: WallStyleKey, shape: StructureShape },
     Building { slot: Slot<BuildingData>, building_type: BuildingType },
     /// An underground ramp or tunnel that supports the floor above.
     ///
     /// A flat shape without openings blocks movement like solid earth.
-    Excavation { shape: VolumeShape },
+    Excavation { shape: StructureShape },
 }
 
-const _: () = assert!(size_of::<GridStructure>() == 8, "GridStructure sits in every cell volume and is read in hot loops");
+const _: () = assert!(size_of::<GridStructure>() == 8, "GridStructure sits in every level of every cell and is read in hot loops");
 
 impl GridStructure {
     /// GPU code matching `STRUCTURE_*` in `assets/shaders/grids/obstacles.wesl`.
@@ -51,10 +57,10 @@ impl GridStructure {
     }
 
     /// Default cell contents: solid earth underground, empty space above.
-    pub const fn default_at(level: VolumeLevel) -> Self {
+    pub const fn default_at(level: AltitudeLevel) -> Self {
         match level {
-            VolumeLevel::Underground => Self::Solid,
-            VolumeLevel::Elevation | VolumeLevel::OnElevation => Self::Empty,
+            AltitudeLevel::Underground => Self::Solid,
+            AltitudeLevel::OnGround | AltitudeLevel::OnElevation | AltitudeLevel::Airborne | AltitudeLevel::AllEncompassing | AltitudeLevel::TopLevel => Self::Empty,
         }
     }
 
@@ -74,7 +80,7 @@ impl GridStructure {
     /// The side a ramp rises toward, or `None` for structures that are not ramps.
     pub const fn ramp_high_side(self) -> Option<EdgeSide> {
         match self.shape() {
-            Some(VolumeShape::Ramp { high_side }) => Some(high_side),
+            Some(StructureShape::Ramp { high_side }) => Some(high_side),
             _ => None,
         }
     }
@@ -88,7 +94,7 @@ impl GridStructure {
     }
 
     /// Returns the shape of a wall or excavation, or `None` for other structures.
-    pub const fn shape(self) -> Option<VolumeShape> {
+    pub const fn shape(self) -> Option<StructureShape> {
         match self {
             Self::Wall { shape, .. } | Self::Excavation { shape } => Some(shape),
             _ => None,
@@ -103,7 +109,7 @@ impl GridStructure {
         }
     }
 
-    /// True if this structure provides the floor of the volume above it.
+    /// True if this structure provides the floor of the level above it.
     pub const fn provides_floor(self) -> bool {
         match self {
             Self::Solid | Self::DarkOre { .. } | Self::Wall { .. } | Self::Excavation { .. } => true,
@@ -151,29 +157,29 @@ structure_data!(
 #[derive(Clone, Debug, PartialEq)]
 pub struct ObstacleCell {
     pub underground: GridStructure,
-    pub elevation: GridStructure,
+    pub on_ground: GridStructure,
     pub on_elevation: GridStructure,
     pub quantum_field: Option<Entity>,
 }
 impl Default for ObstacleCell {
     fn default() -> Self {
-        Self { underground: GridStructure::default_at(VolumeLevel::Underground), elevation: GridStructure::default_at(VolumeLevel::Elevation), on_elevation: GridStructure::default_at(VolumeLevel::OnElevation), quantum_field: None }
+        Self { underground: GridStructure::default_at(AltitudeLevel::Underground), on_ground: GridStructure::default_at(AltitudeLevel::OnGround), on_elevation: GridStructure::default_at(AltitudeLevel::OnElevation), quantum_field: None }
     }
 }
 impl GridCell for ObstacleCell {
     type Data = GridStructure;
-    fn at(&self, level: VolumeLevel) -> &GridStructure {
+    fn at(&self, level: AltitudeLevel) -> &GridStructure {
         match level {
-            VolumeLevel::Underground => &self.underground,
-            VolumeLevel::Elevation => &self.elevation,
-            VolumeLevel::OnElevation => &self.on_elevation,
+            AltitudeLevel::Underground => &self.underground,
+            AltitudeLevel::OnGround => &self.on_ground,
+            AltitudeLevel::OnElevation | AltitudeLevel::Airborne | AltitudeLevel::AllEncompassing | AltitudeLevel::TopLevel => &self.on_elevation,
         }
     }
-    fn at_mut(&mut self, level: VolumeLevel) -> &mut GridStructure {
+    fn at_mut(&mut self, level: AltitudeLevel) -> &mut GridStructure {
         match level {
-            VolumeLevel::Underground => &mut self.underground,
-            VolumeLevel::Elevation => &mut self.elevation,
-            VolumeLevel::OnElevation => &mut self.on_elevation,
+            AltitudeLevel::Underground => &mut self.underground,
+            AltitudeLevel::OnGround => &mut self.on_ground,
+            AltitudeLevel::OnElevation | AltitudeLevel::Airborne | AltitudeLevel::AllEncompassing | AltitudeLevel::TopLevel => &mut self.on_elevation,
         }
     }
 }
@@ -184,42 +190,41 @@ impl ObstacleCell {
     pub fn is_within_quantum_field(&self) -> bool {
         self.quantum_field.is_some()
     }
-    /// Returns whether this cell has the requested floor.
-    /// The underground floor always exists; higher floors require a supporting structure below.
-    pub fn has_floor(&self, floor: FloorLevel) -> bool {
-        match floor {
-            FloorLevel::UndergroundFloor => true,
-            FloorLevel::GroundFloor => self.underground.provides_floor(),
-            FloorLevel::ElevationFloor => self.elevation.provides_floor(),
-        }
+    /// The structure at the stack level below `level`. Solid earth lies below the lowest level.
+    pub fn structure_under(&self, level: AltitudeLevel) -> GridStructure {
+        stack_level_below(level).map_or(GridStructure::Solid, |below| *self.at(below))
     }
-    /// The highest volume with a floor under it.
-    pub fn top_level(&self) -> VolumeLevel {
-        if self.has_floor(FloorLevel::ElevationFloor) {
-            VolumeLevel::OnElevation
-        } else if self.has_floor(FloorLevel::GroundFloor) {
-            VolumeLevel::Elevation
+    /// Returns whether `level` has a floor in this cell, provided by the structure beneath it.
+    pub fn has_floor(&self, level: AltitudeLevel) -> bool {
+        self.structure_under(level).provides_floor()
+    }
+    /// The highest of `Underground`, `OnGround` and `OnElevation` with a floor.
+    pub fn top_level(&self) -> AltitudeLevel {
+        if self.has_floor(AltitudeLevel::OnElevation) {
+            AltitudeLevel::OnElevation
+        } else if self.has_floor(AltitudeLevel::OnGround) {
+            AltitudeLevel::OnGround
         } else {
-            VolumeLevel::Underground
+            AltitudeLevel::Underground
         }
     }
-    /// True for solid earth beneath two empty volumes, with no quantum field.
+    /// True for solid earth beneath two empty levels, with no quantum field.
     pub fn is_open_ground(&self) -> bool {
         self.underground == GridStructure::Solid && self.is_clear_above()
     }
-    /// Whether the underground structure supports a level ground floor.
+    /// Whether the underground structure supports a flat floor at `OnGround`.
     /// Solid earth, ore and flat tunnels qualify; pits and ramps do not.
     pub fn has_flat_ground(&self) -> bool {
         self.underground.provides_floor() && !self.underground.is_ramp()
     }
-    /// Whether ground is flat, has no ore, and has empty volumes above it with no quantum field.
+    /// Whether ground is flat, has no ore, and has empty levels above it with no quantum field.
     /// Allows placement over tunnels.
     pub fn is_placeable_ground(&self) -> bool {
         self.has_flat_ground() && !self.has_dark_ore() && self.is_clear_above()
     }
-    /// Whether both volumes above ground are empty and the cell has no quantum field.
+    /// Whether both levels above ground are empty and the cell has no quantum field.
     fn is_clear_above(&self) -> bool {
-        self.elevation.is_empty() && self.on_elevation.is_empty() && !self.is_within_quantum_field()
+        self.on_ground.is_empty() && self.on_elevation.is_empty() && !self.is_within_quantum_field()
     }
     /// Returns the underground excavation shape, or `None` for solid earth and ore.
     pub fn excavation(&self) -> Option<ExcavationShape> {
@@ -229,16 +234,16 @@ impl ObstacleCell {
             _ => None,
         }
     }
-    /// True if a wall or building occupies the cell's `Elevation` volume.
+    /// True if a wall or building occupies the cell's `OnGround` level.
     pub fn has_structure(&self) -> bool {
-        matches!(self.elevation, GridStructure::Wall { .. } | GridStructure::Building { .. })
+        matches!(self.on_ground, GridStructure::Wall { .. } | GridStructure::Building { .. })
     }
 }
 
 /// Structure occupancy and shared entries, with read access through [`BaseGrid`].
 ///
 /// Use the imprint, relocation, and deprint methods to keep cells and entries synchronized.
-/// Each structure must occupy a distinct area within its volume; callers must remove an existing
+/// Each structure must occupy a distinct area within its level; callers must remove an existing
 /// structure before overwriting its cells.
 #[derive(Resource, Default)]
 pub struct ObstacleGrid {
@@ -267,15 +272,15 @@ impl ObstacleGrid {
         D::table_mut(self).get_mut(slot).expect("a structure's slot stays filled while its cells hold it")
     }
     /// The top of the cell at `coords`.
-    pub fn top_position(&self, coords: GridCoords) -> GridVolumePosition {
+    pub fn top_position(&self, coords: GridCoords) -> GridPosition {
         coords.at(self.cell(coords).top_level())
     }
     /// The top of every in-bounds cell of `area`.
-    pub fn tops_in(&self, area: GridArea) -> impl Iterator<Item = GridVolumePosition> {
+    pub fn tops_in(&self, area: GridArea) -> impl Iterator<Item = GridPosition> {
         area.iter_in_bounds(self.bounds).map(|coords| self.top_position(coords))
     }
     /// True if `position` is the top of its cell.
-    pub fn is_top(&self, position: GridVolumePosition) -> bool {
+    pub fn is_top(&self, position: GridPosition) -> bool {
         position == self.top_position(position.coords)
     }
     /// The entity of `structure`, or `None` for `Empty`, `Solid` and `Excavation`.
@@ -291,7 +296,7 @@ impl ObstacleGrid {
     pub fn imprint_dark_ore(&mut self, area: GridArea, entity: Entity) {
         self.imprint(area, entity, DarkOreData, |slot| GridStructure::DarkOre { slot });
     }
-    pub fn imprint_wall(&mut self, area: GridArea, entity: Entity, style: WallStyleKey, shape: VolumeShape) {
+    pub fn imprint_wall(&mut self, area: GridArea, entity: Entity, style: WallStyleKey, shape: StructureShape) {
         self.imprint(area, entity, WallData, |slot| GridStructure::Wall { slot, style, shape });
     }
     pub fn imprint_building(&mut self, area: GridArea, entity: Entity, building_type: BuildingType) {
@@ -313,26 +318,26 @@ impl ObstacleGrid {
     /// `old` must be the structure's full area; `new` must not overwrite another structure.
     pub fn relocate(&mut self, old: GridArea, new: GridArea) {
         let Some(structure) = self.structure_in(old) else { return; };
-        self.fill(old, GridStructure::default_at(old.origin.level.volume()));
+        self.fill(old, GridStructure::default_at(old.origin.level));
         self.fill(new, structure);
         self.set_entry_area(structure, new);
         self.cells.advance_version();
     }
 
-    /// Restores default cell contents in the area's volume and frees the structure's slot.
+    /// Restores default cell contents at the area's level and frees the structure's slot.
     /// `area` must be the full area of one structure.
     pub fn deprint(&mut self, area: GridArea) {
         if let Some(structure) = self.structure_in(area) {
             self.free_entry(structure);
         }
-        self.fill(area, GridStructure::default_at(area.origin.level.volume()));
+        self.fill(area, GridStructure::default_at(area.origin.level));
         self.cells.advance_version();
     }
 
     /// Replaces underground solid earth with `shape` and advances the grid version.
     /// The caller must ensure `coords` is in bounds and contains solid earth.
     pub fn excavate(&mut self, coords: GridCoords, shape: ExcavationShape) {
-        self.cells[coords.at(VolumeLevel::Underground)] = match shape {
+        self.cells[coords.at(AltitudeLevel::Underground)] = match shape {
             ExcavationShape::Pit => GridStructure::Empty,
             ExcavationShape::Shaped(shape) => GridStructure::Excavation { shape },
         };
@@ -341,7 +346,7 @@ impl ObstacleGrid {
     /// Replaces an underground excavation with solid earth and advances the grid version.
     /// The caller must ensure `coords` is in bounds and contains an excavation.
     pub fn fill_excavation(&mut self, coords: GridCoords) {
-        self.cells[coords.at(VolumeLevel::Underground)] = GridStructure::Solid;
+        self.cells[coords.at(AltitudeLevel::Underground)] = GridStructure::Solid;
         self.cells.advance_version();
     }
 
@@ -355,24 +360,24 @@ impl ObstacleGrid {
         self.cells.advance_version();
     }
 
-    /// Stores the structure's entry and writes its variant into the area's volume.
+    /// Stores the structure's entry and writes its variant into the area's cells at the area's level.
     fn imprint<D: StructureData>(&mut self, area: GridArea, entity: Entity, data: D, structure: impl FnOnce(Slot<D>) -> GridStructure) {
         let slot = D::table_mut(self).insert(StructureEntry { entity, area, data });
         self.fill(area, structure(slot));
         self.cells.advance_version();
     }
 
-    /// Writes `structure` into the area's in-bounds cells at the area's volume level.
+    /// Writes `structure` into the area's in-bounds cells at the area's level.
     fn fill(&mut self, area: GridArea, structure: GridStructure) {
-        let level = area.origin.level.volume();
+        let level = area.origin.level;
         for coords in area.iter_in_bounds(self.cells.bounds) {
             self.cells[coords.at(level)] = structure;
         }
     }
 
-    /// Reads the structure from the area's first in-bounds cell at the area's volume level.
+    /// Reads the structure from the area's first in-bounds cell at the area's level.
     fn structure_in(&self, area: GridArea) -> Option<GridStructure> {
-        let level = area.origin.level.volume();
+        let level = area.origin.level;
         let coords = area.iter_in_bounds(self.cells.bounds).next()?;
         Some(self.cells[coords.at(level)])
     }

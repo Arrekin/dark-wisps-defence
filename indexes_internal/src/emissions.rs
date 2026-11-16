@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use game_core::{prelude::{GridArea, IsOperational, MapInfo, VolumeLevel}, request_flag::RequestFlag};
+use game_core::{prelude::{AltitudeLevel, GridArea, IsOperational, MapInfo}, request_flag::RequestFlag};
 use grids::{EmissionsGridSpreadAffector, GridVersion, base::GridCell};
 use indexes::{
     emissions::{EmissionsGrid, EmissionsRecalculation, EmitterChangedMessage, EmitterEnergy},
@@ -117,5 +117,5 @@ fn upload_gpu_emissions_energy(
     if !emissions_grid.is_added() && *uploaded_version == Some(emissions_grid.version.energy) { return; }
     *uploaded_version = Some(emissions_grid.version.energy);
 
-    shared_gpu.write(SharedGpuBinding::EmissionsEnergy, emissions_grid.grid.iter().map(|cell| cell.at(VolumeLevel::Elevation).energy));
+    shared_gpu.write(SharedGpuBinding::EmissionsEnergy, emissions_grid.grid.iter().map(|cell| cell.at(AltitudeLevel::OnGround).energy));
 }

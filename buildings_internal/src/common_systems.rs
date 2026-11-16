@@ -72,7 +72,7 @@ fn find_tower_targets(
         let range = attack_range.area_range();
         let is_eligible = |wisp: Entity| wisps.get(wisp).is_ok_and(|(wisp_transform, wisp_area)| {
             range.contains(wisp_transform.translation.xy())
-                && (levels == TargetLevels::EveryLevel || obstacle_grid.is_top(wisp_area.origin.volume_position()))
+                && (levels == TargetLevels::EveryLevel || obstacle_grid.is_top(wisp_area.origin))
         });
         match *target {
             TowerWispTarget::Wisp(wisp) if is_eligible(wisp) => continue,
@@ -196,6 +196,6 @@ fn on_building_destroy_request_do_so(
 
     #[info_player("'{}' destroyed at {}", almanach.get_building_info(*building_type).name, area.origin)]
     commands.entity(building_to_destroy).despawn();
-    let level = area.origin.level.volume();
+    let level = area.origin.level;
     commands.spawn_batch(area.iter().map(move |coords| BuilderExplosion(coords.at(level))));
 }

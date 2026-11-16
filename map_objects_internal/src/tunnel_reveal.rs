@@ -10,7 +10,7 @@
 use bevy::prelude::*;
 
 use indexes::prelude::ObstacleGrid;
-use map_objects::prelude::VolumeShape;
+use map_objects::prelude::StructureShape;
 use viewport::MouseInfo;
 
 pub(crate) struct TunnelRevealPlugin;
@@ -45,7 +45,7 @@ fn fade_tunnel_reveal(
     let is_held = !reveal_holders.is_empty();
     let over_tunnel = !mouse_info.is_over_ui
         && obstacle_grid.get(mouse_info.grid_coords).is_some_and(|cell| {
-            [cell.elevation, cell.underground].iter().any(|structure| structure.shape().is_some_and(VolumeShape::is_hollow))
+            [cell.on_ground, cell.underground].iter().any(|structure| structure.shape().is_some_and(StructureShape::is_hollow))
         });
     let target = if is_held || over_tunnel { 1.0 } else { 0.0 };
     if reveal.amount == target { return; }

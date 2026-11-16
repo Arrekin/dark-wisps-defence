@@ -10,19 +10,14 @@ struct FloorCoverEntry {
     starts_at: f32,
     // Wrapped game time, or `FLOOR_COVER_PERMANENT_END`.
     ends_at: f32,
-    // Floor code (FLOOR_*).
-    floor: u32,
+    // Level code (LEVEL_* in grids/obstacles.wesl).
+    level: u32,
 };
 
 // Start offset for each cell in `floor_cover_cell_entries`, followed by a final end offset.
 @group(3) @binding(112) var<storage, read> floor_cover_cell_offsets: array<u32>;
 // Entries in cell order. An effect covering multiple cells has one entry per covered cell.
 @group(3) @binding(113) var<storage, read> floor_cover_cell_entries: array<FloorCoverEntry>;
-
-// Mirrors `FloorLevel::gpu_index` in game_core/src/altitude.rs.
-const FLOOR_UNDERGROUND: u32 = 0u;
-const FLOOR_GROUND: u32 = 1u;
-const FLOOR_ELEVATION: u32 = 2u;
 
 // Mirrors `FloorCoverKind::gpu_index` in indexes/src/floor_cover.rs.
 const FLOOR_COVER_CHAR: u32 = 0u;
@@ -45,12 +40,12 @@ fn floor_cover_is_permanent(entry: FloorCoverEntry) -> bool {
     return entry.ends_at == FLOOR_COVER_PERMANENT_END;
 }
 
-// Checks for an entry of `kind` on floor `floor_level` at `coords`.
-fn floor_cover_has_kind_at(coords: vec2<i32>, kind: u32, floor_level: u32) -> bool {
+// Checks for an entry of `kind` on the floor of `level` at `coords`.
+fn floor_cover_has_kind_at(coords: vec2<i32>, kind: u32, level: u32) -> bool {
     let range = floor_cover_entries_at(coords);
     for (var index = range.x; index < range.y; index++) {
         let entry = floor_cover_cell_entries[index];
-        if entry.kind == kind && entry.floor == floor_level {
+        if entry.kind == kind && entry.level == level {
             return true;
         }
     }

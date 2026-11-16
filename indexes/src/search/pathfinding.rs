@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use game_core::prelude::GridVolumePosition;
+use game_core::prelude::GridPosition;
 
 use crate::{emissions::EmissionsGrid, obstacles::GridStructure, prelude::*};
 
@@ -19,8 +19,8 @@ const BUILDING_FIELD_MODIFIER: f32 = 0.1;
 pub fn path_find_energy_beckon(
     obstacle_grid: &ObstacleGrid,
     emissions_grid: &EmissionsGrid,
-    start: GridVolumePosition,
-    path: &mut VecDeque<GridVolumePosition>,
+    start: GridPosition,
+    path: &mut VecDeque<GridPosition>,
 ) -> bool {
     SEARCH_SCRATCH.with_borrow_mut(|SearchScratch { tracking, cost_queue, .. }| {
         tracking.resize_and_clear(obstacle_grid.bounds);

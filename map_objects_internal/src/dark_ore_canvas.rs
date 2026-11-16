@@ -45,7 +45,7 @@ impl Material2d for DarkOreCanvasMaterial {
 }
 
 #[derive(Component)]
-#[require(ZDepth::DarkOre, DrawLevel::GroundFloor)]
+#[require(ZDepth::DarkOre, DrawLevel::OnGround)]
 struct DarkOreCanvas;
 impl DarkOreCanvas {
     fn create(

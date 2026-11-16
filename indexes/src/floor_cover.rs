@@ -5,17 +5,17 @@
 //! The drawn lifetime follows the entity's current `TimeBound`, which may be inserted, replaced or
 //! removed at any time. A cover without one is permanent.
 //!
-//! [`FloorCoverGrid`] records each effect's entity, kind, and floor per cell, allowing lookups
+//! [`FloorCoverGrid`] records each effect's entity, kind, and level per cell, allowing lookups
 //! without an ECS query. Loading the entities rebuilds the index; the grid itself is not saved.
 
 use std::ops::{Deref, DerefMut};
 
 use bevy::prelude::*;
 
-use game_core::prelude::{Bounds, FloorLevel, GridArea, GridCoords, MapBound};
-use grids::{GridVersion, base::{BaseGrid, GridSingle}};
+use game_core::prelude::{AltitudeLevel, Bounds, GridArea, GridCoords, MapBound};
+use grids::{GridVersion, base::{BaseGrid, GridSingle, STACK_LEVELS, stack_slot}};
 
-/// A floor cover effect occupying the entity's `GridArea`, which must use a floor level.
+/// A floor cover effect on the floor of the entity's `GridArea` level.
 ///
 /// The index tracks insertion and removal of this component. To change the area, remove
 /// `FloorCover` before replacing `GridArea`, then insert `FloorCover` again.
@@ -43,7 +43,8 @@ impl FloorCoverKind {
 pub struct FloorCoverEntry {
     pub entity: Entity,
     pub kind: FloorCoverKind,
-    pub level: FloorLevel,
+    /// The level whose floor holds the cover: `Underground`, `OnGround` or `OnElevation`.
+    pub level: AltitudeLevel,
 }
 
 #[derive(Resource, Default)]
@@ -60,9 +61,10 @@ impl FloorCoverGrid {
     pub fn new_with_size(bounds: impl Into<Bounds>) -> Self {
         Self(BaseGrid::new_with_size(bounds))
     }
-    /// Adds `entity` with `kind` to every in-bounds cell of the area, on the area's floor.
+    /// Adds `entity` with `kind` to every in-bounds cell of the area, on the floor of the area's
+    /// level.
     pub fn imprint(&mut self, area: GridArea, entity: Entity, kind: FloorCoverKind) {
-        let level = area.origin.level.floor();
+        let level = STACK_LEVELS[stack_slot(area.origin.level)];
         let entry = FloorCoverEntry { entity, kind, level };
         for coords in area.iter_in_bounds(self.bounds) {
             self[coords].push(entry);

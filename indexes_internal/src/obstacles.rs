@@ -1,8 +1,8 @@
 use bevy::prelude::*;
 
 use game_core::prelude::MapInfo;
-use grids::prelude::*;
-use indexes::{obstacles::GridStructure, prelude::*};
+use grids::{base::{GridCell, STACK_LEVELS}, prelude::*};
+use indexes::{obstacles::{GridStructure, level_gpu_index}, prelude::*};
 use states::prelude::MapLoadingStage;
 use visuals::shared_gpu::{SharedGpuBinding, SharedGpuWriter};
 
@@ -19,9 +19,7 @@ impl Plugin for ObstaclesGridPlugin {
 }
 
 // Obstacle cell layout, mirrored in `assets/shaders/grids/obstacles.wesl`.
-const UNDERGROUND_SHIFT: u32 = 0;
-const ELEVATION_SHIFT: u32 = 4;
-const ON_ELEVATION_SHIFT: u32 = 8;
+const STRUCTURE_BITS: u32 = 4;
 const QUANTUM_FIELD_BIT: u32 = 1 << 12;
 const BUILDING_TYPE_SHIFT: u32 = 16;
 const UNDERGROUND_SHAPE_SHIFT: u32 = 24;
@@ -38,13 +36,13 @@ fn upload_gpu_obstacle_cells(
 }
 
 fn pack_obstacle_cell(cell: &ObstacleCell) -> u32 {
-    let building_type = match cell.elevation {
+    let building_type = match cell.on_ground {
         GridStructure::Building { building_type, .. } => building_type.gpu_index(),
         _ => 0,
     };
-    cell.underground.gpu_index() << UNDERGROUND_SHIFT
-        | cell.elevation.gpu_index() << ELEVATION_SHIFT
-        | cell.on_elevation.gpu_index() << ON_ELEVATION_SHIFT
+    let structures = STACK_LEVELS.into_iter()
+        .fold(0, |packed, level| packed | cell.at(level).gpu_index() << (level_gpu_index(level) * STRUCTURE_BITS));
+    structures
         | if cell.is_within_quantum_field() { QUANTUM_FIELD_BIT } else { 0 }
         | building_type << BUILDING_TYPE_SHIFT
         | cell.underground.shape().map_or(0, |shape| shape.gpu_code()) << UNDERGROUND_SHAPE_SHIFT

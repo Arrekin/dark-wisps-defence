@@ -1,6 +1,6 @@
 //! Wall placement controls for selecting a style, toggling tunnel openings, and cycling ramp direction.
 //!
-//! Controls replace `WallStyleKey` or `VolumeShape` on the placer's session entity and request a new
+//! Controls replace `WallStyleKey` or `StructureShape` on the placer's session entity and request a new
 //! ghost preview. The same request refreshes the controls to reflect the selection.
 //!
 //! In admin mode the bar also carries the replace switch, which toggles `ReplaceExisting` on the
@@ -10,10 +10,10 @@ use bevy::{input::common_conditions::input_just_pressed, prelude::*, ui_widgets:
 
 use game_core::prelude::{CELL_SIZE, EdgeSides, GridArea, MapObject, ObjectFaceRequest};
 use grids::placement::{BeginPlacing, GridPlacerGhostRebuildRequest, PlacementControls, PlacementModes, PlacementSession};
-use map_objects::{prelude::VolumeShape, wall_style::{WallStyleKey, WallStyles}};
+use map_objects::{prelude::StructureShape, wall_style::{WallStyleKey, WallStyles}};
 use states::AdminMode;
 
-use crate::volume_shape_controls::{
+use crate::structure_shape_controls::{
     CONTROL_FRAME_IDLE, CONTROL_FRAME_SELECTED, ReplaceToggleButton, SHAPE_KEY, SelectableShape,
     controls_bar_node, cycle_shape, on_ghost_rebuild_request_refresh_opening_selector, spawn_opening_selector,
 };
@@ -23,22 +23,22 @@ pub(crate) struct WallEditorUiPlugin;
 impl Plugin for WallEditorUiPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_systems(Update, cycle_shape::<VolumeShape>.run_if(input_just_pressed(SHAPE_KEY)).run_if(any_with_component::<GridPlacerUiForWall>))
+            .add_systems(Update, cycle_shape::<StructureShape>.run_if(input_just_pressed(SHAPE_KEY)).run_if(any_with_component::<GridPlacerUiForWall>))
             .add_observer(GridPlacerUiForWall::on_add_construct_grid_placer_ui)
             .add_observer(GridPlacerUiForWall::on_begin_placing_start_wall_session)
             .add_observer(GridPlacerUiForWall::on_ghost_rebuild_request_refresh_style_swatches)
-            .add_observer(on_ghost_rebuild_request_refresh_opening_selector::<VolumeShape>);
+            .add_observer(on_ghost_rebuild_request_refresh_opening_selector::<StructureShape>);
     }
 }
 
-impl SelectableShape for VolumeShape {
+impl SelectableShape for StructureShape {
     const BASE: Self = Self::Flat { openings: EdgeSides::NONE };
 
-    fn volume_shape(self) -> Option<VolumeShape> {
+    fn structure_shape(self) -> Option<StructureShape> {
         Some(self)
     }
 
-    fn from_volume_shape(shape: VolumeShape) -> Self {
+    fn from_structure_shape(shape: StructureShape) -> Self {
         shape
     }
 }
@@ -54,7 +54,7 @@ impl GridPlacerUiForWall {
         mut commands: Commands,
         styles: Res<WallStyles>,
         admin_mode: Res<State<AdminMode>>,
-        placement_session: Single<(&WallStyleKey, &VolumeShape), With<PlacementSession>>,
+        placement_session: Single<(&WallStyleKey, &StructureShape), With<PlacementSession>>,
     ) {
         let (&selected, &shape) = placement_session.into_inner();
         commands.entity(trigger.entity)
@@ -109,7 +109,7 @@ impl GridPlacerUiForWall {
             GridArea::new(origin, WALL_GRID_IMPRINT),
             PlacementModes::on_press(),
             WallStyleKey::default(),
-            VolumeShape::default(),
+            StructureShape::default(),
         ));
         commands.spawn(GridPlacerUiForWall);
     }

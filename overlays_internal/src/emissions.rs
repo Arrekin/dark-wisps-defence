@@ -7,7 +7,7 @@ use bevy::{
     sprite_render::{AlphaMode2d, Material2d, Material2dPlugin, MeshMaterial2d},
 };
 
-use game_core::prelude::{DrawLevel, MapInfo, VolumeLevel, ZDepth};
+use game_core::prelude::{AltitudeLevel, DrawLevel, MapInfo, ZDepth};
 use grids::{base::GridCell, prelude::GridVersion};
 use indexes::emissions::{EmissionsGrid, EmissionsType};
 use states::prelude::MapLoadingStage;
@@ -86,7 +86,7 @@ impl Material2d for EmissionsOverlayMaterial {
 }
 
 #[derive(Component, Default)]
-#[require(ZDepth::OverlayEmissions, DrawLevel::GroundFloor)]
+#[require(ZDepth::OverlayEmissions, DrawLevel::OnGround)]
 struct EmissionsOverlay {
     /// Grid version used to calculate normalization; `None` before the first refresh.
     shown_version: Option<GridVersion>,
@@ -126,7 +126,7 @@ fn refresh_display(
 
     // Find min/max for GPU-side normalization
     let (mut min_value, mut max_value) = (f32::MAX, f32::MIN);
-    for emissions in emissions_grid.grid.iter().map(|cell| cell.at(VolumeLevel::Elevation)) {
+    for emissions in emissions_grid.grid.iter().map(|cell| cell.at(AltitudeLevel::OnGround)) {
         let value = match overlay_config.emissions_type {
             EmissionsType::Energy => emissions.energy,
         };

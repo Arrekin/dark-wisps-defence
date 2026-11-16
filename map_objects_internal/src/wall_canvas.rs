@@ -17,7 +17,7 @@ use bevy::{
 use strum::{EnumIter, IntoEnumIterator};
 
 use game_core::{prelude::{DrawLevel, GridArea, MapInfo, ZDepth}, request_flag::RequestFlag};
-use map_objects::{prelude::{Wall, VolumeShape}, wall_style::{WallCanvasDebug, WallStyleKey, WallStyles}};
+use map_objects::{prelude::{StructureShape, Wall}, wall_style::{WallCanvasDebug, WallStyleKey, WallStyles}};
 use states::prelude::MapLoadingStage;
 use visuals::{canvas::MapCanvasBundle, shared_gpu::{SharedGpuBinding, SharedGpuWriter}, specialize_with_shared_gpu};
 
@@ -43,7 +43,7 @@ impl Plugin for WallCanvasPlugin {
     }
 }
 
-/// Shift applied to [`VolumeShape::gpu_code`] in a packed cell; bits 0–7 store the style index.
+/// Shift applied to [`StructureShape::gpu_code`] in a packed cell; bits 0–7 store the style index.
 /// Mirrors `SHAPE_SHIFT` in `assets/shaders/walls/styles.wesl`.
 const SHAPE_SHIFT: u32 = 8;
 
@@ -101,7 +101,7 @@ impl WallCanvasPass {
 
 /// One wall canvas quad.
 #[derive(Component)]
-#[require(DrawLevel::Elevation)]
+#[require(DrawLevel::OnGround)]
 struct WallCanvas;
 impl WallCanvas {
     fn create(
@@ -149,7 +149,7 @@ fn upload_gpu_wall_cells(
     mut shared_gpu: SharedGpuWriter,
     mut upload_requested: ResMut<RequestFlag<WallCellsGpuUpload>>,
     map_info: Res<MapInfo>,
-    walls: Query<(&VolumeShape, &GridArea, &WallStyleKey), With<Wall>>,
+    walls: Query<(&StructureShape, &GridArea, &WallStyleKey), With<Wall>>,
 ) {
     upload_requested.clear();
 

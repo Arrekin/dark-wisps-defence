@@ -93,7 +93,7 @@ const SCORCH_DURATION: f32 = 3.;
 /// The fireball's light pool on the ground, drawn additively by the paint lane. Child of a
 /// `Fireball`. Field order and types mirror `Instance` in `assets/shaders/weaponry/fireball_glow.wesl`.
 #[derive(Component, ShaderType, TypePath, Clone, PartialEq)]
-#[require(ZDepth::FireballGlow, DrawLevel::Elevation)]
+#[require(ZDepth::FireballGlow, DrawLevel::OnGround)]
 struct FireballGlow {
     intensity: f32,
     /// Mesh half-size, in pool radii.
@@ -274,7 +274,7 @@ fn resolve_fireball_hits(
         let (blast, scorch) = (TimeBound::lasting(&clock, BLAST_DURATION), TimeBound::lasting(&clock, SCORCH_DURATION));
         let transform = Transform::from_translation(landing_coords.world_center().extend(0.));
         commands.spawn((FireballImpact::new(ImpactLayer::Blast, blast, seed, landing_coords), blast, transform, ZDepth::FireballBlast, DrawLevel::OnElevation));
-        commands.spawn((FireballImpact::new(ImpactLayer::Scorch, scorch, seed, landing_coords), scorch, transform, ZDepth::FireballScorch, DrawLevel::GroundFloor));
+        commands.spawn((FireballImpact::new(ImpactLayer::Scorch, scorch, seed, landing_coords), scorch, transform, ZDepth::FireballScorch, DrawLevel::OnGround));
         let main_blast = GridArea::centered_on(landing_coords.at(AltitudeLevel::TopLevel), GridImprint::square_of_reach(MAIN_BLAST_REACH));
         let blast_zone = GridArea::centered_on(landing_coords.at(AltitudeLevel::TopLevel), GridImprint::square_of_reach(RING_REACH));
         for top in obstacle_grid.tops_in(blast_zone) {

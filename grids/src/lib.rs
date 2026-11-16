@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use bevy::prelude::*;
 
-use game_core::prelude::GridVolumePosition;
+use game_core::prelude::GridPosition;
 
 pub mod base;
 pub mod visited;
@@ -14,10 +14,10 @@ pub type GridVersion = u32;
 #[derive(Component, Default)]
 pub struct GridPath {
     pub grid_version: GridVersion,
-    pub path: VecDeque<GridVolumePosition>,
+    pub path: VecDeque<GridPosition>,
 }
 impl GridPath {
-    pub fn next_in_path(&self) -> Option<GridVolumePosition> {
+    pub fn next_in_path(&self) -> Option<GridPosition> {
         self.path.front().copied()
     }
     pub fn remove_first(&mut self) {
@@ -31,7 +31,7 @@ impl GridPath {
     }
     /// Returns the position `distance` steps ahead, or `None` beyond the path.
     /// Distance starts at 1 for the next step; callers must not pass 0.
-    pub fn at_distance(&self, distance: usize) -> Option<GridVolumePosition> {
+    pub fn at_distance(&self, distance: usize) -> Option<GridPosition> {
         self.path.get(distance - 1).copied()
     }
 }

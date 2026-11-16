@@ -8,7 +8,7 @@ import package::shaders::underground::look::single_cell_excavation;
 // map_objects_internal/src/excavation_materials.rs.
 struct ExcavationFace {
     pit: u32, // nonzero for a pit
-    shape: u32, // `VolumeShape::gpu_code` when `pit` is zero
+    shape: u32, // `StructureShape::gpu_code` when `pit` is zero
 }
 @group(1) @binding(0) var<uniform> settings: ExcavationFace;
 

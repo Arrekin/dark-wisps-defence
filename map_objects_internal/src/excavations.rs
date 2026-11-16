@@ -1,6 +1,6 @@
 //! # Excavations
 //!
-//! Excavations store pits, ramps and tunnels directly in the obstacle grid's underground layer.
+//! Excavations store pits, ramps and tunnels directly in the obstacle grid's `Underground` level.
 //! Placement digs an [`ExcavationShape`] into solid earth. With [`ReplaceExisting`], it can also
 //! reshape an existing excavation. Removal fills the excavation with solid earth.
 //!
@@ -16,12 +16,12 @@
 use bevy::{ecs::system::SystemParam, prelude::*};
 
 use almanach::{Almanach, AlmanachAppExt, ExcavationInfo};
-use game_core::{prelude::{EdgeSide, EdgeSides, GridArea, GridCoords, GridImprint, MapObject, MapObjectTooltipRequest, VolumeLevel}, request_flag::RequestFlag};
+use game_core::{prelude::{AltitudeLevel, EdgeSide, EdgeSides, GridArea, GridCoords, GridImprint, MapObject, MapObjectTooltipRequest}, request_flag::RequestFlag};
 use grids::placement::{PlacementFeedback, PlacementObject, PlacementSession, PlacementValidity, PlacementFeedbackSystems, PlaceRequest, RemoveRequest, ReplaceExisting, ReservedCoords};
 use hud::prelude::BuilderSideMenuItemTooltip;
 use indexes::{emissions::EmissionsRecalculation, obstacles::GridStructure, prelude::{ObstacleCell, ObstacleGrid}};
 use logging::prelude::*;
-use map_objects::prelude::{ExcavationShape, VolumeShape};
+use map_objects::prelude::{ExcavationShape, StructureShape};
 use persistence::{prelude::*, rusqlite};
 use states::prelude::MapLoadingStage;
 
@@ -86,7 +86,7 @@ impl ExcavationPlacementRules<'_, '_> {
     fn excavate(&mut self, coords: GridCoords, shape: ExcavationShape) {
         self.obstacle_grid.excavate(coords, shape);
         if !shape.is_tunnel() {
-            self.cell_clearing.clear_from(coords, VolumeLevel::Underground);
+            self.cell_clearing.clear_from(coords, AltitudeLevel::Underground);
         }
         self.emissions_recalculation.request();
     }
@@ -94,7 +94,7 @@ impl ExcavationPlacementRules<'_, '_> {
     /// Fills the excavation, clears occupants at every level, and requests an emissions rebuild.
     fn fill(&mut self, coords: GridCoords) {
         self.obstacle_grid.fill_excavation(coords);
-        self.cell_clearing.clear_from(coords, VolumeLevel::Underground);
+        self.cell_clearing.clear_from(coords, AltitudeLevel::Underground);
         self.emissions_recalculation.request();
     }
 
@@ -159,11 +159,11 @@ fn collect_excavations(
                     ctx.tx.prepare_cached("INSERT INTO excavation_shapes (x, y) VALUES (?1, ?2)")?
                         .execute(rusqlite::params![x, y])?;
                     match shape {
-                        VolumeShape::Ramp { high_side } => {
+                        StructureShape::Ramp { high_side } => {
                             ctx.tx.prepare_cached("INSERT INTO excavation_ramps (x, y, high_side) VALUES (?1, ?2, ?3)")?
                                 .execute(rusqlite::params![x, y, high_side.as_ref()])?;
                         }
-                        VolumeShape::Flat { openings } => {
+                        StructureShape::Flat { openings } => {
                             for side in openings.iter() {
                                 ctx.tx.prepare_cached("INSERT INTO excavation_openings (x, y, side) VALUES (?1, ?2, ?3)")?
                                     .execute(rusqlite::params![x, y, side.as_ref()])?;
@@ -192,7 +192,7 @@ fn load_excavation_shapes(ctx: &mut LoadContext) -> LoadResult {
         let coords = GridCoords { x: row.get(0)?, y: row.get(1)? };
         // Load openings only for flat shapes; ramps cannot have tunnels.
         let shape = match row.get_parsed_optional::<EdgeSide>(2)? {
-            Some(high_side) => VolumeShape::Ramp { high_side },
+            Some(high_side) => StructureShape::Ramp { high_side },
             None => {
                 let mut statement = ctx.conn.prepare_cached("SELECT side FROM excavation_openings WHERE x = ?1 AND y = ?2")?;
                 let mut opening_rows = statement.query([coords.x, coords.y])?;
@@ -200,7 +200,7 @@ fn load_excavation_shapes(ctx: &mut LoadContext) -> LoadResult {
                 while let Some(opening_row) = opening_rows.next()? {
                     openings = openings.with(opening_row.get_parsed(0)?);
                 }
-                VolumeShape::Flat { openings }
+                StructureShape::Flat { openings }
             }
         };
         ctx.push(excavate_loaded_cell(coords, ExcavationShape::Shaped(shape)));

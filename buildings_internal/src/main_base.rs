@@ -49,7 +49,7 @@ fn seed_main_base(mut commands: Commands, almanach: Res<Almanach>, map_info: Res
         y: map_info.grid_bounds.height / 2,
     };
     let imprint = almanach.get_building_info(BuildingType::MainBase).grid_imprint;
-    commands.spawn(BuilderMainBase::new(GridArea::centered_on(center.at(AltitudeLevel::Elevation), imprint).origin));
+    commands.spawn(BuilderMainBase::new(GridArea::centered_on(center.at(AltitudeLevel::OnGround), imprint).origin));
 }
 
 /// Runs at the end of every map build. Centers the main camera on the `MainBase`,

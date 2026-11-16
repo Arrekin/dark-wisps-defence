@@ -8,10 +8,10 @@ use bevy::{input::common_conditions::input_just_pressed, prelude::*};
 
 use game_core::prelude::{GridArea, MapObject};
 use grids::placement::{BeginPlacing, PlacementControls, PlacementModes, PlacementSession};
-use map_objects::prelude::{ExcavationShape, VolumeShape};
+use map_objects::prelude::{ExcavationShape, StructureShape};
 use states::AdminMode;
 
-use crate::volume_shape_controls::{
+use crate::structure_shape_controls::{
     ReplaceToggleButton, SHAPE_KEY, SelectableShape,
     controls_bar_node, cycle_shape, on_ghost_rebuild_request_refresh_opening_selector, spawn_opening_selector,
 };
@@ -31,14 +31,14 @@ impl Plugin for ExcavationEditorUiPlugin {
 impl SelectableShape for ExcavationShape {
     const BASE: Self = Self::Pit;
 
-    fn volume_shape(self) -> Option<VolumeShape> {
+    fn structure_shape(self) -> Option<StructureShape> {
         match self {
             Self::Pit => None,
             Self::Shaped(shape) => Some(shape),
         }
     }
 
-    fn from_volume_shape(shape: VolumeShape) -> Self {
+    fn from_structure_shape(shape: StructureShape) -> Self {
         Self::Shaped(shape)
     }
 }

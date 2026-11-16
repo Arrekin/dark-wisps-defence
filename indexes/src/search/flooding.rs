@@ -1,7 +1,7 @@
 use bevy::prelude::Entity;
 
 use alteration::modifiers::prelude::EnergySupplyRange;
-use game_core::prelude::{GridArea, GridVolumePosition, Property};
+use game_core::prelude::{GridArea, GridPosition, Property};
 
 use crate::{
     emissions::{EmissionsGrid, EmissionsType, FloodEmissionsDetails, FloodEmissionsEvaluator, FloodEmissionsMode},
@@ -14,7 +14,7 @@ use super::{
     stepping::walkable_neighbors,
 };
 
-/// Spreads emissions from the area's volume level through reachable cardinal neighbors.
+/// Spreads emissions from the area's level through reachable cardinal neighbors.
 /// Follows [`walkable_neighbors`], including level changes through ramps.
 /// Distance counts steps from the area; the area's own cells are at distance 0.
 pub fn flood_emissions<'a>(
@@ -27,9 +27,8 @@ pub fn flood_emissions<'a>(
         position_visited.resize_and_clear(obstacles_grid.bounds);
         position_distance_queue.clear();
         let max_range = emissions_details.into_iter().map(|details| details.range).max().unwrap();
-        let start_level = area.origin.level.volume();
         area.iter().for_each(|coords| {
-            let position = coords.at(start_level);
+            let position = coords.at(area.origin.level);
             position_distance_queue.push_back((0, position));
             position_visited.set_visited(position);
             for details in emissions_details {
@@ -59,7 +58,7 @@ pub fn flood_emissions<'a>(
 
 fn apply_emissions_details(
     emissions_grid: &mut EmissionsGrid,
-    position: GridVolumePosition,
+    position: GridPosition,
     details: &FloodEmissionsDetails,
     distance: usize
 ) {

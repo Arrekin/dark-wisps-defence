@@ -16,8 +16,8 @@ Three decisions shape the system:
 
 ## How the world becomes a frame
 
-Draw order uses two coordinates: a **draw level** and a **layer**. Draw levels run from the
-tunnel floor to `Airborne`. All visuals at one level draw before any visual at the next level.
+Draw order uses two coordinates: a **draw level** and a **layer**. Draw levels run from
+`Underground` to `Airborne`. All visuals at one level draw before any visual at the next level.
 Layers order visuals within a level, such as scorch marks below units or projectiles above them.
 They can also keep instances of the same visual together for batching.
 

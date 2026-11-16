@@ -22,7 +22,7 @@ GridObjectPlacer (entity)
  │                  GridArea (inserted by domain on BeginPlacing),
  │                  PlacementFeedback (inserted by domain validation),
  │                  ReplaceExisting (optional marker),
- │                  <domain settings> (e.g. WallStyleKey, VolumeShape, ExcavationShape)
+ │                  <domain settings> (e.g. WallStyleKey, StructureShape, ExcavationShape)
  │
  └── GridPlacerGhost (transient child entity, rebuilt on GridPlacerGhostRebuildRequest)
         components: GridImprint + domain-rendered world preview (via ObjectFaceRequest::ghost)
@@ -49,7 +49,7 @@ GridObjectPlacerRequest::take()
                                                      write previews and overlay highlights
 ```
 
-**Ordering constraint:** `BeginPlacing` must flush before `GridPlacerGhostRebuildRequest` and `GridPlacerChanged` because the domain's `BeginPlacing` observer inserts `GridArea` and any domain settings (such as `WallStyleKey` and `VolumeShape`) that the ghost and overlay read from `PlacementSession`.
+**Ordering constraint:** `BeginPlacing` must flush before `GridPlacerGhostRebuildRequest` and `GridPlacerChanged` because the domain's `BeginPlacing` observer inserts `GridArea` and any domain settings (such as `WallStyleKey` and `StructureShape`) that the ghost and overlay read from `PlacementSession`.
 
 ### 2. Updating area and settings
 
@@ -123,7 +123,7 @@ Each domain groups validation and request handling in a `*PlacementRules` `Syste
 
 Rule structs expose:
 - `feedback(&self) -> PlacementFeedback` — pure validation used by both `update_feedback` and `on_place_request_do_so`.
-- `on_place_request_do_so` — matches the `MapObject`, recomputes `feedback()`, and applies placement when not `Invalid`. Session components needed only on placement (such as `(&WallStyleKey, &VolumeShape)`) are queried in that observer rather than on the shared `SystemParam`.
+- `on_place_request_do_so` — matches the `MapObject`, recomputes `feedback()`, and applies placement when not `Invalid`. Session components needed only on placement (such as `(&WallStyleKey, &StructureShape)`) are queried in that observer rather than on the shared `SystemParam`.
 - `on_remove_request_do_so` (where supported) — matches the `MapObject`, checks whether removable content of that kind exists at the target area, and removes it without calling `feedback()`.
 
 For buildings with resource costs, `BuildingPlacementRules::claim(&mut self, validity)` rejects `Invalid`, deducts the Almanach cost from `Stock` (skipped when `AdminMode` is enabled), and reserves `area` in `ReservedCoords`. Each caller passes the validity of its own `feedback()`, computed from current state: `rules.claim(rules.feedback().validity)`.

@@ -10,9 +10,10 @@ use bevy::{
     shader::ShaderRef,
     sprite_render::{AlphaMode2d, Material2d, Material2dKey, Material2dPipeline, Material2dPlugin},
 };
-use strum::IntoEnumIterator;
 
-use game_core::prelude::{DrawLevel, FloorLevel, MapInfo, ZDepth};
+use game_core::prelude::{AltitudeLevel, DrawLevel, MapInfo, ZDepth};
+use grids::base::STACK_LEVELS;
+use indexes::obstacles::level_gpu_index;
 use states::prelude::MapLoadingStage;
 use visuals::{canvas::MapCanvasBundle, shader::set_blend, shared_gpu::add_shared_gpu_layout};
 
@@ -27,9 +28,9 @@ impl Plugin for FloorCoverCanvasPlugin {
 
 #[derive(Asset, AsBindGroup, TypePath, Debug, Clone)]
 struct FloorCoverCanvasMaterial {
-    /// Floor code (`FloorLevel::gpu_index`) of the covers this canvas draws.
+    /// Level code (`level_gpu_index`) of the covers this canvas draws.
     #[uniform(0)]
-    floor: u32,
+    level: u32,
 }
 impl Material2d for FloorCoverCanvasMaterial {
     fn fragment_shader() -> ShaderRef {
@@ -56,7 +57,7 @@ impl Material2d for FloorCoverCanvasMaterial {
 /// The floor cover canvas of one floor. Hidden while that floor has no floor cover.
 #[derive(Component)]
 #[require(ZDepth::FloorCover)]
-pub(crate) struct FloorCoverCanvas(pub FloorLevel);
+pub(crate) struct FloorCoverCanvas(pub AltitudeLevel);
 impl FloorCoverCanvas {
     fn create(
         mut commands: Commands,
@@ -65,12 +66,12 @@ impl FloorCoverCanvas {
     ) {
         commands.despawn_all::<With<FloorCoverCanvas>>();
 
-        for floor in FloorLevel::iter() {
-            let material = materials.add(FloorCoverCanvasMaterial { floor: floor.gpu_index() });
+        for level in STACK_LEVELS {
+            let material = materials.add(FloorCoverCanvasMaterial { level: level_gpu_index(level) });
             commands.spawn((
                 MapCanvasBundle::new(material, &map_info),
-                FloorCoverCanvas(floor),
-                DrawLevel::from(floor),
+                FloorCoverCanvas(level),
+                DrawLevel::from(level),
                 Visibility::Hidden,
             ));
         }

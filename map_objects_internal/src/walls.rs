@@ -1,13 +1,13 @@
 use bevy::{ecs::system::SystemParam, prelude::*};
 
 use almanach::{Almanach, AlmanachAppExt, WallInfo};
-use game_core::prelude::{EdgeSide, EdgeSides, GridArea, GridCoords, GridImprint, GridPosition, MapObject, MapObjectTooltipRequest, SSS, VolumeLevel};
+use game_core::prelude::{AltitudeLevel, EdgeSide, EdgeSides, GridArea, GridCoords, GridImprint, GridPosition, MapObject, MapObjectTooltipRequest, SSS};
 use grids::placement::{PlacementFeedback, PlacementObject, PlacementSession, PlacementValidity, PlacementFeedbackSystems, PlaceRequest, RemoveRequest, ReplaceExisting, ReservedCoords};
 use hud::prelude::BuilderSideMenuItemTooltip;
 use indexes::{obstacles::GridStructure, prelude::{ObstacleCell, ObstacleGrid}};
 use logging::prelude::*;
 use map_objects::{
-    prelude::{Wall, VolumeShape},
+    prelude::{StructureShape, Wall},
     wall_style::{WallStyleKey, WallStyles},
 };
 use persistence::{prelude::*, rusqlite};
@@ -55,7 +55,7 @@ impl From<String> for WallStyleSource {
 pub(crate) struct BuilderWall {
     pub grid_position: GridPosition,
     pub style: WallStyleSource,
-    pub shape: VolumeShape,
+    pub shape: StructureShape,
 }
 impl BuilderWall {
     pub fn almanach_info() -> WallInfo {
@@ -67,10 +67,10 @@ impl BuilderWall {
     }
 
     pub fn new(grid_position: GridPosition, style: impl Into<WallStyleSource>) -> Self {
-        Self { grid_position, style: style.into(), shape: VolumeShape::default() }
+        Self { grid_position, style: style.into(), shape: StructureShape::default() }
     }
 
-    pub fn with_shape(mut self, shape: VolumeShape) -> Self {
+    pub fn with_shape(mut self, shape: StructureShape) -> Self {
         self.shape = shape;
         self
     }
@@ -106,14 +106,14 @@ impl BuilderWall {
 
 #[log_tags(Tag::GameSave)]
 fn collect_walls(
-    walls: Query<(Entity, &VolumeShape, &GridArea, &WallStyleKey), With<Wall>>,
+    walls: Query<(Entity, &StructureShape, &GridArea, &WallStyleKey), With<Wall>>,
     styles: Res<WallStyles>,
     mut save: SaveWriter,
 ) {
     if walls.is_empty() { return; }
 
     #[debug_dev("Saving {} walls", rows.len())]
-    let rows: Vec<(u32, GridPosition, String, VolumeShape)> = walls
+    let rows: Vec<(u32, GridPosition, String, StructureShape)> = walls
         .iter()
         .map(|(entity, shape, area, key)| {
             (
@@ -131,11 +131,11 @@ fn collect_walls(
             ctx.tx.prepare_cached("INSERT OR REPLACE INTO walls (id, style) VALUES (?1, ?2)")?
                 .execute(rusqlite::params![id, style])?;
             match shape {
-                VolumeShape::Ramp { high_side } => {
+                StructureShape::Ramp { high_side } => {
                     ctx.tx.prepare_cached("INSERT INTO wall_ramps (id, high_side) VALUES (?1, ?2)")?
                         .execute(rusqlite::params![id, high_side.as_ref()])?;
                 }
-                VolumeShape::Flat { openings } => {
+                StructureShape::Flat { openings } => {
                     for side in openings.iter() {
                         ctx.tx.prepare_cached("INSERT INTO wall_openings (id, side) VALUES (?1, ?2)")?
                             .execute(rusqlite::params![id, side.as_ref()])?;
@@ -154,7 +154,7 @@ fn load_walls(ctx: &mut LoadContext) -> LoadResult {
         let style: String = row.get(1)?;
         // Load openings only for flat walls; ramps cannot have tunnels.
         let shape = match row.get_parsed_optional::<EdgeSide>(2)? {
-            Some(high_side) => VolumeShape::Ramp { high_side },
+            Some(high_side) => StructureShape::Ramp { high_side },
             None => {
                 let mut statement = ctx.conn.prepare_cached("SELECT side FROM wall_openings WHERE id = ?1")?;
                 let mut opening_rows = statement.query([old_id])?;
@@ -162,7 +162,7 @@ fn load_walls(ctx: &mut LoadContext) -> LoadResult {
                 while let Some(opening_row) = opening_rows.next()? {
                     openings = openings.with(opening_row.get_parsed(0)?);
                 }
-                VolumeShape::Flat { openings }
+                StructureShape::Flat { openings }
             }
         };
         let grid_position = ctx.grid_position(old_id)?;
@@ -175,7 +175,7 @@ fn load_walls(ctx: &mut LoadContext) -> LoadResult {
 fn on_insert_wall_imprint_on_obstacle_grid(
     trigger: On<Insert<Wall>>,
     mut obstacle_grid: ResMut<ObstacleGrid>,
-    walls: Query<(&VolumeShape, &GridArea, &WallStyleKey), With<Wall>>,
+    walls: Query<(&StructureShape, &GridArea, &WallStyleKey), With<Wall>>,
 ) {
     let entity = trigger.entity;
     #[warn_dev("Wall {entity} has no shape, area or style; not imprinted on the obstacle grid")]
@@ -212,7 +212,7 @@ impl WallPlacementRules<'_, '_> {
     }
 
     fn wall_at(&self, coords: GridCoords) -> Option<Entity> {
-        match self.obstacle_grid.get(coords)?.elevation {
+        match self.obstacle_grid.get(coords)?.on_ground {
             GridStructure::Wall { slot, .. } => Some(self.obstacle_grid.entry(slot).entity),
             _ => None,
         }
@@ -232,7 +232,7 @@ impl WallPlacementRules<'_, '_> {
     fn on_place_request_do_so(
         trigger: On<PlaceRequest>,
         mut rules: WallPlacementRules,
-        wall_settings: Single<(&WallStyleKey, &VolumeShape), With<PlacementSession>>,
+        wall_settings: Single<(&WallStyleKey, &StructureShape), With<PlacementSession>>,
     ) {
         let PlaceRequest(MapObject::Wall) = *trigger else { return };
         let (&area, _) = *rules.placement_session;
@@ -264,7 +264,7 @@ impl WallPlacementRules<'_, '_> {
         if let Some(wall) = rules.wall_at(coords) {
             rules.commands.entity(wall).despawn();
             // Remove occupants of the wall's upper floor; lower levels keep their supporting floors.
-            cell_clearing.clear_from(coords, VolumeLevel::OnElevation);
+            cell_clearing.clear_from(coords, AltitudeLevel::OnElevation);
         }
     }
 }

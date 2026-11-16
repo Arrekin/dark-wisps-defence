@@ -3,8 +3,7 @@ import package::shaders::common::core::{CELL_HALF, CELL_SIZE};
 import package::shaders::common::fire_ramp::fire_ramp;
 import package::shaders::common::game_time::game_time_since;
 import package::shaders::common::value_noise::value_fbm_3d;
-import package::shaders::grids::floor_cover::FLOOR_ELEVATION;
-import package::shaders::grids::obstacles::{STRUCTURE_WALL, VOLUME_ELEVATION, structure_at};
+import package::shaders::grids::obstacles::{LEVEL_ON_ELEVATION, LEVEL_ON_GROUND, STRUCTURE_WALL, structure_at};
 
 // `FlameScorch` floor decal shader (world units relative to tile center).
 // Premultiplied output: char darkens the floor via `alpha` while cinders add light (`rgb`).
@@ -16,7 +15,7 @@ struct Instance {
     strength: f32,   // normalized char intensity (0..1) from burn duration
     seed: f32,
     half_size: f32,  // quad half-size in world units
-    floor: u32,      // floor code (FLOOR_*)
+    level: u32,      // level code (LEVEL_*)
 };
 
 const DARKNESS: f32 = 0.5;
@@ -25,7 +24,7 @@ const CINDER_DECAY: f32 = 6.0; // exponential decay rate over the normalized age
 fn look(mesh: VertexOutput, scorch: Instance) -> vec4<f32> {
     // The quad extends past its tile. A wall-top scorch stops at the wall's cells.
     let cell = vec2<i32>(floor(mesh.world_position.xy / CELL_SIZE));
-    if scorch.floor == FLOOR_ELEVATION && structure_at(cell, VOLUME_ELEVATION) != STRUCTURE_WALL {
+    if scorch.level == LEVEL_ON_ELEVATION && structure_at(cell, LEVEL_ON_GROUND) != STRUCTURE_WALL {
         return vec4<f32>(0.0);
     }
 

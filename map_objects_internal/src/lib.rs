@@ -8,9 +8,9 @@ pub(crate) mod excavations;
 pub(crate) mod quantum_field;
 pub(crate) mod quantum_field_anomaly;
 pub(crate) mod quantum_field_materials;
+pub(crate) mod structure_shape_controls;
 pub(crate) mod tunnel_reveal;
 pub(crate) mod underground_canvas;
-pub(crate) mod volume_shape_controls;
 pub(crate) mod wall_canvas;
 pub(crate) mod wall_editor_ui;
 pub(crate) mod wall_materials;
@@ -39,6 +39,6 @@ impl Plugin for MapObjectsPlugin {
                 wall_materials::WallMaterialsPlugin,
                 walls::WallPlugin,
             ))
-            .add_plugins(volume_shape_controls::VolumeShapeControlsPlugin);
+            .add_plugins(structure_shape_controls::StructureShapeControlsPlugin);
     }
 }

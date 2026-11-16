@@ -72,7 +72,7 @@ fn show_on_click(
     if mouse_info.is_over_ui || !mouse.just_pressed(MouseButton::Left) { return; }
 
     let Some(cell) = obstacle_grid.get(mouse_info.grid_coords) else { return; };
-    let focused_element = match cell.elevation {
+    let focused_element = match cell.on_ground {
         GridStructure::Building { slot, .. } => obstacle_grid.entry(slot).entity,
         _ => {
             let Some(entity) = cell.quantum_field else { return };

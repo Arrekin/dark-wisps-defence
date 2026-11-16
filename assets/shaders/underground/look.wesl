@@ -246,7 +246,7 @@ fn single_cell_tunnel(openings: u32, p: vec2<f32>, texel: f32) -> vec3<f32> {
     return mix(interior_colour(passage, texel), GROUND_COLOUR, REVEALED_COVER_OPACITY);
 }
 
-// Excavation preview: a nonzero `pit` selects a pit; otherwise `shape` is a `VolumeShape::gpu_code`.
+// Excavation preview: a nonzero `pit` selects a pit; otherwise `shape` is a `StructureShape::gpu_code`.
 // `world` is in world pixels from the cell's bottom-left corner; `texel` is world pixels per
 // screen pixel.
 fn single_cell_excavation(pit: u32, shape: u32, world: vec2<f32>, texel: f32) -> vec3<f32> {

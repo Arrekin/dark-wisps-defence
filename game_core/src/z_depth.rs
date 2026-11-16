@@ -7,7 +7,7 @@ use core::ops::{Index, IndexMut};
 use bevy::prelude::*;
 use strum::{EnumCount, EnumIter, VariantArray};
 
-use crate::altitude::{FloorLevel, VolumeLevel};
+use crate::altitude::AltitudeLevel;
 
 /// Number of bits used for the entity's fractional depth within a layer.
 const LAYER_OFFSET_BITS: u32 = 16;
@@ -27,30 +27,23 @@ const _: () = assert!(
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq, Hash, EnumIter, EnumCount, VariantArray)]
 #[component(immutable)]
 pub enum DrawLevel {
-    UndergroundFloor,
     Underground,
-    GroundFloor,
-    Elevation,
-    ElevationFloor,
+    OnGround,
     OnElevation,
     Airborne,
 }
 
-impl From<VolumeLevel> for DrawLevel {
-    fn from(level: VolumeLevel) -> Self {
+/// Draws a map cell level or `Airborne` at its own level. `AllEncompassing` draws at the highest
+/// level, and `TopLevel` at the highest level below the air.
+impl From<AltitudeLevel> for DrawLevel {
+    fn from(level: AltitudeLevel) -> Self {
         match level {
-            VolumeLevel::Underground => Self::Underground,
-            VolumeLevel::Elevation => Self::Elevation,
-            VolumeLevel::OnElevation => Self::OnElevation,
-        }
-    }
-}
-impl From<FloorLevel> for DrawLevel {
-    fn from(level: FloorLevel) -> Self {
-        match level {
-            FloorLevel::UndergroundFloor => Self::UndergroundFloor,
-            FloorLevel::GroundFloor => Self::GroundFloor,
-            FloorLevel::ElevationFloor => Self::ElevationFloor,
+            AltitudeLevel::Underground => Self::Underground,
+            AltitudeLevel::OnGround => Self::OnGround,
+            AltitudeLevel::OnElevation => Self::OnElevation,
+            AltitudeLevel::Airborne => Self::Airborne,
+            AltitudeLevel::AllEncompassing => Self::Airborne,
+            AltitudeLevel::TopLevel => Self::OnElevation,
         }
     }
 }
@@ -59,11 +52,9 @@ impl From<FloorLevel> for DrawLevel {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DrawLevels(u8);
 impl DrawLevels {
-    pub const FLOORS: Self = Self::only(DrawLevel::UndergroundFloor)
-        .with(DrawLevel::GroundFloor)
-        .with(DrawLevel::ElevationFloor);
-    pub const VOLUMES: Self = Self::only(DrawLevel::Underground)
-        .with(DrawLevel::Elevation)
+    /// Every level below `Airborne`.
+    pub const BELOW_AIR: Self = Self::only(DrawLevel::Underground)
+        .with(DrawLevel::OnGround)
         .with(DrawLevel::OnElevation);
 
     pub const fn only(level: DrawLevel) -> Self {
@@ -148,12 +139,13 @@ pub enum ZDepth {
     UndergroundTop,
     OverlayEmissions,
     DarkOre,
-    /// Wall contact shadows, entrance recesses, tunnel interiors, and lower ramp halves, drawn below wisps.
-    WallBottom,
     FloorCover,
     FloorDecal,
     FireballScorch,
     FlameScorch,
+    /// Wall contact shadows, entrance recesses, tunnel interiors, and lower ramp halves, drawn above
+    /// floor covers and below wisps.
+    WallBottom,
     FlameGlow,
     OverlayEnergySupply,
     OverlayTowerRanges,
@@ -190,19 +182,19 @@ impl ZDepth {
     /// Draw levels supported by this layer.
     pub const fn draw_levels(self) -> DrawLevels {
         match self {
-            Self::UndergroundBottom => DrawLevels::only(DrawLevel::UndergroundFloor),
+            Self::UndergroundBottom => DrawLevels::only(DrawLevel::Underground),
             Self::UndergroundTop
             | Self::OverlayEmissions
-            | Self::DarkOre => DrawLevels::only(DrawLevel::GroundFloor),
-            Self::WallBottom
-            | Self::WallTop => DrawLevels::only(DrawLevel::Elevation),
+            | Self::DarkOre
+            | Self::WallBottom
+            | Self::OverlayEnergySupply
+            | Self::OverlayTowerRanges
+            | Self::WallTop => DrawLevels::only(DrawLevel::OnGround),
             Self::FloorCover
             | Self::FloorDecal
             | Self::FireballScorch
-            | Self::FlameScorch => DrawLevels::FLOORS,
-            Self::OverlayEnergySupply
-            | Self::OverlayTowerRanges => DrawLevels::only(DrawLevel::Elevation),
-            Self::FlameGlow
+            | Self::FlameScorch
+            | Self::FlameGlow
             | Self::Building
             | Self::BuildingEffect
             | Self::WispFire
@@ -216,7 +208,7 @@ impl ZDepth {
             | Self::FlameImpact
             | Self::FlamePilot
             | Self::TowerTop
-            | Self::MapUi => DrawLevels::VOLUMES,
+            | Self::MapUi => DrawLevels::BELOW_AIR,
             Self::AirEffect
             | Self::AerialUnit
             | Self::ProjectileUnder
@@ -249,11 +241,11 @@ impl ZDepth {
             | Self::UndergroundTop
             | Self::OverlayEmissions
             | Self::DarkOre
-            | Self::WallBottom
             | Self::FloorCover
             | Self::FloorDecal
             | Self::FireballScorch
             | Self::FlameScorch
+            | Self::WallBottom
             | Self::FlameGlow
             | Self::OverlayEnergySupply
             | Self::OverlayTowerRanges => Band::Ground,

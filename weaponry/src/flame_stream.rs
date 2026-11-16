@@ -2,7 +2,7 @@ use std::ops::RangeInclusive;
 
 use bevy::prelude::*;
 
-use game_core::prelude::{GridVolumePosition, MapBound};
+use game_core::prelude::{GridPosition, MapBound};
 
 // Stream shape
 const CONE_HALF_ANGLE: f32 = 3.5_f32.to_radians();
@@ -76,7 +76,7 @@ enum FlameStreamState {
 /// First wisp intersection along a `FlameStream`.
 pub struct FlameHit {
     /// Grid position of the hit wisp.
-    pub position: GridVolumePosition,
+    pub position: GridPosition,
     /// Distance from `nozzle` along `direction`.
     pub distance: f32,
 }

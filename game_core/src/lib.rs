@@ -20,11 +20,11 @@ pub mod prelude {
     // `#[derive(MomentKind)]` work wherever the traits are in scope.
     pub use lib_derive::{FromEntity, MomentKind, Property, SSS};
 
-    pub use crate::altitude::{AltitudeLevel, FloorLevel, VolumeLevel};
+    pub use crate::altitude::AltitudeLevel;
     pub use crate::components::{ContentId, DisabledByPlayer, IntegrityPoints, IsOperational, IsPowered, MapBound, NeedsPower};
     pub use crate::display::{DisplayDescription, DisplayIcon, DisplayIconSwitcher, DisplayName, DisplayOrder, FaceSurface, GHOST_ALPHA, MapObjectTooltipRequest, ObjectFaceRequest};
     pub use crate::events::{DamageMessage, TechnicalChange, TechnicalStateChanged};
-    pub use crate::grid::{AreaRange, AutoGridSnap, Bounds, CELL_SIZE, EdgeSide, EdgeSides, GridArea, GridCoords, GridFloorPosition, GridImprint, GridPosition, GridVolumePosition, MapInfo, RangeType, TargetLevels};
+    pub use crate::grid::{AreaRange, AutoGridSnap, Bounds, CELL_SIZE, EdgeSide, EdgeSides, GridArea, GridCoords, GridImprint, GridPosition, MapInfo, RangeType, TargetLevels};
     pub use crate::moments::{
         HasMoments, Moment, MomentHappened, MomentKind, MomentOf, MomentOfInterest, MomentWatchers,
     };

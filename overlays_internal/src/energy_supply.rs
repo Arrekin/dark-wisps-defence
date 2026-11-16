@@ -82,7 +82,7 @@ struct ShownState {
 }
 
 #[derive(Component, Default)]
-#[require(ZDepth::OverlayEnergySupply, DrawLevel::Elevation)]
+#[require(ZDepth::OverlayEnergySupply, DrawLevel::OnGround)]
 struct EnergySupplyOverlay {
     /// `None` before the first refresh.
     shown: Option<ShownState>,

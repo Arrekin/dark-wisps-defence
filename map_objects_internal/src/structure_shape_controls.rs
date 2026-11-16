@@ -1,4 +1,4 @@
-//! # Volume shape controls
+//! # Structure shape controls
 //!
 //! Shared controls for wall and excavation placement: tunnel openings, ramp orientation,
 //! and replacement of existing walls or excavations.
@@ -14,10 +14,10 @@ use strum::IntoEnumIterator;
 
 use game_core::prelude::{CELL_SIZE, EdgeSide, EdgeSides};
 use grids::placement::{GridPlacerGhostRebuildRequest, PlacementSession, ReplaceExisting};
-use map_objects::prelude::VolumeShape;
+use map_objects::prelude::StructureShape;
 
-pub(crate) struct VolumeShapeControlsPlugin;
-impl Plugin for VolumeShapeControlsPlugin {
+pub(crate) struct StructureShapeControlsPlugin;
+impl Plugin for StructureShapeControlsPlugin {
     fn build(&self, app: &mut App) {
         app.add_observer(ReplaceToggleButton::on_add_construct_replace_toggle);
     }
@@ -39,33 +39,33 @@ pub(crate) trait SelectableShape: Component + Copy {
     /// Selection after the last ramp direction or after closing the last tunnel opening.
     const BASE: Self;
 
-    /// Returns the selected volume shape, or `None` for an open pit.
-    fn volume_shape(self) -> Option<VolumeShape>;
+    /// Returns the selected structure shape, or `None` for an open pit.
+    fn structure_shape(self) -> Option<StructureShape>;
 
-    fn from_volume_shape(shape: VolumeShape) -> Self;
+    fn from_structure_shape(shape: StructureShape) -> Self;
 
     fn openings(self) -> EdgeSides {
-        self.volume_shape().map_or(EdgeSides::NONE, VolumeShape::openings)
+        self.structure_shape().map_or(EdgeSides::NONE, StructureShape::openings)
     }
 
     /// Cycles uphill direction through top, right, bottom and left, then returns to [`Self::BASE`].
     /// Other shapes start at the top ramp, discarding any tunnel openings.
     fn next_in_cycle(self) -> Self {
-        let next_high_side = match self.volume_shape() {
-            Some(VolumeShape::Ramp { high_side: EdgeSide::Top }) => EdgeSide::Right,
-            Some(VolumeShape::Ramp { high_side: EdgeSide::Right }) => EdgeSide::Bottom,
-            Some(VolumeShape::Ramp { high_side: EdgeSide::Bottom }) => EdgeSide::Left,
-            Some(VolumeShape::Ramp { high_side: EdgeSide::Left }) => return Self::BASE,
-            Some(VolumeShape::Flat { .. }) | None => EdgeSide::Top,
+        let next_high_side = match self.structure_shape() {
+            Some(StructureShape::Ramp { high_side: EdgeSide::Top }) => EdgeSide::Right,
+            Some(StructureShape::Ramp { high_side: EdgeSide::Right }) => EdgeSide::Bottom,
+            Some(StructureShape::Ramp { high_side: EdgeSide::Bottom }) => EdgeSide::Left,
+            Some(StructureShape::Ramp { high_side: EdgeSide::Left }) => return Self::BASE,
+            Some(StructureShape::Flat { .. }) | None => EdgeSide::Top,
         };
-        Self::from_volume_shape(VolumeShape::Ramp { high_side: next_high_side })
+        Self::from_structure_shape(StructureShape::Ramp { high_side: next_high_side })
     }
 
     /// Toggles the tunnel opening on `side`. Opening a ramp or pit creates a flat tunnel.
     /// Closing the last opening returns to [`Self::BASE`].
     fn with_opening_toggled(self, side: EdgeSide) -> Self {
         let openings = self.openings().toggled(side);
-        if openings.is_empty() { Self::BASE } else { Self::from_volume_shape(VolumeShape::Flat { openings }) }
+        if openings.is_empty() { Self::BASE } else { Self::from_structure_shape(StructureShape::Flat { openings }) }
     }
 }
 

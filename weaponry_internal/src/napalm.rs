@@ -109,8 +109,7 @@ fn burn_wisps_on_napalm(
 ) {
     let damage = NAPALM_DAMAGE_PER_SECOND * time.delta_secs();
     for area in napalms.iter() {
-        let floor = area.origin.floor_position();
-        for &wisp in wisps_grid.wisps_at(floor.coords.at(floor.level.volume())) {
+        for &wisp in wisps_grid.wisps_at(area.origin) {
             // A deferred spawn can enter the grid before its components are available to queries.
             if !wisps.contains(wisp) { continue; }
             damage_messages.write(DamageMessage { target: wisp, amount: damage });
@@ -126,9 +125,8 @@ fn on_remove_napalm_spawn_char(
     napalms: Query<&GridArea, With<Napalm>>,
 ) {
     let Ok(area) = napalms.get(trigger.entity) else { return; };
-    let floor = area.origin.floor_position();
     // Napalm goes with a floor that disappears, and leaves no char behind.
-    if !obstacle_grid.cell(floor.coords).has_floor(floor.level) { return; }
+    if !obstacle_grid.cell(area.origin.coords).has_floor(area.origin.level) { return; }
     commands.spawn((
         FloorCover(FloorCoverKind::Char),
         *area,

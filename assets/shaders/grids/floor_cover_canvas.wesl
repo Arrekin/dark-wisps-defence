@@ -7,8 +7,8 @@ import package::shaders::weaponry::napalm::{char_look, napalm_look};
 // Draws one floor's cover in one pass over a quad covering the map.
 // Blends domain shaders in `FloorCoverKind` order, bottom first, using premultiplied alpha.
 
-// Floor code (FLOOR_*) of the covers this canvas draws.
-@group(2) @binding(0) var<uniform> floor_level: u32;
+// Level code (LEVEL_* in grids/obstacles.wesl) of the covers this canvas draws.
+@group(2) @binding(0) var<uniform> level: u32;
 
 @fragment
 fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
@@ -22,7 +22,7 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
 
     let world = f * CELL_SIZE;
     let local = (f - base - vec2<f32>(0.5)) * CELL_SIZE;
-    let char_mark = char_look(local, world, cell, floor_level);
-    let napalm = napalm_look(local, world, cell, floor_level);
+    let char_mark = char_look(local, world, cell, level);
+    let napalm = napalm_look(local, world, cell, level);
     return napalm + char_mark * (1.0 - napalm.a);
 }

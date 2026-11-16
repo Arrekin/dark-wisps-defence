@@ -2,12 +2,12 @@ use std::{ops::Deref, slice};
 
 use bevy::prelude::*;
 
-use game_core::prelude::{Bounds, GridCoords, GridVolumePosition, TargetLevels};
+use game_core::prelude::{Bounds, GridCoords, GridPosition, TargetLevels};
 use grids::{GridVersion, base::{BaseGrid, GridCell, GridStack}};
 
 use crate::obstacles::ObstacleGrid;
 
-/// Tracks wisps by coordinate and volume level. Membership changes advance the grid version.
+/// Tracks wisps by coordinate and stack level. Membership changes advance the grid version.
 #[derive(Resource, Default)]
 pub struct WispsGrid {
     cells: BaseGrid<GridStack<Vec<Entity>>, GridVersion>,
@@ -22,14 +22,14 @@ impl WispsGrid {
         Self { cells: BaseGrid::new_with_size(bounds) }
     }
 
-    /// Returns the wisps in one cell volume.
+    /// Returns the wisps in the stack level holding `position`.
     ///
     /// Coordinates must be in bounds.
-    pub fn wisps_at(&self, position: GridVolumePosition) -> &[Entity] {
+    pub fn wisps_at(&self, position: GridPosition) -> &[Entity] {
         &self.cells[position]
     }
 
-    /// Iterates wisps at `coords` across all volume levels.
+    /// Iterates wisps at `coords` across all stack levels.
     ///
     /// Coordinates must be in bounds.
     pub fn wisps_in_cell(&self, coords: GridCoords) -> impl Iterator<Item = Entity> {
@@ -48,19 +48,19 @@ impl WispsGrid {
         allowed.iter().flatten().copied()
     }
 
-    pub fn wisp_add(&mut self, position: GridVolumePosition, wisp: Entity) {
+    pub fn wisp_add(&mut self, position: GridPosition, wisp: Entity) {
         self.cells[position].push(wisp);
         self.cells.advance_version();
     }
 
-    pub fn wisp_remove(&mut self, position: GridVolumePosition, wisp: Entity) {
+    pub fn wisp_remove(&mut self, position: GridPosition, wisp: Entity) {
         let cell = &mut self.cells[position];
         let Some(index) = cell.iter().position(|&listed| listed == wisp) else { return; };
         cell.swap_remove(index);
         self.cells.advance_version();
     }
 
-    pub fn wisp_move(&mut self, from: GridVolumePosition, to: GridVolumePosition, wisp: Entity) {
+    pub fn wisp_move(&mut self, from: GridPosition, to: GridPosition, wisp: Entity) {
         self.wisp_remove(from, wisp);
         self.wisp_add(to, wisp);
     }

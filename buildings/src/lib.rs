@@ -11,7 +11,7 @@ use grids::prelude::GridVersion;
 pub struct Tower;
 
 #[derive(Component, Clone, Debug, Default)]
-#[require(AutoGridSnap, ZDepth::Building, DrawLevel::Elevation, MaxIntegrityPoints, MapBound, ModifierBank)]
+#[require(AutoGridSnap, ZDepth::Building, DrawLevel::OnGround, MaxIntegrityPoints, MapBound, ModifierBank)]
 pub struct Building;
 
 #[derive(Component)]

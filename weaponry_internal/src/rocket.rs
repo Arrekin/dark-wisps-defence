@@ -145,7 +145,7 @@ fn move_rockets(
 ) {
     let travel = ROCKET_SPEED * time.delta_secs();
     let max_turn = ROCKET_TURN_SPEED * time.delta_secs();
-    let at_top = |wisp: &RocketTargetWispItem| obstacle_grid.is_top(wisp.area.origin.volume_position());
+    let at_top = |wisp: &RocketTargetWispItem| obstacle_grid.is_top(wisp.area.origin);
     let mut wisps_iter = wisps.iter();
     for (mut rocket, mut transform, mut target) in rockets.iter_mut() {
         // A rocket retargets when its target goes below the top of its cell.

@@ -2,15 +2,16 @@
 //! Replacing the component removes its old entries before indexing the new kind.
 //!
 //! Shaders read a flat entry list with offsets for each cell. Entries contain the cover kind,
-//! floor, and wrapped lifetime timestamps, repeated for each covered cell. Each upload scans
-//! the entire grid and hides the canvases of floors without entries.
+//! the level whose floor holds the cover, and wrapped lifetime timestamps, repeated for each
+//! covered cell. Each upload scans the entire grid and hides the canvases of floors without
+//! entries.
 
 use bevy::prelude::*;
 use bytemuck::{Pod, Zeroable};
-use strum::EnumCount;
 
-use game_core::{prelude::{FloorLevel, GridArea, MapInfo}, request_flag::RequestFlag};
-use indexes::floor_cover::{FloorCover, FloorCoverGrid};
+use game_core::{prelude::{GridArea, MapInfo}, request_flag::RequestFlag};
+use grids::base::{GridCell, GridStack};
+use indexes::{floor_cover::{FloorCover, FloorCoverGrid}, obstacles::level_gpu_index};
 use logging::prelude::*;
 use session::{GameClock, TimeBound};
 use states::prelude::MapLoadingStage;
@@ -47,8 +48,8 @@ struct GpuFloorCoverEntry {
     starts_at: f32,
     /// Wrapped game time, or `PERMANENT_END`.
     ends_at: f32,
-    /// Floor code from `FloorLevel::gpu_index`.
-    floor: u32,
+    /// Level code from `level_gpu_index`.
+    level: u32,
 }
 
 /// Request marker for a full floor cover upload.
@@ -123,21 +124,21 @@ fn upload_gpu_floor_cover(
 
     let mut offsets = Vec::with_capacity(floor_cover_grid.grid.len() + 1);
     let mut entries = Vec::new();
-    let mut is_floor_covered = [false; FloorLevel::COUNT];
+    let mut is_floor_covered = GridStack::<bool>::default();
     for cell in floor_cover_grid.grid.iter() {
         offsets.push(entries.len() as u32);
         entries.extend(cell.iter().map(|entry| {
-            is_floor_covered[entry.level as usize] = true;
+            *is_floor_covered.at_mut(entry.level) = true;
             let (starts_at, ends_at) = match time_bounds.get(entry.entity) {
                 Ok(time_bound) => (GameClock::wrap(time_bound.starts_at), GameClock::wrap(time_bound.ends_at)),
                 Err(_) => (0., PERMANENT_END),
             };
-            GpuFloorCoverEntry { kind: entry.kind.gpu_index(), starts_at, ends_at, floor: entry.level.gpu_index() }
+            GpuFloorCoverEntry { kind: entry.kind.gpu_index(), starts_at, ends_at, level: level_gpu_index(entry.level) }
         }));
     }
     offsets.push(entries.len() as u32);
     for (canvas, mut visibility) in canvases.iter_mut() {
-        visibility.set_if_neq(if is_floor_covered[canvas.0 as usize] { Visibility::Inherited } else { Visibility::Hidden });
+        visibility.set_if_neq(if *is_floor_covered.at(canvas.0) { Visibility::Inherited } else { Visibility::Hidden });
     }
     shared_gpu.write(SharedGpuBinding::FloorCoverCellOffsets, offsets);
     shared_gpu.write_with_capacity(SharedGpuBinding::FloorCoverCellEntries, entries);

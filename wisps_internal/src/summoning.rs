@@ -289,7 +289,7 @@ fn tick_active_summoning(
                 for _ in 0..(to_spawn as usize) {
                     let grid_coords = summoning.area.get_random_coord(obstacle_grid.bounds, &mut rng);
                     let wisp_type = summoning.get_random_wisp_type(&mut rng);
-                    commands.spawn(BuilderWisp::new(wisp_type, grid_coords.at(VolumeLevel::Elevation)));
+                    commands.spawn(BuilderWisp::new(wisp_type, obstacle_grid.top_position(grid_coords)));
                 }
                 runtime.produced = runtime.produced.saturating_add(to_spawn);
                 let jitter_offset = if jitter > 0.0 { (rng.generate::<f32>() * 2.0 - 1.0) * jitter } else { 0.0 };

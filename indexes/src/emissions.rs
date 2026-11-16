@@ -2,7 +2,7 @@ use std::ops::Deref;
 
 use bevy::prelude::*;
 
-use game_core::prelude::{Bounds, GridArea, GridVolumePosition};
+use game_core::prelude::{Bounds, GridArea, GridPosition};
 use grids::{GridVersion, base::{BaseGrid, GridStack}};
 
 #[derive(Component)]
@@ -47,7 +47,7 @@ impl EmissionsGrid {
     pub fn new_with_size(bounds: impl Into<Bounds>) -> Self {
         Self { cells: BaseGrid::new_with_size(bounds) }
     }
-    pub fn add_energy(&mut self, position: GridVolumePosition, energy: f32) {
+    pub fn add_energy(&mut self, position: GridPosition, energy: f32) {
         let emissions = &mut self.cells[position];
         emissions.energy += energy;
         if emissions.energy.abs() < 0.0001 { emissions.energy = 0.; }

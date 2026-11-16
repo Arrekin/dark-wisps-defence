@@ -9,7 +9,7 @@ import package::shaders::underground::look::single_cell_excavation;
 struct ExcavationQuad {
     alpha: f32,
     pit: u32, // nonzero for a pit
-    shape: u32, // `VolumeShape::gpu_code` when `pit` is zero
+    shape: u32, // `StructureShape::gpu_code` when `pit` is zero
 }
 @group(2) @binding(0) var<uniform> settings: ExcavationQuad;
 
