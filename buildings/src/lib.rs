@@ -68,7 +68,7 @@ pub struct TowerField;
 pub struct TowerCrucible;
 
 #[derive(Component)]
-#[require(Tower, BuildingType = BuildingType::Tower(TowerType::Flamethrower), AttackSpeed, AttackDamage, TowerShootingTimer, TowerWispTarget)]
+#[require(Tower, BuildingType = BuildingType::Tower(TowerType::Flamethrower), AttackDamage, TowerWispTarget)]
 pub struct TowerFlamethrower;
 
 #[derive(Component)]

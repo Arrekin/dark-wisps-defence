@@ -8,8 +8,9 @@
 //! - **Hit detection:** Steps grid columns along the stream's dominant axis from `nozzle` to
 //!   `length` and finds the smallest axial distance within the cone and active `fuel` range.
 //!   Only wisps at the top of a cell can be hit.
-//! - **Damage:** Each finished `TowerShootingTimer` of the generator deals its `AttackDamage` to
-//!   every wisp at the hit position. A generator that is not operational deals no damage.
+//! - **Damage:** Deals the generator's `AttackDamage` per second, every frame, to every wisp at the
+//!   hit position. Fuel already in flight keeps dealing damage after the generator stops being
+//!   operational.
 //!
 //! Visuals live in `flame_stream_fire`. Not persisted; recreated by the owning tower on load.
 
@@ -18,8 +19,7 @@ use std::ops::RangeInclusive;
 use bevy::prelude::*;
 
 use alteration::modifiers::prelude::AttackDamage;
-use buildings::prelude::TowerShootingTimer;
-use game_core::prelude::{AltitudeLevel, CELL_SIZE, DamageMessage, GridArea, GridCoords, GridImprint, IsOperational, Property};
+use game_core::prelude::{AltitudeLevel, CELL_SIZE, DamageMessage, GridArea, GridCoords, GridImprint, Property};
 use indexes::{prelude::ObstacleGrid, wisps::WispsGrid};
 use states::prelude::GameState;
 use weaponry::{
@@ -68,21 +68,20 @@ fn update_flame_stream_hits(
     }
 }
 
-/// Each shooting tick damages every wisp at the position the stream hits.
 fn damage_flame_hits(
     mut damage_messages: MessageWriter<DamageMessage>,
+    time: Res<Time>,
     wisps_grid: Res<WispsGrid>,
     streams: Query<(&FlameStream, &FlameStreamGeneratedBy)>,
-    mut generators: Query<(&AttackDamage, &mut TowerShootingTimer), With<IsOperational>>,
+    generators: Query<&AttackDamage>,
 ) {
     for (stream, generated_by) in streams.iter() {
         let Some(hit) = &stream.hit else { continue; };
-        let Ok((attack_damage, mut timer)) = generators.get_mut(generated_by.0) else { continue; };
-        if !timer.0.is_finished() { continue; }
+        let Ok(attack_damage) = generators.get(generated_by.0) else { continue; };
+        let damage = attack_damage.get() * time.delta_secs();
         for &wisp in wisps_grid.wisps_at(hit.position) {
-            damage_messages.write(DamageMessage { target: wisp, amount: attack_damage.get() });
+            damage_messages.write(DamageMessage { target: wisp, amount: damage });
         }
-        timer.0.reset();
     }
 }
 
