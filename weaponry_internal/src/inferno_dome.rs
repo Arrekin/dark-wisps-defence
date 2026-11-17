@@ -1,7 +1,7 @@
 //! # Inferno Dome
 //!
 //! Temporary fire dome spawned when a `TowerInferno` discharges.
-//! Its child visuals share a start time but have separate durations:
+//! Its child visuals share a start instant but have separate durations:
 //!
 //! - `InfernoDomeFire` — hemisphere shell, interior billows, rim spill light, and falling embers.
 //! - `InfernoDomeGround` — release flash and ground scorch decal.
@@ -16,6 +16,7 @@ use bevy::{prelude::*, reflect::TypePath, render::render_resource::{BlendState, 
 use game_core::prelude::{DrawLevel, ZDepth};
 use session::{GameClock, TimeBound};
 use visuals::{
+    clock::ClockInstant,
     lane::{LaneParts, LanePlugin, LaneVisual},
     shader::seed_from_entity,
 };
@@ -61,8 +62,8 @@ const SHIMMER_MARGIN: f32 = 8.;
 #[derive(Component, ShaderType, TypePath, Clone)]
 #[require(ZDepth::AirEffect, DrawLevel::Airborne)]
 struct InfernoDomeFire {
-    /// Wrapped game time of the discharge.
-    start_time: f32,
+    /// Game clock instant of the discharge.
+    start: ClockInstant,
     radius: f32,
     seed: f32,
     /// Quad half-size in world units.
@@ -83,8 +84,8 @@ impl LaneVisual for InfernoDomeFire {
 #[derive(Component, ShaderType, TypePath, Clone)]
 #[require(ZDepth::FloorDecal, DrawLevel::OnGround)]
 struct InfernoDomeGround {
-    /// Wrapped game time of the discharge.
-    start_time: f32,
+    /// Game clock instant of the discharge.
+    start: ClockInstant,
     radius: f32,
     seed: f32,
     /// Quad half-size in world units.
@@ -106,8 +107,8 @@ impl LaneVisual for InfernoDomeGround {
 #[derive(Component, ShaderType, TypePath, Clone)]
 #[require(ZDepth::AirEffect, DrawLevel::Airborne)]
 struct InfernoDomeDisplacement {
-    /// Wrapped game time of the discharge.
-    start_time: f32,
+    /// Game clock instant of the discharge.
+    start: ClockInstant,
     radius: f32,
     /// Quad half-size in world units.
     half_size: f32,
@@ -130,7 +131,7 @@ fn on_add_inferno_dome_spawn_parts(
 ) {
     let entity = trigger.entity;
     let Ok(dome) = domes.get(entity) else { return; };
-    let start_time = clock.wrapped();
+    let start = ClockInstant::at(clock.now());
     let seed = seed_from_entity(entity);
     let fire_half_size = dome.radius + FIRE_MESH_MARGIN;
     let ground_half_size = dome.radius + GROUND_MESH_MARGIN;
@@ -139,16 +140,16 @@ fn on_add_inferno_dome_spawn_parts(
         TimeBound::lasting(&clock, FIRE_DURATION.max(GROUND_DURATION).max(SHIMMER_DURATION)),
         children![
             (
-                InfernoDomeFire { start_time, radius: dome.radius, seed, half_size: fire_half_size },
+                InfernoDomeFire { start, radius: dome.radius, seed, half_size: fire_half_size },
                 TimeBound::lasting(&clock, FIRE_DURATION),
                 Transform::from_scale(Vec3::new(2. * fire_half_size, 2. * fire_half_size, 1.)),
             ),
             (
-                InfernoDomeGround { start_time, radius: dome.radius, seed, half_size: ground_half_size },
+                InfernoDomeGround { start, radius: dome.radius, seed, half_size: ground_half_size },
                 TimeBound::lasting(&clock, GROUND_DURATION),
                 Transform::from_scale(Vec3::new(2. * ground_half_size, 2. * ground_half_size, 1.)),
             ),
-            InfernoDomeDisplacement { start_time, radius: dome.radius, half_size: dome.radius + SHIMMER_MARGIN },
+            InfernoDomeDisplacement { start, radius: dome.radius, half_size: dome.radius + SHIMMER_MARGIN },
         ],
     ));
 }

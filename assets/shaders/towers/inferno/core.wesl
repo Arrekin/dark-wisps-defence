@@ -1,9 +1,10 @@
 import bevy_sprite_render::mesh2d::vertex_output::VertexOutput;
 import bevy_sprite_render::mesh2d::view_bindings::globals;
+import package::shaders::common::clock::wrap_rate;
 import package::shaders::common::color::linear_to_display;
 import package::shaders::common::core::TAU;
 import package::shaders::common::fire_ramp::{FIRE_HEAT_CAP, fire_ramp};
-import package::shaders::common::value_noise::value_noise_3d;
+import package::shaders::common::value_noise::value_noise_3d_drift;
 
 // Charging glow overlay for `TowerInferno`. Quad matches the tower sprite bounds.
 // Masks the central square core and dark sprite seams from `sprite_texture`.
@@ -35,7 +36,7 @@ fn heat_color(heat: f32) -> vec3<f32> {
 fn look(mesh: VertexOutput, core: Instance) -> vec4<f32> {
     let time = globals.time;
 
-    let throb = 1.0 + THROB * sin(time * THROBS_PER_SECOND * TAU) * smoothstep(0.7, 1.0, core.charge);
+    let throb = 1.0 + THROB * sin(time * wrap_rate(THROBS_PER_SECOND, 1.0) * TAU) * smoothstep(0.7, 1.0, core.charge);
     let heat = mix(0.1, HEAT_FULL, core.charge) * throb * smoothstep(0.0, 0.08, core.charge);
     let lit = smoothstep(0.08, 0.3, heat);
 
@@ -48,7 +49,7 @@ fn look(mesh: VertexOutput, core: Instance) -> vec4<f32> {
     let core_mask = 1.0 - smoothstep(CORE_HALF - 0.015, CORE_HALF + 0.01, from_center);
     let reach = CORE_HALF + SEAM_REACH * smoothstep(0.1, 1.0, core.charge);
     let seam = (1.0 - smoothstep(0.06, 0.2, luminance)) * (1.0 - smoothstep(reach - 0.07, reach, from_center));
-    let flicker = value_noise_3d(vec3<f32>(sprite_uv * 18.0, time * 1.5));
+    let flicker = value_noise_3d_drift(vec3<f32>(sprite_uv * 18.0, 0.0), time, vec3<f32>(0.0, 0.0, 1.5));
     let glow = heat_color(heat * (0.85 + 0.25 * flicker));
 
     var color = heat_color(heat * 0.8) * seam * lit * 0.8 * body;

@@ -3,8 +3,9 @@
 
 import bevy_sprite_render::mesh2d::{vertex_output::VertexOutput, view_bindings::globals};
 import package::shaders::common::beneath::beneath_at_world;
+import package::shaders::common::clock::wrap_rate;
 import package::shaders::common::core::TAU;
-import package::shaders::common::value_noise::value_fbm_2d;
+import package::shaders::common::value_noise::value_fbm_2d_drift;
 import package::shaders::quantum_field::look::{quantum_field_masks, quantum_field_glow, box_sdf, COLOR_BOUNDARY};
 
 // Mirrors `MAX_COLLAPSE_POINTS` in map_objects_internal/src/quantum_field_anomaly.rs.
@@ -93,8 +94,8 @@ fn overlay(in: VertexOutput, field: Instance) -> vec4<f32> {
     var sample_world = world_pos;
 
     if ENABLE_SCHLIEREN {
-        let nx = value_fbm_2d(world_pos * SCHLIEREN_SCALE + vec2<f32>(t * 0.20 + field.seed, 0.0));
-        let ny = value_fbm_2d(world_pos * SCHLIEREN_SCALE + vec2<f32>(0.0, t * 0.17 + field.seed));
+        let nx = value_fbm_2d_drift(world_pos * SCHLIEREN_SCALE + vec2<f32>(field.seed, 0.0), t, vec2<f32>(0.20, 0.0));
+        let ny = value_fbm_2d_drift(world_pos * SCHLIEREN_SCALE + vec2<f32>(0.0, field.seed), t, vec2<f32>(0.0, 0.17));
         sample_world += (vec2<f32>(nx, ny) - 0.5) * 2.0 * SCHLIEREN_STRENGTH * masks.weirdness * masks.interior;
     }
     // Inside a collapse disc, pin sampling back to the true position — schlieren and any other
@@ -108,7 +109,7 @@ fn overlay(in: VertexOutput, field: Instance) -> vec4<f32> {
         var acc  = beneath_at_world(sample_world).rgb * 2.0; // real position weighted higher
         var wsum = 2.0;
         for (var k = 0; k < SUPERPOSITION_TAPS; k++) {
-            let ang = TAU * f32(k) / f32(SUPERPOSITION_TAPS) + t * SUPERPOSITION_SPIN;
+            let ang = TAU * f32(k) / f32(SUPERPOSITION_TAPS) + t * wrap_rate(SUPERPOSITION_SPIN, TAU);
             let off = vec2<f32>(cos(ang), sin(ang)) * spread;
             acc += beneath_at_world(sample_world + off).rgb;
             wsum += 1.0;
@@ -128,7 +129,7 @@ fn overlay(in: VertexOutput, field: Instance) -> vec4<f32> {
 
     // ── Phase flicker near the rim (screen-space approximation of tunneling) ───
     if ENABLE_PHASE_FLICKER {
-        let f = value_fbm_2d(world_pos * 0.2 + vec2<f32>(t * PHASE_FLICKER_SPEED, field.seed));
+        let f = value_fbm_2d_drift(world_pos * 0.2 + vec2<f32>(0.0, field.seed), t, vec2<f32>(PHASE_FLICKER_SPEED, 0.0));
         rgb *= 1.0 - PHASE_FLICKER_DEPTH * masks.rim_zone * masks.weirdness * step(0.5, f) * (1.0 - collapse);
     }
 

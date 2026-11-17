@@ -1,7 +1,7 @@
 //! Shared fade types for shader-driven UI widgets.
 //!
-//! [`Fade`] is the GPU-side uniform: the endpoints, start time, and rate of an
-//! exponential curve the shader evaluates against `globals.time`. Its layout
+//! [`Fade`] is the GPU-side uniform: the endpoints, start instant, and rate of an
+//! exponential curve the shader evaluates against Bevy's shader clock. Its layout
 //! mirrors `Fade` in `assets/shaders/widgets/fade.wesl`.
 //!
 //! [`FadeState`] is the runtime bookkeeping: the target a consumer asked for,
@@ -10,16 +10,19 @@
 
 use bevy::render::render_resource::ShaderType;
 
-/// The GPU-side uniform: endpoints, start time, and rate of the exponential
-/// curve. The shader evaluates it against `globals.time`. Layout mirrors `Fade`
+use visuals::clock::ClockInstant;
+
+/// The GPU-side uniform: endpoints, start instant, and rate of the exponential
+/// curve. The shader evaluates it against Bevy's shader clock. Layout mirrors `Fade`
 /// in `assets/shaders/widgets/fade.wesl`.
 #[derive(ShaderType, Clone, Copy, Debug)]
 pub struct Fade {
     pub start_value: f32,
     pub end_value: f32,
-    /// Seconds on the same clock the shader reads from `globals.time`.
-    pub start_time: f32,
     pub rate: f32,
+    /// Uniform buffers require nested structs to be 16-byte aligned.
+    #[shader(align(16))]
+    pub start: ClockInstant,
 }
 
 /// Runtime bookkeeping behind a fade: the target a consumer asked for, plus the
@@ -33,13 +36,13 @@ pub(crate) struct FadeState {
     target: f32,
     start_value: f32,
     end_value: f32,
-    start_time: f32,
+    start: ClockInstant,
     rate: f32,
 }
 
 impl FadeState {
-    pub(crate) const fn new(rate: f32) -> Self {
-        Self { target: 0.0, start_value: 0.0, end_value: 0.0, start_time: 0.0, rate }
+    pub(crate) fn new(rate: f32) -> Self {
+        Self { target: 0.0, start_value: 0.0, end_value: 0.0, start: ClockInstant::default(), rate }
     }
 
     /// Returns whether the target moved.
@@ -51,27 +54,27 @@ impl FadeState {
 
     /// Value at `now`, using the same curve as `eased()` in
     /// `assets/shaders/widgets/fade.wesl`. Both definitions must be kept in step.
-    pub(crate) fn sample(&self, now: f32) -> f32 {
-        let elapsed = (now - self.start_time).max(0.0);
+    pub(crate) fn sample(&self, now: ClockInstant) -> f32 {
+        let elapsed = self.start.seconds_until(now).max(0.0);
         self.start_value + (self.end_value - self.start_value) * (1.0 - (-self.rate * elapsed).exp())
     }
 
     /// Starts a fade toward the target, unless one is already headed there. The
     /// value at this instant becomes the new start, so interrupting a fade
     /// continues from where it visually was rather than snapping.
-    pub(crate) fn begin_fade(&mut self, now: f32) {
+    pub(crate) fn begin_fade(&mut self, now: ClockInstant) {
         if self.target == self.end_value { return }
         self.start_value = self.sample(now);
         self.end_value = self.target;
-        self.start_time = now;
+        self.start = now;
     }
 
     pub(crate) fn fade(&self) -> Fade {
         Fade {
             start_value: self.start_value,
             end_value: self.end_value,
-            start_time: self.start_time,
             rate: self.rate,
+            start: self.start,
         }
     }
 }

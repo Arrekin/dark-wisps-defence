@@ -11,12 +11,13 @@
 // - wisp impacts send ripples across the shell.
 
 import bevy_sprite_render::mesh2d::{vertex_output::VertexOutput, view_bindings::globals};
+import package::shaders::common::clock::wrap_rate;
 import package::shaders::common::color::display_to_linear;
 import package::shaders::common::core::{PI, TAU};
 import package::shaders::common::hash::{HASH_GOLDEN, hash_mix, hash_unit};
 import package::shaders::common::displacement::world_offset_to_uv;
 import package::shaders::common::map_light::MAP_SUN_GROUND_DIRECTION;
-import package::shaders::common::value_noise::{value_fbm_3d, value_noise_3d};
+import package::shaders::common::value_noise::{value_fbm_3d, value_noise_3d_drift};
 import package::shaders::fields::fields::{FieldBoundary, FieldShape, NO_FIELD, field_boundary, field_owners_at, field_shapes};
 
 // Mirrors `MAX_FIELD_IMPACTS` in fields_internal/src/force_field.rs.
@@ -144,9 +145,10 @@ fn shell_at(world_position: vec2<f32>, center: vec2<f32>, radius: f32) -> Shell 
     return Shell(offset, radius, reach, height, vec3<f32>(offset / radius, height), atan2(offset.y, offset.x), direction);
 }
 
-// Noise around the circle with no seam where the angle wraps; `frequency` is features per radian, roughly.
-fn ring_noise(around: f32, frequency: f32, z: f32) -> f32 {
-    return value_noise_3d(vec3<f32>(cos(around) * frequency, sin(around) * frequency, z));
+// Seamless angular noise on a circle of radius `frequency` (features per radian), drifting along Z
+// from `z` at `rate` cells/s.
+fn ring_noise(around: f32, frequency: f32, z: f32, time: f32, rate: f32) -> f32 {
+    return value_noise_3d_drift(vec3<f32>(cos(around) * frequency, sin(around) * frequency, z), time, vec3<f32>(0.0, 0.0, rate));
 }
 
 // Strength of a shell pattern between the centre and the rim.
@@ -159,7 +161,7 @@ fn toward_rim(shell: Shell, centre: f32) -> f32 {
 // Draws strands at `edge` pixels inside the boundary (negative outside).
 // Offsetting the colour channels creates fringes around a white core.
 fn rim_strands(around: f32, edge: f32, time: f32, seed: f32) -> vec3<f32> {
-    let vary = mix(1.0, 0.25 + 1.5 * ring_noise(around, 1.2, time * 0.08 + seed), STRAND_VARY);
+    let vary = mix(1.0, 0.25 + 1.5 * ring_noise(around, 1.2, seed, time, 0.08), STRAND_VARY);
     let offsets = vec3<f32>(STRAND_DISPERSION, -STRAND_DISPERSION, 0.0);
     let widths = vec3<f32>(STRAND_WIDTH, STRAND_WIDTH, STRAND_WIDTH * 1.6);
     var lines = vec3<f32>(0.0);
@@ -167,9 +169,9 @@ fn rim_strands(around: f32, edge: f32, time: f32, seed: f32) -> vec3<f32> {
         let index = f32(k);
         // The outermost strand hugs the edge; inner ones wander more.
         let freedom = 0.3 + 0.7 * index / f32(STRAND_COUNT - 1);
-        let wander = (ring_noise(around, 3.0 + index, time * STRAND_SPEED + seed + index * 7.1) - 0.5) * 2.0 * STRAND_WANDER * freedom;
+        let wander = (ring_noise(around, 3.0 + index, seed + index * 7.1, time, STRAND_SPEED) - 0.5) * 2.0 * STRAND_WANDER * freedom;
         let at = index * STRAND_SPACING + wander;
-        let strength = (1.0 - index / f32(STRAND_COUNT + 1)) * (0.35 + 0.65 * ring_noise(around, 6.0, time * 0.3 + index * 3.3 + seed));
+        let strength = (1.0 - index / f32(STRAND_COUNT + 1)) * (0.35 + 0.65 * ring_noise(around, 6.0, index * 3.3 + seed, time, 0.3));
         let distances = vec3<f32>(edge - at) + offsets;
         lines += exp(-(distances * distances) / (widths * widths)) * strength;
     }
@@ -181,12 +183,13 @@ fn rim_strands(around: f32, edge: f32, time: f32, seed: f32) -> vec3<f32> {
 
 // Adds rapid position and brightness noise to the strands for a shimmering effect.
 fn shimmering_strands(shell: Shell, around: f32, edge: f32, time: f32, seed: f32) -> vec3<f32> {
-    let coarse = shell.normal * SHIMMER_SCALE + vec3<f32>(seed, seed * 0.7, time * SHIMMER_SPEED);
-    let fine = shell.normal * SHIMMER_SCALE * 2.3 + vec3<f32>(3.1, seed, -time * SHIMMER_SPEED * 1.4);
+    let coarse = shell.normal * SHIMMER_SCALE + vec3<f32>(seed, seed * 0.7, 0.0);
+    let fine = shell.normal * SHIMMER_SCALE * 2.3 + vec3<f32>(3.1, seed, 0.0);
+    let fine_rate = -SHIMMER_SPEED * 1.4;
     let weight = toward_rim(shell, SHIMMER_CENTRE);
-    let shift = ((vec2<f32>(value_noise_3d(coarse), value_noise_3d(coarse + 17.3)) - 0.5) * 1.4
-               + (vec2<f32>(value_noise_3d(fine), value_noise_3d(fine + 9.1)) - 0.5) * 0.6) * weight * 2.0 * SHIMMER_SHIFT;
-    let grain = mix(1.0, mix(1.0, 0.35 + 1.3 * value_noise_3d(fine * 1.3 + 5.0), SHIMMER_GRAIN), weight);
+    let shift = ((vec2<f32>(value_noise_3d_drift(coarse, time, vec3<f32>(0.0, 0.0, SHIMMER_SPEED)), value_noise_3d_drift(coarse + 17.3, time, vec3<f32>(0.0, 0.0, SHIMMER_SPEED))) - 0.5) * 1.4
+               + (vec2<f32>(value_noise_3d_drift(fine, time, vec3<f32>(0.0, 0.0, fine_rate)), value_noise_3d_drift(fine + 9.1, time, vec3<f32>(0.0, 0.0, fine_rate))) - 0.5) * 0.6) * weight * 2.0 * SHIMMER_SHIFT;
+    let grain = mix(1.0, mix(1.0, 0.35 + 1.3 * value_noise_3d_drift(fine * 1.3 + 5.0, time, vec3<f32>(0.0, 0.0, fine_rate * 1.3)), SHIMMER_GRAIN), weight);
     return rim_strands(around + shift.y / shell.radius, edge + shift.x, time, seed) * grain;
 }
 
@@ -198,13 +201,13 @@ fn veils(shell: Shell, around: f32, time: f32, seed: f32) -> vec3<f32> {
     let depth = acos(shell.height) / (PI * 0.5);
     var mask = smoothstep(1.0 - VEIL_REACH, 1.0, shell.reach);
     mask *= mask;
-    let flow = around + time * VEIL_FLOW;
-    let warp = (value_noise_3d(vec3<f32>(cos(flow) * 2.0, sin(flow) * 2.0, depth * 3.0 + time * 0.05 + seed)) - 0.5) * VEIL_WARP;
+    let flow = around + time * wrap_rate(VEIL_FLOW, TAU);
+    let warp = (value_noise_3d_drift(vec3<f32>(cos(flow) * 2.0, sin(flow) * 2.0, depth * 3.0 + seed), time, vec3<f32>(0.0, 0.0, 0.05)) - 0.5) * VEIL_WARP;
     let across = depth * VEIL_ACROSS + warp * 4.0;
     let pattern = value_fbm_3d(vec3<f32>(cos(flow) * VEIL_ALONG, sin(flow) * VEIL_ALONG, across + seed), 4);
     let softness = (1.0 - VEIL_CONTRAST) * 0.5;
     let sheet = smoothstep(0.5 - softness, 0.5 + softness + 0.02, pattern);
-    let hue = ring_noise(around - time * VEIL_FLOW * 0.5, 1.3, time * 0.03 + seed + 11.0);
+    let hue = ring_noise(around - time * wrap_rate(VEIL_FLOW * 0.5, TAU), 1.3, seed + 11.0, time, 0.03);
     var colour = mix(display_to_linear(ICE_BLUE), display_to_linear(ULTRAVIOLET), smoothstep(0.35, 0.75, hue) * VEIL_ACCENT);
     colour = mix(colour, PALE, VEIL_PALENESS);
     let edge_on = min(1.0 / max(shell.height, 0.2), 3.0);
@@ -225,15 +228,15 @@ fn rotate_about(v: vec3<f32>, axis: vec3<f32>, angle: f32) -> vec3<f32> {
     return v * cos(angle) + cross(axis, v) * sin(angle) + axis * dot(axis, v) * (1.0 - cos(angle));
 }
 
-// Cell centre on the unit sphere, moving along a great circle.
-// `index` and `salt` determine its starting point, rotation axis, direction, and speed.
-fn web_cell(index: u32, salt: u32, time: f32) -> vec3<f32> {
+// Cell centre on the unit sphere, moving along a great circle. `index` and `salt` determine its
+// starting point, rotation axis, direction, and speed; `pace` scales the speed.
+fn web_cell(index: u32, salt: u32, time: f32, pace: f32) -> vec3<f32> {
     let hash = hash_mix((index * 977u + 13u) ^ salt);
     let start = random_unit_vector(hash);
     let axis = normalize(cross(start, random_unit_vector(hash_mix(hash + 7u))));
     let direction = select(1.0, -1.0, hash_unit(hash_mix(hash + 9u)) < 0.5);
-    let speed = WEB_FLOW * (0.4 + 1.2 * hash_unit(hash_mix(hash + 8u))) * direction;
-    return rotate_about(start, axis, time * speed);
+    let speed = WEB_FLOW * pace * (0.4 + 1.2 * hash_unit(hash_mix(hash + 8u))) * direction;
+    return rotate_about(start, axis, time * wrap_rate(speed, TAU));
 }
 
 // Estimated distance to a web cut in pixels, and the direction away from it into the current cell.
@@ -244,13 +247,13 @@ struct WebCut {
 
 // Approximates the nearest cut using the two closest cell centres. Their dividing plane passes
 // through the sphere's centre. The projected gradient converts distance to that plane into pixels.
-fn web_cut(shell: Shell, point: vec3<f32>, count: u32, salt: u32, time: f32) -> WebCut {
+fn web_cut(shell: Shell, point: vec3<f32>, count: u32, salt: u32, time: f32, pace: f32) -> WebCut {
     var nearest = -2.0;
     var nearest_cell = vec3<f32>(0.0, 0.0, 1.0);
     var second = -2.0;
     var second_cell = vec3<f32>(0.0, 0.0, -1.0);
     for (var k = 0u; k < count; k++) {
-        let cell = web_cell(k, salt, time);
+        let cell = web_cell(k, salt, time, pace);
         let closeness = dot(point, cell);
         if closeness > nearest {
             second = nearest;
@@ -274,9 +277,9 @@ fn web_cut(shell: Shell, point: vec3<f32>, count: u32, salt: u32, time: f32) -> 
 fn web_cuts(shell: Shell, time: f32, seed: f32) -> vec3<f32> {
     let n = shell.normal;
     let warp = vec3<f32>(
-        value_noise_3d(n * 2.5 + vec3<f32>(seed, 0.0, time * 0.05)),
-        value_noise_3d(n * 2.5 + vec3<f32>(5.2, seed, time * 0.05)),
-        value_noise_3d(n * 2.5 + vec3<f32>(9.7, 3.1, seed + time * 0.05)),
+        value_noise_3d_drift(n * 2.5 + vec3<f32>(seed, 0.0, 0.0), time, vec3<f32>(0.0, 0.0, 0.05)),
+        value_noise_3d_drift(n * 2.5 + vec3<f32>(5.2, seed, 0.0), time, vec3<f32>(0.0, 0.0, 0.05)),
+        value_noise_3d_drift(n * 2.5 + vec3<f32>(9.7, 3.1, seed), time, vec3<f32>(0.0, 0.0, 0.05)),
     ) - 0.5;
     let point = normalize(n + warp * WEB_WARP * 0.25);
     let dome_salt = bitcast<u32>(seed);
@@ -286,7 +289,7 @@ fn web_cuts(shell: Shell, time: f32, seed: f32) -> vec3<f32> {
         let weight = select(WEB_FINE, 1.0, main);
         let count = select(FINE_WEB_CELLS, WEB_CELLS, main);
         let salt = dome_salt ^ select(FINE_WEB_SALT, WEB_SALT, main);
-        let cut = web_cut(shell, point, count, salt, time * select(FINE_WEB_SPEED, 1.0, main));
+        let cut = web_cut(shell, point, count, salt, time, select(FINE_WEB_SPEED, 1.0, main));
         let bevel = exp(-cut.distance / WEB_BEVEL);
         let crease = exp(-(cut.distance * cut.distance) / 0.8);
         total += vec3<f32>(
@@ -379,8 +382,8 @@ fn displace(in: VertexOutput, field: Instance) -> vec4<f32> {
     let band = smoothstep(1.0 - VEIL_REACH, 1.0, shell.reach);
     let wobble_point = world_position * 0.03;
     let wobble = vec2<f32>(
-        value_noise_3d(vec3<f32>(wobble_point, globals.time * 0.3)),
-        value_noise_3d(vec3<f32>(wobble_point + 7.0, globals.time * 0.3)),
+        value_noise_3d_drift(vec3<f32>(wobble_point, 0.0), globals.time, vec3<f32>(0.0, 0.0, 0.3)),
+        value_noise_3d_drift(vec3<f32>(wobble_point + 7.0, 0.0), globals.time, vec3<f32>(0.0, 0.0, 0.3)),
     ) - 0.5;
     let lens = (-shell.direction * LENS * pow(1.0 - shell.height, 2.0) + wobble * 2.0 * WOBBLE * band) * smoothstep(0.0, 4.0, surface.boundary.edge);
     let offset = (surface.shift + lens) * field.progress;

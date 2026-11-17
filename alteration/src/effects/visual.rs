@@ -1,5 +1,4 @@
-use bevy::platform::collections::HashMap;
-use bevy::prelude::*;
+use bevy::{ecs::component::Mutable, platform::collections::HashMap, prelude::*, render::render_resource::ShaderType};
 
 // Effect identity shared by every render sink. Bits are OR-ed into the target's effect mask;
 // slots index its parameter bank. Each value has a matching constant in the consuming shaders.
@@ -10,7 +9,7 @@ pub const EFFECT_VISUAL_SLOTS: usize = 8;
 pub const BRITTLE_BIT: u32 = 1 << 0;
 pub const BRITTLE_SLOT: usize = 0;
 
-/// Visual footprint an effect instance contributes to its target.
+/// Visual parameters contributed by an active effect instance to its target.
 ///
 /// Inserted alongside the effect's gameplay components, often via `#[require]` on the effect
 /// marker. `bit` is OR-ed into the target's effect mask; `params` are written into the parameter
@@ -30,22 +29,14 @@ impl EffectVisualContribution {
 /// Per-target aggregate of every active [`EffectVisualContribution`] pointing at it.
 ///
 /// Contributions are keyed by effect instance entity so they stack and unstack cleanly. The
-/// derived mask and parameter bank are read by the entity's render sink.
+/// derived [`EffectVisuals`] are read by the entity's render sink.
 #[derive(Component, Default)]
 pub struct EffectVisualState {
     contributions: HashMap<Entity, EffectVisualContribution>,
-    mask: u32,
-    params: [Vec4; EFFECT_VISUAL_SLOTS],
+    /// Aggregated mask and parameters; updated through [`Self::set`] and [`Self::clear`].
+    pub visuals: EffectVisuals,
 }
 impl EffectVisualState {
-    pub fn mask(&self) -> u32 {
-        self.mask
-    }
-
-    pub fn params(&self) -> [Vec4; EFFECT_VISUAL_SLOTS] {
-        self.params
-    }
-
     pub fn set(&mut self, effect_entity: Entity, contribution: EffectVisualContribution) {
         self.contributions.insert(effect_entity, contribution);
         self.recompute();
@@ -60,13 +51,37 @@ impl EffectVisualState {
         // Bits OR together; a slot is overwritten by whichever contribution holds it. If an
         // effect ever both stacks and carries per-instance params in one slot, that slot needs
         // an explicit combine rule (max/sum/latest), like `ModifierType::aggregate`.
-        self.mask = 0;
-        self.params = [Vec4::ZERO; EFFECT_VISUAL_SLOTS];
+        self.visuals = EffectVisuals::default();
         for contribution in self.contributions.values() {
-            self.mask |= contribution.bit;
+            self.visuals.mask |= contribution.bit;
             if contribution.slot < EFFECT_VISUAL_SLOTS {
-                self.params[contribution.slot] = contribution.params;
+                self.visuals.params[contribution.slot] = contribution.params;
             }
         }
+    }
+}
+
+/// Active effect data for embedding in a lane instance.
+/// Field order and types mirror `EffectVisuals` in `assets/shaders/common/effect_visuals.wesl`.
+#[derive(ShaderType, Clone, Copy, Debug, Default)]
+pub struct EffectVisuals {
+    /// One bit per active effect type.
+    pub mask: u32,
+    /// Per-effect parameters, indexed by slot.
+    pub params: [Vec4; EFFECT_VISUAL_SLOTS],
+}
+
+/// A lane component that can render aggregated effect visuals.
+pub trait EffectVisualTarget: Component<Mutability = Mutable> {
+    fn effects_mut(&mut self) -> &mut EffectVisuals;
+}
+
+/// Copies changed [`EffectVisualState`] values into each entity's [`EffectVisualTarget`].
+/// The render sink's domain registers it once per target type.
+pub fn sync_effect_visuals<T: EffectVisualTarget>(
+    mut targets: Query<(&EffectVisualState, &mut T), Changed<EffectVisualState>>,
+) {
+    for (state, mut target) in targets.iter_mut() {
+        *target.effects_mut() = state.visuals;
     }
 }

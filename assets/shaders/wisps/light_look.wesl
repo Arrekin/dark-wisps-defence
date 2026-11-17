@@ -1,3 +1,4 @@
+import package::shaders::common::clock::wrap_rate;
 import package::shaders::common::core::TAU;
 import package::shaders::common::effect_visuals::BRITTLE_BIT;
 import package::shaders::common::voronoi_border::{voronoi_border_2d, voronoi_hash_2d};
@@ -58,19 +59,20 @@ fn wisp_light(uv: vec2<f32>, time: f32, look: WispMotionLook, effects_mask: u32)
     let r = length(p) * 2.0; // 0 at centre, ~1 at the inscribed edge
     let ang = atan2(p.y, p.x);
     let vigor = look.vigor;
-    let pulse = 0.85 + 0.15 * sin(time * PULSE_SPEED + look.seed);
+    let pulse = 0.85 + 0.15 * sin(time * wrap_rate(PULSE_SPEED, TAU) + look.seed);
 
     // ── Slowly-rotating god-ray beams (fixed geometry; speed only brightens) ──
-    let spin = time * ROT_SPEED + look.seed;
+    let spin = time * wrap_rate(ROT_SPEED, TAU) + look.seed;
+    let counter_spin = time * wrap_rate(ROT_SPEED * 0.6, TAU) + look.seed * 0.6;
     let beams = pow(0.5 + 0.5 * sin((ang + spin) * RAYS_PRIMARY), RAY_SHARP) * 0.7
-              + pow(0.5 + 0.5 * sin((ang - spin * 0.6) * RAYS_SECONDARY + 1.3), RAY_SHARP) * 0.3;
+              + pow(0.5 + 0.5 * sin((ang - counter_spin) * RAYS_SECONDARY + 1.3), RAY_SHARP) * 0.3;
     let reach = 0.55; // constant — the star geometry never changes with speed
     let rays = beams * exp(-r / reach) * smoothstep(0.0, 0.1, r) * pulse * (1.0 + 0.3 * vigor);
 
     // Prismatic dispersion: the beams are white at the core and split into a vivid
     // spectrum from close in — where they are still bright — so the colour reads.
     // An angular prism fan, deliberately unlike the quantum field's chromatic rim.
-    let hue = ang / TAU + time * 0.04;
+    let hue = ang / TAU + time * wrap_rate(0.04, 1.0);
     let dispersion = SPECTRUM_SAT * smoothstep(0.08, 0.4, r);
     let ray_color = mix(vec3<f32>(1.0), spectrum(hue), dispersion);
 
@@ -95,7 +97,7 @@ fn wisp_light(uv: vec2<f32>, time: f32, look: WispMotionLook, effects_mask: u32)
     var motes_rgb = vec3<f32>(0.0); // each mote carries its own spectral tint
     for (var i = 0; i < NUM_MOTES; i = i + 1) {
         let rnd = voronoi_hash_2d(vec2<f32>(f32(i), look.seed)); // per-mote randoms
-        let life = fract(time * MOTE_RATE + rnd.x);     // staggered 0..1 lifetime
+        let life = fract(time * wrap_rate(MOTE_RATE, 1.0) + rnd.x); // staggered 0..1 lifetime
         let spread = (rnd.y - 0.5) * MOTE_SPREAD * life;        // fan out as it ages
         let pos = wake * (life * MOTE_REACH) + wake_perp * spread;
         let glow = (1.0 - smoothstep(0.0, MOTE_SIZE, length(p - pos))) * (1.0 - life);

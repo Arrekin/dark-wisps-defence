@@ -12,6 +12,7 @@ use bevy::{
 };
 
 use game_core::prelude::{FaceSurface, MapObject, ObjectFaceRequest, WispType};
+use visuals::clock::ClockInstant;
 
 use super::looks::{WispElectricVisual, WispFireVisual, WispLightVisual, WispWaterVisual};
 
@@ -29,7 +30,7 @@ impl Plugin for WispFacePlugin {
     }
 }
 
-// Stateless materials; each face shader derives its output from node UVs and global time.
+// Each face shader derives its output from node UVs and Bevy's shader clock.
 #[derive(Asset, AsBindGroup, TypePath, Clone, Copy, Debug)]
 pub(crate) struct WispFireFaceMaterial {}
 impl UiMaterial for WispFireFaceMaterial {
@@ -39,8 +40,14 @@ impl UiMaterial for WispFireFaceMaterial {
 }
 
 #[derive(Asset, AsBindGroup, TypePath, Clone, Copy, Debug)]
-pub(crate) struct WispWaterFaceMaterial {}
+pub(crate) struct WispWaterFaceMaterial {
+    /// Spawn instant on Bevy's shader clock, used to anchor oscillator phases.
+    #[uniform(0)]
+    anchor: ClockInstant,
+}
 impl UiMaterial for WispWaterFaceMaterial {
+    visuals::specialize_ui_with_shared_gpu!();
+
     fn fragment_shader() -> ShaderRef {
         "shaders/wisps/water_face.wesl".into()
     }
@@ -65,19 +72,21 @@ impl UiMaterial for WispElectricFaceMaterial {
 fn on_object_face_request_draw_wisp(
     trigger: On<ObjectFaceRequest>,
     mut commands: Commands,
+    time: Res<Time>,
     mut fire_materials: ResMut<Assets<WispFireFaceMaterial>>,
     mut water_materials: ResMut<Assets<WispWaterFaceMaterial>>,
     mut light_materials: ResMut<Assets<WispLightFaceMaterial>>,
     mut electric_materials: ResMut<Assets<WispElectricFaceMaterial>>,
 ) {
     let ObjectFaceRequest { entity, object: MapObject::Wisp(wisp_type), surface, alpha } = *trigger else { return };
+    let now = ClockInstant::shader_now(&time);
 
     match surface {
         FaceSurface::Ui => {
             let mut face_node = commands.entity(entity);
             match wisp_type {
                 WispType::Fire => { face_node.insert(MaterialNode(fire_materials.add(WispFireFaceMaterial {}))); }
-                WispType::Water => { face_node.insert(MaterialNode(water_materials.add(WispWaterFaceMaterial {}))); }
+                WispType::Water => { face_node.insert(MaterialNode(water_materials.add(WispWaterFaceMaterial { anchor: now }))); }
                 WispType::Light => { face_node.insert(MaterialNode(light_materials.add(WispLightFaceMaterial {}))); }
                 WispType::Electric => { face_node.insert(MaterialNode(electric_materials.add(WispElectricFaceMaterial {}))); }
             }
@@ -88,7 +97,7 @@ fn on_object_face_request_draw_wisp(
             let mut face_entity = commands.entity(entity);
             match wisp_type {
                 WispType::Fire => { face_entity.insert(WispFireVisual::new(alpha)); }
-                WispType::Water => { face_entity.insert(WispWaterVisual::new(alpha)); }
+                WispType::Water => { face_entity.insert(WispWaterVisual::new(alpha, now)); }
                 WispType::Light => { face_entity.insert(WispLightVisual::new(alpha)); }
                 WispType::Electric => { face_entity.insert(WispElectricVisual::new(alpha)); }
             }

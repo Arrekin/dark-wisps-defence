@@ -11,6 +11,8 @@ use bevy::{
     ui_render::ui_material::UiMaterial,
 };
 
+use visuals::clock::ClockInstant;
+
 const SHADER_ASSET_PATH: &str = "shaders/widgets/rune.wesl";
 
 // ============================================================================
@@ -23,8 +25,9 @@ pub struct RuneParams {
     pub seed: u32,
     pub stroke_width: f32,
     pub tilt: f32,
-    /// Seconds on the same clock the shader reads from `globals.time`.
-    pub start_time: f32,
+    /// Uniform buffers require nested structs to be 16-byte aligned.
+    #[shader(align(16))]
+    pub start: ClockInstant,
 }
 
 /// The glyph's fade, evaluated in the shader from its age. Keeping the whole curve on the
@@ -50,6 +53,8 @@ pub struct RuneMaterial {
 }
 
 impl UiMaterial for RuneMaterial {
+    visuals::specialize_ui_with_shared_gpu!();
+
     fn fragment_shader() -> ShaderRef {
         SHADER_ASSET_PATH.into()
     }
@@ -92,18 +97,19 @@ impl RuneFlight {
 #[derive(Component, Clone, Copy, Debug)]
 pub struct Rune {
     pub flight: RuneFlight,
-    pub started_at: f32,
+    /// Instant on Bevy's shader clock when the flight began.
+    pub start: ClockInstant,
     pub size: f32,
 }
 
 impl Rune {
     /// Progress along the flight, 0..=1. At 1 the rune has arrived.
-    pub fn progress(&self, now: f32) -> f32 {
+    pub fn progress(&self, now: ClockInstant) -> f32 {
         if self.flight.duration <= 0. { return 1.0 }
-        ((now - self.started_at) / self.flight.duration).clamp(0., 1.)
+        (self.start.seconds_until(now) / self.flight.duration).clamp(0., 1.)
     }
 
-    pub fn position(&self, now: f32) -> Vec2 {
+    pub fn position(&self, now: ClockInstant) -> Vec2 {
         self.flight.position(self.progress(now))
     }
 }
@@ -148,14 +154,14 @@ impl BuilderRune {
         self
     }
 
-    pub fn params(&self, start_time: f32) -> RuneParams {
+    pub fn params(&self, start: ClockInstant) -> RuneParams {
         RuneParams {
             // Only the low twelve bits pick branches, and the spine keeps a zero seed from
             // drawing nothing at all.
             seed: self.seed & 0xFFF,
             stroke_width: self.stroke_width,
             tilt: self.tilt,
-            start_time,
+            start,
         }
     }
 

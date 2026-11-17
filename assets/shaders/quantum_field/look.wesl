@@ -1,7 +1,8 @@
 // Procedural quantum field glow: boundary, interior tint and moiré lattice.
 
+import package::shaders::common::clock::wrap_rate;
 import package::shaders::common::core::TAU;
-import package::shaders::common::value_noise::{value_fbm_2d, value_noise_curl_2d};
+import package::shaders::common::value_noise::{value_fbm_2d_drift, value_noise_curl_2d_drift};
 
 // ── Effect switches ──────────────────────────────────────────────────────────
 const ENABLE_BOUNDARY:             bool = true;
@@ -79,7 +80,7 @@ fn quantum_field_masks(
     // Uncertain boundary: wobble the effective edge used for masking.
     var edge_sdf = box_sdf(local, half_extent);
     if ENABLE_BOUNDARY_UNCERTAINTY {
-        let jitter = value_fbm_2d(noise_at * BOUNDARY_UNCERT_FREQ + vec2<f32>(seed, time * 0.3)) - 0.5;
+        let jitter = value_fbm_2d_drift(noise_at * BOUNDARY_UNCERT_FREQ + vec2<f32>(seed, 0.0), time, vec2<f32>(0.0, 0.3)) - 0.5;
         edge_sdf += jitter * 2.0 * BOUNDARY_UNCERT_AMP;
     }
 
@@ -107,16 +108,16 @@ fn quantum_field_glow(
     // Drifting standing-wave brightness modulation.
     var bright = 1.0;
     if ENABLE_INTERFERENCE {
-        let w1 = sin(dot(local, vec2<f32>(1.0, 0.3))  * INTERFERENCE_SCALE * TAU + time * INTERFERENCE_SPEED);
-        let w2 = sin(dot(local, vec2<f32>(-0.4, 1.0)) * INTERFERENCE_SCALE * TAU - time * INTERFERENCE_SPEED * 0.8);
+        let w1 = sin(dot(local, vec2<f32>(1.0, 0.3))  * INTERFERENCE_SCALE * TAU + time * wrap_rate(INTERFERENCE_SPEED, TAU));
+        let w2 = sin(dot(local, vec2<f32>(-0.4, 1.0)) * INTERFERENCE_SCALE * TAU - time * wrap_rate(INTERFERENCE_SPEED * 0.8, TAU));
         bright = 0.55 + 0.45 * (w1 + w2) * 0.5; // ~0.1 .. 1.0
     }
 
     // Combine the two warped grids into the moiré lattice.
     var lattice = 0.0;
     if ENABLE_MOIRE {
-        let warp = value_noise_curl_2d(local * MOIRE_WARP_SCALE + vec2<f32>(time * MOIRE_WARP_SPEED + seed, 0.0)) * MOIRE_WARP_STRENGTH;
-        let la = grid_wave(local * MOIRE_SCALE_A + warp + vec2<f32>(time * 0.05, 0.0));
+        let warp = value_noise_curl_2d_drift(local * MOIRE_WARP_SCALE + vec2<f32>(seed, 0.0), time, vec2<f32>(MOIRE_WARP_SPEED, 0.0)) * MOIRE_WARP_STRENGTH;
+        let la = grid_wave(local * MOIRE_SCALE_A + warp + vec2<f32>(time * wrap_rate(0.05, 1.0), 0.0));
         let lb = grid_wave(rotate(local, MOIRE_ROT) * MOIRE_SCALE_B + warp);
         lattice = la * lb;
     }

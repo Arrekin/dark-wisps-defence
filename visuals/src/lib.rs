@@ -1,9 +1,9 @@
 #![feature(associated_type_defaults)]
 
 pub mod canvas;
+pub mod clock;
 pub mod color_pulsation;
 pub mod cut_lane;
-pub mod effect_visuals;
 pub mod explosion;
 pub mod lane;
 pub mod map_light;

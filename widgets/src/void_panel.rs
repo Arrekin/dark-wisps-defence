@@ -14,6 +14,8 @@ use bevy::{
     ui_render::ui_material::UiMaterial,
 };
 
+use visuals::clock::ClockInstant;
+
 use crate::common::fade::{Fade, FadeState};
 
 // ============================================================================
@@ -52,7 +54,8 @@ pub struct VoidPanelStyleResponse {
 /// Animation parameters for the two surges traveling around the panel border.
 #[derive(ShaderType, Clone, Copy, Debug)]
 pub struct VoidPanelBorderSurge {
-    /// Laps of the perimeter per second.
+    /// Perimeter laps per second (quantized in the shader to fit an integer number of laps per
+    /// clock wrap).
     pub rate: f32,
     /// Length of one surge along the border, in pixels.
     pub span: f32,
@@ -103,6 +106,8 @@ pub struct VoidPanelMaterial {
 }
 
 impl UiMaterial for VoidPanelMaterial {
+    visuals::specialize_ui_with_shared_gpu!();
+
     fn fragment_shader() -> ShaderRef {
         SHADER_ASSET_PATH.into()
     }
@@ -202,7 +207,7 @@ impl VoidPanel {
     }
 
     /// Starts a fade on any state whose target has moved. Called by the sync system.
-    pub fn begin_fades(&mut self, now: f32) {
+    pub fn begin_fades(&mut self, now: ClockInstant) {
         self.selected.begin_fade(now);
         self.hover.begin_fade(now);
         self.style_amount.begin_fade(now);

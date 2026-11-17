@@ -1,8 +1,9 @@
 import bevy_sprite_render::mesh2d::vertex_output::VertexOutput;
 import bevy_sprite_render::mesh2d::view_bindings::globals;
+import package::shaders::common::clock::{wrap_count, wrap_index, wrap_period};
 import package::shaders::common::fire_ramp::{FIRE_HEAT_CAP, fire_ramp};
 import package::shaders::common::hash::{HASH_GOLDEN, hash_mix, hash_unit};
-import package::shaders::common::value_noise::value_fbm_3d;
+import package::shaders::common::value_noise::value_fbm_3d_drift;
 import package::shaders::weaponry::ground_fire::{GROUND_FIRE_ALL_CLOSED, ground_fire};
 
 // `ImpactFire` shader on a `FlameStream`'s hit tile (world units relative to tile center,
@@ -41,7 +42,7 @@ fn look(mesh: VertexOutput, impact: Instance) -> vec4<f32> {
     let across = dot(from_hit, normal);
     let radius = length(from_hit);
     let angle = atan2(across, along);
-    let spray = value_fbm_3d(vec3<f32>(angle * 2.2, radius / 6.0 - time * 5.0, time * 1.3), 4);
+    let spray = value_fbm_3d_drift(vec3<f32>(angle * 2.2, radius / 6.0, 0.0), time, vec3<f32>(0.0, -5.0, 1.3), 4);
     let spread = SPLASH * (0.35 + 0.65 * smoothstep(-12.0, 6.0, along));
     let fan = (1.0 - smoothstep(spread * 0.55, spread, abs(across) + (spray - 0.5) * 18.0))
         * smoothstep(-16.0, -6.0, along) * (1.0 - smoothstep(4.0, 16.0, along + (spray - 0.5) * 10.0));
@@ -49,7 +50,7 @@ fn look(mesh: VertexOutput, impact: Instance) -> vec4<f32> {
     // Downstream clinging flames around `hit_point`.
     let downstream = max(along, 0.0);
     let cling_radius = length(from_hit - direction * downstream * 0.55);
-    let tongues = value_fbm_3d(vec3<f32>(angle * 1.6, cling_radius / 5.0 - time * 4.0, time), 4);
+    let tongues = value_fbm_3d_drift(vec3<f32>(angle * 1.6, cling_radius / 5.0, 0.0), time, vec3<f32>(0.0, -4.0, 1.0), 4);
     let cling = smoothstep(17.0, 7.0, cling_radius + (tongues - 0.5) * 12.0) * smoothstep(3.5, 7.5, radius);
 
     // Full-cell surface flames and cell border highlight.
@@ -67,10 +68,12 @@ fn look(mesh: VertexOutput, impact: Instance) -> vec4<f32> {
     // Additive sparks with exponential drag (`v(t) = v0 * exp(-SPARK_DRAG * t)`).
     for (var i = 0u; i < SPARK_COUNT; i++) {
         let spark_hash = hash_mix((i * HASH_GOLDEN) ^ bitcast<u32>(impact.seed));
-        let life = 0.2 + 0.45 * hash_unit(spark_hash);
+        let rough_life = 0.2 + 0.45 * hash_unit(spark_hash);
+        let life = wrap_period(rough_life);
         let cycle_time = globals.time / life + hash_unit(hash_mix(spark_hash));
         let phase = fract(cycle_time);
-        let cycle_hash = hash_mix(spark_hash ^ bitcast<u32>(floor(cycle_time)));
+        // Wrap the cycle index so sparks in flight do not jump when `globals.time` wraps.
+        let cycle_hash = hash_mix(spark_hash ^ bitcast<u32>(wrap_index(floor(cycle_time), wrap_count(rough_life))));
         let sideways = (hash_unit(cycle_hash) * 2.0 - 1.0) * 150.0;
         let backward = -20.0 - hash_unit(hash_mix(cycle_hash)) * 70.0;
         let velocity = direction * backward + normal * sideways;

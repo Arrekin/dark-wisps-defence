@@ -1,5 +1,6 @@
 import bevy_ui_render::ui_vertex_output::{UiVertexOutput};
 import bevy_render::globals::{Globals};
+import package::shaders::common::clock::wrap_rate;
 import package::shaders::widgets::fade::{Fade, eased};
 
 // Parameterized UI material using pixel-space signed-distance fields with derivative-based
@@ -206,7 +207,7 @@ fn fragment(in: UiVertexOutput) -> @location(0) vec4<f32> {
     //
     // Two surges travel half a lap apart and increase the contour's width and intensity.
     let perimeter = 2.0 * (size.x + size.y);
-    let lap = material.border_surge.rate * globals.time;
+    let lap = wrap_rate(material.border_surge.rate, 1.0) * globals.time;
     let here = perimeter_position(p, half_size);
     let nearest_surge = min(ring_gap(here, lap), ring_gap(here, lap + 0.5));
     let surge = (1.0 - smoothstep(0.0, material.border_surge.span / perimeter, nearest_surge)) * surge_amount;

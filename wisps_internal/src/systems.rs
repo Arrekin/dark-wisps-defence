@@ -11,7 +11,7 @@ use indexes::{
     wisps::WispsGrid,
 };
 use resources::prelude::*;
-use visuals::prelude::*;
+use visuals::{clock::ClockInstant, prelude::*};
 use wisps::prelude::*;
 
 use super::{
@@ -28,7 +28,7 @@ const BACKOFF_SPEED_MULTIPLIER: f32 = 0.5;
 const DRIVE_EPSILON: f32 = 0.01;
 
 /// Updates water-wisp vigor and heading from [`Locomotion`].
-/// Writes only when motion inputs exceed `DRIVE_EPSILON` or the shader clock wraps.
+/// Writes only when motion inputs exceed `DRIVE_EPSILON`.
 ///
 /// Before changing vigor, advances each oscillator phase at its previous rate and resets the
 /// time anchor. This keeps the shader animation continuous across speed changes.
@@ -43,9 +43,7 @@ pub(crate) fn drive_wisp_water_look(
     const SURF_RATE_REST: f32 = 1.5;
     const SURF_RATE_SWING: f32 = 6.0;
 
-    // The wrapped clock the shader reads as `globals.time`, so anchors line up.
-    let now = time.elapsed_wrapped().as_secs_f32();
-    let wrap_period = time.wrap_period().as_secs_f32();
+    let now = ClockInstant::shader_now(&time);
 
     for (locomotion, mut visual) in wisps.iter_mut() {
         let (vigor, heading) = wisp_motion(locomotion);
@@ -53,23 +51,17 @@ pub(crate) fn drive_wisp_water_look(
         // Read through `Deref` first, so an unchanged wisp is not marked changed.
         let applied_vigor = visual.look.vigor;
         let applied_heading = visual.look.heading;
-        let applied_anchor = visual.look.anchor_time;
 
         let vigor_changed = (vigor - applied_vigor).abs() > DRIVE_EPSILON;
         let heading_changed = (heading - applied_heading).abs().max_element() > DRIVE_EPSILON;
-        let clock_wrapped = now < applied_anchor;
-        if !(vigor_changed || heading_changed || clock_wrapped) { continue; }
+        if !(vigor_changed || heading_changed) { continue; }
 
         let look = &mut visual.look;
         // Preserve the phase accumulated at the previous rate before changing vigor.
-        let elapsed = if now >= look.anchor_time {
-            now - look.anchor_time
-        } else {
-            now + wrap_period - look.anchor_time
-        };
+        let elapsed = look.anchor.seconds_until(now);
         look.stroke_anchor_phase += elapsed * (STROKE_RATE_REST + STROKE_RATE_SWING * look.vigor);
         look.surf_anchor_phase += elapsed * (SURF_RATE_REST + SURF_RATE_SWING * look.vigor);
-        look.anchor_time = now;
+        look.anchor = now;
         look.vigor = vigor;
         look.heading = heading;
     }

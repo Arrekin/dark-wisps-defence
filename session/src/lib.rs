@@ -1,5 +1,5 @@
 //! Shared session state: game time, entity lifetimes, statistics and the game-start moment.
-//! `session_internal` owns updates, expiry, persistence and GPU clock uploads.
+//! `session_internal` owns updates, expiry, persistence and the GPU game clock upload.
 
 use bevy::prelude::*;
 use serde::Serialize;
@@ -16,10 +16,6 @@ pub struct GameClock {
     pub elapsed: f64,
 }
 impl GameClock {
-    /// Seconds after which the wrapped clock starts again at zero. Mirrors `GAME_TIME_WRAP_PERIOD`
-    /// in `assets/shaders/common/game_time.wesl`.
-    const WRAP_PERIOD: f64 = 3600.;
-
     /// The current moment on the game timeline, in seconds.
     /// Holds the same value as `elapsed` but reads as a point in time, not a span.
     /// Use it to stamp or compare timestamps.
@@ -30,24 +26,6 @@ impl GameClock {
     /// The game time `seconds` from now.
     pub fn from_now(&self, seconds: impl Into<f64>) -> f64 {
         self.elapsed + seconds.into()
-    }
-
-    /// Shader clock in seconds, wrapped to one hour before conversion to f32 to limit precision loss.
-    /// Use [`Self::wrapped_since`] to measure durations shorter than the wrap period.
-    pub fn wrapped(&self) -> f32 {
-        Self::wrap(self.elapsed)
-    }
-
-    /// Wraps an absolute game time to the same one-hour range as [`Self::wrapped`].
-    pub fn wrap(timestamp: f64) -> f32 {
-        timestamp.rem_euclid(Self::WRAP_PERIOD) as f32
-    }
-
-    /// Seconds since a timestamp from [`Self::wrapped`], accounting for one clock wrap.
-    /// Elapsed time must be shorter than one hour. Mirrors `game_time_since` in
-    /// `assets/shaders/common/game_time.wesl`.
-    pub fn wrapped_since(&self, timestamp: f32) -> f32 {
-        (self.wrapped() - timestamp).rem_euclid(Self::WRAP_PERIOD as f32)
     }
 }
 

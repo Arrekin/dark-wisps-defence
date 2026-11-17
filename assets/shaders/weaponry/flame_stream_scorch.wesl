@@ -1,7 +1,7 @@
 import bevy_sprite_render::mesh2d::vertex_output::VertexOutput;
+import package::shaders::common::clock::{ClockInstant, game_time_since};
 import package::shaders::common::core::{CELL_HALF, CELL_SIZE};
 import package::shaders::common::fire_ramp::fire_ramp;
-import package::shaders::common::game_time::game_time_since;
 import package::shaders::common::value_noise::value_fbm_3d;
 import package::shaders::grids::obstacles::{LEVEL_ON_ELEVATION, LEVEL_ON_GROUND, STRUCTURE_WALL, structure_at};
 
@@ -10,12 +10,12 @@ import package::shaders::grids::obstacles::{LEVEL_ON_ELEVATION, LEVEL_ON_GROUND,
 
 // Field order and types mirror `FlameScorch` in weaponry_internal/src/flame_stream_fire.rs.
 struct Instance {
-    start_time: f32, // wrapped game time the tile stopped burning
-    duration: f32,   // seconds the scorch lives
-    strength: f32,   // normalized char intensity (0..1) from burn duration
+    start: ClockInstant, // game clock instant the tile stopped burning
+    duration: f32,       // seconds the scorch lives
+    strength: f32,       // normalized char intensity (0..1) from burn duration
     seed: f32,
-    half_size: f32,  // quad half-size in world units
-    level: u32,      // level code (LEVEL_*)
+    half_size: f32,      // quad half-size in world units
+    level: u32,          // level code (LEVEL_*)
 };
 
 const DARKNESS: f32 = 0.5;
@@ -28,7 +28,7 @@ fn look(mesh: VertexOutput, scorch: Instance) -> vec4<f32> {
         return vec4<f32>(0.0);
     }
 
-    let life = saturate(game_time_since(scorch.start_time) / scorch.duration); // normalized age (0..1)
+    let life = saturate(game_time_since(scorch.start) / scorch.duration); // normalized age (0..1)
     let p = (vec2<f32>(mesh.uv.x, 1.0 - mesh.uv.y) - vec2<f32>(0.5)) * 2.0 * scorch.half_size;
     let noise = value_fbm_3d(vec3<f32>(p / 4.0, scorch.seed), 4);
     let tile_distance = max(abs(p.x), abs(p.y));

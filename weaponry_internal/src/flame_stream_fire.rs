@@ -18,6 +18,7 @@ use indexes::obstacles::level_gpu_index;
 use session::{GameClock, TimeBound};
 use states::prelude::GameState;
 use visuals::{
+    clock::ClockInstant,
     lane::{LanePlugin, LaneVisual},
     shader::{ADDITIVE_BLENDING, seed_from_entity},
 };
@@ -198,8 +199,8 @@ impl LaneVisual for ImpactFireVisual {
 #[derive(Component, ShaderType, TypePath, Clone)]
 #[require(MapBound, ZDepth::FlameScorch)]
 struct FlameScorch {
-    /// Wrapped game time the tile stopped burning.
-    start_time: f32,
+    /// Game clock instant the tile stopped burning.
+    start: ClockInstant,
     duration: f32,
     /// Normalized char intensity in `0.0..=1.0`, from the burn duration.
     strength: f32,
@@ -360,7 +361,7 @@ fn update_impact_fires(
             let time_bound = TimeBound::lasting(&clock, SCORCH_DURATION);
             commands.spawn((
                 FlameScorch {
-                    start_time: GameClock::wrap(time_bound.starts_at),
+                    start: ClockInstant::at(time_bound.starts_at),
                     duration: time_bound.duration() as f32,
                     strength,
                     seed: (position.coords.x * 31 + position.coords.y) as f32 % 97.,

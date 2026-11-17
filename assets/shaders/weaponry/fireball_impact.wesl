@@ -1,7 +1,7 @@
 import bevy_sprite_render::mesh2d::vertex_output::VertexOutput;
 import bevy_sprite_render::mesh2d::view_bindings::globals;
+import package::shaders::common::clock::{CLOCK_WRAP_PERIOD, ClockInstant, game_time_since, wrap_fade, wrap_mix};
 import package::shaders::common::core::TAU;
-import package::shaders::common::game_time::game_time_since;
 import package::shaders::common::fire_ramp::fire_ramp;
 import package::shaders::common::gradient_noise::{gradient_fbm_2d, gradient_noise_2d};
 import package::shaders::common::hash::{HASH_GOLDEN, hash_mix, hash_unit};
@@ -18,7 +18,7 @@ import package::shaders::common::map_info::grid_contains;
 
 // Field order and types mirror `FireballImpact` in weaponry_internal/src/fireball.rs.
 struct Instance {
-    start_time: f32,      // wrapped game time of the impact
+    start: ClockInstant,  // game clock instant of the impact
     seed: f32,
     layer: u32,           // 0 = blast, 1 = scorch
     duration: f32,        // seconds the layer lives
@@ -106,6 +106,24 @@ fn scorch_layer(q: vec2<f32>, age: f32, on_map: f32) -> vec4<f32> {
     return out;
 }
 
+// Time-varying gradient-noise samples for the blast splatter, ring licks, and billow swirl.
+struct Flicker {
+    flicker: f32,
+    lick: f32,
+    swirl: vec2<f32>,
+};
+
+fn flicker_at(q: vec2<f32>, dir: vec2<f32>, noise_point: vec2<f32>, time: f32) -> Flicker {
+    return Flicker(
+        gradient_noise_2d(q * 3.0 + vec2<f32>(0.0, time * 4.0)),
+        gradient_fbm_2d(dir * RING_LICKS + vec2<f32>(time * 2.0, impact.seed), 3),
+        vec2<f32>(
+            gradient_fbm_2d(noise_point * 0.6 + vec2<f32>(5.0 + time * 0.7, 1.0), 2),
+            gradient_fbm_2d(noise_point * 0.6 + vec2<f32>(-3.0, 9.0 - time * 0.9), 2),
+        ),
+    );
+}
+
 fn blast_layer(q: vec2<f32>, age: f32, time: f32, on_map: f32) -> vec4<f32> {
     let main_half = impact.main_half_size;
     let ring_half = impact.ring_half_size;
@@ -122,14 +140,25 @@ fn blast_layer(q: vec2<f32>, age: f32, time: f32, on_map: f32) -> vec4<f32> {
     let ring_phase = clamp(age / RING_TIME, 0.0, 1.0);
     let ring_radius = ring_half * (1.0 - pow(1.0 - ring_phase, 3.0));
     let splat_noise = gradient_fbm_2d(q * SPLAT_SCALE + vec2<f32>(-5.0, 17.0), 4);
-    let flicker = gradient_noise_2d(q * 3.0 + vec2<f32>(0.0, time * 4.0));
+    let noise_point = q * NOISE_SCALE / max(main_half, 0.5) - dir * age * BILLOW_SPEED + vec2<f32>(impact.seed);
+    var flickering = flicker_at(q, dir, noise_point, time);
+    let fade = wrap_fade(globals.time);
+    if fade > 0.0 {
+        let earlier = flicker_at(q, dir, noise_point, time - CLOCK_WRAP_PERIOD);
+        flickering = Flicker(
+            wrap_mix(flickering.flicker, earlier.flicker, fade),
+            wrap_mix(flickering.lick, earlier.lick, fade),
+            vec2<f32>(wrap_mix(flickering.swirl.x, earlier.swirl.x, fade), wrap_mix(flickering.swirl.y, earlier.swirl.y, fade)),
+        );
+    }
+    let flicker = flickering.flicker;
     let splat_threshold = 0.6 + 0.15 * clamp(age / SPLAT_LIFE, 0.0, 1.0);
     let splat_region = (1.0 - smoothstep(ring_radius - 0.1, ring_radius + 0.05, m)) * (1.0 - smoothstep(ring_half - 0.2, ring_half + 0.1, m));
     let splat = smoothstep(splat_threshold, splat_threshold + 0.04, splat_noise + (flicker - 0.5) * 0.08)
         * splat_region * SPLAT * (1.0 - smoothstep(SPLAT_LIFE * 0.4, SPLAT_LIFE, age)) * on_map;
     out = premultiplied_over(out, fire_ramp(0.45 + 0.15 * flicker), splat);
 
-    let lick = gradient_fbm_2d(dir * RING_LICKS + vec2<f32>(time * 2.0, impact.seed), 3);
+    let lick = flickering.lick;
     let thickness = RING_THICKNESS * (0.6 + 0.8 * lick);
     let behind_front = m - ring_radius;
     let ring_mask = smoothstep(-thickness, 0.0, behind_front) * (1.0 - smoothstep(0.0, thickness * 0.3, behind_front));
@@ -142,11 +171,7 @@ fn blast_layer(q: vec2<f32>, age: f32, time: f32, on_map: f32) -> vec4<f32> {
     // Main blast expands, breaks into patches, and fades to smoke.
     let life = age / CORE_LIFE;
     let core_radius = main_half * CORE_FILL * (1.0 - exp(-age * CORE_GROW));
-    let noise_point = q * NOISE_SCALE / max(main_half, 0.5) - dir * age * BILLOW_SPEED + vec2<f32>(impact.seed);
-    let swirl = vec2<f32>(
-        gradient_fbm_2d(noise_point * 0.6 + vec2<f32>(5.0 + time * 0.7, 1.0), 2),
-        gradient_fbm_2d(noise_point * 0.6 + vec2<f32>(-3.0, 9.0 - time * 0.9), 2),
-    ) - 0.5;
+    let swirl = flickering.swirl - 0.5;
     let density = gradient_fbm_2d(noise_point + swirl * 0.9 + vec2<f32>(31.0, 7.0), 4);
     let envelope = 1.0 - m / max(core_radius, 1e-3);
     let field = density + BIAS * (envelope - 0.25) - BURN * smoothstep(0.25, 1.0, life);
@@ -185,7 +210,7 @@ fn blast_layer(q: vec2<f32>, age: f32, time: f32, on_map: f32) -> vec4<f32> {
 
 fn look(mesh: VertexOutput, instance: Instance) -> vec4<f32> {
     impact = instance;
-    let age = game_time_since(impact.start_time);
+    let age = game_time_since(impact.start);
     let mesh_half_size = f32(impact.reach) + 0.5;
     let q = vec2<f32>(mesh.uv.x - 0.5, 0.5 - mesh.uv.y) * 2.0 * mesh_half_size;
     let on_map = map_coverage(q);

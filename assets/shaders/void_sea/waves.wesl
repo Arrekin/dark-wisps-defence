@@ -1,20 +1,15 @@
+import package::shaders::common::clock::{CLOCK_WRAP_PERIOD, wrap_count, wrap_index};
 import package::shaders::common::core::{CELL_SIZE, TAU};
 import package::shaders::common::hash::{HASH_GOLDEN, hash_coords, hash_mix, hash_unit};
 import package::shaders::common::map_info::grid_bounds;
-import package::shaders::common::value_noise::value_noise_2d;
+import package::shaders::common::value_noise::{value_noise_2d, value_noise_2d_drift};
 
 // Waves on the glass around the map. Each stretch of the glass gets waves on its own random schedule: a
 // wave runs in from the sea, crashes into the glass and dies there. Most waves are small; now and then a
 // big one comes. A slow swell energy drifts along the glass and decides where the big ones land.
 //
-// Time is Bevy's shader clock, which wraps to 0 every `TIME_WRAP` seconds. Every repeat fits a whole
-// number of times into the wrap, and drifting noise crossfades into its own state at time 0 before it,
-// so the wrap shows no seam.
-
-// Mirrors Bevy's default `Time::wrap_period`, which wraps `globals.time`.
-const TIME_WRAP: f32 = 3600.0;
-// Seconds before the wrap over which drifting noise crossfades into its state at time 0.
-const WRAP_FADE: f32 = 20.0;
+// Driven by `globals.time`. Cyclic periods and drifting noise are quantized or crossfaded across
+// `CLOCK_WRAP_PERIOD` so the wrap boundary is seamless (see `common/clock.wesl`).
 
 // Calm height of the sea's surface above the map, in world units.
 const WATER_HEIGHT: f32 = 60.0;
@@ -38,31 +33,6 @@ const SET_SPEED: f32 = 0.06;
 // with the shortest stretch length.
 const HIT_REACH: i32 = 2;
 const HIT_SALT: u32 = 0x1f83d9abu;
-
-// How many times a repeat of about this period fits into the wrap.
-fn wrap_count(period: f32) -> f32 {
-    return max(floor(TIME_WRAP / period + 0.5), 1.0);
-}
-
-// The repeat period nearest to `period` that fits a whole number of times into the wrap.
-fn wrap_period(period: f32) -> f32 {
-    return TIME_WRAP / wrap_count(period);
-}
-
-// A whole-number index folded into 0..count-1. Exact where a plain modulo can land on count itself.
-fn wrap_index(index: f32, count: f32) -> f32 {
-    return index - count * floor((index + 0.5) / count);
-}
-
-// How far the crossfade into the wrap has come: 0 until `WRAP_FADE` seconds before it, then up to 1.
-fn wrap_fade(t: f32) -> f32 {
-    return smoothstep(TIME_WRAP - WRAP_FADE, TIME_WRAP, t);
-}
-
-// Crossfades two samples of 0..1 noise, keeping the noise's spread for uncorrelated samples.
-fn wrap_mix(now: f32, wrapped: f32, fade: f32) -> f32 {
-    return 0.5 + (mix(now, wrapped, fade) - 0.5) / sqrt(fade * fade + (1.0 - fade) * (1.0 - fade));
-}
 
 fn floored_mod(x: f32, y: f32) -> f32 {
     return x - y * floor(x / y);
@@ -127,12 +97,19 @@ fn wall_point(s: f32) -> WallPoint {
     return WallPoint(vec2<f32>(0.0, size.y - along), vec2<f32>(-1.0, 0.0));
 }
 
-// Value noise along the glass, seamless where the coordinate wraps. `scale` is the feature size in
-// world units.
+// Value noise sampled around a circle so it is seamless along the closed perimeter. `scale` is the
+// feature size in world units; `z` offsets the sample slice.
 fn wall_noise(wall: vec2<f32>, scale: f32, z: f32) -> f32 {
     let angle = TAU * wall.x / wall.y;
     let ring = wall.y / (TAU * scale);
     return value_noise_2d(vec2<f32>(cos(angle), sin(angle)) * ring + vec2<f32>(z, 0.0));
+}
+
+// `wall_noise` drifting at `rate` cells/s over wrapped `time`.
+fn wall_noise_drift(wall: vec2<f32>, scale: f32, time: f32, rate: f32) -> f32 {
+    let angle = TAU * wall.x / wall.y;
+    let ring = wall.y / (TAU * scale);
+    return value_noise_2d_drift(vec2<f32>(cos(angle), sin(angle)) * ring, time, vec2<f32>(rate, 0.0));
 }
 
 // One wave as it affects a point of the glass.
@@ -164,10 +141,10 @@ fn stretch_hit(wall: vec2<f32>, t: f32, k: i32) -> Hit {
     let stretch = floored_mod(base + f32(k), stretches);
     let h0 = hash_coords(vec2<f32>(stretch, 0.0), HIT_SALT);
     let cycles = wrap_count(IMPACT_PERIOD * (0.6 + 0.8 * hash_unit(h0)));
-    let period = TIME_WRAP / cycles;
+    let period = CLOCK_WRAP_PERIOD / cycles;
     let offset = hash_unit(hash_mix(h0 ^ HASH_GOLDEN));
     let cycle = t / period + offset;
-    // The generation counts around the wrap, so the wave in flight at the wrap carries on unchanged.
+    // Wrap the generation index so an in-flight wave's hash does not jump when `t` wraps.
     let generation = wrap_index(floor(cycle), cycles);
     let age = fract(cycle);
     let h1 = hash_mix(h0 ^ (u32(generation) * HASH_GOLDEN));

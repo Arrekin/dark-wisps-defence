@@ -4,7 +4,7 @@ use logging::prelude::*;
 use persistence::prelude::*;
 use session::GameClock;
 use states::prelude::{GameState, MapLoadingStage};
-use visuals::shared_gpu::{SharedGpuBinding, SharedGpuWriter};
+use visuals::{clock::ClockInstant, shared_gpu::{SharedGpuBinding, SharedGpuWriter}};
 
 pub(crate) struct GameClockPlugin;
 impl Plugin for GameClockPlugin {
@@ -13,7 +13,7 @@ impl Plugin for GameClockPlugin {
             .init_resource::<GameClock>()
             .add_systems(OnEnter(MapLoadingStage::Init), |mut commands: Commands| { commands.insert_resource(GameClock::default()); })
             .add_systems(PreUpdate, advance_game_clock.run_if(in_state(GameState::Running)))
-            .add_systems(PostUpdate, upload_gpu_game_time.run_if(resource_changed::<GameClock>))
+            .add_systems(PostUpdate, upload_gpu_game_clock.run_if(resource_changed::<GameClock>))
             .add_systems(CollectSave, collect_game_clock)
             .register_loader(MapLoadingStage::LoadResources, "game_clock", load_game_clock);
     }
@@ -23,11 +23,11 @@ fn advance_game_clock(time: Res<Time>, mut clock: ResMut<GameClock>) {
     clock.elapsed += time.delta_secs_f64();
 }
 
-fn upload_gpu_game_time(
+fn upload_gpu_game_clock(
     mut shared_gpu: SharedGpuWriter,
     clock: Res<GameClock>,
 ) {
-    shared_gpu.write(SharedGpuBinding::GameTime, [clock.wrapped()]);
+    shared_gpu.write(SharedGpuBinding::GameClock, [ClockInstant::at(clock.now())]);
 }
 
 fn collect_game_clock(clock: Res<GameClock>, mut save: SaveWriter) {

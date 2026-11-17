@@ -1,15 +1,16 @@
 // Floor cover entries per cell, uploaded by indexes_internal through the shared GPU group.
 // Custom materials enable this group through visuals::shared_gpu; lane shaders include it.
 
+import package::shaders::common::clock::ClockInstant;
 import package::shaders::common::map_info::{grid_contains, grid_index};
 
 // Field order and types mirror `GpuFloorCoverEntry` in indexes_internal/src/floor_cover.rs.
 struct FloorCoverEntry {
     kind: u32,
-    // Wrapped game time.
-    starts_at: f32,
-    // Wrapped game time, or `FLOOR_COVER_PERMANENT_END`.
-    ends_at: f32,
+    // Game-clock instant when the cover started.
+    start: ClockInstant,
+    // Lifetime in seconds, or `FLOOR_COVER_PERMANENT_DURATION`.
+    duration: f32,
     // Level code (LEVEL_* in grids/obstacles.wesl).
     level: u32,
 };
@@ -23,8 +24,8 @@ struct FloorCoverEntry {
 const FLOOR_COVER_CHAR: u32 = 0u;
 const FLOOR_COVER_NAPALM: u32 = 1u;
 
-// End time of an entry without a lifetime. Mirrors `PERMANENT_END` in indexes_internal/src/floor_cover.rs.
-const FLOOR_COVER_PERMANENT_END: f32 = -1.0;
+// Duration sentinel for entries without `TimeBound`. Mirrors `PERMANENT_DURATION` in indexes_internal/src/floor_cover.rs.
+const FLOOR_COVER_PERMANENT_DURATION: f32 = -1.0;
 
 // Returns the start and end offsets of the cell's entries in `floor_cover_cell_entries`.
 // Returns an empty range outside the map.
@@ -37,7 +38,7 @@ fn floor_cover_entries_at(coords: vec2<i32>) -> vec2<u32> {
 }
 
 fn floor_cover_is_permanent(entry: FloorCoverEntry) -> bool {
-    return entry.ends_at == FLOOR_COVER_PERMANENT_END;
+    return entry.duration == FLOOR_COVER_PERMANENT_DURATION;
 }
 
 // Checks for an entry of `kind` on the floor of `level` at `coords`.

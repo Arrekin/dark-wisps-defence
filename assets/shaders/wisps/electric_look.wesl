@@ -1,7 +1,8 @@
+import package::shaders::common::clock::{CLOCK_WRAP_PERIOD, wrap_index, wrap_rate};
 import package::shaders::common::core::{PI, TAU};
 import package::shaders::common::effect_visuals::BRITTLE_BIT;
 import package::shaders::common::hash::{hash_coords, hash_unit};
-import package::shaders::common::value_noise::{value_hash_2d, value_noise_2d};
+import package::shaders::common::value_noise::{value_hash_2d, value_noise_2d_drift};
 import package::shaders::common::voronoi_border::voronoi_border_2d;
 import package::shaders::wisps::motion_look::WispMotionLook;
 
@@ -17,6 +18,7 @@ const STRIKE_RATE: f32 = 8.0; // strikes per second per arc
 const STRIKE_DECAY: f32 = 4.0; // how fast a strike fades within its interval
 const NUM_ARCS: i32 = 8;
 const ARC_WANDER: f32 = 0.6;  // how far an arc's centreline swings, radians
+const ARC_WANDER_SPEED: f32 = 1.3; // centreline drift speed (noise cells/s)
 const ARC_CORE: f32 = 0.05;   // hot core half-width (arc-length units)
 const ARC_GLOW: f32 = 0.42;   // soft halo half-width
 
@@ -34,9 +36,9 @@ fn angle_diff(a: f32, b: f32) -> f32 {
 
 // One jagged arc from the core toward the rim. `base` is its striking angle;
 // the centreline wanders in angle as it climbs outward, giving the kinked path.
-fn arc(r: f32, ang: f32, base: f32, seed: f32, t: f32) -> f32 {
-    let wander = (value_noise_2d(vec2<f32>(r * 5.0 + seed, t)) - 0.5) * (ARC_WANDER * 2.0)
-               + (value_noise_2d(vec2<f32>(r * 13.0 + seed * 2.0, t * 1.7)) - 0.5) * ARC_WANDER;
+fn arc(r: f32, ang: f32, base: f32, seed: f32, time: f32) -> f32 {
+    let wander = (value_noise_2d_drift(vec2<f32>(r * 5.0 + seed, 0.0), time, vec2<f32>(0.0, ARC_WANDER_SPEED)) - 0.5) * (ARC_WANDER * 2.0)
+               + (value_noise_2d_drift(vec2<f32>(r * 13.0 + seed * 2.0, 0.0), time, vec2<f32>(0.0, ARC_WANDER_SPEED * 1.7)) - 0.5) * ARC_WANDER;
     let centre = base + wander;
     let d = abs(angle_diff(ang, centre)) * r; // angular gap → screen-space thinness
     let core = 1.0 - smoothstep(0.0, ARC_CORE, d);
@@ -75,22 +77,24 @@ fn wisp_electric(uv: vec2<f32>, time: f32, look: WispMotionLook, effects_mask: u
 
     // Arcs reach to the rim, each striking on its own staggered schedule so the
     // globe crackles continuously rather than strobing all at once.
+    let strike_rate = wrap_rate(STRIKE_RATE, 1.0);
     var bolts = 0.0;
     for (var k = 0; k < NUM_ARCS; k = k + 1) {
         let fk = f32(k);
-        let phase = time * STRIKE_RATE + look.seed + fk * 0.37;
-        let strike = floor(phase);
+        let phase = time * strike_rate + look.seed + fk * 0.37;
+        // Wrap the strike index so an active strike does not jump when `time` wraps.
+        let strike = wrap_index(floor(phase), strike_rate * CLOCK_WRAP_PERIOD);
         let env = exp(-fract(phase) * STRIKE_DECAY);            // fire then fade
         let base = hash11(strike + fk * 17.0 + look.seed) * TAU; // re-aim each strike
         let live = step(0.35, hash11(strike * 1.7 + fk * 5.0 + look.seed)); // some skip
-        bolts += arc(r, ang, base, fk * 9.0 + look.seed, time * 1.3) * env * live;
+        bolts += arc(r, ang, base, fk * 9.0 + look.seed, time) * env * live;
     }
     bolts *= crackle;
 
     // White-hot nucleus, surging with a shared strike pulse.
-    let surge = exp(-fract(time * STRIKE_RATE + look.seed) * STRIKE_DECAY);
+    let surge = exp(-fract(time * strike_rate + look.seed) * STRIKE_DECAY);
     let core_intensity = smoothstep(0.22, 0.0, r);
-    let core = core_intensity * (0.75 + 0.25 * sin(time * 25.0 + look.seed) + surge * 0.6);
+    let core = core_intensity * (0.75 + 0.25 * sin(time * wrap_rate(25.0, TAU) + look.seed) + surge * 0.6);
 
     // Sparks: sparse twinkling points in the outer body; while travelling, extra
     // sparks light up behind the heading, shedding into the wake.
@@ -98,7 +102,7 @@ fn wisp_electric(uv: vec2<f32>, time: f32, look: WispMotionLook, effects_mask: u
     let dir = p / max(length(p), 1e-4);
     let back = max(0.0, -dot(dir, heading)); // 1 directly behind travel, 0 ahead
     let sp = p * 9.0;
-    let twinkle = step(0.92, fract(value_hash_2d(floor(sp)) + time * 3.0));
+    let twinkle = step(0.92, fract(value_hash_2d(floor(sp)) + time * wrap_rate(3.0, 1.0)));
     let spark_shape = (1.0 - smoothstep(0.0, 0.25, length(fract(sp) - 0.5))) * smoothstep(0.3, 0.95, r);
     let spark = twinkle * spark_shape * (0.5 + 1.2 * back * look.vigor);
 

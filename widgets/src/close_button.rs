@@ -13,6 +13,8 @@ use bevy::{
     ui_widgets::Button,
 };
 
+use visuals::clock::ClockInstant;
+
 use crate::common::fade::{Fade, FadeState};
 
 const SHADER_ASSET_PATH: &str = "shaders/widgets/close_button.wesl";
@@ -70,6 +72,8 @@ pub struct CloseButtonMaterial {
 }
 
 impl UiMaterial for CloseButtonMaterial {
+    visuals::specialize_ui_with_shared_gpu!();
+
     fn fragment_shader() -> ShaderRef {
         SHADER_ASSET_PATH.into()
     }
@@ -95,7 +99,7 @@ impl CloseButton {
         self.hover.set_target(if hovering { 1.0 } else { 0.0 });
     }
 
-    pub fn begin_fades(&mut self, now: f32) {
+    pub fn begin_fades(&mut self, now: ClockInstant) {
         self.hover.begin_fade(now);
     }
 

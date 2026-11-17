@@ -2,6 +2,7 @@
 
 use bevy::prelude::*;
 
+use visuals::clock::ClockInstant;
 use widgets::prelude::{BuilderCloseButton, CloseButton, CloseButtonMaterial};
 
 pub(crate) struct CloseButtonPlugin;
@@ -46,7 +47,7 @@ fn sync_close_buttons(
     mut materials: ResMut<Assets<CloseButtonMaterial>>,
     mut buttons: Query<(&mut CloseButton, &MaterialNode<CloseButtonMaterial>), Changed<CloseButton>>,
 ) {
-    let now = time.elapsed_secs();
+    let now = ClockInstant::shader_now(&time);
     for (mut button, material_handle) in buttons.iter_mut() {
         // Fade bookkeeping is derived state. Writing it through change detection would mark
         // the button changed again and requeue it here every frame, forever.

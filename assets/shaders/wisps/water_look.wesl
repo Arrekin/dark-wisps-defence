@@ -1,3 +1,5 @@
+import package::shaders::common::clock::{ClockInstant, shader_time_since, wrap_rate};
+import package::shaders::common::core::TAU;
 import package::shaders::common::effect_visuals::BRITTLE_BIT;
 import package::shaders::common::voronoi_border::voronoi_border_2d;
 
@@ -17,12 +19,12 @@ struct WispWaterLook {
     heading: vec2<f32>, // unit travel direction (quad-local)
     vigor: f32,         // measured speed / sweet-spot; the shader derives deform AND cadence from it
     // Oscillator phases are extrapolated from the GPU clock as
-    // `anchor_phase + (globals.time - anchor_time) * rate(vigor)`, so the wobble
+    // `anchor_phase + (seconds since anchor) * rate(vigor)`, so the wobble
     // keeps moving every frame without a per-frame upload (the CPU only re-anchors
     // on change). The rate is recomputed from vigor below — it is not stored.
     stroke_anchor_phase: f32, // swim-stroke phase at the anchor instant
     surf_anchor_phase: f32,   // rim-ripple phase at the anchor instant
-    anchor_time: f32,         // GPU-clock time the phases were anchored (wrapped seconds)
+    anchor: ClockInstant,     // shader-clock instant when the phases were anchored
 };
 
 // Mesh padding factor. Mirrors `WispWaterVisual::QUAD_SCALE` in wisps_internal/src/looks.rs:
@@ -52,7 +54,7 @@ fn brittle(color: vec4<f32>, q: vec2<f32>, body: f32, seed: f32) -> vec4<f32> {
 // at DEFORM_ASYMP, so the body deforms more with speed but never stretches enough to tear.
 const DEFORM_ASYMP: f32 = 1.25;
 // Oscillator cadences, radians/sec: rate = rest + swing * vigor. MUST match the
-// same-named constants in drive_water_material (wisps_internal/src/systems.rs), which uses
+// same-named constants in drive_wisp_water_look (wisps_internal/src/systems.rs), which uses
 // them for the CPU re-anchor. (Divergence shows up as a phase snap on speed changes.)
 const STROKE_RATE_REST: f32 = 3.5;
 const STROKE_RATE_SWING: f32 = 3.5;
@@ -66,7 +68,6 @@ const TAIL_TAPER: f32 = 0.22;   // how sharply the trailing edge pinches
 const CHURN_AMP_GAIN: f32 = 1.6;// extra rim amplitude at full travel
 
 fn wisp_water(uv: vec2<f32>, time: f32, look: WispWaterLook, effects_mask: u32) -> vec4<f32> {
-    let t = time * look.flow_speed;
     // Saturating geometry deform from raw vigor: 0 at rest, ≈1 at the sweet spot,
     // asymptotes at DEFORM_ASYMP so the body deforms more with speed but never tears.
     let deform = DEFORM_ASYMP * look.vigor / (look.vigor + DEFORM_ASYMP - 1.0);
@@ -79,8 +80,9 @@ fn wisp_water(uv: vec2<f32>, time: f32, look: WispWaterLook, effects_mask: u32) 
     // Locomotion strokes drive a forward lurch and a lateral wriggle. The cadence
     // is extrapolated from the GPU clock against a CPU-set anchor, so it keeps
     // moving every frame and a speed change re-anchors smoothly (no phase jump).
+    let age = shader_time_since(look.anchor, time);
     let stroke_rate = STROKE_RATE_REST + STROKE_RATE_SWING * look.vigor;
-    let stroke = look.stroke_anchor_phase + (time - look.anchor_time) * stroke_rate;
+    let stroke = look.stroke_anchor_phase + age * stroke_rate;
     let beat = sin(stroke + look.seed);
     let lunge = deform * (STRETCH_BASE + STRETCH_BEAT * beat);
     let lurch = deform * LURCH * beat;
@@ -104,7 +106,7 @@ fn wisp_water(uv: vec2<f32>, time: f32, look: WispWaterLook, effects_mask: u32) 
     // The rim churns harder and faster the quicker the wisp moves, so the wobble
     // reads as the effort propelling it rather than an idle shimmer.
     let surf_rate = SURF_RATE_REST + SURF_RATE_SWING * look.vigor;
-    let surf_t = look.surf_anchor_phase + (time - look.anchor_time) * surf_rate;
+    let surf_t = look.surf_anchor_phase + age * surf_rate;
     let wob = look.wobble * (1.0 + CHURN_AMP_GAIN * deform);
     let direction_to_edge = q / max(length(q), 1e-4);
     let trailing = max(0.0, -dot(direction_to_edge, h)); // 1 on the trailing side
@@ -134,8 +136,8 @@ fn wisp_water(uv: vec2<f32>, time: f32, look: WispWaterLook, effects_mask: u32) 
 
     // ── Roaming specular glint, biased toward the leading edge ────────────────
     let glint_pos = h * (0.18 * deform) + vec2<f32>(
-        cos(t * 0.7 + look.seed),
-        sin(t * 0.9 + look.seed * 1.7),
+        cos(time * wrap_rate(look.flow_speed * 0.7, TAU) + look.seed),
+        sin(time * wrap_rate(look.flow_speed * 0.9, TAU) + look.seed * 1.7),
     ) * 0.22;
     let glint = smoothstep(0.16, 0.0, length(q - glint_pos));
     col += foam * glint * 0.7 * body;

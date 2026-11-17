@@ -2,6 +2,7 @@
 
 use bevy::prelude::*;
 
+use visuals::clock::ClockInstant;
 use widgets::prelude::{BuilderVoidPanel, VoidPanel, VoidPanelMaterial};
 
 pub(crate) struct VoidPanelPlugin;
@@ -54,7 +55,7 @@ fn sync_void_panels(
     mut materials: ResMut<Assets<VoidPanelMaterial>>,
     mut panels: Query<(&mut VoidPanel, &MaterialNode<VoidPanelMaterial>), Changed<VoidPanel>>,
 ) {
-    let now = time.elapsed_secs();
+    let now = ClockInstant::shader_now(&time);
     for (mut panel, material_handle) in panels.iter_mut() {
         // Fade bookkeeping is derived state. Writing it through change detection would
         // mark the panel changed again and requeue it here every frame, forever.

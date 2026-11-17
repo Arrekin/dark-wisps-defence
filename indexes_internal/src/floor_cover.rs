@@ -1,10 +1,9 @@
 //! Maintains `FloorCoverGrid` through `FloorCover` insertion and removal observers.
 //! Replacing the component removes its old entries before indexing the new kind.
 //!
-//! Shaders read a flat entry list with offsets for each cell. Entries contain the cover kind,
-//! the level whose floor holds the cover, and wrapped lifetime timestamps, repeated for each
-//! covered cell. Each upload scans the entire grid and hides the canvases of floors without
-//! entries.
+//! Shaders read a flat entry list indexed by per-cell offsets. Each entry stores the cover kind,
+//! floor level, start instant, and duration, repeated for every cell the cover occupies. Each
+//! upload rebuilds the buffers and hides canvases for levels without active entries.
 
 use bevy::prelude::*;
 use bytemuck::{Pod, Zeroable};
@@ -13,9 +12,9 @@ use game_core::{prelude::{GridArea, MapInfo}, request_flag::RequestFlag};
 use grids::base::{GridCell, GridStack};
 use indexes::{floor_cover::{FloorCover, FloorCoverGrid}, obstacles::level_gpu_index};
 use logging::prelude::*;
-use session::{GameClock, TimeBound};
+use session::TimeBound;
 use states::prelude::MapLoadingStage;
-use visuals::shared_gpu::{SharedGpuBinding, SharedGpuWriter};
+use visuals::{clock::ClockInstant, shared_gpu::{SharedGpuBinding, SharedGpuWriter}};
 
 use crate::floor_cover_canvas::FloorCoverCanvas;
 
@@ -34,9 +33,9 @@ impl Plugin for FloorCoverPlugin {
     }
 }
 
-/// End-time sentinel for entries without `TimeBound`, outside the wrapped game time range.
-/// Mirrored by `FLOOR_COVER_PERMANENT_END` in `assets/shaders/grids/floor_cover.wesl`.
-const PERMANENT_END: f32 = -1.;
+/// Duration sentinel for entries without `TimeBound`.
+/// Mirrored by `FLOOR_COVER_PERMANENT_DURATION` in `assets/shaders/grids/floor_cover.wesl`.
+const PERMANENT_DURATION: f32 = -1.;
 
 /// GPU representation of a floor cover entry. Field order and types match `FloorCoverEntry` in
 /// `assets/shaders/grids/floor_cover.wesl`.
@@ -44,10 +43,10 @@ const PERMANENT_END: f32 = -1.;
 #[repr(C)]
 struct GpuFloorCoverEntry {
     kind: u32,
-    /// Wrapped game time.
-    starts_at: f32,
-    /// Wrapped game time, or `PERMANENT_END`.
-    ends_at: f32,
+    /// Game-clock instant when the cover started.
+    start: ClockInstant,
+    /// Lifetime in seconds, or `PERMANENT_DURATION`.
+    duration: f32,
     /// Level code from `level_gpu_index`.
     level: u32,
 }
@@ -129,11 +128,11 @@ fn upload_gpu_floor_cover(
         offsets.push(entries.len() as u32);
         entries.extend(cell.iter().map(|entry| {
             *is_floor_covered.at_mut(entry.level) = true;
-            let (starts_at, ends_at) = match time_bounds.get(entry.entity) {
-                Ok(time_bound) => (GameClock::wrap(time_bound.starts_at), GameClock::wrap(time_bound.ends_at)),
-                Err(_) => (0., PERMANENT_END),
+            let (start, duration) = match time_bounds.get(entry.entity) {
+                Ok(time_bound) => (ClockInstant::at(time_bound.starts_at), time_bound.duration() as f32),
+                Err(_) => (ClockInstant::default(), PERMANENT_DURATION),
             };
-            GpuFloorCoverEntry { kind: entry.kind.gpu_index(), starts_at, ends_at, level: level_gpu_index(entry.level) }
+            GpuFloorCoverEntry { kind: entry.kind.gpu_index(), start, duration, level: level_gpu_index(entry.level) }
         }));
     }
     offsets.push(entries.len() as u32);

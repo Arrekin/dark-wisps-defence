@@ -1,12 +1,17 @@
 // Burning napalm and char marks for the floor cover canvas. Adjacent cells of the same kind
 // join into a continuous surface. Game time controls expiry and fading; the shader clock
 // animates the flames. Both shaders return premultiplied colour.
+//
+// Napalm and char entities always carry a `TimeBound`, so `entry.duration` is always a finite
+// positive lifetime (`FLOOR_COVER_PERMANENT_DURATION` is never used here).
 
 import bevy_sprite_render::mesh2d::view_bindings::globals;
+import package::shaders::common::clock::game_time_since;
 import package::shaders::common::fire_ramp::{FIRE_HEAT_CAP, fire_ramp};
-import package::shaders::common::game_time::game_time_span;
 import package::shaders::common::value_noise::value_fbm_2d_octaves;
-import package::shaders::grids::floor_cover::{FLOOR_COVER_CHAR, FLOOR_COVER_NAPALM, floor_cover_cell_entries, floor_cover_entries_at, floor_cover_has_kind_at};
+import package::shaders::grids::floor_cover::{
+    FLOOR_COVER_CHAR, FLOOR_COVER_NAPALM, FloorCoverEntry, floor_cover_cell_entries, floor_cover_entries_at, floor_cover_has_kind_at,
+};
 import package::shaders::weaponry::ground_fire::{
     GROUND_FIRE_OPEN_BOTTOM, GROUND_FIRE_OPEN_BOTTOM_LEFT, GROUND_FIRE_OPEN_BOTTOM_RIGHT, GROUND_FIRE_OPEN_LEFT,
     GROUND_FIRE_OPEN_RIGHT, GROUND_FIRE_OPEN_TOP, GROUND_FIRE_OPEN_TOP_LEFT, GROUND_FIRE_OPEN_TOP_RIGHT,
@@ -51,11 +56,11 @@ fn open_sides(cell: vec2<i32>, kind: u32, level: u32) -> u32 {
 }
 
 // A patch flares on ignition, burns steadily, then fades before expiry.
-fn napalm_intensity(starts_at: f32, ends_at: f32) -> f32 {
-    let span = game_time_span(starts_at, ends_at);
-    let ignition = smoothstep(0.0, NAPALM_IGNITION, span.age);
-    let flare = 1.0 + NAPALM_FLARE_BOOST * (1.0 - smoothstep(NAPALM_IGNITION, NAPALM_FLARE_END, span.age));
-    let dying = saturate(span.remaining / NAPALM_DIE_DOWN);
+fn napalm_intensity(entry: FloorCoverEntry) -> f32 {
+    let age = game_time_since(entry.start);
+    let ignition = smoothstep(0.0, NAPALM_IGNITION, age);
+    let flare = 1.0 + NAPALM_FLARE_BOOST * (1.0 - smoothstep(NAPALM_IGNITION, NAPALM_FLARE_END, age));
+    let dying = saturate((entry.duration - age) / NAPALM_DIE_DOWN);
     return ignition * flare * dying;
 }
 
@@ -67,7 +72,7 @@ fn napalm_look(local: vec2<f32>, world: vec2<f32>, cell: vec2<i32>, level: u32) 
     for (var index = range.x; index < range.y; index++) {
         let entry = floor_cover_cell_entries[index];
         if entry.kind == FLOOR_COVER_NAPALM && entry.level == level {
-            intensity += napalm_intensity(entry.starts_at, entry.ends_at);
+            intensity += napalm_intensity(entry);
         }
     }
     if intensity <= 0.0 {
@@ -93,8 +98,7 @@ fn char_look(local: vec2<f32>, world: vec2<f32>, cell: vec2<i32>, level: u32) ->
     for (var index = range.x; index < range.y; index++) {
         let entry = floor_cover_cell_entries[index];
         if entry.kind == FLOOR_COVER_CHAR && entry.level == level {
-            let span = game_time_span(entry.starts_at, entry.ends_at);
-            let life = saturate(span.age / max(span.duration, 0.001));
+            let life = saturate(game_time_since(entry.start) / max(entry.duration, 0.001));
             transmittance *= 1.0 - CHAR_DARKNESS * (1.0 - smoothstep(0.3, 1.0, life));
             cinder_heat += exp(-life * CHAR_CINDER_DECAY);
         }

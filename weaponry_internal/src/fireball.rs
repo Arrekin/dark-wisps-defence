@@ -13,7 +13,7 @@
 //! them. Ground fire and scorch stay on the map.
 //!
 //! Body, glow and impact use dedicated lane layers for batching. Impact instances store a start
-//! time and duration; the shader derives age from the game clock without per-frame instance updates.
+//! instant and duration; the shader derives age from the game clock without per-frame instance updates.
 
 use bevy::{
     prelude::*,
@@ -29,6 +29,7 @@ use persistence::{prelude::*, rusqlite};
 use session::{GameClock, TimeBound};
 use states::prelude::{GameState, MapLoadingStage};
 use visuals::{
+    clock::ClockInstant,
     lane::{LanePlugin, LaneVisual},
     shader::{ADDITIVE_BLENDING, seed_from_entity},
 };
@@ -146,8 +147,8 @@ enum ImpactLayer {
 #[derive(Component, ShaderType, TypePath, Clone)]
 #[require(MapBound)]
 struct FireballImpact {
-    /// Wrapped game time of the impact.
-    start_time: f32,
+    /// Game clock instant of the impact.
+    start: ClockInstant,
     seed: f32,
     /// An `ImpactLayer`.
     layer: u32,
@@ -174,7 +175,7 @@ impl LaneVisual for FireballImpact {
 impl FireballImpact {
     fn new(layer: ImpactLayer, time_bound: TimeBound, seed: f32, landing_coords: GridCoords) -> Self {
         Self {
-            start_time: GameClock::wrap(time_bound.starts_at),
+            start: ClockInstant::at(time_bound.starts_at),
             seed,
             layer: layer as u32,
             duration: time_bound.duration() as f32,

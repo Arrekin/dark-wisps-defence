@@ -2,6 +2,7 @@
 
 use bevy::prelude::*;
 
+use visuals::clock::ClockInstant;
 use widgets::prelude::{BuilderProgressBar, ProgressBar, ProgressBarMaterial};
 
 pub(crate) struct ProgressBarPlugin;
@@ -36,7 +37,7 @@ fn sync_progress_bars(
     mut materials: ResMut<Assets<ProgressBarMaterial>>,
     mut bars: Query<(&mut ProgressBar, &MaterialNode<ProgressBarMaterial>), Changed<ProgressBar>>,
 ) {
-    let now = time.elapsed_secs();
+    let now = ClockInstant::shader_now(&time);
     for (mut bar, material_handle) in bars.iter_mut() {
         // Fade bookkeeping is derived state. Writing it through change detection would mark
         // the bar changed again and requeue it here every frame, forever.

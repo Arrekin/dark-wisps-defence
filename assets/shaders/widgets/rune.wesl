@@ -1,5 +1,6 @@
 import bevy_ui_render::ui_vertex_output::{UiVertexOutput};
 import bevy_render::globals::{Globals};
+import package::shaders::common::clock::{ClockInstant, shader_time_since};
 
 // A glyph with a fixed spine and twelve seed-selected branches.
 //
@@ -15,8 +16,8 @@ struct RuneParams {
     stroke_width: f32,
     // Radians. Small per-glyph rotations keep a column of runes from looking stamped.
     tilt: f32,
-    // Seconds on the same clock as globals.time.
-    start_time: f32,
+    // Uniform buffers require nested structs to be 16-byte aligned.
+    @align(16) start: ClockInstant,
 };
 
 // The glyph's fade is a function of its age alone, so the whole curve lives here and the
@@ -89,7 +90,7 @@ fn fragment(in: UiVertexOutput) -> @location(0) vec4<f32> {
     if (has_branch(bits, 10u)) { d = min(d, stroke(p, TL, BL)); }
     if (has_branch(bits, 11u)) { d = min(d, stroke(p, TR, BR)); }
 
-    let age = globals.time - material.params.start_time;
+    let age = shader_time_since(material.params.start, globals.time);
     let progress = clamp(age / max(material.life.duration, 1e-4), 0.0, 1.0);
     let rising = clamp(progress / max(material.life.fade_in, 1e-4), 0.0, 1.0);
     let falling = clamp((1.0 - progress) / max(material.life.fade_out, 1e-4), 0.0, 1.0);

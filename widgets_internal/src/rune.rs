@@ -4,6 +4,7 @@
 
 use bevy::prelude::*;
 
+use visuals::clock::ClockInstant;
 use widgets::prelude::{BuilderRune, Rune, RuneMaterial};
 
 pub(crate) struct RunePlugin;
@@ -26,10 +27,10 @@ fn on_builder_add_spawn_rune(
     let entity = trigger.entity;
     let Ok(builder) = builders.get(entity) else { return };
 
-    let started_at = time.elapsed_secs();
+    let start = ClockInstant::shader_now(&time);
     let material = materials.add(RuneMaterial {
         color: builder.color.to_linear(),
-        params: builder.params(started_at),
+        params: builder.params(start),
         life: builder.life(),
     });
     // A flight is described between centres, but `left`/`top` place a node's corner.
@@ -39,7 +40,7 @@ fn on_builder_add_spawn_rune(
         .remove::<BuilderRune>()
         .insert((
             MaterialNode(material),
-            Rune { flight: builder.flight, started_at, size: builder.size },
+            Rune { flight: builder.flight, start, size: builder.size },
             Node {
                 position_type: PositionType::Absolute,
                 left: Val::Px(corner.x),
@@ -59,7 +60,7 @@ fn advance_runes(
     time: Res<Time>,
     mut runes: Query<(Entity, &Rune, &mut Node)>,
 ) {
-    let now = time.elapsed_secs();
+    let now = ClockInstant::shader_now(&time);
     for (entity, rune, mut node) in runes.iter_mut() {
         if rune.progress(now) >= 1.0 {
             commands.entity(entity).try_despawn();

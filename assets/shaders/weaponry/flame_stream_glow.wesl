@@ -1,5 +1,7 @@
 import bevy_sprite_render::mesh2d::vertex_output::VertexOutput;
 import bevy_sprite_render::mesh2d::view_bindings::globals;
+import package::shaders::common::clock::wrap_rate;
+import package::shaders::common::core::TAU;
 import package::shaders::weaponry::flame_stream_common::BREAKUP;
 
 // Additive ground light under a `FlameStream`: axial band along `[tail, end]` plus a radial pool
@@ -34,7 +36,7 @@ fn look(mesh: VertexOutput, glow: Instance) -> vec4<f32> {
     var light = STREAM_LIGHT * heat * span * exp(-u * u / (radius * radius));
 
     // Radial pool at the hit point.
-    let flicker = 0.85 + 0.15 * sin(time * 31.0) * sin(time * 17.0);
+    let flicker = 0.85 + 0.15 * sin(time * wrap_rate(31.0, TAU)) * sin(time * wrap_rate(17.0, TAU));
     let to_end = vec2<f32>(s - glow.end, u);
     light += glow.hit * IMPACT_LIGHT * flicker * exp(-dot(to_end, to_end) / (IMPACT_RADIUS * IMPACT_RADIUS));
 

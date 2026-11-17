@@ -6702,7 +6702,6 @@ dependencies = [
 name = "visuals"
 version = "0.2.0"
 dependencies = [
- "alteration",
  "bevy",
  "bytemuck",
  "game_core",
@@ -7274,6 +7273,7 @@ dependencies = [
  "bevy",
  "resources",
  "states",
+ "visuals",
 ]
 
 [[package]]
@@ -7284,6 +7284,7 @@ dependencies = [
  "bevy",
  "game_core",
  "resources",
+ "visuals",
  "widgets",
 ]
 

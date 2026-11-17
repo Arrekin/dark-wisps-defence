@@ -1,6 +1,6 @@
 import bevy_sprite_render::mesh2d::vertex_output::VertexOutput;
+import package::shaders::common::clock::{ClockInstant, game_time_since};
 import package::shaders::common::fire_ramp::fire_ramp;
-import package::shaders::common::game_time::game_time_since;
 import package::shaders::common::hash::{hash_coords, hash_mix, hash_unit};
 import package::shaders::common::value_noise::{value_fbm_3d, value_noise_3d};
 
@@ -14,10 +14,10 @@ import package::shaders::common::value_noise::{value_fbm_3d, value_noise_3d};
 
 // Field order and types mirror `InfernoDomeFire` in weaponry_internal/src/inferno_dome.rs.
 struct Instance {
-    start_time: f32, // wrapped game time of the discharge
-    radius: f32,     // dome radius in world units
-    seed: f32,       // per-entity noise offset
-    half_size: f32,  // quad half-size in world units
+    start: ClockInstant, // game clock instant of the discharge
+    radius: f32,         // dome radius in world units
+    seed: f32,           // per-entity noise offset
+    half_size: f32,      // quad half-size in world units
 };
 
 // The instance being drawn, set by `look` for the helpers below.
@@ -232,7 +232,7 @@ fn embers(p: vec2<f32>, radius: f32, age: f32) -> vec3<f32> {
 fn look(mesh: VertexOutput, instance: Instance) -> vec4<f32> {
     dome = instance;
     let p = (vec2<f32>(mesh.uv.x, 1.0 - mesh.uv.y) - vec2<f32>(0.5)) * 2.0 * dome.half_size;
-    let age = game_time_since(dome.start_time);
+    let age = game_time_since(dome.start);
     let radius = dome.radius;
     let progress = age / BREAKUP_TIME;
 

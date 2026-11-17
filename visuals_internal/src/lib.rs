@@ -2,6 +2,7 @@ pub(crate) mod color_pulsation;
 pub(crate) mod cut;
 pub(crate) mod explosion;
 pub(crate) mod render_schedule;
+pub(crate) mod shader_clock;
 pub(crate) mod shared_gpu;
 pub(crate) mod sprite_animation;
 pub(crate) mod void_sea;
@@ -20,6 +21,7 @@ impl Plugin for VisualsPlugin {
                 render_schedule::BandedCore2dPlugin,
                 cut::CutPlugin,
                 shared_gpu::SharedGpuPlugin,
+                shader_clock::ShaderClockPlugin,
                 explosion::ExplosionPlugin,
                 void_sea::VoidSeaPlugin,
                 wisp_attack::WispAttackEffectPlugin,

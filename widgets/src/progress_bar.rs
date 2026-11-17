@@ -19,6 +19,8 @@ use bevy::{
     ui_render::ui_material::UiMaterial,
 };
 
+use visuals::clock::ClockInstant;
+
 use crate::common::fade::{Fade, FadeState};
 
 const SHADER_ASSET_PATH: &str = "shaders/widgets/progress_bar.wesl";
@@ -99,6 +101,8 @@ pub struct ProgressBarMaterial {
 }
 
 impl UiMaterial for ProgressBarMaterial {
+    visuals::specialize_ui_with_shared_gpu!();
+
     fn fragment_shader() -> ShaderRef {
         SHADER_ASSET_PATH.into()
     }
@@ -141,7 +145,7 @@ impl ProgressBar {
         self.marker.set_target(reachable) | self.band.set_target(reachable)
     }
 
-    pub fn begin_fades(&mut self, now: f32) {
+    pub fn begin_fades(&mut self, now: ClockInstant) {
         self.progress.begin_fade(now);
         self.marker.begin_fade(now);
         self.band.begin_fade(now);

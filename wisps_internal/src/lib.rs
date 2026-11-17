@@ -8,11 +8,12 @@ pub(crate) mod tooltip;
 use bevy::prelude::*;
 
 use almanach::{WispInfo, prelude::*};
+use alteration::effects::visual::sync_effect_visuals;
 use game_core::motion::MotionSystems;
 use grids::{ObstacleChangeSystems, placement::PlacementFeedbackSystems};
 use persistence::prelude::{AppGameLoadSaveExtension, CollectSave};
 use states::prelude::*;
-use visuals::{effect_visuals::sync_effect_visuals, lane::LanePlugin};
+use visuals::lane::LanePlugin;
 use wisps::prelude::*;
 
 pub struct WispsPlugin;

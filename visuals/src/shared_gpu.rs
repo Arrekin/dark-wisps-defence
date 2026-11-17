@@ -37,8 +37,8 @@ use strum::{EnumIter, IntoEnumIterator};
 pub enum SharedGpuBinding {
     /// `GpuMapInfo`, read through `shaders::common::map_info`.
     MapInfo = 100,
-    /// The wrapped game time, one `f32`, read through `shaders::common::game_time`.
-    GameTime = 101,
+    /// The current game clock instant, one `ClockInstant`, read through `shaders::common::clock`.
+    GameClock = 101,
     /// Dark ore fill, one `f32` per cell, read through `shaders::dark_ore::fill`.
     DarkOreFill = 102,
     /// Obstacle cells, one packed `u32` per cell, read through `shaders::grids::obstacles`.
@@ -61,6 +61,8 @@ pub enum SharedGpuBinding {
     FloorCoverCellOffsets = 112,
     /// Floor cover entries concatenated in cell order, read through `shaders::grids::floor_cover`.
     FloorCoverCellEntries = 113,
+    /// The epoch of Bevy's shader clock, one `u32`, read through `shaders::common::clock`.
+    ShaderClockEpoch = 114,
 }
 impl SharedGpuBinding {
     pub fn index(self) -> u32 {

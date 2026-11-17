@@ -175,13 +175,28 @@ the [shared-data API](../../visuals/src/shared_gpu.rs) and the corresponding sha
 
 Choose a clock according to the visual's intended pause behaviour. Game time stops while the
 game is paused; Bevy's shader clock continues. A gameplay-timed blast should age on game time,
-while an ambient animation may intentionally continue during a pause.
+while an ambient or UI animation may continue during a pause.
 
-Temporary visuals store a start time and duration so the shader can derive their age without
-per-frame age updates from the CPU. A `TimeBound` on the same clock despawns the entity.
-Shader game time wraps to preserve floating-point precision over long sessions, so durations
-measured this way must be shorter than the wrap period. The `GameClock` API defines
-that contract.
+Both clocks wrap to zero every `CLOCK_WRAP_PERIOD` seconds to preserve `f32` precision over
+long sessions:
+
+- **Elapsed time and ages.** Store start times as a [`ClockInstant`](../../visuals/src/clock.rs),
+  which pairs the clock's wrap count (`epoch`) with the wrapped seconds. Elapsed time between
+  two instants remains continuous across wraps, so long-lived or finished visuals never jump or
+  replay at the wrap boundary. Temporary world visuals pair a start instant and duration with a
+  `TimeBound` that despawns the entity. `ClockInstant::shader_now` stamps Bevy's shader clock;
+  `ClockInstant::at` converts an elapsed time such as `GameClock::now()`. Shaders read both
+  clocks through [`common/clock.wesl`](../../assets/shaders/common/clock.wesl) via the shared
+  GPU group.
+- **Seamless periodic animation.** A looping animation has no seam at the wrap when an integer
+  number of cycles fits into `CLOCK_WRAP_PERIOD`. `common/clock.wesl` provides `wrap_period`
+  and `wrap_rate` to quantize periods and rates to the wrap period, and `wrap_index` to fold
+  per-cycle indices modulo the cycle count per wrap.
+- **Drifting noise.** Periodic value noise in
+  [`common/value_noise.wesl`](../../assets/shaders/common/value_noise.wesl) quantizes its drift
+  velocity so the noise lattice repeats once per wrap at no extra sample cost. Non-periodic
+  noise (such as gradient or simplex noise scrolling across a plane) can crossfade into its
+  wrap-shifted sample shortly before the wrap using `wrap_fade` and `wrap_mix`.
 
 ## Performance tradeoffs
 

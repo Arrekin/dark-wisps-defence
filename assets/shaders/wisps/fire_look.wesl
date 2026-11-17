@@ -1,3 +1,4 @@
+import package::shaders::common::clock::{CLOCK_WRAP_PERIOD, wrap_fade, wrap_mix, wrap_rate};
 import package::shaders::common::core::TAU;
 import package::shaders::common::effect_visuals::BRITTLE_BIT;
 import package::shaders::common::fire_ramp::fire_ramp;
@@ -92,6 +93,16 @@ fn snoise(v: vec2<f32>) -> f32 {
     return 130.0 * dot(m, g);
 }
 
+// 2D simplex noise scrolling at `scroll` units/s over wrapped `time`. Since `snoise` is non-periodic,
+// crossfades into the wrap-shifted sample shortly before `CLOCK_WRAP_PERIOD`.
+fn scrolling_snoise(v: vec2<f32>, scroll: vec2<f32>, time: f32) -> f32 {
+    let now = snoise(v + scroll * time);
+    let fade = wrap_fade(time);
+    if fade <= 0.0 { return now; }
+    let earlier = snoise(v + scroll * (time - CLOCK_WRAP_PERIOD));
+    return wrap_mix(now * 0.5 + 0.5, earlier * 0.5 + 0.5, fade) * 2.0 - 1.0;
+}
+
 // A single stylized flame in a local frame.
 //   fx: signed lateral position (0 = centreline)
 //   fy: 0 at the base, 1 at the tip
@@ -101,7 +112,7 @@ fn flame_mask(fx: f32, fy: f32, t: f32, seed: f32) -> f32 {
     // Teardrop shaping: squish, sway (stronger toward the top), pinch to a point.
     var px = fx * FLAME_SIZE * FLAME_WIDTH;
     let py = (fy - 0.5) * FLAME_SIZE;
-    let disp = max(0.0, sin(t * DISPLACEMENT_SPEED + py * DISPLACEMENT_FREQUENCY + seed)
+    let disp = max(0.0, sin(t * wrap_rate(DISPLACEMENT_SPEED, TAU) + py * DISPLACEMENT_FREQUENCY + seed)
                       * DISPLACEMENT_STRENGTH * pow(max(fy - 0.1, 0.0), DISPLACEMENT_EXPONENT));
     px = px + disp;
     px = px + px / pow(max(1.0 - py, 0.05), TEAR_EXPONENT); // teardrop point at the top
@@ -109,8 +120,8 @@ fn flame_mask(fx: f32, fy: f32, t: f32, seed: f32) -> f32 {
     let base = 1.0 - pow(gradient, BASE_SHARPNESS);
 
     // Smooth simplex noise scrolling outward — animates the surface (the flicker).
-    let up0 = snoise(vec2<f32>(fx, fy) * NOISE_SCALE + vec2<f32>(seed, -t * NOISE_SPEED)) * NOISE_MULT + NOISE_GAIN;
-    let up1 = 0.5 + snoise(vec2<f32>(fx, fy) * NOISE_SCALE * 1.7 + vec2<f32>(seed + 4.0, -t * NOISE_SPEED * 0.8)) * NOISE_MULT + NOISE_GAIN;
+    let up0 = scrolling_snoise(vec2<f32>(fx, fy) * NOISE_SCALE + vec2<f32>(seed, 0.0), vec2<f32>(0.0, -NOISE_SPEED), t) * NOISE_MULT + NOISE_GAIN;
+    let up1 = 0.5 + scrolling_snoise(vec2<f32>(fx, fy) * NOISE_SCALE * 1.7 + vec2<f32>(seed + 4.0, 0.0), vec2<f32>(0.0, -NOISE_SPEED * 0.8), t) * NOISE_MULT + NOISE_GAIN;
     var flame = base * up0 * up1;
 
     // Dissolve the tip into breaking tendrils.
@@ -130,7 +141,7 @@ fn fire_corona(p: vec2<f32>, t: f32, seed: f32, wind: vec2<f32>) -> f32 {
         let r1 = fract(sin(fk * 12.9898 + seed * 1.7) * 43758.5453);
         let r2 = fract(sin(fk * 78.2330 + seed * 2.3) * 24634.6345);
         // Evenly spaced slot, swinging tangentially about it (the chaos at rest).
-        let slot_ang = (fk + 0.5) / f32(NUM_LICKS) * TAU + sin(t * LICK_SWAY_SPEED + r1 * TAU) * LICK_SWAY;
+        let slot_ang = (fk + 0.5) / f32(NUM_LICKS) * TAU + sin(t * wrap_rate(LICK_SWAY_SPEED, TAU) + r1 * TAU) * LICK_SWAY;
         let slot_dir = vec2<f32>(cos(slot_ang), sin(slot_ang));
         // Length keyed to the home slot: wake-facing licks stream longer, front ones shorten.
         let len = max(LICK_LEN * (0.7 + 0.6 * r2) * (1.0 + LICK_LEN_BIAS * dot(wind, slot_dir)), 0.05);
@@ -177,19 +188,18 @@ fn brittle(color: vec4<f32>, c: vec2<f32>, seed: f32) -> vec4<f32> {
 fn wisp_fire(uv: vec2<f32>, time: f32, look: WispMotionLook, effects_mask: u32) -> vec4<f32> {
     let p = (uv - vec2<f32>(0.5)) * QUAD_SCALE; // y points down
     let r = length(p);
-    let t = time;
 
     // ── Glowing molten orb — the wisp's body ──────────────────────────────────
     // Mostly-stable and hot, with a slow molten shimmer on its surface (no hard blink).
-    let pulse = 0.97 + 0.03 * sin(t * PULSE_SPEED + look.seed);
-    let churn = snoise(p * 5.0 + vec2<f32>(t * 0.4, -t * 0.3)) * CORE_CHURN;
+    let pulse = 0.97 + 0.03 * sin(time * wrap_rate(PULSE_SPEED, TAU) + look.seed);
+    let churn = scrolling_snoise(p * 5.0, vec2<f32>(0.4, -0.3), time) * CORE_CHURN;
     let orb_body = smoothstep(CORE_RADIUS, CORE_RADIUS * 0.1, r);
     let orb_heat = clamp(orb_body * (pulse + churn), 0.0, 1.0);
 
     // ── Flame licks all around it ─────────────────────────────────────────────
     // Locomotion wind: points opposite to travel, scaled by (bounded) speed; 0 at rest.
     let wind = -look.heading * min(look.vigor, 1.5);
-    let flame = fire_corona(p, t, look.seed, wind);
+    let flame = fire_corona(p, time, look.seed, wind);
 
     // ── Compose: additive HDR so the flames stay translucent over the orb ─────
     let orb_rgb = fire_ramp(orb_heat);

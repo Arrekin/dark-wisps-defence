@@ -7,11 +7,13 @@
 // in, the seam burns like the rim.
 
 import bevy_sprite_render::mesh2d::{vertex_output::VertexOutput, view_bindings::globals};
+import package::shaders::common::clock::{wrap_count, wrap_index, wrap_period, wrap_rate};
+import package::shaders::common::core::TAU;
 import package::shaders::common::displacement::world_offset_to_uv;
 import package::shaders::common::fire_ramp::fire_ramp;
 import package::shaders::common::hash::{HASH_GOLDEN, hash_coords, hash_mix, hash_unit};
 import package::shaders::common::map_light::MAP_SUN_DIRECTION;
-import package::shaders::common::value_noise::{value_fbm_3d, value_noise_3d};
+import package::shaders::common::value_noise::{value_fbm_3d_drift, value_noise_3d_drift};
 import package::shaders::fields::fields::{FieldShape, field_boundary, field_owners_at, field_shapes};
 
 // Field order and types mirror `CrucibleFieldDome` in fields_internal/src/crucible_field.rs.
@@ -81,9 +83,12 @@ const EMBER_SALT: u32 = 0x510e527fu;
 // value noise eases, at the same moment.
 const TIME_WALK: vec3<f32> = vec3<f32>(0.37, 0.23, 1.0);
 
-fn churn_noise(q: vec2<f32>, z: f32) -> f32 {
-    let walk = TIME_WALK * z;
-    return (value_noise_3d(vec3<f32>(q, 0.0) + walk) + 0.5 * value_noise_3d(vec3<f32>(q * 2.1 + vec2<f32>(4.3, 1.7), 0.0) + walk * 1.7)) / 1.5;
+// Two-octave 3D noise at `q`, drifting along `TIME_WALK` at `rate` cells/s from `offset`.
+fn churn_noise(q: vec2<f32>, offset: f32, time: f32, rate: f32) -> f32 {
+    let walk = TIME_WALK * offset;
+    let coarse = value_noise_3d_drift(vec3<f32>(q, 0.0) + walk, time, TIME_WALK * rate);
+    let fine = value_noise_3d_drift(vec3<f32>(q * 2.1 + vec2<f32>(4.3, 1.7), 0.0) + walk * 1.7, time, TIME_WALK * rate * 1.7);
+    return (coarse + 0.5 * fine) / 1.5;
 }
 
 // ── Place ────────────────────────────────────────────────────────────────────
@@ -122,11 +127,16 @@ fn haze_offset(world_position: vec2<f32>, field: Instance, shape: FieldShape, ti
     let toward_rim = smoothstep(0.4, 1.0, here.relative_distance);
     let spread = mix(HAZE_INTERIOR, 1.0, toward_rim) * edge_fade;
     let q = world_position / HAZE_SCALE;
-    let z = HAZE_SPEED * time + field.seed;
-    let shimmer = vec2<f32>(churn_noise(q, z), churn_noise(q + vec2<f32>(19.0, 7.0), z)) * 2.0 - 1.0;
+    let shimmer = vec2<f32>(
+        churn_noise(q, field.seed, time, HAZE_SPEED),
+        churn_noise(q + vec2<f32>(19.0, 7.0), field.seed, time, HAZE_SPEED),
+    ) * 2.0 - 1.0;
     let wave_q = world_position / HAZE_WAVE_SCALE;
-    let wave_z = HAZE_WAVE_SPEED * time + field.seed + 50.0;
-    let waves = vec2<f32>(churn_noise(wave_q, wave_z), churn_noise(wave_q + vec2<f32>(31.0, 13.0), wave_z)) * 2.0 - 1.0;
+    let wave_offset = field.seed + 50.0;
+    let waves = vec2<f32>(
+        churn_noise(wave_q, wave_offset, time, HAZE_WAVE_SPEED),
+        churn_noise(wave_q + vec2<f32>(31.0, 13.0), wave_offset, time, HAZE_WAVE_SPEED),
+    ) * 2.0 - 1.0;
     return ((shimmer * HAZE_STRENGTH + waves * HAZE_WAVES) * spread - direction * LENS * toward_rim * edge_fade) * field.progress;
 }
 
@@ -140,15 +150,16 @@ fn dome_shade(normal: vec3<f32>) -> f32 {
 // Thin tendrils on the hemisphere, crawling up toward the apex, densest where the eye looks through the
 // most shell.
 fn shell_tendrils(normal: vec3<f32>, path: f32, radius: f32, time: f32, seed: f32) -> vec3<f32> {
-    let surface = normal * radius / TENDRIL_CELL - vec3<f32>(0.0, 0.0, TENDRIL_RISE * time / TENDRIL_CELL) + vec3<f32>(seed);
+    let surface = normal * radius / TENDRIL_CELL + vec3<f32>(seed);
+    let rise = -TENDRIL_RISE / TENDRIL_CELL;
     let warp = vec3<f32>(
-        value_fbm_3d(surface * 0.5 + vec3<f32>(3.1, 1.7, 0.0), 2),
-        value_fbm_3d(surface * 0.5 + vec3<f32>(-5.2, 8.3, 2.0), 2),
+        value_fbm_3d_drift(surface * 0.5 + vec3<f32>(3.1, 1.7, 0.0), time, vec3<f32>(0.0, 0.0, rise * 0.5), 2),
+        value_fbm_3d_drift(surface * 0.5 + vec3<f32>(-5.2, 8.3, 2.0), time, vec3<f32>(0.0, 0.0, rise * 0.5), 2),
         0.5,
     ) - vec3<f32>(0.5);
-    let n = value_fbm_3d(surface + warp * TENDRIL_WARP, 3);
+    let n = value_fbm_3d_drift(surface + warp * TENDRIL_WARP, time, vec3<f32>(0.0, 0.0, rise), 3);
     let strand = pow(1.0 - abs(2.0 * n - 1.0), TENDRIL_SHARPNESS);
-    let sparse = smoothstep(TENDRIL_SPARSE, TENDRIL_SPARSE + 0.2, value_fbm_3d(surface * 0.35 + vec3<f32>(9.0, 4.0, 0.0), 2));
+    let sparse = smoothstep(TENDRIL_SPARSE, TENDRIL_SPARSE + 0.2, value_fbm_3d_drift(surface * 0.35 + vec3<f32>(9.0, 4.0, 0.0), time, vec3<f32>(0.0, 0.0, rise * 0.35), 2));
     return fire_ramp(TENDRIL_HEAT + 0.15 * strand) * strand * sparse * max(path, TENDRIL_INTERIOR) * TENDRIL_BRIGHT;
 }
 
@@ -158,11 +169,11 @@ fn limb_strands(direction: vec2<f32>, edge: f32, radius: f32, time: f32, seed: f
     var total = 0.0;
     for (var k = 0; k < 3; k++) {
         let layer = f32(k);
-        let angle = time * STRAND_SPIN * select(1.0 + 0.4 * layer, -1.3, k == 1);
+        let angle = time * wrap_rate(STRAND_SPIN * select(1.0 + 0.4 * layer, -1.3, k == 1), TAU);
         let c = cos(angle);
         let s = sin(angle);
         let turned = vec2<f32>(c * direction.x - s * direction.y, s * direction.x + c * direction.y);
-        let n = value_fbm_3d(vec3<f32>(turned * (radius / STRAND_LENGTH) + vec2<f32>(layer * 17.0), edge / STRAND_WIDTH + STRAND_CHURN * time + seed + layer * 5.3), 2);
+        let n = value_fbm_3d_drift(vec3<f32>(turned * (radius / STRAND_LENGTH) + vec2<f32>(layer * 17.0), edge / STRAND_WIDTH + seed + layer * 5.3), time, vec3<f32>(0.0, 0.0, STRAND_CHURN), 2);
         let strand = pow(1.0 - abs(2.0 * n - 1.0), STRAND_SHARPNESS);
         total += strand * exp(-edge / (LIMB_DEPTH * (1.0 + 0.6 * layer)));
     }
@@ -177,10 +188,13 @@ fn embers(world_position: vec2<f32>, field: Instance, shape: FieldShape, time: f
         for (var dx = -1; dx <= 1; dx++) {
             let cell = home + vec2<f32>(f32(dx), f32(dy));
             let h = hash_coords(cell + vec2<f32>(field.seed), EMBER_SALT);
-            let period = EMBER_LIFE * (1.2 + 0.8 * hash_unit(h));
+            let rough_period = EMBER_LIFE * (1.2 + 0.8 * hash_unit(h));
+            let slots = wrap_count(rough_period);
+            let period = wrap_period(rough_period);
             let shift = hash_unit(hash_mix(h + 1u)) * period;
             let slot = floor((time + shift) / period);
-            let slot_hash = hash_mix(h ^ (u32(i32(slot)) * HASH_GOLDEN));
+            // Wrap the slot index so an active ember's hash does not jump when `time` wraps.
+            let slot_hash = hash_mix(h ^ (u32(wrap_index(slot, slots)) * HASH_GOLDEN));
             let base = (cell + 0.1 + 0.8 * vec2<f32>(hash_unit(hash_mix(slot_hash + 3u)), hash_unit(hash_mix(slot_hash + 4u)))) * EMBER_CELL;
             let relative_distance = distance(base, shape.center) / shape.current_radius;
             let chance = EMBER_CHANCE * mix(1.0, smoothstep(0.3, 1.0, relative_distance) * 1.6, EMBER_RIM_BIAS);
@@ -228,7 +242,7 @@ fn fire_light(world_position: vec2<f32>, field: Instance, shape: FieldShape, tim
     // Strands get hotter toward their cores and the edge, with hot flecks, capped like the other fire.
     let strands = limb_strands(direction, edge, radius, time, field.seed);
     let strand_mask = min(strands, 1.0);
-    let flecks = STRAND_FLECKS * smoothstep(0.72, 0.9, value_noise_3d(vec3<f32>(seen / 6.0, time * 1.5 + field.seed)));
+    let flecks = STRAND_FLECKS * smoothstep(0.72, 0.9, value_noise_3d_drift(vec3<f32>(seen / 6.0, field.seed), time, vec3<f32>(0.0, 0.0, 1.5)));
     let strand_heat = min(STRAND_HEAT + STRAND_CORE_HEAT * strand_mask + STRAND_HOT_RIM * exp(-edge / LIMB_DEPTH) + flecks * strand_mask, 0.97);
     light += fire_ramp(strand_heat) * shade * strands * STRAND_BRIGHT;
 

@@ -1,7 +1,8 @@
 import bevy_sprite_render::mesh2d::{vertex_output::VertexOutput, view_bindings::globals};
+import package::shaders::common::clock::wrap_rate;
 import package::shaders::common::core::TAU;
 import package::shaders::common::displacement::world_offset_to_uv;
-import package::shaders::common::value_noise::value_noise_3d;
+import package::shaders::common::value_noise::value_noise_3d_drift;
 
 // Heat haze around a charging `TowerInferno`. Inward-drifting radial waves between
 // `front = reach * (1 - charge)` and `reach` (world units). The quad spans the haze diameter.
@@ -34,8 +35,8 @@ fn displace(in: VertexOutput, haze: Instance) -> vec4<f32> {
     }
 
     let q = p / 7.0;
-    let jitter = vec2<f32>(value_noise_3d(vec3<f32>(q, time * 2.0)), value_noise_3d(vec3<f32>(q + 17.0, time * 2.0))) - vec2<f32>(0.5);
-    let phase = (d + DRIFT_SPEED * time) / RING_SPACING + value_noise_3d(vec3<f32>(q * 0.5, time * 0.3)) * 2.0;
+    let jitter = vec2<f32>(value_noise_3d_drift(vec3<f32>(q, 0.0), time, vec3<f32>(0.0, 0.0, 2.0)), value_noise_3d_drift(vec3<f32>(q + 17.0, 0.0), time, vec3<f32>(0.0, 0.0, 2.0))) - vec2<f32>(0.5);
+    let phase = d / RING_SPACING + time * wrap_rate(DRIFT_SPEED / RING_SPACING, 1.0) + value_noise_3d_drift(vec3<f32>(q * 0.5, 0.0), time, vec3<f32>(0.0, 0.0, 0.3)) * 2.0;
     let wave = sin(TAU * phase);
     let offset = (p / d * wave * 0.7 + jitter * 0.9) * STRENGTH * envelope;
 

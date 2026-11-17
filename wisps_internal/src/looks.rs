@@ -5,8 +5,9 @@
 use bevy::{ecs::component::Mutable, prelude::*, reflect::TypePath, render::render_resource::ShaderType};
 use nanorand::Rng;
 
+use alteration::effects::visual::{EffectVisualTarget, EffectVisuals};
 use game_core::{motion::Locomotion, prelude::{DrawLevel, ZDepth}};
-use visuals::{effect_visuals::{EffectVisualTarget, EffectVisuals}, lane::LaneVisual};
+use visuals::{clock::ClockInstant, lane::LaneVisual};
 use wisps::prelude::WISP_GRID_IMPRINT;
 
 /// Wisp visuals driven by measured speed and heading through `WispMotionLook`.
@@ -90,13 +91,14 @@ pub(crate) struct WispWaterLook {
     /// and cadence from it.
     pub vigor: f32,
     /// Oscillator phase anchors. The shader extrapolates each phase as
-    /// `anchor_phase + (globals.time - anchor_time) * rate(vigor)`, deriving the rate from `vigor`
+    /// `anchor_phase + (seconds since anchor) * rate(vigor)`, deriving the rate from `vigor`
     /// itself, so the wobble keeps moving every frame off the GPU clock with no per-frame upload.
     /// The CPU only re-anchors (folding elapsed time into `anchor_phase`) when vigor or heading
     /// changes.
     pub stroke_anchor_phase: f32,
     pub surf_anchor_phase: f32,
-    pub anchor_time: f32,
+    /// Instant on Bevy's shader clock when the phases were last anchored.
+    pub anchor: ClockInstant,
 }
 
 /// A water wisp. Field order and types mirror `Instance` in `assets/shaders/wisps/water_quad.wesl`.
@@ -113,14 +115,16 @@ impl WispWaterVisual {
     /// `QUAD_SCALE` in `assets/shaders/wisps/water_look.wesl` (which scales UV by it).
     pub const QUAD_SCALE: f32 = 2.4;
 
-    /// A visual with fresh per-wisp look parameters, drawn at `alpha` (below 1.0 for a ghost).
-    pub fn new(alpha: f32) -> Self {
+    /// A visual with fresh per-wisp look parameters, anchored at `now` and drawn at `alpha`
+    /// (below 1.0 for a ghost).
+    pub fn new(alpha: f32, now: ClockInstant) -> Self {
         let mut rng = nanorand::tls_rng();
         let look = WispWaterLook {
             seed: rng.generate::<f32>() * 100., // decorrelates a cluster of wisps
             wobble: rng.generate::<f32>() * 0.04 + 0.04, // 0.04 - 0.08
             flow_speed: rng.generate::<f32>() * 0.6 + 0.7, // 0.7 - 1.3
             tint: rng.generate::<f32>() * 2. - 1., // -1.0 - 1.0
+            anchor: now,
             ..default() // a still wisp still ripples: the shader derives rest cadence from vigor 0
         };
         Self { look, effects: default(), alpha }

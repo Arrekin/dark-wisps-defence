@@ -1,14 +1,15 @@
 import bevy_sprite_render::mesh2d::vertex_output::VertexOutput;
 import bevy_sprite_render::mesh2d::view_bindings::globals;
+import package::shaders::common::clock::{CLOCK_WRAP_PERIOD, wrap_index, wrap_rate};
 import package::shaders::common::fire_ramp::{FIRE_HEAT_CAP, fire_ramp};
 import package::shaders::common::hash::{hash_coords, hash_mix, hash_unit};
-import package::shaders::common::value_noise::value_fbm_3d;
+import package::shaders::common::value_noise::value_fbm_3d_drift;
 import package::shaders::weaponry::flame_stream_common::BREAKUP;
 
 // `Flame` stream jet shader.
 //
 // Coordinates are in world units along the stream (`s` from nozzle) and across it (`u`).
-// Active fuel spans `[tail, end]`. Noise is advected at `DRIFT` (`m = s - DRIFT * time`).
+// Active fuel spans `[tail, end]`. Noise is advected along `s` at `DRIFT`.
 // Premultiplied output compositing four layers:
 // - `soot`: dark fringe and tip smoke (`alpha > 0`).
 // - `fire`: main flame body (`alpha > 0`).
@@ -72,17 +73,17 @@ fn look(mesh: VertexOutput, flame: Instance) -> vec4<f32> {
     let x = u / w;
     let ax = abs(x);
 
-    // Advected noise coordinates.
-    let m = s - DRIFT * time;
-    let q = vec3<f32>(m / (BILLOW * 1.6), x * 1.15, time * 0.85 + flame.seed);
-    let warp_x = value_fbm_3d(q * 0.7 + vec3<f32>(3.1, 1.7, 0.0), 3) - 0.5;
-    let warp_y = value_fbm_3d(q * 0.7 + vec3<f32>(-5.2, 8.3, 2.0), 3) - 0.5;
+    // Base noise coordinates and advection velocity (streaming along `s` and churning in Z).
+    let q = vec3<f32>(s / (BILLOW * 1.6), x * 1.15, flame.seed);
+    let q_drift = vec3<f32>(-DRIFT / (BILLOW * 1.6), 0.0, 0.85);
+    let warp_x = value_fbm_3d_drift(q * 0.7 + vec3<f32>(3.1, 1.7, 0.0), time, q_drift * 0.7, 3) - 0.5;
+    let warp_y = value_fbm_3d_drift(q * 0.7 + vec3<f32>(-5.2, 8.3, 2.0), time, q_drift * 0.7, 3) - 0.5;
     let qw = q + vec3<f32>(warp_x * 1.3, warp_y * 0.9, 0.0);
-    let n = value_fbm_3d(qw, 5);
-    let veins = 1.0 - abs(value_fbm_3d(qw * 2.1 + vec3<f32>(7.0, -3.0, 0.0), 3) * 2.0 - 1.0);
+    let n = value_fbm_3d_drift(qw, time, q_drift, 5);
+    let veins = 1.0 - abs(value_fbm_3d_drift(qw * 2.1 + vec3<f32>(7.0, -3.0, 0.0), time, q_drift * 2.1, 3) * 2.0 - 1.0);
 
     // Axial fuel masks (`[tail, end]`) with noise-perturbed boundaries.
-    let edge_noise = value_fbm_3d(vec3<f32>(m / 9.0, x * 2.0, time * 2.3), 3) - 0.5;
+    let edge_noise = value_fbm_3d_drift(vec3<f32>(s / 9.0, x * 2.0, 0.0), time, vec3<f32>(-DRIFT / 9.0, 0.0, 2.3), 3) - 0.5;
     let alive = smoothstep(end + 5.0 + hit * 5.0, end - 13.0 + hit * 11.0, s + edge_noise * 16.0)
         * smoothstep(tail - 2.0, tail + 24.0, s + edge_noise * 22.0);
     let alive_soot = smoothstep(end + 26.0, end - 6.0, s + edge_noise * 18.0) * smoothstep(tail - 12.0, tail + 34.0, s);
@@ -107,7 +108,7 @@ fn look(mesh: VertexOutput, flame: Instance) -> vec4<f32> {
     let rod_color = mix(ROD_COLOR, fire_ramp(FIRE_HEAT_CAP), smoothstep(0.3, 1.0, abs(u) / rod_half));
 
     // Fringe and tip soot.
-    let soot_noise = value_fbm_3d(vec3<f32>(m / (BILLOW * 2.6), x, time * 0.45 + flame.seed + 11.0), 4);
+    let soot_noise = value_fbm_3d_drift(vec3<f32>(s / (BILLOW * 2.6), x, flame.seed + 11.0), time, vec3<f32>(-DRIFT / (BILLOW * 2.6), 0.0, 0.45), 4);
     let fringe = smoothstep(0.35, 0.95, ax + (soot_noise - 0.5) * 0.7) * (1.0 - smoothstep(1.15, 1.6, ax));
     let tip = smoothstep(end - 22.0, end + 6.0, s) * (1.0 - smoothstep(1.0, 1.5, ax)) * (1.0 - 0.6 * hit);
     let soot_zone = smoothstep(BREAKUP * 0.6, BREAKUP * 1.5, s) * max(fringe, tip);
@@ -124,11 +125,13 @@ fn look(mesh: VertexOutput, flame: Instance) -> vec4<f32> {
     alpha = rod + alpha * (1.0 - rod);
 
     // Additive embers.
-    let ember_along = (s - EMBER_SPEED * time) / EMBER_SPACING;
+    let ember_rate = wrap_rate(EMBER_SPEED / EMBER_SPACING, 1.0);
+    let ember_along = s / EMBER_SPACING - ember_rate * time;
     let fanned = max(s - BREAKUP * 0.5, 0.0);
     let ember_across = x * EMBER_ROWS / (1.0 + EMBER_FAN * fanned);
     let ember_cell = floor(vec2<f32>(ember_along, ember_across));
-    let ember_hash = hash_coords(ember_cell, EMBER_SALT);
+    // Wrap the cell X index so embers in flight do not jump when `time` wraps.
+    let ember_hash = hash_coords(vec2<f32>(wrap_index(ember_cell.x, ember_rate * CLOCK_WRAP_PERIOD), ember_cell.y), EMBER_SALT);
     let ember_center = vec2<f32>(hash_unit(hash_mix(ember_hash)), hash_unit(hash_mix(hash_mix(ember_hash)))) * 0.6 + vec2<f32>(0.2);
     let ember_offset = (fract(vec2<f32>(ember_along, ember_across)) - ember_center) * vec2<f32>(EMBER_SPACING, w * (1.0 + EMBER_FAN * fanned) / EMBER_ROWS);
     let ember_zone = smoothstep(BREAKUP * 0.5, BREAKUP, s) * alive_soot * (1.0 - smoothstep(1.2, 1.6, ax));

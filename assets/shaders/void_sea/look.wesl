@@ -1,11 +1,11 @@
+import package::shaders::common::clock::{CLOCK_WRAP_PERIOD, wrap_count, wrap_fade, wrap_index, wrap_mix, wrap_period};
 import package::shaders::common::core::TAU;
 import package::shaders::common::gradient_noise::gradient_noise_2d;
 import package::shaders::common::hash::{hash_coords, hash_mix, hash_unit};
 import package::shaders::common::map_light::{MAP_SUN_ELEVATION_TANGENT, MAP_SUN_GROUND_DIRECTION};
-import package::shaders::common::value_noise::value_noise_2d;
+import package::shaders::common::value_noise::{value_noise_2d, value_noise_2d_drift};
 import package::shaders::void_sea::waves::{
-    HIT_REACH, TIME_WRAP, WATER_HEIGHT, floored_mod, map_size, stretch_hit, wall_coordinate, wall_noise,
-    wall_point, wrap_count, wrap_fade, wrap_index, wrap_mix, wrap_period,
+    HIT_REACH, WATER_HEIGHT, floored_mod, map_size, stretch_hit, wall_coordinate, wall_noise, wall_noise_drift, wall_point,
 };
 
 // The sea's look: a black mercury surface with thin cold streaks, foam where waves meet the glass, and
@@ -119,11 +119,10 @@ fn glass_streaks(p: vec2<f32>, t: f32, pixel: f32) -> f32 {
     let q = vec2<f32>(dot(p, along_crest) / STREAK_STRETCH, dot(p, TRAVEL)) / STREAK_SCALE;
     var n = streak_noise(q, t);
     let break_q = q * vec2<f32>(4.0, 1.5);
-    var breaks = value_noise_2d(break_q + vec2<f32>(t * 0.1, 0.0));
+    let breaks = value_noise_2d_drift(break_q, t, vec2<f32>(0.1, 0.0));
     let fade = wrap_fade(t);
     if fade > 0.0 {
-        n = wrap_mix(n, streak_noise(q, t - TIME_WRAP), fade);
-        breaks = wrap_mix(breaks, value_noise_2d(break_q + vec2<f32>((t - TIME_WRAP) * 0.1, 0.0)), fade);
+        n = wrap_mix(n, streak_noise(q, t - CLOCK_WRAP_PERIOD), fade);
     }
     let level = n * STREAK_LEVELS;
     let to_level = abs(level - floor(level + 0.5));
@@ -137,7 +136,7 @@ fn lap_pulse(t: f32) -> f32 {
     return pow(0.5 + 0.5 * cos(TAU * t / wrap_period(RIPPLE_PERIOD)), 8.0);
 }
 
-// The lap's number, counted around the wrap.
+// Lap index wrapped modulo the number of laps per `CLOCK_WRAP_PERIOD`.
 fn lap_index(t: f32) -> f32 {
     return wrap_index(floor(t / wrap_period(RIPPLE_PERIOD) + 0.5), wrap_count(RIPPLE_PERIOD));
 }
@@ -190,11 +189,7 @@ struct Foam {
 // always stays pressed on the glass and swells with each lap. Every wave reaching the point adds its part.
 fn impact_foam(p: vec2<f32>, d: f32, t: f32, pixel: f32) -> Foam {
     let wall = wall_coordinate(p);
-    var ragged = wall_noise(wall, 14.0, t * 0.9);
-    let fade = wrap_fade(t);
-    if fade > 0.0 {
-        ragged = wrap_mix(ragged, wall_noise(wall, 14.0, (t - TIME_WRAP) * 0.9), fade);
-    }
+    let ragged = wall_noise_drift(wall, 14.0, t, 0.9);
     let cling = CLING * (1.0 + 0.6 * (ragged - 0.5)) + LAP_SWELL * lap_pulse(t) * lap_amount(wall, t);
     var result = Foam(
         1.0 - smoothstep(cling - 0.5 * pixel, cling + 0.5 * pixel, d),
@@ -261,7 +256,7 @@ fn sea_surface(p: vec2<f32>, d: f32, t: f32, pixel: f32) -> vec3<f32> {
     var tone = tone_noise(tone_p, t);
     let fade = wrap_fade(t);
     if fade > 0.0 {
-        tone = wrap_mix(tone, tone_noise(tone_p, t - TIME_WRAP), fade);
+        tone = wrap_mix(tone, tone_noise(tone_p, t - CLOCK_WRAP_PERIOD), fade);
     }
     let tone_aa = fwidth(tone);
     var color = mix(VOID_COLOR, BODY_COLOR, smoothstep(TONE_LOW - tone_aa, TONE_LOW + tone_aa, tone));
@@ -276,7 +271,7 @@ fn sea_surface(p: vec2<f32>, d: f32, t: f32, pixel: f32) -> vec3<f32> {
     if ripple_distance > 0.0 && ripple_distance < RIPPLE_REACH {
         let phase = ripple_distance / RIPPLE_SPACING - t / wrap_period(RIPPLE_PERIOD);
         let to_line = abs(fract(phase + 0.5) - 0.5) * RIPPLE_SPACING;
-        // The ring's number, counted around the wrap.
+        // Ring index wrapped modulo the number of rings per `CLOCK_WRAP_PERIOD`.
         let ring = wrap_index(floor(phase + 0.5), wrap_count(RIPPLE_PERIOD));
         let closest = clamp(p, vec2<f32>(0.0), map_size());
         let broken = step(0.5, gradient_noise_2d(closest / 57.0 + vec2<f32>(ring * 3.1, 0.0)));
@@ -330,8 +325,9 @@ fn glass_crossing(p: vec2<f32>, surface: vec2<f32>, sea_height: f32) -> GlassCro
 
 // Bubbles rising through the churn on the glass.
 fn churn_noise(wall: vec2<f32>, below_surface: f32, t: f32) -> f32 {
-    let q = vec2<f32>(wall.x, below_surface + t * 6.0) / BUBBLE_SCALE;
-    return 0.65 * value_noise_2d(q) + 0.35 * value_noise_2d(q * 2.3 + vec2<f32>(5.1, 1.7));
+    let q = vec2<f32>(wall.x, below_surface) / BUBBLE_SCALE;
+    let rise = vec2<f32>(0.0, 6.0 / BUBBLE_SCALE);
+    return 0.65 * value_noise_2d_drift(q, t, rise) + 0.35 * value_noise_2d_drift(q * 2.3 + vec2<f32>(5.1, 1.7), t, rise * 2.3);
 }
 
 // The sea's face against the glass, seen between the map's edge and the rim of the raised surface. The
@@ -358,11 +354,7 @@ fn glass_face(crossing: GlassCrossing, below_width: f32, along_width: f32, t: f3
         flash = max(flash, hit.weight * exp(-hit.crashed * FLASH_DECAY));
     }
     color += FLASH_COLOR * BARRIER_FLASH * flash * (0.25 + 0.75 * height_fraction);
-    var n = churn_noise(wall, below_surface, t);
-    let fade = wrap_fade(t);
-    if fade > 0.0 {
-        n = wrap_mix(n, churn_noise(wall, below_surface, t - TIME_WRAP), fade);
-    }
+    let n = churn_noise(wall, below_surface, t);
     let churn = 1.0 - below_surface / max(churn_depth, 1e-3) + (n - 0.5) * BLOB_NOISE;
     // The churn's change across a pixel: its depth falloff and its noise.
     let aa = clamp(below_width / max(churn_depth, 1e-3) + BLOB_NOISE * (along_width + below_width) / BUBBLE_SCALE, 1e-4, 0.2);
