@@ -207,8 +207,8 @@ impl ZDepth {
             | Self::FlameJet
             | Self::FlameImpact
             | Self::FlamePilot
-            | Self::TowerTop
-            | Self::MapUi => DrawLevels::BELOW_AIR,
+            | Self::TowerTop => DrawLevels::BELOW_AIR,
+            Self::MapUi => DrawLevels::only(DrawLevel::OnElevation),
             Self::AirEffect
             | Self::AerialUnit
             | Self::ProjectileUnder

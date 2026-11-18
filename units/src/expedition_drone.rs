@@ -75,8 +75,9 @@ impl ExpeditionDrone {
     }
 }
 
+/// Light cone from the drone down to its scan spot, drawn in the air above everything it crosses.
 #[derive(Component)]
-#[require(MapBound, ZDepth::GroundEffect, DrawLevel::OnElevation)]
+#[require(MapBound, ZDepth::AirEffect, DrawLevel::Airborne)]
 pub struct ScanningBeam {
     pub drone: Entity,
     pub spot: Entity,  // the scan spot entity
