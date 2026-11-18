@@ -1,4 +1,4 @@
-use bevy::{ecs::system::SystemParam, platform::collections::HashMap, prelude::*};
+use bevy::{ecs::system::SystemParam, prelude::*};
 
 use alteration::{effects::prelude::*, modifiers::prelude::*};
 use game_core::prelude::*;
@@ -69,11 +69,11 @@ impl BuilderWisp {
                 Wisp,
                 builder.wisp_type,
                 related![EffectInstances[
-                    (ModifierContributions(HashMap::from([
+                    (ModifierContributions::from([
                         (ModifierType::MaxIntegrityPoints, 10.),
                         (ModifierType::MaxAttackRange, 1.),
-                        (ModifierType::MovementSpeed, 60.),
-                    ])), BaselineEffect),
+                        (ModifierType::MovementSpeedFlat, 60.),
+                    ]), BaselineEffect),
                 ]],
             ))
             .trigger(move |entity| ObjectFaceRequest::world(entity, MapObject::Wisp(builder.wisp_type)));

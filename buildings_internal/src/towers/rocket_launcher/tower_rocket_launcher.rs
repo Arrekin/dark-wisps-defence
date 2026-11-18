@@ -1,5 +1,4 @@
 use bevy::{
-    platform::collections::HashMap,
     prelude::*,
     sprite::Anchor,
 };
@@ -64,7 +63,7 @@ impl BuilderTowerRocketLauncher {
             grid_imprint: GridImprint::square(3),
             attack_range: AttackRangeType(RangeType::Cells).into(),
             cost: vec![ResourceAmount::new(ResourceType::DarkOre, 350)],
-            baseline: HashMap::from([
+            baseline: ModifierContributions::from([
                 (ModifierType::MaxIntegrityPoints, 100.),
                 (ModifierType::MinAttackRange, 7.),
                 (ModifierType::MaxAttackRange, 30.),
@@ -128,7 +127,7 @@ impl BuilderTowerRocketLauncher {
                     IndicatorType::DisabledByPlayer,
                 ]],
                 related![EffectInstances[
-                    (ModifierContributions(building_info.baseline.clone()), BaselineEffect),
+                    (building_info.baseline.clone(), BaselineEffect),
                 ]],
                 related![TowerTop[(
                     Sprite {

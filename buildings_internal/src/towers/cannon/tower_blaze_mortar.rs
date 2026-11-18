@@ -4,10 +4,7 @@
 //! at its target wisp's next cell. Each impact hits a 3x3 area with reduced damage in the
 //! surrounding one-cell ring.
 
-use bevy::{
-    platform::collections::HashMap,
-    prelude::*,
-};
+use bevy::prelude::*;
 
 use almanach::{BuildingInfo, prelude::*};
 use alteration::{
@@ -71,7 +68,7 @@ impl BuilderTowerBlazeMortar {
             grid_imprint: GridImprint::square(3),
             attack_range: AttackRangeType(RangeType::Cells).into(),
             cost: vec![ResourceAmount::new(ResourceType::DarkOre, 350)],
-            baseline: HashMap::from([
+            baseline: ModifierContributions::from([
                 (ModifierType::MaxIntegrityPoints, 100.),
                 (ModifierType::MaxAttackRange, 15.),
                 (ModifierType::AttackSpeed, 0.3),
@@ -130,7 +127,7 @@ impl BuilderTowerBlazeMortar {
                     IndicatorType::DisabledByPlayer,
                 ]],
                 related![EffectInstances[
-                    (ModifierContributions(building_info.baseline.clone()), BaselineEffect),
+                    (building_info.baseline.clone(), BaselineEffect),
                 ]],
                 children![
                     IndicatorDisplay::default(),

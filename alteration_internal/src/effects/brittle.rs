@@ -1,4 +1,4 @@
-use bevy::{platform::collections::HashMap, prelude::*};
+use bevy::prelude::*;
 
 use alteration::{
     effects::{brittle::BrittleEffect, prelude::*},
@@ -30,10 +30,7 @@ fn collect_brittle_effects(
     let rows: Vec<(u32, u32, Option<u32>, f32, Option<TimeBound>)> = brittle_effects
         .iter()
         .map(|(entity, effect_target, effect_source, contributions, time_bound)| {
-            let damage_multiplier = contributions.0
-                .get(&ModifierType::IncomingDamageMultiplier)
-                .copied()
-                .unwrap_or(1.0);
+            let damage_multiplier = contributions.get(ModifierType::IncomingDamageMultiplier).unwrap_or(1.0);
             (
                 entity.index_u32(),
                 effect_target.0.index_u32(),
@@ -91,7 +88,7 @@ fn on_builder_add_spawn_brittle_effect(
         .remove::<BuilderBrittleEffect>()
         .insert((
             EffectTarget(builder.target_entity),
-            ModifierContributions(HashMap::from([(ModifierType::IncomingDamageMultiplier, builder.damage_multiplier)])),
+            ModifierContributions::from([(ModifierType::IncomingDamageMultiplier, builder.damage_multiplier)]),
             BrittleEffect,
         ))
         .insert_some(builder.source_entity)

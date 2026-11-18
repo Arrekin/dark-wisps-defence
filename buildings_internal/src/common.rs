@@ -81,8 +81,8 @@ pub(crate) fn on_grid_placer_changed_highlight_attack_range(
     let range = AreaRange {
         range_type,
         area,
-        min: building_info.baseline.get(&ModifierType::MinAttackRange).copied().unwrap_or(0.),
-        max: building_info.baseline[&ModifierType::MaxAttackRange],
+        min: building_info.baseline.get(ModifierType::MinAttackRange).unwrap_or(0.),
+        max: building_info.baseline.get(ModifierType::MaxAttackRange).unwrap_or(0.),
     };
     overlay_config.secondary_mode = Some(TowersRangeOverlaySecondaryMode::HighlightRange { range });
 }

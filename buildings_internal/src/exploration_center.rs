@@ -20,7 +20,6 @@
 
 use bevy::{
     color::palettes::css::BLUE,
-    platform::collections::HashMap,
     prelude::*,
     ui::widget::ViewportNode,
     ui_widgets::Button,
@@ -116,7 +115,7 @@ impl BuilderExplorationCenter {
             grid_imprint: GridImprint::square(4),
             attack_range: None,
             cost: vec![ResourceAmount::new(ResourceType::DarkOre, 500)],
-            baseline: HashMap::from([(ModifierType::MaxIntegrityPoints, 100.)]),
+            baseline: ModifierContributions::from([(ModifierType::MaxIntegrityPoints, 100.)]),
             sockets: vec![],
         }
     }
@@ -158,7 +157,7 @@ impl BuilderExplorationCenter {
                     IndicatorType::DisabledByPlayer,
                 ]],
                 related![EffectInstances[
-                    (ModifierContributions(building_info.baseline.clone()), BaselineEffect),
+                    (building_info.baseline.clone(), BaselineEffect),
                 ]],
                 children![
                     IndicatorDisplay::default(),

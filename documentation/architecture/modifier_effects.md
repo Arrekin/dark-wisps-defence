@@ -2,7 +2,8 @@
 
 Effects determine the stats of towers, wisps, and other entities, including their starting values and changes from shards, auras, or debuffs. A tower's attack range and a wisp's movement speed both use this system.
 
-Each effect instance contributes one or more stat values to a target. The target's `ModifierBank` aggregates those contributions by `ModifierType` and writes the resulting stat components for gameplay systems to read.
+Each effect instance contributes one or more modifier values to a target.
+The target's `ModifierBank` aggregates those contributions by `ModifierType` and writes the resulting stat components for gameplay systems to read.
 
 ## How Stats Are Stored
 
@@ -13,8 +14,9 @@ An effect instance is a lightweight ECS entity. Its core components are:
 - **`EffectTarget(Entity)`** links the effect to the entity whose stats it modifies.
   The target's `EffectInstances` relationship uses `linked_spawn`, so despawning the target
   also despawns its effects.
-- **`ModifierContributions(HashMap<ModifierType, f32>)`** stores the effect's contribution
-  to each stat. One effect can contribute to several stats.
+- **`ModifierContributions`** stores the effect's contribution to each modifier, at most one value
+  per modifier. One effect can contribute to several modifiers. The component is immutable:
+  inserting a new one replaces the effect's contributions.
 
 Optional components control the effect's lifetime and associate it with a source:
 
@@ -35,22 +37,23 @@ and identifies each contribution by its effect entity:
 
 ```text
 ModifierBank on a Wisp:
-    MovementSpeed:
+    MovementSpeedFlat:
         entity_3 (baseline)    → 60.0
+    MovementSpeedSlowPercentage:
+        entity_5 (Field slow)  → 66.7
     IncomingDamageMultiplier:
         entity_8 (Brittle, A)  → 1.5
         entity_12 (Brittle, B) → 1.3
 ```
 
-The bank caches contributions; effect instances own their source and lifetime information.
-Gameplay systems read the derived stat components.
-
-Observers of `ModifierContributions` insertion and removal update the target's bank,
-recalculate the affected totals, and queue replacements for the corresponding stat components.
+Effect instances own their source and lifetime; `ModifierBank` caches their active contributions
+and computes the target's stats. When `ModifierContributions` is inserted on an effect instance, or
+discarded by removal or replacement, observers update the target's bank and insert the recalculated
+stat components.
 
 ### Derived Stat Components
 
-The bank writes each total to an immutable component:
+`ModifierBank` writes each computed stat to an immutable component on the target:
 
 ```text
 MaxIntegrityPoints(f32)         MovementSpeed(f32)     AttackSpeed(f32)
@@ -61,24 +64,27 @@ IncomingDamageMultiplier(f32)   EnergySupplyRange(f32) TurnSpeed(f32)
 These components use `#[component(immutable)]`, so updates insert replacements rather than
 mutating values in place. Systems that react to stat changes observe `On<Insert<Stat>>`.
 
-`MinAttackRange` and `MaxAttackRange` store inclusive distance limits in cells.
-`AttackRangeType` selects how to measure that distance: cardinal grid steps from the nearest
+`AttackRangeType` selects how to measure attack distance: cardinal grid steps from the nearest
 imprint cell, or a circular radius from the area's world centre. `AttackAreaRange` queries
 the grid area, distance metric, and limits together to construct an `AreaRange`.
 
-## Stat Aggregation
+## Stat Calculation
 
-Each `ModifierType` variant defines how multiple contributions combine:
+`ModifierBank` first aggregates all active contributions per `ModifierType`, starting from the
+modifier's identity value (which is also the result when no effects contribute):
 
-| Stat | Rule | Identity | Semantics |
-|------|------|----------|-----------|
-| AttackSpeed, MinAttackRange, MaxAttackRange, AttackDamage, MaxIntegrityPoints, MovementSpeed, EnergySupplyRange, TurnSpeed | Sum | 0.0 | Flat contributions add together |
-| IncomingDamageMultiplier | Max | 1.0 | Worst active debuff wins |
+| Modifier | Rule | Identity | Semantics |
+|----------|------|----------|-----------|
+| AttackSpeed, MinAttackRange, MaxAttackRange, AttackDamage, MaxIntegrityPoints, MovementSpeedFlat, EnergySupplyRange, TurnSpeed | Sum | 0.0 | Flat contributions add together |
+| MovementSpeedSlowPercentage | Max | 0.0 | Strongest slow percentage (0–100) wins |
+| IncomingDamageMultiplier | Max | 1.0 | Largest multiplier wins |
 
-Aggregation starts from the identity value, which is also the result when no effects contribute.
+Most modifiers map 1:1 to the stat component of the same name. `MovementSpeed` combines two
+modifiers and clamps the result to `MIN_MOVEMENT_SPEED` so slowed entities never stop completely:
 
-Gameplay systems decide how to apply each total. For example, `IncomingDamageMultiplier`
-takes the largest contribution, with a minimum of 1.0, and weapon systems multiply damage by it.
+```text
+MovementSpeed = max(MovementSpeedFlat × (1 − MovementSpeedSlowPercentage / 100), MIN_MOVEMENT_SPEED)
+```
 
 ## Baseline Effects
 
@@ -119,7 +125,7 @@ spawn effect instance with (EffectTarget, ModifierContributions, ...)
 
 ```text
 expiry queue pops entry → despawn effect instance
-  → On<Remove<ModifierContributions>> fires
+  → On<Discard<ModifierContributions>> fires
   → observer removes contributions from ModifierBank and queues recalculated stat components
 ```
 
@@ -128,7 +134,7 @@ expiry queue pops entry → despawn effect instance
 ```text
 FieldExited fires on the field
   → field observer uses EffectSourceOf to find and despawn FieldEffect instances on that target
-  → On<Remove<ModifierContributions>> removes their values from the target's ModifierBank
+  → On<Discard<ModifierContributions>> removes their values from the target's ModifierBank
   → affected stat components are recalculated
 ```
 

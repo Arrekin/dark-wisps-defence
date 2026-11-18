@@ -1,6 +1,5 @@
 use bevy::{
     ecs::system::SystemParam,
-    platform::collections::HashMap,
     prelude::*,
 };
 
@@ -82,7 +81,7 @@ impl BuilderMainBase {
             grid_imprint: GridImprint::square(6),
             attack_range: None,
             cost: vec![],
-            baseline: HashMap::from([
+            baseline: ModifierContributions::from([
                 (ModifierType::MaxIntegrityPoints, 10000.),
                 (ModifierType::EnergySupplyRange, 15.),
             ]),
@@ -125,7 +124,7 @@ impl BuilderMainBase {
                 GeneratorEnergy,
                 SupplierEnergy,
                 related![EffectInstances[
-                    (ModifierContributions(building_info.baseline.clone()), BaselineEffect),
+                    (building_info.baseline.clone(), BaselineEffect),
                 ]],
             ))
             .observe(on_technical_state_changed_recompute_operational);

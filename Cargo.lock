@@ -168,6 +168,7 @@ dependencies = [
  "bevy",
  "game_core",
  "session",
+ "smallvec",
  "strum",
 ]
 

@@ -1,4 +1,4 @@
-use bevy::{platform::collections::HashMap, prelude::*};
+use bevy::prelude::*;
 
 use alteration::{
     effects::{prelude::*, slow::SlowEffect},
@@ -26,7 +26,7 @@ fn on_builder_add_spawn_slow_effect(
         .remove::<BuilderSlowEffect>()
         .insert((
             EffectTarget(builder.target_entity),
-            ModifierContributions(HashMap::from([(ModifierType::MovementSpeed, -builder.slow_amount)])),
+            ModifierContributions::from([(ModifierType::MovementSpeedSlowPercentage, builder.slow_percentage)]),
             SlowEffect,
             FieldEffect,
         ))

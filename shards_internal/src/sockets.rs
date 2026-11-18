@@ -4,16 +4,10 @@
 //! modifier effects; discarding a shard releases it to its configured destination. Upserts also
 //! restore saved sockets after their holders have spawned.
 
-use bevy::{
-    platform::collections::HashMap,
-    prelude::*,
-};
+use bevy::prelude::*;
 use strum::{EnumCount, IntoEnumIterator};
 
-use alteration::{
-    effects::prelude::EffectSourceOf,
-    modifiers::prelude::ModifierType,
-};
+use alteration::effects::{ModifierContributions, prelude::EffectSourceOf};
 use game_core::prelude::{ContentId, OptionalCommands, Shard, ShardTier};
 use logging::prelude::*;
 use persistence::{prelude::*, rusqlite};
@@ -148,7 +142,7 @@ fn on_insert_shard_socket_state_apply(
         ShardSocketState::Active => {
             socket_commands.insert(ActiveSocket).despawn_related::<EffectSourceOf>();
             if let Some(&SocketedShard(shard)) = socketed {
-                commands.spawn(ShardEffect::from_modifiers(socket_entity, holder, socket.contributions_for(shard.tier).clone()));
+                commands.spawn(ShardEffect::from_contributions(socket_entity, holder, socket.contributions_for(shard.tier).clone()));
             }
         }
     }
@@ -210,7 +204,7 @@ fn collect_shard_sockets(
                 ])?;
             let socket_row_id = ctx.tx.last_insert_rowid();
             for tier in ShardTier::iter() {
-                for (modifier_type, value) in socket.contributions_for(tier) {
+                for (modifier_type, value) in socket.contributions_for(tier).iter() {
                     ctx.tx.prepare_cached("INSERT INTO shard_socket_contributions (socket_row_id, shard_tier, modifier_type, value) VALUES (?1, ?2, ?3, ?4)")?
                         .execute(rusqlite::params![socket_row_id, tier.as_ref(), modifier_type.as_ref(), value])?;
                 }
@@ -230,12 +224,12 @@ fn load_shard_sockets(ctx: &mut LoadContext) -> LoadResult {
             let socketed = row.get_parsed_optional(7)?.zip(row.get_parsed_optional(8)?)
                 .map(|(shard_type, tier)| Shard::new(shard_type, tier));
 
-            let mut contributions: [HashMap<ModifierType, f32>; ShardTier::COUNT] = Default::default();
+            let mut contributions: [ModifierContributions; ShardTier::COUNT] = Default::default();
             let mut statement = ctx.conn.prepare_cached("SELECT shard_tier, modifier_type, value FROM shard_socket_contributions WHERE socket_row_id = ?1")?;
             let mut contribution_rows = statement.query([socket_row_id])?;
             while let Some(contribution_row) = contribution_rows.next()? {
                 let tier: ShardTier = contribution_row.get_parsed(0)?;
-                contributions[tier as usize].insert(contribution_row.get_parsed(1)?, contribution_row.get(2)?);
+                contributions[tier as usize].push(contribution_row.get_parsed(1)?, contribution_row.get(2)?);
             }
 
             let definition = ShardSocket {

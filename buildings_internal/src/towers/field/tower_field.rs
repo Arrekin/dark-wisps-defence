@@ -1,7 +1,4 @@
-use bevy::{
-    platform::collections::HashMap,
-    prelude::*,
-};
+use bevy::prelude::*;
 
 use almanach::{BuildingInfo, prelude::*};
 use alteration::{
@@ -45,8 +42,7 @@ impl Plugin for TowerFieldPlugin {
 const FIELD_RANGE_CELLS: f32 = 7.5;
 
 // Slow effect
-/// Reduction in a wisp's `MovementSpeed`, in world pixels per second.
-const SLOW_AMOUNT: f32 = 40.0;
+const SLOW_PERCENTAGE: f32 = 66.7;
 
 #[derive(Component, SSS)]
 pub(crate) struct BuilderTowerField {
@@ -67,7 +63,7 @@ impl BuilderTowerField {
             grid_imprint: GridImprint::Plus { extents: 1 },
             attack_range: AttackRangeType(RangeType::Circle).into(),
             cost: vec![ResourceAmount::new(ResourceType::DarkOre, 500)],
-            baseline: HashMap::from([
+            baseline: ModifierContributions::from([
                 (ModifierType::MaxIntegrityPoints, 100.),
                 (ModifierType::MaxAttackRange, FIELD_RANGE_CELLS),
             ]),
@@ -115,7 +111,7 @@ impl BuilderTowerField {
                     IndicatorType::DisabledByPlayer,
                 ]],
                 related![EffectInstances[
-                    (ModifierContributions(building_info.baseline.clone()), BaselineEffect),
+                    (building_info.baseline.clone(), BaselineEffect),
                 ]],
                 children![
                     IndicatorDisplay::default(),
@@ -169,7 +165,7 @@ impl BuilderTowerField {
         mut commands: Commands,
     ) {
         commands.spawn(
-            BuilderSlowEffect::new(trigger.target, SLOW_AMOUNT).with_source(trigger.field),
+            BuilderSlowEffect::new(trigger.target, SLOW_PERCENTAGE).with_source(trigger.field),
         );
     }
 
@@ -179,8 +175,8 @@ impl BuilderTowerField {
         sources: Query<&EffectSourceOf>,
         effects: Query<&EffectTarget, With<FieldEffect>>,
     ) {
-        let Ok(sourced) = sources.get(trigger.field) else { return; };
-        for effect_entity in sourced.iter() {
+        let Ok(field_effects) = sources.get(trigger.field) else { return; };
+        for effect_entity in field_effects.iter() {
             if effects.get(effect_entity).is_ok_and(|effect_target| effect_target.0 == trigger.target) {
                 commands.entity(effect_entity).despawn();
             }

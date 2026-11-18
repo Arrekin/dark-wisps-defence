@@ -16,10 +16,7 @@
 //! the stream is cut off (`Venting`) and `TowerWispTarget` is set to `Suspended` so the turret does
 //! not rotate while in-flight fuel burns out. `FlameStreamBurntOut` restores `SearchForNewTarget`.
 
-use bevy::{
-    platform::collections::HashMap,
-    prelude::*,
-};
+use bevy::prelude::*;
 
 use almanach::{BuildingInfo, prelude::*};
 use alteration::{
@@ -91,7 +88,7 @@ impl BuilderTowerFlamethrower {
             grid_imprint: GridImprint::square(2),
             attack_range: AttackRangeType(RangeType::Cells).into(),
             cost: vec![ResourceAmount::new(ResourceType::DarkOre, 150)],
-            baseline: HashMap::from([
+            baseline: ModifierContributions::from([
                 (ModifierType::MaxIntegrityPoints, 100.),
                 (ModifierType::MaxAttackRange, 6.),
                 (ModifierType::AttackDamage, 5.),
@@ -150,7 +147,7 @@ impl BuilderTowerFlamethrower {
                     IndicatorType::DisabledByPlayer,
                 ]],
                 related![EffectInstances[
-                    (ModifierContributions(building_info.baseline.clone()), BaselineEffect),
+                    (building_info.baseline.clone(), BaselineEffect),
                 ]],
                 related![GeneratedFlameStream[FlameStream::default()]],
                 related![TowerTop[(

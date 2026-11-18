@@ -1,4 +1,15 @@
-use bevy::{ecs::query::QueryData, platform::collections::HashMap, prelude::*};
+//! Stat components, modifier types, and per-entity stat calculation via [`ModifierBank`].
+//!
+//! ## Future Directions
+//!
+//! The modifier model is intentionally simple for now. When new features outgrow fixed rules in
+//! [`ModifierBank`], consider:
+//! - **Per-bank aggregation config** — each [`ModifierBank`] carries its own aggregation rules.
+//! - **Self-describing modifiers** — each modifier defines how it behaves, and the bank evaluates
+//!   the full modifier family to compute the final stat value.
+
+use bevy::{ecs::query::QueryData, prelude::*};
+use smallvec::SmallVec;
 use strum::{AsRefStr, EnumString};
 
 use game_core::prelude::*;
@@ -17,6 +28,8 @@ pub mod prelude {
 //  MODIFIER TYPE
 ////////////////////////
 
+/// Input channel for stat calculation. Effects contribute values keyed by `ModifierType`, which
+/// [`ModifierBank`] aggregates into the target's stat components.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumString, AsRefStr)]
 pub enum ModifierType {
     AttackSpeed,
@@ -24,45 +37,17 @@ pub enum ModifierType {
     MaxAttackRange,
     AttackDamage,
     MaxIntegrityPoints,
-    MovementSpeed,
+    MovementSpeedFlat,
+    MovementSpeedSlowPercentage,
     EnergySupplyRange,
     IncomingDamageMultiplier,
     TurnSpeed,
-}
-impl ModifierType {
-    fn aggregate(&self, values: impl Iterator<Item = f32>) -> f32 {
-        match self {
-            Self::AttackSpeed
-            | Self::MinAttackRange
-            | Self::MaxAttackRange
-            | Self::AttackDamage
-            | Self::MaxIntegrityPoints
-            | Self::MovementSpeed
-            | Self::EnergySupplyRange
-            | Self::TurnSpeed => values.fold(0.0, |acc, v| acc + v),
-            Self::IncomingDamageMultiplier => values.fold(1.0, f32::max),
-        }
-    }
-
-    fn materialize(&self, value: f32, entity_commands: &mut EntityCommands) {
-        match self {
-            Self::AttackSpeed => { entity_commands.insert(AttackSpeed::new(value)); }
-            Self::MinAttackRange => { entity_commands.insert(MinAttackRange::new(value)); }
-            Self::MaxAttackRange => { entity_commands.insert(MaxAttackRange::new(value)); }
-            Self::AttackDamage => { entity_commands.insert(AttackDamage::new(value)); }
-            Self::MaxIntegrityPoints => { entity_commands.insert(MaxIntegrityPoints::new(value)); }
-            Self::MovementSpeed => { entity_commands.insert(MovementSpeed::new(value)); }
-            Self::EnergySupplyRange => { entity_commands.insert(EnergySupplyRange::new(value)); }
-            Self::IncomingDamageMultiplier => { entity_commands.insert(IncomingDamageMultiplier::new(value)); }
-            Self::TurnSpeed => { entity_commands.insert(TurnSpeed::new(value)); }
-        }
-    }
 }
 
 #[derive(Component, Clone, Copy, Property)]
 #[component(immutable)]
 #[require(IntegrityPoints)]
-pub struct MaxIntegrityPoints(pub f32);
+pub struct MaxIntegrityPoints(f32);
 impl Default for MaxIntegrityPoints {
     fn default() -> Self {
         Self::new(f32::MAX)
@@ -77,11 +62,9 @@ pub struct AttackSpeed(f32);
 #[derive(Component, Default, Clone, Copy, Property)]
 #[component(immutable)]
 pub struct AttackDamage(f32);
-/// Inclusive minimum attack distance, in cells.
 #[derive(Component, Default, Clone, Copy, Property)]
 #[component(immutable)]
 pub struct MinAttackRange(f32);
-/// Inclusive maximum attack distance, in cells.
 #[derive(Component, Default, Clone, Copy, Property)]
 #[component(immutable)]
 pub struct MaxAttackRange(f32);
@@ -99,7 +82,6 @@ pub struct IncomingDamageMultiplier(f32);
 impl Default for IncomingDamageMultiplier {
     fn default() -> Self { Self::new(1.0) }
 }
-/// Radians per second.
 #[derive(Component, Default, Clone, Copy, Property)]
 #[component(immutable)]
 pub struct TurnSpeed(f32);
@@ -126,31 +108,80 @@ impl AttackAreaRangeItem<'_, '_> {
     }
 }
 
-/////////////////////
-// MODIFIER BANK  ///
-/////////////////////
+////////////////////////
+//  MODIFIER BANK
+////////////////////////
 
-/// Per-entity cache of all active modifier contributions, keyed by effect instance entity.
+// Stat limits
+/// Floor on materialized [`MovementSpeed`] so slowed entities never come to a full stop.
+const MIN_MOVEMENT_SPEED: f32 = 4.0;
+
+/// Per-entity store of active modifier contributions, grouped by [`ModifierType`] and identified by effect entity.
+/// Aggregates each group and writes the resulting stat components.
 ///
-/// Updated by effect instance observers, which also re-materialize affected stats immediately.
+/// Removing an effect visits only the groups of the modifiers it contributed. Groups stay once created, so a
+/// returning modifier reuses its group.
 #[derive(Component, Default)]
 pub struct ModifierBank {
-    entries: HashMap<ModifierType, HashMap<Entity, f32>>,
+    groups: Vec<(ModifierType, SmallVec<[(Entity, f32); 4]>)>,
 }
 impl ModifierBank {
-    fn insert(&mut self, effect_entity: Entity, stat: ModifierType, value: f32) {
-        self.entries.entry(stat).or_default().insert(effect_entity, value);
+    fn insert(&mut self, effect_entity: Entity, modifier: ModifierType, value: f32) {
+        let index = self.groups.iter().position(|(group_modifier, _)| *group_modifier == modifier).unwrap_or_else(|| {
+            self.groups.push((modifier, SmallVec::new()));
+            self.groups.len() - 1
+        });
+        self.groups[index].1.push((effect_entity, value));
     }
 
-    fn remove(&mut self, effect_entity: Entity, stat: ModifierType) {
-        if let Some(sources) = self.entries.get_mut(&stat) {
-            sources.remove(&effect_entity);
+    fn remove(&mut self, effect_entity: Entity, modifier: ModifierType) {
+        let Some((_, contributions)) = self.groups.iter_mut().find(|(group_modifier, _)| *group_modifier == modifier) else { return; };
+        let Some(index) = contributions.iter().position(|(entry_effect, _)| *entry_effect == effect_entity) else { return; };
+        contributions.swap_remove(index);
+    }
+
+    /// Combines active contributions for `modifier`, defaulting to its identity value when empty.
+    fn aggregate(&self, modifier: ModifierType) -> f32 {
+        let values = self.groups.iter()
+            .find(|(group_modifier, _)| *group_modifier == modifier)
+            .into_iter()
+            .flat_map(|(_, contributions)| contributions.iter().map(|&(_, value)| value));
+        match modifier {
+            ModifierType::AttackSpeed
+            | ModifierType::MinAttackRange
+            | ModifierType::MaxAttackRange
+            | ModifierType::AttackDamage
+            | ModifierType::MaxIntegrityPoints
+            | ModifierType::MovementSpeedFlat
+            | ModifierType::EnergySupplyRange
+            | ModifierType::TurnSpeed => values.fold(0.0, |acc, v| acc + v),
+            ModifierType::MovementSpeedSlowPercentage => values.fold(0.0, f32::max),
+            ModifierType::IncomingDamageMultiplier => values.fold(1.0, f32::max),
         }
     }
 
-    fn aggregate(&self, stat: ModifierType) -> f32 {
-        let values = self.entries.get(&stat).into_iter().flat_map(|sources| sources.values().copied());
-        stat.aggregate(values)
+    fn movement_speed(&self) -> f32 {
+        let flat = self.aggregate(ModifierType::MovementSpeedFlat);
+        let slow = self.aggregate(ModifierType::MovementSpeedSlowPercentage);
+        (flat * (1.0 - slow / 100.0)).max(MIN_MOVEMENT_SPEED)
+    }
+
+    /// Recomputes the stat component affected by `modifier` and inserts the updated value.
+    fn materialize(&self, modifier: ModifierType, entity_commands: &mut EntityCommands) {
+        let value = || self.aggregate(modifier);
+        match modifier {
+            ModifierType::AttackSpeed => entity_commands.insert(AttackSpeed::new(value())),
+            ModifierType::MinAttackRange => entity_commands.insert(MinAttackRange::new(value())),
+            ModifierType::MaxAttackRange => entity_commands.insert(MaxAttackRange::new(value())),
+            ModifierType::AttackDamage => entity_commands.insert(AttackDamage::new(value())),
+            ModifierType::MaxIntegrityPoints => entity_commands.insert(MaxIntegrityPoints::new(value())),
+            ModifierType::MovementSpeedFlat | ModifierType::MovementSpeedSlowPercentage => {
+                entity_commands.insert(MovementSpeed::new(self.movement_speed()))
+            }
+            ModifierType::EnergySupplyRange => entity_commands.insert(EnergySupplyRange::new(value())),
+            ModifierType::IncomingDamageMultiplier => entity_commands.insert(IncomingDamageMultiplier::new(value())),
+            ModifierType::TurnSpeed => entity_commands.insert(TurnSpeed::new(value())),
+        };
     }
 
     /// Applies all contributions from an effect instance to this bank and re-materializes affected stats.
@@ -160,10 +191,9 @@ impl ModifierBank {
         contributions: &ModifierContributions,
         entity_commands: &mut EntityCommands,
     ) {
-        for (stat, value) in contributions.0.iter() {
-            self.insert(effect_entity, *stat, *value);
-            let aggregated = self.aggregate(*stat);
-            stat.materialize(aggregated, entity_commands);
+        for (modifier, value) in contributions.iter() {
+            self.insert(effect_entity, modifier, value);
+            self.materialize(modifier, entity_commands);
         }
     }
 
@@ -174,10 +204,9 @@ impl ModifierBank {
         contributions: &ModifierContributions,
         entity_commands: &mut EntityCommands,
     ) {
-        for (stat, _) in contributions.0.iter() {
-            self.remove(effect_entity, *stat);
-            let aggregated = self.aggregate(*stat);
-            stat.materialize(aggregated, entity_commands);
+        for (modifier, _) in contributions.iter() {
+            self.remove(effect_entity, modifier);
+            self.materialize(modifier, entity_commands);
         }
     }
 }

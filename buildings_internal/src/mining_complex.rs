@@ -1,6 +1,5 @@
 use bevy::{
     ecs::system::SystemParam,
-    platform::collections::HashMap,
     prelude::*,
 };
 use nanorand::Rng;
@@ -107,7 +106,7 @@ impl BuilderMiningComplex {
             grid_imprint: GridImprint::square(3),
             attack_range: None,
             cost: vec![ResourceAmount::new(ResourceType::DarkOre, 100)],
-            baseline: HashMap::from([(ModifierType::MaxIntegrityPoints, 100.)]),
+            baseline: ModifierContributions::from([(ModifierType::MaxIntegrityPoints, 100.)]),
             sockets: vec![],
         }
     }
@@ -153,7 +152,7 @@ impl BuilderMiningComplex {
                     IndicatorType::DisabledByPlayer,
                 ]],
                 related![EffectInstances[
-                    (ModifierContributions(building_info.baseline.clone()), BaselineEffect),
+                    (building_info.baseline.clone(), BaselineEffect),
                 ]],
                 children![
                     IndicatorDisplay::default(),

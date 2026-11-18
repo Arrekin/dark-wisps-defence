@@ -209,11 +209,12 @@ fn panel_transition_to_hidden(
         Val::Px(top) => top,
         _ => return,
     };
+    let panel_height = computed_node.unrounded_size().y * computed_node.inverse_scale_factor();
     let new_top = current_top - time.delta_secs() * SLIDING_SPEED;
-    if new_top > -computed_node.size().y {
+    if new_top > -panel_height {
         node.top = Val::Px(new_top);
     } else {
-        node.top = Val::Px(-computed_node.size().y);
+        node.top = Val::Px(-panel_height);
         next_state.set(ObjectivesPanelState::Hidden);
     }
 }

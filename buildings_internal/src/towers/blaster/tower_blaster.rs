@@ -1,7 +1,4 @@
-use bevy::{
-    platform::collections::HashMap,
-    prelude::*,
-};
+use bevy::prelude::*;
 
 use almanach::{BuildingInfo, prelude::*};
 use alteration::{
@@ -62,7 +59,7 @@ impl BuilderTowerBlaster {
             grid_imprint: GridImprint::square(2),
             attack_range: AttackRangeType(RangeType::Cells).into(),
             cost: vec![ResourceAmount::new(ResourceType::DarkOre, 150)],
-            baseline: HashMap::from([
+            baseline: ModifierContributions::from([
                 (ModifierType::MaxIntegrityPoints, 100.),
                 (ModifierType::MaxAttackRange, 15.),
                 (ModifierType::AttackSpeed, 5.),
@@ -127,7 +124,7 @@ impl BuilderTowerBlaster {
                     IndicatorType::DisabledByPlayer,
                 ]],
                 related![EffectInstances[
-                    (ModifierContributions(building_info.baseline.clone()), BaselineEffect),
+                    (building_info.baseline.clone(), BaselineEffect),
                 ]],
                 related![TowerTop[(
                     Sprite {

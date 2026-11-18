@@ -3,10 +3,7 @@
 //! Fire evolution of the Emitter. Charges over its reload (`TowerShootingTimer`), holds at full
 //! charge, and spawns an `InfernoDome` covering its range once a target wisp is inside.
 
-use bevy::{
-    platform::collections::HashMap,
-    prelude::*,
-};
+use bevy::prelude::*;
 
 use almanach::{BuildingInfo, prelude::*};
 use alteration::{
@@ -64,7 +61,7 @@ impl BuilderTowerInferno {
             grid_imprint: GridImprint::square(2),
             attack_range: AttackRangeType(RangeType::Circle).into(),
             cost: vec![ResourceAmount::new(ResourceType::DarkOre, 450)],
-            baseline: HashMap::from([
+            baseline: ModifierContributions::from([
                 (ModifierType::MaxIntegrityPoints, 100.),
                 (ModifierType::MaxAttackRange, 4.),
                 (ModifierType::AttackSpeed, 0.2),
@@ -120,7 +117,7 @@ impl BuilderTowerInferno {
                     IndicatorType::DisabledByPlayer,
                 ]],
                 related![EffectInstances[
-                    (ModifierContributions(building_info.baseline.clone()), BaselineEffect),
+                    (building_info.baseline.clone(), BaselineEffect),
                 ]],
                 children![
                     IndicatorDisplay::default(),

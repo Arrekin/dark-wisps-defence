@@ -1,6 +1,5 @@
 use bevy::{
     ecs::system::SystemParam,
-    platform::collections::HashMap,
     prelude::*,
 };
 
@@ -60,7 +59,7 @@ impl BuilderEnergyRelay {
             grid_imprint: GridImprint::square(2),
             attack_range: None,
             cost: vec![ResourceAmount::new(ResourceType::DarkOre, 300)],
-            baseline: HashMap::from([
+            baseline: ModifierContributions::from([
                 (ModifierType::MaxIntegrityPoints, 100.),
                 (ModifierType::EnergySupplyRange, 12.),
             ]),
@@ -115,7 +114,7 @@ impl BuilderEnergyRelay {
                     IndicatorType::DisabledByPlayer,
                 ]],
                 related![EffectInstances[
-                    (ModifierContributions(building_info.baseline.clone()), BaselineEffect),
+                    (building_info.baseline.clone(), BaselineEffect),
                 ]],
                 children![
                     IndicatorDisplay::default(),
@@ -136,7 +135,7 @@ pub(crate) struct EnergyRelayPlacementRules<'w, 's> {
 impl EnergyRelayPlacementRules<'_, '_> {
     /// The supply range a newly placed relay has.
     fn supply_range(&self) -> EnergySupplyRange {
-        EnergySupplyRange::new(self.building_rules.almanach.get_building_info(BuildingType::EnergyRelay).baseline[&ModifierType::EnergySupplyRange])
+        EnergySupplyRange::new(self.building_rules.almanach.get_building_info(BuildingType::EnergyRelay).baseline.get(ModifierType::EnergySupplyRange).unwrap_or(0.))
     }
 
     /// Checks ground, reservations, and cost, then tests the relay's proposed supply coverage.

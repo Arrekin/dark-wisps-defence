@@ -50,7 +50,7 @@ impl EffectVisualState {
     fn recompute(&mut self) {
         // Bits OR together; a slot is overwritten by whichever contribution holds it. If an
         // effect ever both stacks and carries per-instance params in one slot, that slot needs
-        // an explicit combine rule (max/sum/latest), like `ModifierType::aggregate`.
+        // an explicit combine rule (max/sum/latest), like `ModifierBank::aggregate`.
         self.visuals = EffectVisuals::default();
         for contribution in self.contributions.values() {
             self.visuals.mask |= contribution.bit;

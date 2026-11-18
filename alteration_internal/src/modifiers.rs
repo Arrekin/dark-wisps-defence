@@ -11,7 +11,7 @@ impl Plugin for ModifiersPlugin {
     fn build(&self, app: &mut App) {
         app
             .add_observer(on_insert_modifier_contributions_apply_to_bank)
-            .add_observer(on_remove_modifier_contributions_remove_from_bank)
+            .add_observer(on_discard_modifier_contributions_remove_from_bank)
             .add_observer(on_insert_max_integrity_points_clamp_integrity_points);
     }
 }
@@ -30,8 +30,8 @@ fn on_insert_modifier_contributions_apply_to_bank(
     bank.apply_contributions(effect_entity, contributions, &mut entity_commands);
 }
 
-fn on_remove_modifier_contributions_remove_from_bank(
-    trigger: On<Remove<ModifierContributions>>,
+fn on_discard_modifier_contributions_remove_from_bank(
+    trigger: On<Discard<ModifierContributions>>,
     mut commands: Commands,
     instances: Query<(&EffectTarget, &ModifierContributions)>,
     mut banks: Query<&mut ModifierBank>,

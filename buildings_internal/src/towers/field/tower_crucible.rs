@@ -3,10 +3,7 @@
 //! The Field tower's fire evolution: a dome of heat. It generates a `CrucibleField`, which shares
 //! space with every other field.
 
-use bevy::{
-    platform::collections::HashMap,
-    prelude::*,
-};
+use bevy::prelude::*;
 
 use almanach::{BuildingInfo, prelude::*};
 use alteration::{
@@ -65,7 +62,7 @@ impl BuilderTowerCrucible {
             grid_imprint: GridImprint::Plus { extents: 1 },
             attack_range: AttackRangeType(RangeType::Circle).into(),
             cost: vec![ResourceAmount::new(ResourceType::DarkOre, 500)],
-            baseline: HashMap::from([
+            baseline: ModifierContributions::from([
                 (ModifierType::MaxIntegrityPoints, 100.),
                 (ModifierType::MaxAttackRange, FIELD_RANGE_CELLS),
             ]),
@@ -112,7 +109,7 @@ impl BuilderTowerCrucible {
                     IndicatorType::DisabledByPlayer,
                 ]],
                 related![EffectInstances[
-                    (ModifierContributions(building_info.baseline.clone()), BaselineEffect),
+                    (building_info.baseline.clone(), BaselineEffect),
                 ]],
                 children![
                     IndicatorDisplay::default(),

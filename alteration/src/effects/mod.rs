@@ -2,8 +2,8 @@ pub mod visual;
 pub mod brittle;
 pub mod slow;
 
-use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
+use smallvec::SmallVec;
 
 use crate::modifiers::ModifierType;
 
@@ -55,9 +55,36 @@ pub struct EffectSourceOf(Vec<Entity>);
 // MODIFIER CONTRIBUTIONS //
 ////////////////////////////
 
-/// The set of stat contributions an effect instance provides to its target.
-#[derive(Component)]
-pub struct ModifierContributions(pub HashMap<ModifierType, f32>);
+/// The values an effect instance contributes to its target's modifiers, at most one per modifier.
+///
+/// Construction does not check for repeats, and a repeated modifier gives an unspecified outcome.
+/// Insert a new `ModifierContributions` to change an effect's contributions.
+#[derive(Component, Clone, Default)]
+#[component(immutable)]
+pub struct ModifierContributions(SmallVec<[(ModifierType, f32); 4]>);
+impl ModifierContributions {
+    pub fn push(&mut self, modifier: ModifierType, value: f32) {
+        self.0.push((modifier, value));
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (ModifierType, f32)> + '_ {
+        self.0.iter().copied()
+    }
+
+    pub fn get(&self, modifier: ModifierType) -> Option<f32> {
+        self.0.iter().find(|(entry_modifier, _)| *entry_modifier == modifier).map(|&(_, value)| value)
+    }
+}
+impl FromIterator<(ModifierType, f32)> for ModifierContributions {
+    fn from_iter<I: IntoIterator<Item = (ModifierType, f32)>>(entries: I) -> Self {
+        Self(entries.into_iter().collect())
+    }
+}
+impl<const N: usize> From<[(ModifierType, f32); N]> for ModifierContributions {
+    fn from(entries: [(ModifierType, f32); N]) -> Self {
+        entries.into_iter().collect()
+    }
+}
 
 /// Marker on the permanent baseline effect instance spawned at entity creation.
 ///

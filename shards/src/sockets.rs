@@ -1,10 +1,7 @@
-use bevy::{
-    platform::collections::HashMap,
-    prelude::*,
-};
+use bevy::prelude::*;
 use strum::{AsRefStr, EnumCount, EnumString};
 
-use alteration::modifiers::prelude::ModifierType;
+use alteration::{effects::ModifierContributions, modifiers::prelude::ModifierType};
 use game_core::prelude::{ContentId, Shard, ShardTier, ShardType};
 
 /// Accepted shard type, optional tier restriction, and modifier contributions per tier.
@@ -21,7 +18,7 @@ pub struct ShardSocket {
     /// Player-facing label, e.g. "Attack speed".
     pub description: String,
     /// Modifiers applied to the holder, indexed by tier starting at T1.
-    pub contributions: [HashMap<ModifierType, f32>; ShardTier::COUNT],
+    pub contributions: [ModifierContributions; ShardTier::COUNT],
 }
 impl ShardSocket {
     /// Accepts any tier of `shard_type`, contributing `per_tier[tier]` to a single modifier.
@@ -30,7 +27,7 @@ impl ShardSocket {
             shard_type,
             shard_tier: None,
             description: description.into(),
-            contributions: per_tier.map(|value| HashMap::from([(modifier, value)])),
+            contributions: per_tier.map(|value| ModifierContributions::from([(modifier, value)])),
         }
     }
 
@@ -48,7 +45,7 @@ impl ShardSocket {
         shard.shard_type == self.shard_type && self.shard_tier.is_none_or(|tier| tier == shard.tier)
     }
 
-    pub fn contributions_for(&self, tier: ShardTier) -> &HashMap<ModifierType, f32> {
+    pub fn contributions_for(&self, tier: ShardTier) -> &ModifierContributions {
         &self.contributions[tier as usize]
     }
 }
