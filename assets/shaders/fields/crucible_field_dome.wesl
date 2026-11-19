@@ -1,10 +1,9 @@
-// Crucible field dome: a dome of heat. `displace` bends the scene beneath it with a haze; `overlay`
-// adds hair-thin fire strands around its limb, a soft glow fading inward from its boundary, thin
-// tendrils over the shell and drifting embers. The fire is drawn where the haze samples the scene,
-// so it bends with it.
+// Crucible field dome: heat-haze refraction (`displace`) and additive fire shell (`overlay`).
+// Both passes clip to the field's territory via the shared field index; shared seams between
+// neighboring fields receive the same boundary glow and strands as the outer rim.
 //
-// The shared field index clips both passes to the field's territory. Where another field presses
-// in, the seam burns like the rim.
+// `overlay` evaluates fire at the haze-displaced world position so the shell tracks the refracted
+// scene beneath it.
 
 import bevy_sprite_render::mesh2d::{vertex_output::VertexOutput, view_bindings::globals};
 import package::shaders::common::clock::{wrap_count, wrap_index, wrap_period, wrap_rate};
@@ -13,7 +12,7 @@ import package::shaders::common::displacement::world_offset_to_uv;
 import package::shaders::common::fire_ramp::fire_ramp;
 import package::shaders::common::hash::{HASH_GOLDEN, hash_coords, hash_mix, hash_unit};
 import package::shaders::common::map_light::MAP_SUN_DIRECTION;
-import package::shaders::common::value_noise::{value_fbm_3d_drift, value_noise_3d_drift};
+import package::shaders::common::noise::{noise_3d_drift, noise_fbm_3d_drift};
 import package::shaders::fields::fields::{FieldShape, field_boundary, field_owners_at, field_shapes};
 
 // Field order and types mirror `CrucibleFieldDome` in fields_internal/src/crucible_field.rs.
@@ -32,7 +31,7 @@ const HAZE_SPEED: f32 = 2.2;
 const HAZE_WAVES: f32 = 6.0;         // large slow waves, world px
 const HAZE_WAVE_SCALE: f32 = 70.0;
 const HAZE_WAVE_SPEED: f32 = 0.6;
-const HAZE_INTERIOR: f32 = 0.85;     // haze in the middle, of the rim's
+const HAZE_INTERIOR: f32 = 0.85;     // interior haze strength relative to the rim
 const HAZE_EDGE_FADE: f32 = 10.0;    // px over which the haze fades in from the boundary
 const LENS: f32 = 3.0;               // outward lens toward the edge, px
 
@@ -79,15 +78,14 @@ const EMBER_DRIFT: f32 = 8.0;
 const EMBER_RIM_BIAS: f32 = 0.6;
 const EMBER_SALT: u32 = 0x510e527fu;
 
-// Time walks diagonally through the noise lattice so pixels do not all cross lattice planes, where
-// value noise eases, at the same moment.
+// Diagonal drift axis so adjacent pixels do not cross integer lattice planes simultaneously.
 const TIME_WALK: vec3<f32> = vec3<f32>(0.37, 0.23, 1.0);
 
 // Two-octave 3D noise at `q`, drifting along `TIME_WALK` at `rate` cells/s from `offset`.
 fn churn_noise(q: vec2<f32>, offset: f32, time: f32, rate: f32) -> f32 {
     let walk = TIME_WALK * offset;
-    let coarse = value_noise_3d_drift(vec3<f32>(q, 0.0) + walk, time, TIME_WALK * rate);
-    let fine = value_noise_3d_drift(vec3<f32>(q * 2.1 + vec2<f32>(4.3, 1.7), 0.0) + walk * 1.7, time, TIME_WALK * rate * 1.7);
+    let coarse = noise_3d_drift(vec3<f32>(q, 0.0) + walk, time, TIME_WALK * rate);
+    let fine = noise_3d_drift(vec3<f32>(q * 2.1 + vec2<f32>(4.3, 1.7), 0.0) + walk * 1.7, time, TIME_WALK * rate * 1.7);
     return (coarse + 0.5 * fine) / 1.5;
 }
 
@@ -153,13 +151,13 @@ fn shell_tendrils(normal: vec3<f32>, path: f32, radius: f32, time: f32, seed: f3
     let surface = normal * radius / TENDRIL_CELL + vec3<f32>(seed);
     let rise = -TENDRIL_RISE / TENDRIL_CELL;
     let warp = vec3<f32>(
-        value_fbm_3d_drift(surface * 0.5 + vec3<f32>(3.1, 1.7, 0.0), time, vec3<f32>(0.0, 0.0, rise * 0.5), 2),
-        value_fbm_3d_drift(surface * 0.5 + vec3<f32>(-5.2, 8.3, 2.0), time, vec3<f32>(0.0, 0.0, rise * 0.5), 2),
+        noise_fbm_3d_drift(surface * 0.5 + vec3<f32>(3.1, 1.7, 0.0), time, vec3<f32>(0.0, 0.0, rise * 0.5), 2),
+        noise_fbm_3d_drift(surface * 0.5 + vec3<f32>(-5.2, 8.3, 2.0), time, vec3<f32>(0.0, 0.0, rise * 0.5), 2),
         0.5,
     ) - vec3<f32>(0.5);
-    let n = value_fbm_3d_drift(surface + warp * TENDRIL_WARP, time, vec3<f32>(0.0, 0.0, rise), 3);
+    let n = noise_fbm_3d_drift(surface + warp * TENDRIL_WARP, time, vec3<f32>(0.0, 0.0, rise), 3);
     let strand = pow(1.0 - abs(2.0 * n - 1.0), TENDRIL_SHARPNESS);
-    let sparse = smoothstep(TENDRIL_SPARSE, TENDRIL_SPARSE + 0.2, value_fbm_3d_drift(surface * 0.35 + vec3<f32>(9.0, 4.0, 0.0), time, vec3<f32>(0.0, 0.0, rise * 0.35), 2));
+    let sparse = smoothstep(TENDRIL_SPARSE, TENDRIL_SPARSE + 0.2, noise_fbm_3d_drift(surface * 0.35 + vec3<f32>(9.0, 4.0, 0.0), time, vec3<f32>(0.0, 0.0, rise * 0.35), 2));
     return fire_ramp(TENDRIL_HEAT + 0.15 * strand) * strand * sparse * max(path, TENDRIL_INTERIOR) * TENDRIL_BRIGHT;
 }
 
@@ -173,7 +171,7 @@ fn limb_strands(direction: vec2<f32>, edge: f32, radius: f32, time: f32, seed: f
         let c = cos(angle);
         let s = sin(angle);
         let turned = vec2<f32>(c * direction.x - s * direction.y, s * direction.x + c * direction.y);
-        let n = value_fbm_3d_drift(vec3<f32>(turned * (radius / STRAND_LENGTH) + vec2<f32>(layer * 17.0), edge / STRAND_WIDTH + seed + layer * 5.3), time, vec3<f32>(0.0, 0.0, STRAND_CHURN), 2);
+        let n = noise_fbm_3d_drift(vec3<f32>(turned * (radius / STRAND_LENGTH) + vec2<f32>(layer * 17.0), edge / STRAND_WIDTH + seed + layer * 5.3), time, vec3<f32>(0.0, 0.0, STRAND_CHURN), 2);
         let strand = pow(1.0 - abs(2.0 * n - 1.0), STRAND_SHARPNESS);
         total += strand * exp(-edge / (LIMB_DEPTH * (1.0 + 0.6 * layer)));
     }
@@ -207,7 +205,7 @@ fn embers(world_position: vec2<f32>, field: Instance, shape: FieldShape, time: f
             if !owns(base, field) { continue; }
             let outward = normalize(base - shape.center + vec2<f32>(0.001));
             let position = base + outward * EMBER_DRIFT * age;
-            let twinkle = 0.6 + 0.4 * sin(age * 23.0 + hash_unit(hash_mix(slot_hash + 5u)) * 6.28);
+            let twinkle = 0.6 + 0.4 * sin(age * 23.0 + hash_unit(hash_mix(slot_hash + 5u)) * TAU);
             let size = EMBER_SIZE * (1.0 - 0.5 * fraction);
             let k = smoothstep(size, 0.0, length(world_position - position));
             color += fire_ramp(0.8 - 0.25 * fraction) * k * k * twinkle * (1.0 - fraction * fraction) * EMBER_BRIGHT;
@@ -242,7 +240,7 @@ fn fire_light(world_position: vec2<f32>, field: Instance, shape: FieldShape, tim
     // Strands get hotter toward their cores and the edge, with hot flecks, capped like the other fire.
     let strands = limb_strands(direction, edge, radius, time, field.seed);
     let strand_mask = min(strands, 1.0);
-    let flecks = STRAND_FLECKS * smoothstep(0.72, 0.9, value_noise_3d_drift(vec3<f32>(seen / 6.0, field.seed), time, vec3<f32>(0.0, 0.0, 1.5)));
+    let flecks = STRAND_FLECKS * smoothstep(0.72, 0.9, noise_3d_drift(vec3<f32>(seen / 6.0, field.seed), time, vec3<f32>(0.0, 0.0, 1.5)));
     let strand_heat = min(STRAND_HEAT + STRAND_CORE_HEAT * strand_mask + STRAND_HOT_RIM * exp(-edge / LIMB_DEPTH) + flecks * strand_mask, 0.97);
     light += fire_ramp(strand_heat) * shade * strands * STRAND_BRIGHT;
 

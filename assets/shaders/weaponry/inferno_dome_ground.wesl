@@ -1,7 +1,7 @@
 import bevy_sprite_render::mesh2d::vertex_output::VertexOutput;
 import package::shaders::common::clock::{ClockInstant, game_time_since};
 import package::shaders::common::color::display_to_linear;
-import package::shaders::common::value_noise::value_fbm_3d;
+import package::shaders::common::noise::noise_fbm_3d;
 
 // `InfernoDomeGround` shader: release flash and scorch decal under an `InfernoDome`.
 // Coordinates are in world units relative to dome center. Premultiplied output: scorch darkens
@@ -37,7 +37,7 @@ fn look(mesh: VertexOutput, ground: Instance) -> vec4<f32> {
 
     let scorch = SCORCH * max(0.0, 1.0 - age / SCORCH_DURATION) * min(1.0, age / 0.15);
     if scorch > 0.0 {
-        let noise = value_fbm_3d(vec3<f32>(p / 14.0, ground.seed), 4);
+        let noise = noise_fbm_3d(vec3<f32>(p / 14.0, ground.seed), 4);
         let mark = smoothstep(radius + 4.0, radius - 18.0, d + (noise - 0.5) * 30.0) * smoothstep(0.3, 0.7, noise + 0.15);
         alpha = scorch * SCORCH_DARKNESS * mark;
     }

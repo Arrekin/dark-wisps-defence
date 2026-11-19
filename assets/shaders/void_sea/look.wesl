@@ -1,15 +1,15 @@
-import package::shaders::common::clock::{CLOCK_WRAP_PERIOD, wrap_count, wrap_fade, wrap_index, wrap_mix, wrap_period};
+import package::shaders::common::clock::{wrap_count, wrap_index, wrap_period};
 import package::shaders::common::core::TAU;
-import package::shaders::common::gradient_noise::gradient_noise_2d;
 import package::shaders::common::hash::{hash_coords, hash_mix, hash_unit};
 import package::shaders::common::map_light::{MAP_SUN_ELEVATION_TANGENT, MAP_SUN_GROUND_DIRECTION};
-import package::shaders::common::value_noise::{value_noise_2d, value_noise_2d_drift};
+import package::shaders::common::noise::{noise_2d, noise_2d_drift, noise_gradient_2d, noise_gradient_2d_drift};
 import package::shaders::void_sea::waves::{
     HIT_REACH, WATER_HEIGHT, floored_mod, map_size, stretch_hit, wall_coordinate, wall_noise, wall_noise_drift, wall_point,
 };
 
-// The sea's look: a black mercury surface with thin cold streaks, foam where waves meet the glass, and
-// the water's face seen through the glass. Lengths are in world units and times in seconds.
+// Void sea shading: dark mercury surface with contour streaks, wave and crash foam along the glass
+// barrier, and the vertical water face seen through the glass. Lengths are in world units; `t` is
+// `globals.time` in seconds.
 
 // Surface tones: void, body and light patches of slow noise, stretched along the crests.
 const VOID_COLOR: vec3<f32> = vec3<f32>(0.00439, 0.00518, 0.00651); // near black
@@ -20,16 +20,16 @@ const TONE_SPEED: f32 = 0.02;
 const TONE_STRETCH: f32 = 3.0;
 const TONE_LOW: f32 = 0.42;
 const TONE_HIGH: f32 = 0.66;
-// Unit direction the sea's crests travel in.
+// Unit propagation direction of open-sea wave crests.
 const TRAVEL: vec2<f32> = vec2<f32>(0.0, -1.0);
 
-// Toward the horizon every colour closes in on this one, past a clear band around the glass.
+// Exponential distance fog target beyond `HORIZON_START` from the glass.
 const DEEP_COLOR: vec3<f32> = vec3<f32>(0.00212, 0.00243, 0.00304); // black
 const HORIZON_START: f32 = 500.0;
-// Distance over which colours halve their difference to `DEEP_COLOR`.
+// Half-life distance of the exponential fade toward `DEEP_COLOR`.
 const HORIZON_HALF: f32 = 500.0;
 
-// Glass streaks: contour lines of slowly flowing noise, where light catches ripples.
+// Glass streaks: contour lines of slowly flowing noise on the open sea.
 const STROKE_COLOR: vec3<f32> = vec3<f32>(0.64448, 0.69387, 0.75294); // pale steel
 const STREAK_SCALE: f32 = 200.0;
 const STREAK_STRETCH: f32 = 6.0;
@@ -37,10 +37,10 @@ const STREAK_LEVELS: f32 = 3.0;
 const STREAK_WIDTH: f32 = 0.9;
 const STREAK_SPEED: f32 = 0.08;
 const STREAK_BREAK: f32 = 0.68;
-// Distance from the glass within which the streaks give way to the incoming waves.
+// Distance from the glass over which open-sea streaks fade in.
 const GLINT_CLEAR: f32 = 180.0;
 
-// Foam of the waves and crashes.
+// Wave and crash foam.
 const FOAM_COLOR: vec3<f32> = vec3<f32>(0.71569, 0.76052, 0.81485); // pale grey
 const FOAM_CORE_COLOR: vec3<f32> = vec3<f32>(1.0, 1.0, 1.0); // white
 const APPROACH_REACH: f32 = 170.0;
@@ -48,26 +48,25 @@ const ROLLER_WIDTH: f32 = 18.0;
 const ROLLER_BOW: f32 = 30.0;
 const WAVE_GLINT_WIDTH: f32 = 0.8;
 const BURST_WIDTH: f32 = 24.0;
-// Fractions of the crash over which its foam tears apart.
+// Crash progress range over which the foam dissolves.
 const BREAK_START: f32 = 0.15;
 const BREAK_END: f32 = 0.8;
 const BLOB_SCALE: f32 = 5.0;
 const BLOB_NOISE: f32 = 0.9;
 const CORE_BAND: f32 = 0.3;
-// Foam always pressed on the glass, and how much each lap swells it.
+// Baseline foam width along the glass and additional width per lap pulse.
 const CLING: f32 = 3.0;
 const LAP_SWELL: f32 = 2.0;
-// Tiny drops hopping off the glass at each lap.
+// Small drops ejected from the glass on each lap pulse.
 const LAP_DROP_SPACING: f32 = 26.0;
 const LAP_DROP_CHANCE: f32 = 0.35;
 const LAP_DROP_SIZE: f32 = 1.1;
 const LAP_DROP_OUT: f32 = 6.0;
-// Waves, crashes, echoes and lapping drops all stay within this distance of the glass:
+// Maximum distance from the glass reached by waves, crashes, echoes, or lap drops:
 // max(APPROACH_REACH + ROLLER_BOW + ROLLER_WIDTH, CLING + ECHO_REACH + RIPPLE_WIDTH, BURST_WIDTH) + 8.
 const FOAM_REACH: f32 = 226.0;
 
-// Lapping rings leaving the glass, and the echo a crash sends back out. The ring period is also the
-// rhythm of the lapping.
+// Periodic lapping rings and crash echo ripples propagating outward from the glass.
 const RIPPLE_STRENGTH: f32 = 0.09;
 const RIPPLE_SPACING: f32 = 22.0;
 const RIPPLE_PERIOD: f32 = 2.2;
@@ -76,12 +75,12 @@ const RIPPLE_WIDTH: f32 = 1.0;
 const ECHO_STRENGTH: f32 = 0.8;
 const ECHO_REACH: f32 = 80.0;
 
-// Charged glass: the glass glows for a moment where a wave crashes. HDR, so it blooms.
+// Additive HDR cyan flash along the glass on wave impact.
 const FLASH_COLOR: vec3<f32> = vec3<f32>(0.21223, 0.80695, 1.0); // cyan
 const BARRIER_FLASH: f32 = 1.4;
 const FLASH_DECAY: f32 = 9.0;
 
-// The water's face against the glass.
+// Vertical water face against the glass barrier.
 const FACE_DEEP_COLOR: vec3<f32> = vec3<f32>(0.00152, 0.00182, 0.00212); // black
 const FACE_TOP_COLOR: vec3<f32> = vec3<f32>(0.01229, 0.01521, 0.01938); // slate
 const MENISCUS_COLOR: vec3<f32> = vec3<f32>(1.0, 1.0, 1.0); // white
@@ -90,26 +89,25 @@ const FACE_FOAM: f32 = 1.5;
 const CHURN_DEPTH: f32 = 32.0;
 const BUBBLE_SCALE: f32 = 4.0;
 
-// Spray thrown up the glass by crashes.
+// Crash spray particles and surface shadow opacity.
 const DROP_COUNT: f32 = 14.0;
 const DROP_SIZE: f32 = 2.0;
 const DROP_HEIGHT: f32 = 80.0;
 const DROP_OUT: f32 = 8.0;
-// How dark a drop's shadow lies on the surface.
 const SEA_SHADOW: f32 = 0.55;
 
 const LAP_SALT: u32 = 0x6a09e667u;
 
-// Coverage of a stroke of the given half-width. Strokes thinner than a pixel keep a pixel's width and
-// fade instead.
+// Anti-aliased stroke coverage for `half_width` at `distance` (world units). Sub-pixel strokes
+// clamp their width to `pixel` and attenuate opacity proportionally.
 fn ink(distance: f32, half_width: f32, pixel: f32) -> f32 {
     let w = max(half_width, 0.5 * pixel);
     return (1.0 - smoothstep(w - 0.5 * pixel, w + 0.5 * pixel, distance)) * min(half_width / w, 1.0);
 }
 
 fn streak_noise(q: vec2<f32>, t: f32) -> f32 {
-    let flow = vec2<f32>(0.3, -1.0) * t * STREAK_SPEED;
-    return gradient_noise_2d(q + flow) + 0.5 * (gradient_noise_2d(q * 2.1 + vec2<f32>(3.3, 7.1) - flow * 1.3) - 0.5);
+    let flow = vec2<f32>(0.3, -1.0) * STREAK_SPEED;
+    return noise_gradient_2d_drift(q, t, flow) + 0.5 * (noise_gradient_2d_drift(q * 2.1 + vec2<f32>(3.3, 7.1), t, -flow * 1.3) - 0.5);
 }
 
 // Thin cold streaks where light catches ripples on the surface. They follow contour lines of slowly
@@ -117,13 +115,9 @@ fn streak_noise(q: vec2<f32>, t: f32) -> f32 {
 fn glass_streaks(p: vec2<f32>, t: f32, pixel: f32) -> f32 {
     let along_crest = vec2<f32>(-TRAVEL.y, TRAVEL.x);
     let q = vec2<f32>(dot(p, along_crest) / STREAK_STRETCH, dot(p, TRAVEL)) / STREAK_SCALE;
-    var n = streak_noise(q, t);
+    let n = streak_noise(q, t);
     let break_q = q * vec2<f32>(4.0, 1.5);
-    let breaks = value_noise_2d_drift(break_q, t, vec2<f32>(0.1, 0.0));
-    let fade = wrap_fade(t);
-    if fade > 0.0 {
-        n = wrap_mix(n, streak_noise(q, t - CLOCK_WRAP_PERIOD), fade);
-    }
+    let breaks = noise_2d_drift(break_q, t, vec2<f32>(0.1, 0.0));
     let level = n * STREAK_LEVELS;
     let to_level = abs(level - floor(level + 0.5));
     let world_distance = to_level / max(fwidth(level), 1e-6) * pixel;
@@ -182,11 +176,9 @@ struct Foam {
     flash: f32,
 };
 
-// Waves on the sea's surface near the glass. A wave is born out at sea as a faint glint on the swell and
-// runs in at a steady speed, its middle ahead of its ends; big waves start further out. It gathers foam
-// as it nears the glass, flecks first and then a solid cap. It crashes into the glass, where its foam
-// bursts against the wall, tears apart and dies in place, and its echo can run back out. A little water
-// always stays pressed on the glass and swells with each lap. Every wave reaching the point adds its part.
+// Evaluates foam, core, crest/echo lines, and barrier flash near the glass (`d < FOAM_REACH`).
+// Combines the persistent lapping band (`CLING`) and droplets with incoming rollers and crash
+// bursts from the `2 * HIT_REACH + 1` nearest perimeter stretches.
 fn impact_foam(p: vec2<f32>, d: f32, t: f32, pixel: f32) -> Foam {
     let wall = wall_coordinate(p);
     let ragged = wall_noise_drift(wall, 14.0, t, 0.9);
@@ -199,8 +191,7 @@ fn impact_foam(p: vec2<f32>, d: f32, t: f32, pixel: f32) -> Foam {
     );
     result.foam = max(result.foam, lap_drops(wall, d, t, pixel));
 
-    // Edge softness from the slopes of the shapes and the noise, so it needs no screen derivatives.
-    // Capped so a shape thinner than a pixel fades out instead of smearing.
+    // Analytical anti-aliasing width from the shape and noise gradients (avoids `fwidth` inside the loop).
     let noise_slope = BLOB_NOISE / BLOB_SCALE;
     for (var k = -HIT_REACH; k <= HIT_REACH; k++) {
         let hit = stretch_hit(wall, t, k);
@@ -208,14 +199,14 @@ fn impact_foam(p: vec2<f32>, d: f32, t: f32, pixel: f32) -> Foam {
             continue;
         }
         let q = p / BLOB_SCALE + vec2<f32>(hit.seed * 17.3, hit.seed * 5.9);
-        let n = 0.65 * value_noise_2d(q) + 0.35 * value_noise_2d(q * 2.3 + vec2<f32>(5.1, 1.7));
+        let n = 0.65 * noise_2d(q) + 0.35 * noise_2d(q * 2.3 + vec2<f32>(5.1, 1.7));
         if hit.incoming >= 0.0 {
             let coming = hit.incoming;
             let front = APPROACH_REACH * (0.35 + 0.65 * hit.strength) * (1.0 - coming) + (1.0 - hit.envelope) * ROLLER_BOW * hit.strength;
-            // The glint on the crest, fading in as the wave is born.
+            // Crest glint as the roller forms.
             let born = smoothstep(0.0, 0.2, coming) * hit.envelope;
             result.lines = max(result.lines, ink(abs(d - front), WAVE_GLINT_WIDTH * (0.5 + 0.5 * hit.strength), pixel) * born * (0.4 + 0.6 * hit.strength));
-            // The foam cap: a band from the crest back, fading out toward the ends of its span.
+            // Trailing foam cap behind the crest.
             let thickness = max(ROLLER_WIDTH * coming * hit.weight, 0.5);
             let gathered = smoothstep(0.15, 0.85, coming);
             let roller = 1.0 - abs((d - front) / thickness - 0.5) * 2.0 + (n - 0.5) * BLOB_NOISE - (1.0 - gathered) * 1.2 - (1.0 - hit.envelope) * 1.5;
@@ -223,16 +214,16 @@ fn impact_foam(p: vec2<f32>, d: f32, t: f32, pixel: f32) -> Foam {
             result.foam = max(result.foam, smoothstep(-aa, aa, roller));
             result.core = max(result.core, smoothstep(0.45 - aa, 0.45 + aa, roller) * coming * hit.strength);
         } else {
-            // The crash: a mass of foam against the glass that tears and dissolves without moving off it.
+            // Stationary foam burst against the glass that erodes via a rising threshold.
             let struck = hit.crashed;
             let reach_out = max(BURST_WIDTH * hit.weight * smoothstep(0.0, 0.06, struck), 0.5);
             let crash = max(1.0 - d / reach_out, -1.0) + (n - 0.5) * BLOB_NOISE;
-            // Rises past the densest fragment by the end, so every fragment dissolves before the next wave.
+            // Exceeds max `crash` (`1.0 + 0.5 * BLOB_NOISE`) by `BREAK_END` so no foam lingers.
             let threshold = mix(-0.15, 1.05 + 0.5 * BLOB_NOISE, smoothstep(BREAK_START, BREAK_END, struck));
             let aa = min(pixel * (1.0 / reach_out + noise_slope), 0.2);
             result.foam = max(result.foam, smoothstep(threshold - aa, threshold + aa, crash));
             result.core = max(result.core, smoothstep(threshold + CORE_BAND - aa, threshold + CORE_BAND + aa, crash));
-            // The crash's echo: a ripple running back out from its span, as strong as the crash.
+            // Outward echo ring reflected from the glass.
             let echo = CLING + struck * ECHO_REACH;
             result.lines = max(result.lines, ink(abs(d - echo), RIPPLE_WIDTH * (1.0 - struck), pixel) * hit.weight * (1.0 - struck) * ECHO_STRENGTH);
             result.flash = max(result.flash, hit.weight * exp(-struck * FLASH_DECAY));
@@ -241,23 +232,18 @@ fn impact_foam(p: vec2<f32>, d: f32, t: f32, pixel: f32) -> Foam {
     return result;
 }
 
-// The slow tone patches drifting across the sea.
+// Slow two-octave gradient noise for surface tone patches.
 fn tone_noise(tone_p: vec2<f32>, t: f32) -> f32 {
-    let drift = vec2<f32>(t * TONE_SPEED, -0.6 * t * TONE_SPEED);
-    return 0.65 * gradient_noise_2d(tone_p + drift) + 0.35 * gradient_noise_2d(tone_p * 2.3 - drift * 1.7);
+    let drift = vec2<f32>(1.0, -0.6) * TONE_SPEED;
+    return 0.65 * noise_gradient_2d_drift(tone_p, t, drift) + 0.35 * noise_gradient_2d_drift(tone_p * 2.3, t, -drift * 1.7);
 }
 
-// The sea's surface at the surface point `p`: tones, streaks, rings and the waves near the glass.
-// `d` is the distance from the glass and `pixel` the surface's world size of a screen pixel.
+// Shades the sea surface at world position `p`, distance `d` outside the glass, and world-units-per-pixel `pixel`.
 fn sea_surface(p: vec2<f32>, d: f32, t: f32, pixel: f32) -> vec3<f32> {
     // Three flat tones from slow noise, their shapes stretched along the crests.
     let along_crest = vec2<f32>(-TRAVEL.y, TRAVEL.x);
     let tone_p = vec2<f32>(dot(p, along_crest) / TONE_STRETCH, dot(p, TRAVEL)) / TONE_SCALE;
-    var tone = tone_noise(tone_p, t);
-    let fade = wrap_fade(t);
-    if fade > 0.0 {
-        tone = wrap_mix(tone, tone_noise(tone_p, t - CLOCK_WRAP_PERIOD), fade);
-    }
+    let tone = tone_noise(tone_p, t);
     let tone_aa = fwidth(tone);
     var color = mix(VOID_COLOR, BODY_COLOR, smoothstep(TONE_LOW - tone_aa, TONE_LOW + tone_aa, tone));
     color = mix(color, LIGHT_COLOR, smoothstep(TONE_HIGH - tone_aa, TONE_HIGH + tone_aa, tone));
@@ -274,7 +260,7 @@ fn sea_surface(p: vec2<f32>, d: f32, t: f32, pixel: f32) -> vec3<f32> {
         // Ring index wrapped modulo the number of rings per `CLOCK_WRAP_PERIOD`.
         let ring = wrap_index(floor(phase + 0.5), wrap_count(RIPPLE_PERIOD));
         let closest = clamp(p, vec2<f32>(0.0), map_size());
-        let broken = step(0.5, gradient_noise_2d(closest / 57.0 + vec2<f32>(ring * 3.1, 0.0)));
+        let broken = step(0.5, noise_gradient_2d(closest / 57.0 + vec2<f32>(ring * 3.1, 0.0)));
         let ring_fade = 1.0 - ripple_distance / RIPPLE_REACH;
         color = mix(color, STROKE_COLOR, ink(to_line, RIPPLE_WIDTH * ring_fade, pixel) * broken * RIPPLE_STRENGTH);
     }
@@ -287,19 +273,19 @@ fn sea_surface(p: vec2<f32>, d: f32, t: f32, pixel: f32) -> vec3<f32> {
         // Charged glass: the crash flash glows along the glass.
         color += FLASH_COLOR * BARRIER_FLASH * foam.flash * exp(-d / 4.0);
     }
-    // Past a clear band around the glass, every colour closes in on the deep at the same rate toward the
-    // horizon, so they keep their contrast with each other while they darken, until they merge.
+    // Exponential distance fog toward `DEEP_COLOR` beyond `HORIZON_START`.
     let horizon = exp2(-max(d - HORIZON_START, 0.0) / HORIZON_HALF);
     return DEEP_COLOR + (color - DEEP_COLOR) * horizon;
 }
 
-// Where the line of sight from a ground point to the sea-surface point above it crosses the glass.
+// Intersection of the view ray (from ground point `p` to displaced sea-surface point `surface`)
+// with the vertical glass barrier.
 struct GlassCrossing {
-    // 0 at the ground, 1 at the sea's top.
+    // Normalized height on the glass (`0` at ground level, `1` at the sea surface).
     height_fraction: f32,
-    // Depth below the sea's top.
+    // Depth below the sea surface in world units.
     below_surface: f32,
-    // Position along the glass.
+    // Perimeter coordinate (`wall_coordinate`) at the crossing.
     wall: vec2<f32>,
 };
 
@@ -323,27 +309,25 @@ fn glass_crossing(p: vec2<f32>, surface: vec2<f32>, sea_height: f32) -> GlassCro
     return GlassCrossing(height_fraction, sea_height * (1.0 - height_fraction), wall_coordinate(mix(p, surface, height_fraction)));
 }
 
-// Bubbles rising through the churn on the glass.
+// Rising bubble noise inside the glass-face foam churn.
 fn churn_noise(wall: vec2<f32>, below_surface: f32, t: f32) -> f32 {
     let q = vec2<f32>(wall.x, below_surface) / BUBBLE_SCALE;
     let rise = vec2<f32>(0.0, 6.0 / BUBBLE_SCALE);
-    return 0.65 * value_noise_2d_drift(q, t, rise) + 0.35 * value_noise_2d_drift(q * 2.3 + vec2<f32>(5.1, 1.7), t, rise * 2.3);
+    return 0.65 * noise_2d_drift(q, t, rise) + 0.35 * noise_2d_drift(q * 2.3 + vec2<f32>(5.1, 1.7), t, rise * 2.3);
 }
 
-// The sea's face against the glass, seen between the map's edge and the rim of the raised surface. The
-// water is darker deeper down. At the top, foam presses on the glass and swells with each lap, and
-// crashes drive white churn down into the water. `below_width` and `along_width` are the crossing's
-// change across a pixel, taken where every pixel runs.
+// Shades the vertical water column seen through the glass between the map edge and the parallax-
+// displaced surface rim. `below_width` and `along_width` are screen-space derivatives (`fwidth`) of
+// `crossing.below_surface` and `crossing.wall.x`, precomputed in uniform control flow.
 fn glass_face(crossing: GlassCrossing, below_width: f32, along_width: f32, t: f32) -> vec3<f32> {
     let height_fraction = crossing.height_fraction;
     let below_surface = crossing.below_surface;
     let wall = crossing.wall;
     var color = mix(FACE_DEEP_COLOR, FACE_TOP_COLOR, height_fraction * height_fraction);
-    // A thin cold line where the water's top meets the glass.
+    // Meniscus highlight where the surface meets the glass.
     color = mix(color, MENISCUS_COLOR, 1.0 - smoothstep(0.0, MENISCUS_WIDTH, below_surface));
 
     var churn_depth = FACE_FOAM + LAP_SWELL * lap_pulse(t) * lap_amount(wall, t);
-    // Charged glass: the glass shows itself for a moment where a wave crashes.
     var flash = 0.0;
     for (var k = -HIT_REACH; k <= HIT_REACH; k++) {
         let hit = stretch_hit(wall, t, k);
@@ -356,25 +340,23 @@ fn glass_face(crossing: GlassCrossing, below_width: f32, along_width: f32, t: f3
     color += FLASH_COLOR * BARRIER_FLASH * flash * (0.25 + 0.75 * height_fraction);
     let n = churn_noise(wall, below_surface, t);
     let churn = 1.0 - below_surface / max(churn_depth, 1e-3) + (n - 0.5) * BLOB_NOISE;
-    // The churn's change across a pixel: its depth falloff and its noise.
     let aa = clamp(below_width / max(churn_depth, 1e-3) + BLOB_NOISE * (along_width + below_width) / BUBBLE_SCALE, 1e-4, 0.2);
     color = mix(color, FOAM_COLOR, smoothstep(-aa, aa, churn));
     color = mix(color, FOAM_CORE_COLOR, smoothstep(0.45 - aa, 0.45 + aa, churn));
-    // A dark crease where the water meets the map's ground.
+    // Darken the base where the glass meets the ground plane.
     return color * mix(0.35, 1.0, smoothstep(0.0, 0.12, height_fraction));
 }
 
 struct Spray {
-    // Drop coverage.
+    // Droplet coverage.
     cover: f32,
-    // Coverage of the drops' shadows on the surface.
+    // Shadow coverage on the sea surface.
     shadow: f32,
 };
 
-// Spray thrown up the glass by crashes, more and higher from bigger waves. Each drop rises above the sea
-// and falls back near the glass. The perspective that lifts the sea carries a drop further from the
-// camera the higher it is, and its shadow lies on the sea's surface. `p` is the ground point under the
-// pixel; a ground point at height h shows at `camera + (p - camera) * camera_height / (camera_height - h)`.
+// Ballistic spray droplets launched upward by wave crashes and their shadows on the sea surface.
+// Projects droplet positions at height `h` to ground-plane coordinates via perspective parallax
+// (`camera + (base - camera) * camera_height / (camera_height - h)`).
 fn spray_drops(p: vec2<f32>, camera: vec2<f32>, camera_height: f32, t: f32, pixel: f32) -> Spray {
     let wall = wall_coordinate(p);
     let sun_away = -MAP_SUN_GROUND_DIRECTION / MAP_SUN_ELEVATION_TANGENT;

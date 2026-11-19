@@ -14,6 +14,7 @@ use bevy::{
 
 use game_core::prelude::{FaceSurface, GridImprint, MapObject, ObjectFaceRequest};
 use logging::prelude::*;
+use visuals::{specialize_ui_with_shared_gpu, specialize_with_shared_gpu};
 
 pub(crate) struct QuantumFieldMaterialsPlugin;
 impl Plugin for QuantumFieldMaterialsPlugin {
@@ -25,13 +26,15 @@ impl Plugin for QuantumFieldMaterialsPlugin {
     }
 }
 
-/// Stateless material; the shader derives its output from node UVs and global time.
+/// Stateless material; the shader derives its output from node UVs, global time and shared noise.
 #[derive(Asset, AsBindGroup, TypePath, Clone, Copy, Debug)]
 pub(crate) struct QuantumFieldFaceMaterial {}
 impl UiMaterial for QuantumFieldFaceMaterial {
     fn fragment_shader() -> ShaderRef {
         "shaders/quantum_field/face.wesl".into()
     }
+
+    specialize_ui_with_shared_gpu!();
 }
 
 /// The same glow in world space, spanning the imprint the field covers.
@@ -50,6 +53,8 @@ impl Material2d for QuantumFieldQuadMaterial {
     fn alpha_mode(&self) -> AlphaMode2d {
         AlphaMode2d::Blend
     }
+
+    specialize_with_shared_gpu!();
 }
 
 #[log_tags(Tag::MapObjects)]

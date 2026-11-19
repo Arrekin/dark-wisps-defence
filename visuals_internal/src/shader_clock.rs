@@ -3,7 +3,7 @@
 
 use std::time::Duration;
 
-use bevy::prelude::*;
+use bevy::{asset::AssetEventSystems, prelude::*};
 
 use visuals::{clock::{CLOCK_WRAP_PERIOD, ClockInstant}, shared_gpu::{SharedGpuBinding, SharedGpuWriter}};
 
@@ -12,7 +12,9 @@ impl Plugin for ShaderClockPlugin {
     fn build(&self, app: &mut App) {
         app
             .add_systems(Startup, apply_clock_wrap_period)
-            .add_systems(PostUpdate, upload_shader_clock_epoch);
+            // Run before `AssetEventSystems` so the `ShaderBuffer` modification is extracted in the
+            // same frame as the wrapped `globals.time`.
+            .add_systems(PostUpdate, upload_shader_clock_epoch.before(AssetEventSystems));
     }
 }
 

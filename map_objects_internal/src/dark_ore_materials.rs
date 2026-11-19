@@ -11,6 +11,7 @@ use bevy::{
 
 use game_core::prelude::{FaceSurface, GridImprint, MapObject, ObjectFaceRequest};
 use logging::prelude::*;
+use visuals::{specialize_ui_with_shared_gpu, specialize_with_shared_gpu};
 
 pub(crate) struct DarkOreMaterialsPlugin;
 impl Plugin for DarkOreMaterialsPlugin {
@@ -22,13 +23,15 @@ impl Plugin for DarkOreMaterialsPlugin {
     }
 }
 
-/// Stateless; the face shader derives the deposit from node UVs alone.
+/// Stateless; the face shader derives the deposit from node UVs and shared noise.
 #[derive(Asset, AsBindGroup, TypePath, Clone, Copy, Debug)]
 pub(crate) struct DarkOreFaceMaterial {}
 impl UiMaterial for DarkOreFaceMaterial {
     fn fragment_shader() -> ShaderRef {
         "shaders/dark_ore/face.wesl".into()
     }
+
+    specialize_ui_with_shared_gpu!();
 }
 
 /// Field order and types mirror `DarkOreQuad` in `assets/shaders/dark_ore/quad.wesl`.
@@ -50,6 +53,8 @@ impl Material2d for DarkOreQuadMaterial {
     fn alpha_mode(&self) -> AlphaMode2d {
         AlphaMode2d::Blend
     }
+
+    specialize_with_shared_gpu!();
 }
 
 /// Attaches a dark-ore face for UI or placement preview use.

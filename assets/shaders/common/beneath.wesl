@@ -1,5 +1,5 @@
 // Samples the scene captured after a band's displacement and before its overlays.
-// Bindings match `BENEATH_TEXTURE_BINDING` and `BENEATH_SAMPLER_BINDING` in
+// Bindings match `SharedGpuBinding::BeneathTexture` and `SharedGpuBinding::BeneathSampler` in
 // visuals/src/shared_gpu.rs. When no snapshot is bound, sampling reads Bevy's fallback image.
 
 import bevy_sprite_render::mesh2d::view_bindings::view;

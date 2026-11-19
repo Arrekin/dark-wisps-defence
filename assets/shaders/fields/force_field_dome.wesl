@@ -14,10 +14,10 @@ import bevy_sprite_render::mesh2d::{vertex_output::VertexOutput, view_bindings::
 import package::shaders::common::clock::wrap_rate;
 import package::shaders::common::color::display_to_linear;
 import package::shaders::common::core::{PI, TAU};
-import package::shaders::common::hash::{HASH_GOLDEN, hash_mix, hash_unit};
 import package::shaders::common::displacement::world_offset_to_uv;
+import package::shaders::common::hash::{HASH_GOLDEN, hash_mix, hash_unit};
 import package::shaders::common::map_light::MAP_SUN_GROUND_DIRECTION;
-import package::shaders::common::value_noise::{value_fbm_3d, value_noise_3d_drift};
+import package::shaders::common::noise::{noise_3d_drift, noise_fbm_3d};
 import package::shaders::fields::fields::{FieldBoundary, FieldShape, NO_FIELD, field_boundary, field_owners_at, field_shapes};
 
 // Mirrors `MAX_FIELD_IMPACTS` in fields_internal/src/force_field.rs.
@@ -148,7 +148,7 @@ fn shell_at(world_position: vec2<f32>, center: vec2<f32>, radius: f32) -> Shell 
 // Seamless angular noise on a circle of radius `frequency` (features per radian), drifting along Z
 // from `z` at `rate` cells/s.
 fn ring_noise(around: f32, frequency: f32, z: f32, time: f32, rate: f32) -> f32 {
-    return value_noise_3d_drift(vec3<f32>(cos(around) * frequency, sin(around) * frequency, z), time, vec3<f32>(0.0, 0.0, rate));
+    return noise_3d_drift(vec3<f32>(cos(around) * frequency, sin(around) * frequency, z), time, vec3<f32>(0.0, 0.0, rate));
 }
 
 // Strength of a shell pattern between the centre and the rim.
@@ -187,9 +187,9 @@ fn shimmering_strands(shell: Shell, around: f32, edge: f32, time: f32, seed: f32
     let fine = shell.normal * SHIMMER_SCALE * 2.3 + vec3<f32>(3.1, seed, 0.0);
     let fine_rate = -SHIMMER_SPEED * 1.4;
     let weight = toward_rim(shell, SHIMMER_CENTRE);
-    let shift = ((vec2<f32>(value_noise_3d_drift(coarse, time, vec3<f32>(0.0, 0.0, SHIMMER_SPEED)), value_noise_3d_drift(coarse + 17.3, time, vec3<f32>(0.0, 0.0, SHIMMER_SPEED))) - 0.5) * 1.4
-               + (vec2<f32>(value_noise_3d_drift(fine, time, vec3<f32>(0.0, 0.0, fine_rate)), value_noise_3d_drift(fine + 9.1, time, vec3<f32>(0.0, 0.0, fine_rate))) - 0.5) * 0.6) * weight * 2.0 * SHIMMER_SHIFT;
-    let grain = mix(1.0, mix(1.0, 0.35 + 1.3 * value_noise_3d_drift(fine * 1.3 + 5.0, time, vec3<f32>(0.0, 0.0, fine_rate * 1.3)), SHIMMER_GRAIN), weight);
+    let shift = ((vec2<f32>(noise_3d_drift(coarse, time, vec3<f32>(0.0, 0.0, SHIMMER_SPEED)), noise_3d_drift(coarse + 17.3, time, vec3<f32>(0.0, 0.0, SHIMMER_SPEED))) - 0.5) * 1.4
+               + (vec2<f32>(noise_3d_drift(fine, time, vec3<f32>(0.0, 0.0, fine_rate)), noise_3d_drift(fine + 9.1, time, vec3<f32>(0.0, 0.0, fine_rate))) - 0.5) * 0.6) * weight * 2.0 * SHIMMER_SHIFT;
+    let grain = mix(1.0, mix(1.0, 0.35 + 1.3 * noise_3d_drift(fine * 1.3 + 5.0, time, vec3<f32>(0.0, 0.0, fine_rate * 1.3)), SHIMMER_GRAIN), weight);
     return rim_strands(around + shift.y / shell.radius, edge + shift.x, time, seed) * grain;
 }
 
@@ -202,9 +202,9 @@ fn veils(shell: Shell, around: f32, time: f32, seed: f32) -> vec3<f32> {
     var mask = smoothstep(1.0 - VEIL_REACH, 1.0, shell.reach);
     mask *= mask;
     let flow = around + time * wrap_rate(VEIL_FLOW, TAU);
-    let warp = (value_noise_3d_drift(vec3<f32>(cos(flow) * 2.0, sin(flow) * 2.0, depth * 3.0 + seed), time, vec3<f32>(0.0, 0.0, 0.05)) - 0.5) * VEIL_WARP;
+    let warp = (noise_3d_drift(vec3<f32>(cos(flow) * 2.0, sin(flow) * 2.0, depth * 3.0 + seed), time, vec3<f32>(0.0, 0.0, 0.05)) - 0.5) * VEIL_WARP;
     let across = depth * VEIL_ACROSS + warp * 4.0;
-    let pattern = value_fbm_3d(vec3<f32>(cos(flow) * VEIL_ALONG, sin(flow) * VEIL_ALONG, across + seed), 4);
+    let pattern = noise_fbm_3d(vec3<f32>(cos(flow) * VEIL_ALONG, sin(flow) * VEIL_ALONG, across + seed), 4);
     let softness = (1.0 - VEIL_CONTRAST) * 0.5;
     let sheet = smoothstep(0.5 - softness, 0.5 + softness + 0.02, pattern);
     let hue = ring_noise(around - time * wrap_rate(VEIL_FLOW * 0.5, TAU), 1.3, seed + 11.0, time, 0.03);
@@ -277,9 +277,9 @@ fn web_cut(shell: Shell, point: vec3<f32>, count: u32, salt: u32, time: f32, pac
 fn web_cuts(shell: Shell, time: f32, seed: f32) -> vec3<f32> {
     let n = shell.normal;
     let warp = vec3<f32>(
-        value_noise_3d_drift(n * 2.5 + vec3<f32>(seed, 0.0, 0.0), time, vec3<f32>(0.0, 0.0, 0.05)),
-        value_noise_3d_drift(n * 2.5 + vec3<f32>(5.2, seed, 0.0), time, vec3<f32>(0.0, 0.0, 0.05)),
-        value_noise_3d_drift(n * 2.5 + vec3<f32>(9.7, 3.1, seed), time, vec3<f32>(0.0, 0.0, 0.05)),
+        noise_3d_drift(n * 2.5 + vec3<f32>(seed, 0.0, 0.0), time, vec3<f32>(0.0, 0.0, 0.05)),
+        noise_3d_drift(n * 2.5 + vec3<f32>(5.2, seed, 0.0), time, vec3<f32>(0.0, 0.0, 0.05)),
+        noise_3d_drift(n * 2.5 + vec3<f32>(9.7, 3.1, seed), time, vec3<f32>(0.0, 0.0, 0.05)),
     ) - 0.5;
     let point = normalize(n + warp * WEB_WARP * 0.25);
     let dome_salt = bitcast<u32>(seed);
@@ -382,8 +382,8 @@ fn displace(in: VertexOutput, field: Instance) -> vec4<f32> {
     let band = smoothstep(1.0 - VEIL_REACH, 1.0, shell.reach);
     let wobble_point = world_position * 0.03;
     let wobble = vec2<f32>(
-        value_noise_3d_drift(vec3<f32>(wobble_point, 0.0), globals.time, vec3<f32>(0.0, 0.0, 0.3)),
-        value_noise_3d_drift(vec3<f32>(wobble_point + 7.0, 0.0), globals.time, vec3<f32>(0.0, 0.0, 0.3)),
+        noise_3d_drift(vec3<f32>(wobble_point, 0.0), globals.time, vec3<f32>(0.0, 0.0, 0.3)),
+        noise_3d_drift(vec3<f32>(wobble_point + 7.0, 0.0), globals.time, vec3<f32>(0.0, 0.0, 0.3)),
     ) - 0.5;
     let lens = (-shell.direction * LENS * pow(1.0 - shell.height, 2.0) + wobble * 2.0 * WOBBLE * band) * smoothstep(0.0, 4.0, surface.boundary.edge);
     let offset = (surface.shift + lens) * field.progress;

@@ -2,31 +2,24 @@
 
 import package::shaders::common::clock::wrap_rate;
 import package::shaders::common::core::TAU;
-import package::shaders::common::value_noise::{value_fbm_2d_drift, value_noise_curl_2d_drift};
-
-// ── Effect switches ──────────────────────────────────────────────────────────
-const ENABLE_BOUNDARY:             bool = true;
-const ENABLE_BOUNDARY_UNCERTAINTY: bool = true;
-const ENABLE_MOIRE:                bool = true;   // moiré lattice — the interior's visible structure
-const ENABLE_INTERFERENCE:         bool = true;   // drifting standing-wave brightness bands across the lattice
-const ENABLE_LAYER_DIMINISH:       bool = true;
+import package::shaders::common::noise::{noise_curl_2d_drift, noise_fbm_2d_drift};
 
 // ── Palette ───────────────────────────────────────────────────────────────────
 const COLOR_BASE:     vec3<f32> = vec3<f32>(0.45, 0.20, 0.85); // violet interior
 const COLOR_ACCENT:   vec3<f32> = vec3<f32>(0.25, 1.00, 0.70); // cyan-green spark on bright lattice nodes
 const COLOR_BOUNDARY: vec3<f32> = vec3<f32>(0.60, 0.45, 1.00); // brighter violet rim — matches the interior
 
-const BOUNDARY_THICKNESS:   f32 = 2.5;   // visible rim line half-width
-const INTERIOR_FADE:        f32 = 6.0;   // distance the interior ramps to full strength over;
-                                         // also the object-effect edge falloff distance
-const BOUNDARY_UNCERT_AMP:  f32 = 5.0;   // edge jitter amplitude
-const BOUNDARY_UNCERT_FREQ: f32 = 0.05;  // edge jitter spatial frequency
+const BOUNDARY_THICKNESS:             f32 = 2.5;   // visible rim line half-width
+const INTERIOR_FADE:                  f32 = 6.0;   // distance the interior ramps to full strength over;
+                                                   // also the object-effect edge falloff distance
+const BOUNDARY_UNCERTAINTY_AMPLITUDE: f32 = 5.0;   // edge jitter amplitude
+const BOUNDARY_UNCERTAINTY_FREQUENCY: f32 = 0.05;  // edge jitter spatial frequency
 
 // ── Interior pattern tunables ─────────────────────────────────────────────────
-// Moiré lattice from two differently scaled grids warped by curl noise.
+// Moiré lattice from two differently scaled grids warped by curl noise; the interior's visible structure.
 const MOIRE_SCALE_A:       f32 = 0.10;
 const MOIRE_SCALE_B:       f32 = 0.115;  // slightly different scale → beat pattern
-const MOIRE_ROT:           f32 = 0.20;   // radians between the two lattices
+const MOIRE_ROTATION:      f32 = 0.20;   // radians between the two lattices
 const MOIRE_INTENSITY:     f32 = 0.60;   // overall lattice brightness
 const ACCENT_AMOUNT:       f32 = 0.20;   // cyan-green spark on the brightest lattice nodes (0 = none)
 const MOIRE_WARP_SCALE:    f32 = 0.0275; // curl-warp frequency (how the mesh writhes)
@@ -52,23 +45,23 @@ fn grid_wave(p: vec2<f32>) -> f32 {
     return (sin(p.x * TAU) * 0.5 + 0.5) * (sin(p.y * TAU) * 0.5 + 0.5);
 }
 
-// The masks that shape a field's look at one point.
+// Spatial and state masks for a quantum field sample.
 struct QuantumFieldMasks {
-    // Signed distance to the (jittered) edge, world pixels. Negative inside.
+    // Signed distance to the jittered boundary in world pixels (negative inside).
     edge_sdf: f32,
-    // 1 for a fresh anomaly, 0 for a solved one.
+    // 1 for an unsolved anomaly, 0 when solved.
     weirdness: f32,
-    // 1 deep inside, 0 at the edge.
+    // 1 deep inside, 0 at the boundary.
     interior: f32,
-    // A band straddling the edge, INTERIOR_FADE wide.
+    // Band straddling the boundary (`INTERIOR_FADE` wide).
     rim_zone: f32,
-    // The thin visible boundary line, BOUNDARY_THICKNESS wide.
+    // Visible boundary stroke (`BOUNDARY_THICKNESS` wide).
     on_edge: f32,
 }
 
-// Computes the masks for one point in a field. `local` is that point relative to the field's
-// centre. `noise_at` is where the edge jitter is sampled: on the map that is the world position,
-// which keeps two neighbouring fields from wobbling in step. Both in world pixels.
+// Computes boundary and interior masks at `local` (offset from the field centre, in world pixels).
+// `noise_at` is the world-space sample position for boundary jitter so adjacent fields do not
+// wobble in phase. `time` is the wrapped shader clock (`globals.time`).
 fn quantum_field_masks(
     local: vec2<f32>,
     half_extent: vec2<f32>,
@@ -78,13 +71,10 @@ fn quantum_field_masks(
     solve_progress: f32,
 ) -> QuantumFieldMasks {
     // Uncertain boundary: wobble the effective edge used for masking.
-    var edge_sdf = box_sdf(local, half_extent);
-    if ENABLE_BOUNDARY_UNCERTAINTY {
-        let jitter = value_fbm_2d_drift(noise_at * BOUNDARY_UNCERT_FREQ + vec2<f32>(seed, 0.0), time, vec2<f32>(0.0, 0.3)) - 0.5;
-        edge_sdf += jitter * 2.0 * BOUNDARY_UNCERT_AMP;
-    }
+    let jitter = noise_fbm_2d_drift(noise_at * BOUNDARY_UNCERTAINTY_FREQUENCY + vec2<f32>(seed, 0.0), time, vec2<f32>(0.0, 0.3), 2) - 0.5;
+    let edge_sdf = box_sdf(local, half_extent) + jitter * 2.0 * BOUNDARY_UNCERTAINTY_AMPLITUDE;
 
-    let weirdness = select(1.0, 1.0 - solve_progress, ENABLE_LAYER_DIMINISH);
+    let weirdness = 1.0 - solve_progress;
     // Interior mask: 1 inside, fading to 0 at the edge.
     let interior  = 1.0 - smoothstep(-INTERIOR_FADE, 0.0, edge_sdf);
     // Edge band used by phase flicker.
@@ -95,9 +85,8 @@ fn quantum_field_masks(
     return QuantumFieldMasks(edge_sdf, weirdness, interior, rim_zone, on_edge);
 }
 
-// The light a field adds on top of whatever is behind it: the moiré interior, the boundary line
-// and the faint interior tint. `collapse` runs 0..1 and eases all of it toward calm — a drone
-// beam scanning the field raises it.
+// Additive field glow combining the moiré lattice, boundary line, and interior tint.
+// `collapse` (`0..1`, raised by drone scan beams) suppresses the lattice and tint.
 fn quantum_field_glow(
     local: vec2<f32>,
     masks: QuantumFieldMasks,
@@ -106,21 +95,15 @@ fn quantum_field_glow(
     collapse: f32,
 ) -> vec3<f32> {
     // Drifting standing-wave brightness modulation.
-    var bright = 1.0;
-    if ENABLE_INTERFERENCE {
-        let w1 = sin(dot(local, vec2<f32>(1.0, 0.3))  * INTERFERENCE_SCALE * TAU + time * wrap_rate(INTERFERENCE_SPEED, TAU));
-        let w2 = sin(dot(local, vec2<f32>(-0.4, 1.0)) * INTERFERENCE_SCALE * TAU - time * wrap_rate(INTERFERENCE_SPEED * 0.8, TAU));
-        bright = 0.55 + 0.45 * (w1 + w2) * 0.5; // ~0.1 .. 1.0
-    }
+    let wave_a = sin(dot(local, vec2<f32>(1.0, 0.3))  * INTERFERENCE_SCALE * TAU + time * wrap_rate(INTERFERENCE_SPEED, TAU));
+    let wave_b = sin(dot(local, vec2<f32>(-0.4, 1.0)) * INTERFERENCE_SCALE * TAU - time * wrap_rate(INTERFERENCE_SPEED * 0.8, TAU));
+    let bright = 0.55 + 0.45 * (wave_a + wave_b) * 0.5; // ~0.1 .. 1.0
 
     // Combine the two warped grids into the moiré lattice.
-    var lattice = 0.0;
-    if ENABLE_MOIRE {
-        let warp = value_noise_curl_2d_drift(local * MOIRE_WARP_SCALE + vec2<f32>(seed, 0.0), time, vec2<f32>(MOIRE_WARP_SPEED, 0.0)) * MOIRE_WARP_STRENGTH;
-        let la = grid_wave(local * MOIRE_SCALE_A + warp + vec2<f32>(time * wrap_rate(0.05, 1.0), 0.0));
-        let lb = grid_wave(rotate(local, MOIRE_ROT) * MOIRE_SCALE_B + warp);
-        lattice = la * lb;
-    }
+    let warp = noise_curl_2d_drift(local * MOIRE_WARP_SCALE + vec2<f32>(seed, 0.0), time, vec2<f32>(MOIRE_WARP_SPEED, 0.0)) * MOIRE_WARP_STRENGTH;
+    let lattice_a = grid_wave(local * MOIRE_SCALE_A + warp + vec2<f32>(time * wrap_rate(0.05, 1.0), 0.0));
+    let lattice_b = grid_wave(rotate(local, MOIRE_ROTATION) * MOIRE_SCALE_B + warp);
+    let lattice = lattice_a * lattice_b;
 
     // Add cyan-green accents to the brightest violet lattice nodes.
     let lit = lattice * bright;
@@ -129,14 +112,10 @@ fn quantum_field_glow(
     // Scan-collapse eases the chaotic lattice toward calm where the field is being observed.
     overlay *= masks.interior * masks.weirdness * (1.0 - collapse);
 
-    // ── Boundary ───────────────────────────────────────────────────────────────
-    var boundary_col = vec3<f32>(0.0);
-    if ENABLE_BOUNDARY {
-        boundary_col += COLOR_BOUNDARY * masks.on_edge * (0.6 + 0.4 * masks.weirdness);
-    }
+    let boundary_color = COLOR_BOUNDARY * masks.on_edge * (0.6 + 0.4 * masks.weirdness);
 
     // Faint interior tint so the area still reads when calm/solved (also eased by collapse).
     let base_tint = COLOR_BASE * masks.interior * (0.05 + 0.10 * masks.weirdness) * (1.0 - collapse);
 
-    return overlay + boundary_col + base_tint;
+    return overlay + boundary_color + base_tint;
 }

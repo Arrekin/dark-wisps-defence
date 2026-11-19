@@ -3,7 +3,7 @@ import bevy_sprite_render::mesh2d::view_bindings::globals;
 import package::shaders::common::clock::{wrap_count, wrap_index, wrap_period};
 import package::shaders::common::fire_ramp::{FIRE_HEAT_CAP, fire_ramp};
 import package::shaders::common::hash::{HASH_GOLDEN, hash_mix, hash_unit};
-import package::shaders::common::value_noise::value_fbm_3d_drift;
+import package::shaders::common::noise::noise_fbm_3d_drift;
 import package::shaders::weaponry::ground_fire::{GROUND_FIRE_ALL_CLOSED, ground_fire};
 
 // `ImpactFire` shader on a `FlameStream`'s hit tile (world units relative to tile center,
@@ -42,7 +42,7 @@ fn look(mesh: VertexOutput, impact: Instance) -> vec4<f32> {
     let across = dot(from_hit, normal);
     let radius = length(from_hit);
     let angle = atan2(across, along);
-    let spray = value_fbm_3d_drift(vec3<f32>(angle * 2.2, radius / 6.0, 0.0), time, vec3<f32>(0.0, -5.0, 1.3), 4);
+    let spray = noise_fbm_3d_drift(vec3<f32>(angle * 2.2, radius / 6.0, 0.0), time, vec3<f32>(0.0, -5.0, 1.3), 4);
     let spread = SPLASH * (0.35 + 0.65 * smoothstep(-12.0, 6.0, along));
     let fan = (1.0 - smoothstep(spread * 0.55, spread, abs(across) + (spray - 0.5) * 18.0))
         * smoothstep(-16.0, -6.0, along) * (1.0 - smoothstep(4.0, 16.0, along + (spray - 0.5) * 10.0));
@@ -50,7 +50,7 @@ fn look(mesh: VertexOutput, impact: Instance) -> vec4<f32> {
     // Downstream clinging flames around `hit_point`.
     let downstream = max(along, 0.0);
     let cling_radius = length(from_hit - direction * downstream * 0.55);
-    let tongues = value_fbm_3d_drift(vec3<f32>(angle * 1.6, cling_radius / 5.0, 0.0), time, vec3<f32>(0.0, -4.0, 1.0), 4);
+    let tongues = noise_fbm_3d_drift(vec3<f32>(angle * 1.6, cling_radius / 5.0, 0.0), time, vec3<f32>(0.0, -4.0, 1.0), 4);
     let cling = smoothstep(17.0, 7.0, cling_radius + (tongues - 0.5) * 12.0) * smoothstep(3.5, 7.5, radius);
 
     // Full-cell surface flames and cell border highlight.

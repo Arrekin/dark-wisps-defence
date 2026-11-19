@@ -3,7 +3,7 @@
 // neighbouring flames.
 
 import package::shaders::common::core::CELL_HALF;
-import package::shaders::common::value_noise::value_fbm_3d_drift;
+import package::shaders::common::noise::noise_fbm_3d_drift;
 
 // Bit flags for `ground_fire`'s `open` argument. Open a side when its neighbour also burns.
 // Open a corner when both adjacent neighbours and the diagonal neighbour burn.
@@ -44,9 +44,10 @@ fn ground_fire_past_boundary(local: vec2<f32>, open: u32) -> f32 {
     return past;
 }
 
-// `local` (relative to cell centre) and `world` are in world units; `time` is a wrapped shader clock.
+// `local` (relative to cell centre) and `world` are in world units. `time` is `globals.time`
+// (optionally offset by a constant seed).
 fn ground_fire(local: vec2<f32>, world: vec2<f32>, time: f32, open: u32) -> GroundFire {
-    let noise = value_fbm_3d_drift(vec3<f32>(world / 5.0, 0.0), time, vec3<f32>(0.0, 0.0, 2.4), 4);
+    let noise = noise_fbm_3d_drift(vec3<f32>(world / 5.0, 0.0), time, vec3<f32>(0.0, 0.0, 2.4), 4);
     let past = ground_fire_past_boundary(local, open);
     let inside = 1.0 - smoothstep(-3.0, 2.0, past + (noise - 0.5) * 7.0);
     let coverage = smoothstep(0.5, 0.64, noise + 0.1) * inside;

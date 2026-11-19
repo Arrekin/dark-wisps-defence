@@ -2,11 +2,11 @@ import bevy_sprite_render::mesh2d::{vertex_output::VertexOutput, view_bindings::
 import package::shaders::common::clock::{ClockInstant, game_time_since};
 import package::shaders::common::core::TAU;
 import package::shaders::common::displacement::world_offset_to_uv;
-import package::shaders::common::value_noise::value_noise_3d_drift;
+import package::shaders::common::noise::noise_3d_drift;
 
 // Distortion of an `InfernoDome` (world units):
 // - Radial lens bulge inside the dome during breakup (`0..LENS_DURATION`).
-// - Noise shimmer over the dome footprint (`0..SHIMMER_DURATION`).
+// - Noise shimmer over the dome's area (`0..SHIMMER_DURATION`).
 
 // Field order and types mirror `InfernoDomeDisplacement` in weaponry_internal/src/inferno_dome.rs.
 struct Instance {
@@ -45,7 +45,7 @@ fn displace(in: VertexOutput, dome: Instance) -> vec4<f32> {
         let tail = exp(-SHIMMER_DURATION / SHIMMER_FADE);
         let decay = (exp(-age / SHIMMER_FADE) - tail) / (1.0 - tail);
         let shimmer = SHIMMER * decay * min(1.0, age / 0.1);
-        let rise = vec2<f32>(value_noise_3d_drift(vec3<f32>(p / 5.0, 0.0), time, vec3<f32>(0.0, 0.0, 3.0)), value_noise_3d_drift(vec3<f32>(p / 5.0 + 9.0, 0.0), time, vec3<f32>(0.0, 0.0, 3.0))) - vec2<f32>(0.5);
+        let rise = vec2<f32>(noise_3d_drift(vec3<f32>(p / 5.0, 0.0), time, vec3<f32>(0.0, 0.0, 3.0)), noise_3d_drift(vec3<f32>(p / 5.0 + 9.0, 0.0), time, vec3<f32>(0.0, 0.0, 3.0))) - vec2<f32>(0.5);
         offset += rise * 2.0 * shimmer * smoothstep(dome.half_size, dome.radius - 16.0, d);
     }
 

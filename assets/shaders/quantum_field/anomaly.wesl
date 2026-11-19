@@ -5,7 +5,7 @@ import bevy_sprite_render::mesh2d::{vertex_output::VertexOutput, view_bindings::
 import package::shaders::common::beneath::beneath_at_world;
 import package::shaders::common::clock::wrap_rate;
 import package::shaders::common::core::TAU;
-import package::shaders::common::value_noise::value_fbm_2d_drift;
+import package::shaders::common::noise::noise_fbm_2d_drift;
 import package::shaders::quantum_field::look::{quantum_field_masks, quantum_field_glow, box_sdf, COLOR_BOUNDARY};
 
 // Mirrors `MAX_COLLAPSE_POINTS` in map_objects_internal/src/quantum_field_anomaly.rs.
@@ -24,13 +24,6 @@ struct Instance {
 // Fields gathered for this frame, used to assign each pixel to one field.
 // `READS_ALL_INSTANCES` makes the generated entry shader import this declaration.
 @group(2) @binding(0) var<storage, read> instances: array<Instance>;
-
-// ── Effect switches ──────────────────────────────────────────────────────────
-const ENABLE_SCHLIEREN:            bool = true;
-const ENABLE_SUPERPOSITION:        bool = true;
-const ENABLE_DECOHERENCE:          bool = true;
-const ENABLE_PHASE_FLICKER:        bool = true;
-const ENABLE_SCAN_COLLAPSE:        bool = true;  // drone beams locally calm the field around their scan spot
 
 // ── Boundary tunables (world units unless noted) ──────────────────────────────
 const BOUNDARY_OUTER_BAND:  f32 = 8.0;   // distance past the edge still processed
@@ -52,26 +45,26 @@ const SCAN_COLLAPSE_RADIUS: f32 = 40.0;  // world-unit radius of the calmed regi
 const SCAN_GLOW:           f32 = 0.5;    // brightness of the soft "observed" rim
 
 fn overlay(in: VertexOutput, field: Instance) -> vec4<f32> {
-    let world_pos = in.world_position.xy;
-    let t = globals.time;
+    let world_position = in.world_position.xy;
+    let time = globals.time;
 
     // Fields never overlap (placement validator), but their quads' margins can; each pixel
     // belongs to the deepest box (smallest SDF), and other quads leave it alone.
     var best_sdf = 1.0e9;
-    var best_idx = 0u;
+    var best_index = 0u;
     for (var i = 0u; i < arrayLength(&instances); i++) {
-        let sdf = box_sdf(world_pos - instances[i].center, instances[i].half_extent);
+        let sdf = box_sdf(world_position - instances[i].center, instances[i].half_extent);
         if sdf < best_sdf {
             best_sdf = sdf;
-            best_idx = i;
+            best_index = i;
         }
     }
-    if best_idx != in.instance_index {
+    if best_index != in.instance_index {
         discard;
     }
 
-    let to_center = world_pos - field.center;
-    let masks = quantum_field_masks(to_center, field.half_extent, world_pos, t, field.seed, field.solve_progress);
+    let to_center = world_position - field.center;
+    let masks = quantum_field_masks(to_center, field.half_extent, world_position, time, field.seed, field.solve_progress);
 
     // Anything well outside the (possibly wobbled) edge is untouched.
     if masks.edge_sdf > BOUNDARY_OUTER_BAND {
@@ -82,62 +75,48 @@ fn overlay(in: VertexOutput, field: Instance) -> vec4<f32> {
     // For each active scan spot, calm a disc around it: superposition + decoherence snap toward
     // the real object and the chaotic lattice eases (observation collapses the wavefunction).
     var collapse = 0.0;
-    if ENABLE_SCAN_COLLAPSE {
-        for (var i = 0u; i < field.collapse_count; i++) {
-            let d = distance(world_pos, field.collapse_points[i]);
-            collapse = max(collapse, smoothstep(SCAN_COLLAPSE_RADIUS, SCAN_COLLAPSE_RADIUS * 0.35, d));
-        }
-        collapse *= masks.interior;
+    for (var i = 0u; i < field.collapse_count; i++) {
+        let d = distance(world_position, field.collapse_points[i]);
+        collapse = max(collapse, smoothstep(SCAN_COLLAPSE_RADIUS, SCAN_COLLAPSE_RADIUS * 0.35, d));
     }
+    collapse *= masks.interior;
 
     // ── Build the world-space coordinate we sample the scene from ──────────────
-    var sample_world = world_pos;
-
-    if ENABLE_SCHLIEREN {
-        let nx = value_fbm_2d_drift(world_pos * SCHLIEREN_SCALE + vec2<f32>(field.seed, 0.0), t, vec2<f32>(0.20, 0.0));
-        let ny = value_fbm_2d_drift(world_pos * SCHLIEREN_SCALE + vec2<f32>(0.0, field.seed), t, vec2<f32>(0.0, 0.17));
-        sample_world += (vec2<f32>(nx, ny) - 0.5) * 2.0 * SCHLIEREN_STRENGTH * masks.weirdness * masks.interior;
-    }
+    let schlieren_x = noise_fbm_2d_drift(world_position * SCHLIEREN_SCALE + vec2<f32>(field.seed, 0.0), time, vec2<f32>(0.20, 0.0), 2);
+    let schlieren_y = noise_fbm_2d_drift(world_position * SCHLIEREN_SCALE + vec2<f32>(0.0, field.seed), time, vec2<f32>(0.0, 0.17), 2);
+    var sample_world = world_position + (vec2<f32>(schlieren_x, schlieren_y) - 0.5) * 2.0 * SCHLIEREN_STRENGTH * masks.weirdness * masks.interior;
     // Inside a collapse disc, pin sampling back to the true position — schlieren and any other
     // displacement vanish, so the observed area shows crystal-clear reality (rim still distorts).
-    sample_world = mix(sample_world, world_pos, collapse);
+    sample_world = mix(sample_world, world_position, collapse);
 
     // ── Sample the scene: superposition ghosting + chromatic decoherence ───────
-    var rgb: vec3<f32>;
-    if ENABLE_SUPERPOSITION {
-        let spread = SUPERPOSITION_OFFSET * masks.weirdness * masks.interior * (1.0 - collapse);
-        var acc  = beneath_at_world(sample_world).rgb * 2.0; // real position weighted higher
-        var wsum = 2.0;
-        for (var k = 0; k < SUPERPOSITION_TAPS; k++) {
-            let ang = TAU * f32(k) / f32(SUPERPOSITION_TAPS) + t * wrap_rate(SUPERPOSITION_SPIN, TAU);
-            let off = vec2<f32>(cos(ang), sin(ang)) * spread;
-            acc += beneath_at_world(sample_world + off).rgb;
-            wsum += 1.0;
-        }
-        rgb = acc / wsum;
-    } else {
-        rgb = beneath_at_world(sample_world).rgb;
+    let spread = SUPERPOSITION_OFFSET * masks.weirdness * masks.interior * (1.0 - collapse);
+    var accumulated = beneath_at_world(sample_world).rgb * 2.0; // real position weighted higher
+    var weight_sum = 2.0;
+    for (var k = 0; k < SUPERPOSITION_TAPS; k++) {
+        let angle = TAU * f32(k) / f32(SUPERPOSITION_TAPS) + time * wrap_rate(SUPERPOSITION_SPIN, TAU);
+        let offset = vec2<f32>(cos(angle), sin(angle)) * spread;
+        accumulated += beneath_at_world(sample_world + offset).rgb;
+        weight_sum += 1.0;
     }
-    if ENABLE_DECOHERENCE {
-        let split = DECOHERENCE_SPLIT * masks.weirdness * masks.interior * (1.0 - collapse);
-        let len   = length(to_center);
-        let dir   = select(vec2<f32>(1.0, 0.0), to_center / max(len, 0.001), len > 0.001);
-        let cr = beneath_at_world(sample_world + dir * split).r;
-        let cb = beneath_at_world(sample_world - dir * split).b;
-        rgb = vec3<f32>(cr, rgb.g, cb);
-    }
+    var rgb = accumulated / weight_sum;
+
+    let split = DECOHERENCE_SPLIT * masks.weirdness * masks.interior * (1.0 - collapse);
+    let distance_to_center = length(to_center);
+    let direction = select(vec2<f32>(1.0, 0.0), to_center / max(distance_to_center, 0.001), distance_to_center > 0.001);
+    let red = beneath_at_world(sample_world + direction * split).r;
+    let blue = beneath_at_world(sample_world - direction * split).b;
+    rgb = vec3<f32>(red, rgb.g, blue);
 
     // ── Phase flicker near the rim (screen-space approximation of tunneling) ───
-    if ENABLE_PHASE_FLICKER {
-        let f = value_fbm_2d_drift(world_pos * 0.2 + vec2<f32>(0.0, field.seed), t, vec2<f32>(PHASE_FLICKER_SPEED, 0.0));
-        rgb *= 1.0 - PHASE_FLICKER_DEPTH * masks.rim_zone * masks.weirdness * step(0.5, f) * (1.0 - collapse);
-    }
+    let flicker = noise_fbm_2d_drift(world_position * 0.2 + vec2<f32>(0.0, field.seed), time, vec2<f32>(PHASE_FLICKER_SPEED, 0.0), 2);
+    rgb *= 1.0 - PHASE_FLICKER_DEPTH * masks.rim_zone * masks.weirdness * step(0.5, flicker) * (1.0 - collapse);
 
-    var result = rgb + quantum_field_glow(to_center, masks, t, field.seed, collapse);
+    var result = rgb + quantum_field_glow(to_center, masks, time, field.seed, collapse);
 
     // Scan-collapse: soft violet rim marking each observed/calmed disc (0 when nothing scanning).
     let collapse_rim = collapse * (1.0 - collapse) * 4.0; // peaks at the disc edge
     result += COLOR_BOUNDARY * collapse_rim * SCAN_GLOW;
 
-    return vec4<f32>(result, beneath_at_world(world_pos).a);
+    return vec4<f32>(result, beneath_at_world(world_position).a);
 }

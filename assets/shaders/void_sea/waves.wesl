@@ -2,35 +2,35 @@ import package::shaders::common::clock::{CLOCK_WRAP_PERIOD, wrap_count, wrap_ind
 import package::shaders::common::core::{CELL_SIZE, TAU};
 import package::shaders::common::hash::{HASH_GOLDEN, hash_coords, hash_mix, hash_unit};
 import package::shaders::common::map_info::grid_bounds;
-import package::shaders::common::value_noise::{value_noise_2d, value_noise_2d_drift};
+import package::shaders::common::noise::{noise_2d, noise_2d_drift};
 
-// Waves on the glass around the map. Each stretch of the glass gets waves on its own random schedule: a
-// wave runs in from the sea, crashes into the glass and dies there. Most waves are small; now and then a
-// big one comes. A slow swell energy drifts along the glass and decides where the big ones land.
+// Wave kinematics and glass-perimeter coordinates for the void sea.
+// The glass perimeter is partitioned into fixed stretches (`HIT_SPACING`), each running an
+// independent periodic wave schedule. A low-frequency swell field (`SET_SCALE`) modulates whether a
+// spawned wave is a small lap or a large breaker.
 //
-// Driven by `globals.time`. Cyclic periods and drifting noise are quantized or crossfaded across
-// `CLOCK_WRAP_PERIOD` so the wrap boundary is seamless (see `common/clock.wesl`).
+// Driven by `globals.time`. Cyclic periods are quantized to `CLOCK_WRAP_PERIOD` (`common/clock.wesl`)
+// and noise is advected via `common/noise.wesl` drift functions, keeping the wrap boundary seamless.
 
 // Calm height of the sea's surface above the map, in world units.
 const WATER_HEIGHT: f32 = 60.0;
-// Height a wave climbing the glass adds, as a fraction of `WATER_HEIGHT`.
+// Peak wave surge height at the glass as a fraction of `WATER_HEIGHT`.
 const WATER_SURGE: f32 = 0.6;
 
-// Wave schedule. Times in seconds, lengths in world units.
+// Wave schedule (seconds and world units).
 const IMPACT_PERIOD: f32 = 2.2;
-// Shortest stretch length. The stretches fit a whole number of times into the glass.
+// Target stretch length; quantized so an integer number of stretches fits the perimeter.
 const HIT_SPACING: f32 = 90.0;
 const HIT_WIDTH: f32 = 140.0;
 const HIT_CHANCE: f32 = 0.1;
-// Fraction of a wave's cycle spent running in; it crashes for the rest.
+// Cycle fraction spent approaching the glass; the remainder (`1 - ARRIVE`) is the crash phase.
 const ARRIVE: f32 = 0.5;
-// Fraction of the crash at which the water stands highest on the glass.
+// Crash-phase fraction at which water surge peaks on the glass.
 const HIT_PEAK: f32 = 0.2;
-// Swell energy: feature size along the glass and drift speed.
+// Swell modulation wavelength along the glass and drift speed.
 const SET_SCALE: f32 = 500.0;
 const SET_SPEED: f32 = 0.06;
-// Stretches to either side whose waves can reach a point: ceil(0.9 * HIT_WIDTH / HIT_SPACING + 0.3),
-// with the shortest stretch length.
+// Neighboring stretch radius checked per query (`ceil(0.9 * HIT_WIDTH / HIT_SPACING + 0.3)`).
 const HIT_REACH: i32 = 2;
 const HIT_SALT: u32 = 0x1f83d9abu;
 
@@ -102,37 +102,37 @@ fn wall_point(s: f32) -> WallPoint {
 fn wall_noise(wall: vec2<f32>, scale: f32, z: f32) -> f32 {
     let angle = TAU * wall.x / wall.y;
     let ring = wall.y / (TAU * scale);
-    return value_noise_2d(vec2<f32>(cos(angle), sin(angle)) * ring + vec2<f32>(z, 0.0));
+    return noise_2d(vec2<f32>(cos(angle), sin(angle)) * ring + vec2<f32>(z, 0.0));
 }
 
-// `wall_noise` drifting at `rate` cells/s over wrapped `time`.
+// `wall_noise` drifting at `rate` lattice cells/s.
 fn wall_noise_drift(wall: vec2<f32>, scale: f32, time: f32, rate: f32) -> f32 {
     let angle = TAU * wall.x / wall.y;
     let ring = wall.y / (TAU * scale);
-    return value_noise_2d_drift(vec2<f32>(cos(angle), sin(angle)) * ring, time, vec2<f32>(rate, 0.0));
+    return noise_2d_drift(vec2<f32>(cos(angle), sin(angle)) * ring, time, vec2<f32>(rate, 0.0));
 }
 
-// One wave as it affects a point of the glass.
+// State of a single perimeter stretch's current wave evaluated at a query point.
 struct Hit {
-    // 1 in the middle of the wave's span, 0 past its ends.
+    // Lateral falloff along the perimeter (`1` at `centre`, `0` beyond `half_width`).
     envelope: f32,
-    // The wave's size, 0..1.
+    // Wave intensity (`0..1`).
     strength: f32,
-    // Envelope times strength; 0 when the stretch has no wave now.
+    // `envelope * strength` (`0` when inactive).
     weight: f32,
-    // 0..1 while the wave runs in, -1 after.
+    // Approach progress (`0..1`) before impact, or `-1` after impact.
     incoming: f32,
-    // 0..1 from the crash until the wave dies, -1 before.
+    // Crash progress (`0..1`) after impact, or `-1` while approaching.
     crashed: f32,
-    // How far the water climbs the glass now, 0..1.
+    // Normalized vertical surge on the glass (`0..1`).
     rise: f32,
-    // The span along the glass.
+    // Perimeter coordinate of the wave's center and half-span.
     centre: f32,
     half_width: f32,
     seed: f32,
 };
 
-// The current wave of the stretch `k` stretches away from the point's own.
+// Evaluates the active wave for the stretch at offset `k` from `wall.x`'s home stretch.
 fn stretch_hit(wall: vec2<f32>, t: f32, k: i32) -> Hit {
     let none = Hit(0.0, 0.0, 0.0, -1.0, -1.0, 0.0, 0.0, 1.0, 0.0);
     let stretches = max(floor(wall.y / HIT_SPACING), 1.0);

@@ -1,10 +1,10 @@
 // Shared shading for underground terrain and excavation previews.
-// All excavations use the same earth palette.
-// Colours are linear. Distances are in world pixels.
+// All excavations use the same earth palette. Colours are linear; distances are in world pixels.
+// Requires the shared GPU group for `common::noise`.
 
 import package::shaders::common::core::CELL_SIZE;
-import package::shaders::common::gradient_noise::gradient_fbm_2d;
 import package::shaders::common::map_light::{MAP_SUN_ELEVATION_TANGENT, MAP_SUN_GROUND_DIRECTION};
+import package::shaders::common::noise::noise_gradient_fbm_2d;
 import package::shaders::walls::look::{passage_arm_distance, ramp_up};
 import package::shaders::walls::styles::{opens_toward, shape_openings, shape_ramp};
 
@@ -85,7 +85,7 @@ const RECESS_TONE: f32 = 0.08;
 const REVEALED_COVER_OPACITY: f32 = 0.3;
 
 fn erosion_noise(world: vec2<f32>) -> f32 {
-    return saturate(gradient_fbm_2d(world / RIM_GRAIN, 3));
+    return saturate(noise_gradient_fbm_2d(world / RIM_GRAIN, 3));
 }
 
 fn pit_floor_colour() -> vec3<f32> {

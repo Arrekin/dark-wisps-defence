@@ -1,3 +1,10 @@
+// Procedural 2D and 3D value noise computed by hashing integer lattice coordinates.
+// Serves as the reference for the texture-backed value noise in `common::noise` and as a
+// binding-free fallback for pipelines without the shared GPU group.
+//
+// `*_drift` functions quantize `velocity` so the periodic lattice repeats an integer number of
+// times per `CLOCK_WRAP_PERIOD`.
+
 import package::shaders::common::clock::{CLOCK_WRAP_PERIOD, wrap_rate};
 import package::shaders::common::hash::{HASH_GOLDEN, hash_coords, hash_mix, hash_unit};
 

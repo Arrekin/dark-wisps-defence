@@ -1,3 +1,10 @@
+// Procedural 2D gradient (Perlin) noise computed by hashing integer lattice coordinates.
+// Serves as the reference for the texture-backed gradient noise in `common::noise` and as a
+// binding-free fallback for pipelines without the shared GPU group.
+//
+// Because hashed gradient noise is non-periodic, scrolling coordinates over wrapped time requires
+// crossfading across `CLOCK_WRAP_PERIOD` with `wrap_fade` and `wrap_mix` from `common::clock`.
+
 import package::shaders::common::hash::{HASH_GOLDEN, hash_coords, hash_mix, hash_unit};
 
 // Scales zero-centered interpolated dot products before shifting the output around 0.5.

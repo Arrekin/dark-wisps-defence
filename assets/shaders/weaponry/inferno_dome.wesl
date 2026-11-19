@@ -2,7 +2,7 @@ import bevy_sprite_render::mesh2d::vertex_output::VertexOutput;
 import package::shaders::common::clock::{ClockInstant, game_time_since};
 import package::shaders::common::fire_ramp::fire_ramp;
 import package::shaders::common::hash::{hash_coords, hash_mix, hash_unit};
-import package::shaders::common::value_noise::{value_fbm_3d, value_noise_3d};
+import package::shaders::common::noise::{noise_3d, noise_fbm_3d};
 
 // `InfernoDomeFire` shader: full-radius hemisphere that erodes in place via rising noise thresholds.
 //
@@ -103,7 +103,7 @@ fn skin(p: vec2<f32>, radius: f32, age: f32, progress: f32) -> vec4<f32> {
     let churn = CHURN * age + dome.seed;
     // Sample rim noise via the unit direction vector to avoid an angular seam at +-pi.
     let around = p / max(d, 0.001) * radius / 18.0;
-    let rim_noise = value_fbm_3d(vec3<f32>(around, churn * 1.7), 3);
+    let rim_noise = noise_fbm_3d(vec3<f32>(around, churn * 1.7), 3);
     let inside = smoothstep(1.0, 0.985, r + (rim_noise - 0.5) * 2.0 * RAGGED_RIM / radius);
     if inside <= 0.0 {
         return vec4<f32>(0.0);
@@ -120,16 +120,16 @@ fn skin(p: vec2<f32>, radius: f32, age: f32, progress: f32) -> vec4<f32> {
     // Domain-warped 3D noise evaluated on the hemisphere normal.
     let s = normal * radius / FLAME_CELL + vec3<f32>(dome.seed * 3.7);
     let warp = vec3<f32>(
-        value_fbm_3d(s * 0.6 + vec3<f32>(3.1, 1.7, churn), 3),
-        value_fbm_3d(s * 0.6 + vec3<f32>(-5.2, 8.3, churn + 2.0), 3),
-        value_fbm_3d(s * 0.6 + vec3<f32>(6.4, -2.9, churn + 5.0), 3),
+        noise_fbm_3d(s * 0.6 + vec3<f32>(3.1, 1.7, churn), 3),
+        noise_fbm_3d(s * 0.6 + vec3<f32>(-5.2, 8.3, churn + 2.0), 3),
+        noise_fbm_3d(s * 0.6 + vec3<f32>(6.4, -2.9, churn + 5.0), 3),
     ) - vec3<f32>(0.5);
     let sw = s + warp * 1.4;
-    let coarse = value_fbm_3d(sw, 5);
-    let coarse_veins = 1.0 - abs(value_fbm_3d(sw * 2.1 + vec3<f32>(7.0, -3.0, 0.0), 3) * 2.0 - 1.0);
+    let coarse = noise_fbm_3d(sw, 5);
+    let coarse_veins = 1.0 - abs(noise_fbm_3d(sw * 2.1 + vec3<f32>(7.0, -3.0, 0.0), 3) * 2.0 - 1.0);
     let fine_point = sw / LATTICE_CELL + vec3<f32>(11.0, -4.0, 0.0);
-    let fine = value_fbm_3d(fine_point, 5);
-    let fine_veins = 1.0 - abs(value_fbm_3d(fine_point * 2.1 + vec3<f32>(7.0, -3.0, 0.0), 3) * 2.0 - 1.0);
+    let fine = noise_fbm_3d(fine_point, 5);
+    let fine_veins = 1.0 - abs(noise_fbm_3d(fine_point * 2.1 + vec3<f32>(7.0, -3.0, 0.0), 3) * 2.0 - 1.0);
     let lattice = smoothstep(LATTICE_FROM, 1.0, r);
     let n = mix(coarse, fine, lattice);
     let veins = mix(coarse_veins, fine_veins, lattice);
@@ -169,15 +169,16 @@ fn inner_fire(p: vec2<f32>, radius: f32, age: f32, b: f32) -> vec4<f32> {
         let point = vec3<f32>(p, top - (f32(i) + 0.5) * step_length);
         let q = point / INNER_CELL + vec3<f32>(dome.seed * 1.3, dome.seed * 0.7, -INNER_RISE * age * 2.0);
         let warp = vec3<f32>(
-            value_fbm_3d(q * 0.5 + vec3<f32>(2.0, 0.0, age), 2),
-            value_fbm_3d(q * 0.5 + vec3<f32>(0.0, 5.0, age), 2),
+            noise_fbm_3d(q * 0.5 + vec3<f32>(2.0, 0.0, age), 2),
+            noise_fbm_3d(q * 0.5 + vec3<f32>(0.0, 5.0, age), 2),
             0.5,
         ) - vec3<f32>(0.5);
-        let n = value_fbm_3d(q + warp * 1.6, 4);
+        let n = noise_fbm_3d(q + warp * 1.6, 4);
         let density = smoothstep(threshold, threshold + 0.12, n) * INNER_DENSITY;
-        let coreness = 1.0 - length(point) / radius;
+        let point_r = length(point) / radius;
+        let coreness = 1.0 - point_r;
         let heat = INNER_HEAT * (1.0 - COOLING * 0.5 * b) + INNER_CORE_HEAT * coreness + 0.35 * (n - threshold)
-            + rim_heat(length(point) / radius, n, 0.5);
+            + rim_heat(point_r, n, 0.5);
         let alpha = 1.0 - exp(-density * step_length / 14.0);
         color += transmit * flame_color(heat) * alpha * 1.2;
         transmit *= 1.0 - alpha;
@@ -246,7 +247,7 @@ fn look(mesh: VertexOutput, instance: Instance) -> vec4<f32> {
     var spill = 0.0;
     if progress < 1.0 && past_rim < 3.0 {
         spill = SPILL * smoothstep(0.97, 1.02, r) * exp(-past_rim * past_rim) * (1.0 - progress)
-            * (0.7 + 0.6 * value_noise_3d(vec3<f32>(p / 12.0, age * 2.0)));
+            * (0.7 + 0.6 * noise_3d(vec3<f32>(p / 12.0, age * 2.0)));
     }
     let added = flame_color(0.5) * spill * 0.45 + embers(p, radius, age);
     return vec4<f32>(result.rgb + added, result.a);

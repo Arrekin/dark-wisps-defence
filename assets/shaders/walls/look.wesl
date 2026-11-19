@@ -1,9 +1,9 @@
 // Wall style layout and shading shared by the map canvas, placement previews and UI swatches.
-// Callers supply material bindings.
+// Callers supply material bindings; requires the shared GPU group for `common::noise`.
 
 import package::shaders::common::core::{CELL_HALF, CELL_SIZE};
-import package::shaders::common::gradient_noise::gradient_fbm_2d;
 import package::shaders::common::map_light::MAP_SUN_GROUND_DIRECTION;
+import package::shaders::common::noise::noise_gradient_fbm_2d;
 
 // Distances and erosion amplitude are measured in world pixels.
 struct WallStyleGeometry {
@@ -173,7 +173,7 @@ fn single_cell_distance(world: vec2<f32>) -> f32 {
 
 // Body variation is exposed separately for the canvas noise diagnostic.
 fn plate_noise(world: vec2<f32>, style: WallStyle) -> f32 {
-    return gradient_fbm_2d(world / style.surface.plate_noise_scale, 4);
+    return noise_gradient_fbm_2d(world / style.surface.plate_noise_scale, 4);
 }
 
 // The style's body colour, blended by plate noise.
@@ -188,7 +188,7 @@ fn shadow_falloff(distance: f32, reach: f32) -> f32 {
 
 // Perturbs signed distance with noise scaled by the style's erosion amount and edge-step height.
 fn eroded_distance(raw_distance: f32, world: vec2<f32>, edge_step: f32, style: WallStyle) -> f32 {
-    return raw_distance + (gradient_fbm_2d(world / GRAIN_SCALE, 3) - 0.5) * style.geometry.erosion_amount * edge_step;
+    return raw_distance + (noise_gradient_fbm_2d(world / GRAIN_SCALE, 3) - 0.5) * style.geometry.erosion_amount * edge_step;
 }
 
 // Maximum extent of edge shading into the surface, in world pixels.

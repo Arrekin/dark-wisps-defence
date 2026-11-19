@@ -3,7 +3,7 @@ import bevy_sprite_render::mesh2d::view_bindings::globals;
 import package::shaders::common::clock::{CLOCK_WRAP_PERIOD, wrap_index, wrap_rate};
 import package::shaders::common::fire_ramp::{FIRE_HEAT_CAP, fire_ramp};
 import package::shaders::common::hash::{hash_coords, hash_mix, hash_unit};
-import package::shaders::common::value_noise::value_fbm_3d_drift;
+import package::shaders::common::noise::noise_fbm_3d_drift;
 import package::shaders::weaponry::flame_stream_common::BREAKUP;
 
 // `Flame` stream jet shader.
@@ -76,14 +76,14 @@ fn look(mesh: VertexOutput, flame: Instance) -> vec4<f32> {
     // Base noise coordinates and advection velocity (streaming along `s` and churning in Z).
     let q = vec3<f32>(s / (BILLOW * 1.6), x * 1.15, flame.seed);
     let q_drift = vec3<f32>(-DRIFT / (BILLOW * 1.6), 0.0, 0.85);
-    let warp_x = value_fbm_3d_drift(q * 0.7 + vec3<f32>(3.1, 1.7, 0.0), time, q_drift * 0.7, 3) - 0.5;
-    let warp_y = value_fbm_3d_drift(q * 0.7 + vec3<f32>(-5.2, 8.3, 2.0), time, q_drift * 0.7, 3) - 0.5;
+    let warp_x = noise_fbm_3d_drift(q * 0.7 + vec3<f32>(3.1, 1.7, 0.0), time, q_drift * 0.7, 3) - 0.5;
+    let warp_y = noise_fbm_3d_drift(q * 0.7 + vec3<f32>(-5.2, 8.3, 2.0), time, q_drift * 0.7, 3) - 0.5;
     let qw = q + vec3<f32>(warp_x * 1.3, warp_y * 0.9, 0.0);
-    let n = value_fbm_3d_drift(qw, time, q_drift, 5);
-    let veins = 1.0 - abs(value_fbm_3d_drift(qw * 2.1 + vec3<f32>(7.0, -3.0, 0.0), time, q_drift * 2.1, 3) * 2.0 - 1.0);
+    let n = noise_fbm_3d_drift(qw, time, q_drift, 5);
+    let veins = 1.0 - abs(noise_fbm_3d_drift(qw * 2.1 + vec3<f32>(7.0, -3.0, 0.0), time, q_drift * 2.1, 3) * 2.0 - 1.0);
 
     // Axial fuel masks (`[tail, end]`) with noise-perturbed boundaries.
-    let edge_noise = value_fbm_3d_drift(vec3<f32>(s / 9.0, x * 2.0, 0.0), time, vec3<f32>(-DRIFT / 9.0, 0.0, 2.3), 3) - 0.5;
+    let edge_noise = noise_fbm_3d_drift(vec3<f32>(s / 9.0, x * 2.0, 0.0), time, vec3<f32>(-DRIFT / 9.0, 0.0, 2.3), 3) - 0.5;
     let alive = smoothstep(end + 5.0 + hit * 5.0, end - 13.0 + hit * 11.0, s + edge_noise * 16.0)
         * smoothstep(tail - 2.0, tail + 24.0, s + edge_noise * 22.0);
     let alive_soot = smoothstep(end + 26.0, end - 6.0, s + edge_noise * 18.0) * smoothstep(tail - 12.0, tail + 34.0, s);
@@ -108,7 +108,7 @@ fn look(mesh: VertexOutput, flame: Instance) -> vec4<f32> {
     let rod_color = mix(ROD_COLOR, fire_ramp(FIRE_HEAT_CAP), smoothstep(0.3, 1.0, abs(u) / rod_half));
 
     // Fringe and tip soot.
-    let soot_noise = value_fbm_3d_drift(vec3<f32>(s / (BILLOW * 2.6), x, flame.seed + 11.0), time, vec3<f32>(-DRIFT / (BILLOW * 2.6), 0.0, 0.45), 4);
+    let soot_noise = noise_fbm_3d_drift(vec3<f32>(s / (BILLOW * 2.6), x, flame.seed + 11.0), time, vec3<f32>(-DRIFT / (BILLOW * 2.6), 0.0, 0.45), 4);
     let fringe = smoothstep(0.35, 0.95, ax + (soot_noise - 0.5) * 0.7) * (1.0 - smoothstep(1.15, 1.6, ax));
     let tip = smoothstep(end - 22.0, end + 6.0, s) * (1.0 - smoothstep(1.0, 1.5, ax)) * (1.0 - 0.6 * hit);
     let soot_zone = smoothstep(BREAKUP * 0.6, BREAKUP * 1.5, s) * max(fringe, tip);

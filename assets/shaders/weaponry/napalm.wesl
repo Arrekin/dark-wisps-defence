@@ -8,7 +8,7 @@
 import bevy_sprite_render::mesh2d::view_bindings::globals;
 import package::shaders::common::clock::game_time_since;
 import package::shaders::common::fire_ramp::{FIRE_HEAT_CAP, fire_ramp};
-import package::shaders::common::value_noise::value_fbm_2d_octaves;
+import package::shaders::common::noise::noise_fbm_2d;
 import package::shaders::grids::floor_cover::{
     FLOOR_COVER_CHAR, FLOOR_COVER_NAPALM, FloorCoverEntry, floor_cover_cell_entries, floor_cover_entries_at, floor_cover_has_kind_at,
 };
@@ -98,7 +98,7 @@ fn char_look(local: vec2<f32>, world: vec2<f32>, cell: vec2<i32>, level: u32) ->
     for (var index = range.x; index < range.y; index++) {
         let entry = floor_cover_cell_entries[index];
         if entry.kind == FLOOR_COVER_CHAR && entry.level == level {
-            let life = saturate(game_time_since(entry.start) / max(entry.duration, 0.001));
+            let life = saturate(game_time_since(entry.start) / entry.duration);
             transmittance *= 1.0 - CHAR_DARKNESS * (1.0 - smoothstep(0.3, 1.0, life));
             cinder_heat += exp(-life * CHAR_CINDER_DECAY);
         }
@@ -108,9 +108,9 @@ fn char_look(local: vec2<f32>, world: vec2<f32>, cell: vec2<i32>, level: u32) ->
     }
 
     let past = ground_fire_past_boundary(local, open_sides(cell, FLOOR_COVER_CHAR, level));
-    let noise = value_fbm_2d_octaves(world / 4.0, 4);
+    let noise = noise_fbm_2d(world / 4.0, 4);
     let mark = (1.0 - smoothstep(-4.0, 2.0, past + (noise - 0.5) * 8.0)) * smoothstep(0.35, 0.6, noise + 0.15);
-    let cinder_noise = value_fbm_2d_octaves(world / 2.5 + vec2<f32>(53.0, 17.0), 3);
+    let cinder_noise = noise_fbm_2d(world / 2.5 + vec2<f32>(53.0, 17.0), 3);
     let cinders = smoothstep(0.66, 0.72, cinder_noise) * mark * min(cinder_heat, 1.0);
     return vec4<f32>(fire_ramp(0.55) * cinders, mark * (1.0 - transmittance));
 }

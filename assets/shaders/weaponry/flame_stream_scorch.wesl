@@ -2,7 +2,7 @@ import bevy_sprite_render::mesh2d::vertex_output::VertexOutput;
 import package::shaders::common::clock::{ClockInstant, game_time_since};
 import package::shaders::common::core::{CELL_HALF, CELL_SIZE};
 import package::shaders::common::fire_ramp::fire_ramp;
-import package::shaders::common::value_noise::value_fbm_3d;
+import package::shaders::common::noise::noise_fbm_3d;
 import package::shaders::grids::obstacles::{LEVEL_ON_ELEVATION, LEVEL_ON_GROUND, STRUCTURE_WALL, structure_at};
 
 // `FlameScorch` floor decal shader (world units relative to tile center).
@@ -30,14 +30,14 @@ fn look(mesh: VertexOutput, scorch: Instance) -> vec4<f32> {
 
     let life = saturate(game_time_since(scorch.start) / scorch.duration); // normalized age (0..1)
     let p = (vec2<f32>(mesh.uv.x, 1.0 - mesh.uv.y) - vec2<f32>(0.5)) * 2.0 * scorch.half_size;
-    let noise = value_fbm_3d(vec3<f32>(p / 4.0, scorch.seed), 4);
+    let noise = noise_fbm_3d(vec3<f32>(p / 4.0, scorch.seed), 4);
     let tile_distance = max(abs(p.x), abs(p.y));
     let mark = (1.0 - smoothstep(CELL_HALF - 4.0, CELL_HALF + 2.0, tile_distance + (noise - 0.5) * 8.0))
         * smoothstep(0.35, 0.6, noise + 0.15);
     let fade = 1.0 - smoothstep(0.3, 1.0, life);
     let alpha = mark * scorch.strength * DARKNESS * fade;
 
-    let cinder_noise = value_fbm_3d(vec3<f32>(p / 2.5, scorch.seed + 5.0), 3);
+    let cinder_noise = noise_fbm_3d(vec3<f32>(p / 2.5, scorch.seed + 5.0), 3);
     let cinders = smoothstep(0.66, 0.72, cinder_noise) * mark * scorch.strength * exp(-life * CINDER_DECAY);
     return vec4<f32>(fire_ramp(0.55) * cinders, alpha);
 }

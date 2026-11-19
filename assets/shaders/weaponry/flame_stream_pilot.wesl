@@ -3,7 +3,7 @@ import bevy_sprite_render::mesh2d::view_bindings::globals;
 import package::shaders::common::clock::wrap_rate;
 import package::shaders::common::core::TAU;
 import package::shaders::common::fire_ramp::fire_ramp;
-import package::shaders::common::value_noise::value_noise_3d_drift;
+import package::shaders::common::noise::noise_3d_drift;
 
 // Additive nozzle pilot flame for an armed `FlameStream`.
 // Local coordinates (`p`) are in world units with the flame root at `(0, 0)` (1 unit inside the
@@ -22,7 +22,7 @@ fn look(mesh: VertexOutput, pilot: Instance) -> vec4<f32> {
     let p = vec2<f32>(mesh.uv.x, 0.5 - mesh.uv.y) * pilot.size - vec2<f32>(1.0, 0.0);
     let time = globals.time + pilot.seed;
 
-    let flicker = value_noise_3d_drift(vec3<f32>(0.0, 0.0, pilot.seed), time, vec3<f32>(9.0, 0.0, 0.0));
+    let flicker = noise_3d_drift(vec3<f32>(0.0, 0.0, pilot.seed), time, vec3<f32>(9.0, 0.0, 0.0));
     let flame_length = 4.2 + 1.6 * flicker;
     let along = p.x / flame_length;
     let half_width = 1.9 * sqrt(max(along, 0.0)) * (1.0 - along) + 0.6;

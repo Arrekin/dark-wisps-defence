@@ -1,7 +1,7 @@
 import bevy_sprite_render::mesh2d::vertex_output::VertexOutput;
 import bevy_sprite_render::mesh2d::view_bindings::globals;
 import package::shaders::common::fire_ramp::fire_ramp;
-import package::shaders::common::value_noise::value_fbm_3d_drift;
+import package::shaders::common::noise::noise_fbm_3d_drift;
 
 // Ground ember ring at the outer edge of `TowerInferno` range, scaling with `charge`.
 // Coordinates are in world units relative to the tower center. Output is additive light.
@@ -14,7 +14,7 @@ struct Instance {
 };
 
 // Ring parameters
-const RING: f32 = 0.1;
+const RING_LIGHT: f32 = 0.1;
 const RING_WIDTH: f32 = 3.0;
 const RING_HEAT: f32 = 0.6;
 const RING_HEAT_CAP: f32 = 0.97;
@@ -30,10 +30,10 @@ fn look(mesh: VertexOutput, ember_ring: Instance) -> vec4<f32> {
 
     // Sample noise via the unit direction vector to avoid an angular seam at +-pi.
     let around = p / max(d, 0.001) * (6.0 + (d - range) / 8.0);
-    let noise = value_fbm_3d_drift(vec3<f32>(around, 0.0), globals.time, vec3<f32>(0.0, 0.0, 0.7), 3);
+    let noise = noise_fbm_3d_drift(vec3<f32>(around, 0.0), globals.time, vec3<f32>(0.0, 0.0, 0.7), 3);
     let off_ring = (d - range) / RING_WIDTH;
     let band = exp(-off_ring * off_ring);
     let heat = RING_HEAT + 0.3 * (noise - 0.5) + 0.25 * smoothstep(0.35, 0.75, noise);
-    let fire = fire_ramp(min(heat, RING_HEAT_CAP)) * RING * pow(ember_ring.charge, RING_BUILD) * band * (0.4 + 0.8 * noise);
+    let fire = fire_ramp(min(heat, RING_HEAT_CAP)) * RING_LIGHT * pow(ember_ring.charge, RING_BUILD) * band * (0.4 + 0.8 * noise);
     return vec4<f32>(fire, 0.0);
 }

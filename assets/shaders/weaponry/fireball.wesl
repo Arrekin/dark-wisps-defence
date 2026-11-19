@@ -1,9 +1,9 @@
 import bevy_sprite_render::mesh2d::vertex_output::VertexOutput;
 import bevy_sprite_render::mesh2d::view_bindings::globals;
-import package::shaders::common::clock::{CLOCK_WRAP_PERIOD, wrap_fade, wrap_index, wrap_mix, wrap_rate};
+import package::shaders::common::clock::{CLOCK_WRAP_PERIOD, wrap_index, wrap_rate};
 import package::shaders::common::fire_ramp::fire_ramp;
-import package::shaders::common::gradient_noise::{gradient_fbm_2d, gradient_noise_2d};
 import package::shaders::common::hash::{hash_coords, hash_mix, hash_unit};
+import package::shaders::common::noise::{noise_gradient_2d_drift, noise_gradient_fbm_2d_drift};
 
 // Procedural fireball with a bright core, tapered flame tail, and drifting embers.
 // Local x points forward along the flight; y runs across it. Distances are in core radii.
@@ -27,11 +27,11 @@ const TAIL_WIDTH: f32 = 0.5;     // tail half-width at its end
 
 // ── Flames ───────────────────────────────────────────────────────────────────
 const NOISE_SCALE: f32 = 1.6;
-const FLOW: f32 = 6.0;           // backward scroll of the flames
-const BIAS: f32 = 0.9;           // how strongly the envelope pulls density toward the core
-const THRESHOLD: f32 = 0.5;      // density at which the fire burns
+const FLOW: f32 = 6.0;           // backward flame scroll speed (core radii/s)
+const BIAS: f32 = 0.9;           // envelope density bias toward the core
+const THRESHOLD: f32 = 0.5;      // density cutoff for flame coverage
 const SOFTNESS: f32 = 0.12;
-const SMOKE_BAND: f32 = 0.14;    // density range below the threshold that shows as smoke
+const SMOKE_BAND: f32 = 0.14;    // density band below `THRESHOLD` rendered as smoke
 const SMOKE_ALPHA: f32 = 0.35;
 
 // ── Heat (input to `fire_ramp`) ──────────────────────────────────────────────
@@ -43,29 +43,10 @@ const MAX_HEAT: f32 = 0.97;
 
 // ── Embers ───────────────────────────────────────────────────────────────────
 const EMBER_SCALE: f32 = 2.5;    // ember grid cells per core radius
-const EMBER_CHANCE: f32 = 0.35;  // share of grid cells holding an ember
+const EMBER_CHANCE: f32 = 0.35;  // occupancy probability per cell
 const EMBER_HEAT: f32 = 0.8;
 const EMBER_ALPHA: f32 = 0.9;
 const EMBER_SALT: u32 = 0x5bd1e995u;
-
-// Scrolling gradient-noise samples for the flame body, veins, and core churn.
-struct Flames {
-    density: f32,
-    veins: f32,
-    churn: f32,
-};
-
-fn flames_at(along: f32, across: f32, time: f32) -> Flames {
-    let flow_point = vec2<f32>(along * 0.6 + time * FLOW, across) * NOISE_SCALE;
-    let swirl = vec2<f32>(
-        gradient_fbm_2d(flow_point * 0.6 + vec2<f32>(5.0 + time * 1.3, 1.0), 2),
-        gradient_fbm_2d(flow_point * 0.6 + vec2<f32>(-3.0, 9.0 - time * 1.7), 2),
-    ) - 0.5;
-    let density = gradient_fbm_2d(flow_point + swirl * 0.9 + vec2<f32>(31.0, 7.0), 4);
-    let veins = gradient_fbm_2d(flow_point * 1.8 + swirl * 0.3 + vec2<f32>(-17.0, 4.0), 3);
-    let churn = gradient_noise_2d(vec2<f32>(along, across) * 2.5 + vec2<f32>(time * 1.1, -time * 0.9));
-    return Flames(density, veins, churn);
-}
 
 fn look(mesh: VertexOutput, fireball: Instance) -> vec4<f32> {
     let along = (mesh.uv.x - 0.5) * 2.0 * fireball.half_length;
@@ -85,22 +66,18 @@ fn look(mesh: VertexOutput, fireball: Instance) -> vec4<f32> {
     }
 
     // Flame density streams backward through the envelope, swirled by a second noise field.
-    // Gradient noise is non-periodic, so crossfade into the wrap-shifted sample before `globals.time` wraps.
-    var flames = flames_at(along, across, time);
-    let fade = wrap_fade(globals.time);
-    if fade > 0.0 {
-        let earlier = flames_at(along, across, time - CLOCK_WRAP_PERIOD);
-        flames = Flames(
-            wrap_mix(flames.density, earlier.density, fade),
-            wrap_mix(flames.veins, earlier.veins, fade),
-            wrap_mix(flames.churn, earlier.churn, fade),
-        );
-    }
-    let field = flames.density + BIAS * (0.75 - envelope);
+    let flow_point = vec2<f32>(along * 0.6, across) * NOISE_SCALE;
+    let flow = vec2<f32>(FLOW * NOISE_SCALE, 0.0);
+    let swirl = vec2<f32>(
+        noise_gradient_fbm_2d_drift(flow_point * 0.6 + vec2<f32>(5.0, 1.0), time, flow * 0.6 + vec2<f32>(1.3, 0.0), 2),
+        noise_gradient_fbm_2d_drift(flow_point * 0.6 + vec2<f32>(-3.0, 9.0), time, flow * 0.6 + vec2<f32>(0.0, -1.7), 2),
+    ) - 0.5;
+    let density = noise_gradient_fbm_2d_drift(flow_point + swirl * 0.9 + vec2<f32>(31.0, 7.0), time, flow, 4);
+    let field = density + BIAS * (0.75 - envelope);
     let fire = smoothstep(THRESHOLD, THRESHOLD + SOFTNESS, field);
     let smoke = smoothstep(THRESHOLD - SMOKE_BAND, THRESHOLD, field) * smoothstep(0.1, 0.6, tail);
     let tail_fade = 1.0 - smoothstep(0.55, 1.0, tail);
-    let veins = 1.0 - abs(flames.veins * 2.0 - 1.0);
+    let veins = 1.0 - abs(noise_gradient_fbm_2d_drift(flow_point * 1.8 + swirl * 0.3 + vec2<f32>(-17.0, 4.0), time, flow * 1.8, 3) * 2.0 - 1.0);
 
     let fire_heat = mix(HEAT_TAIL, HEAT_HEAD, clamp(1.0 - envelope, 0.0, 1.0)) + 0.5 * max(field - THRESHOLD, 0.0) + 0.25 * (veins - 0.5);
     let burning = fire / max(max(fire, smoke), 0.001);
@@ -109,7 +86,7 @@ fn look(mesh: VertexOutput, fireball: Instance) -> vec4<f32> {
 
     // Molten core.
     let radius = length(vec2<f32>(along, across));
-    let churn = (flames.churn - 0.5) * 0.25;
+    let churn = (noise_gradient_2d_drift(vec2<f32>(along, across) * 2.5, time, vec2<f32>(1.1, -0.9)) - 0.5) * 0.25;
     let core = 1.0 - smoothstep(0.75, 1.0, radius + churn);
     let core_heat = mix(CORE_HEAT - 0.12, CORE_HEAT, 1.0 - smoothstep(0.0, 1.0, radius));
     heat = mix(heat, core_heat, core);

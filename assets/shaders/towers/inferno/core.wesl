@@ -4,7 +4,7 @@ import package::shaders::common::clock::wrap_rate;
 import package::shaders::common::color::linear_to_display;
 import package::shaders::common::core::TAU;
 import package::shaders::common::fire_ramp::{FIRE_HEAT_CAP, fire_ramp};
-import package::shaders::common::value_noise::value_noise_3d_drift;
+import package::shaders::common::noise::noise_3d_drift;
 
 // Charging glow overlay for `TowerInferno`. Quad matches the tower sprite bounds.
 // Masks the central square core and dark sprite seams from `sprite_texture`.
@@ -49,7 +49,7 @@ fn look(mesh: VertexOutput, core: Instance) -> vec4<f32> {
     let core_mask = 1.0 - smoothstep(CORE_HALF - 0.015, CORE_HALF + 0.01, from_center);
     let reach = CORE_HALF + SEAM_REACH * smoothstep(0.1, 1.0, core.charge);
     let seam = (1.0 - smoothstep(0.06, 0.2, luminance)) * (1.0 - smoothstep(reach - 0.07, reach, from_center));
-    let flicker = value_noise_3d_drift(vec3<f32>(sprite_uv * 18.0, 0.0), time, vec3<f32>(0.0, 0.0, 1.5));
+    let flicker = noise_3d_drift(vec3<f32>(sprite_uv * 18.0, 0.0), time, vec3<f32>(0.0, 0.0, 1.5));
     let glow = heat_color(heat * (0.85 + 0.25 * flicker));
 
     var color = heat_color(heat * 0.8) * seam * lit * 0.8 * body;

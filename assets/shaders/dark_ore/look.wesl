@@ -1,10 +1,10 @@
 import package::shaders::common::core::TAU;
-import package::shaders::common::gradient_noise::gradient_fbm_2d;
 import package::shaders::common::hash::{HASH_GOLDEN, hash_coords, hash_mix, hash_unit};
 import package::shaders::common::map_light::{MAP_SUN_DIRECTION, MAP_SUN_GROUND_DIRECTION, MAP_SUN_HALF_VECTOR};
+import package::shaders::common::noise::noise_gradient_fbm_2d;
 
-// Binding-free procedural dark-ore shading. Callers provide distance, fill, screen scale and world
-// position; nothing here declares a binding of its own.
+// Procedural dark-ore shading. Callers provide distance, fill, screen scale, and world position;
+// requires the shared GPU group for `common::noise`.
 //
 // Each crystal is a deterministic leaning convex prism. A vertical orthographic view ray is clipped
 // against its face half-spaces and the ground plane to find the visible surface. Nearby prisms are
@@ -13,9 +13,8 @@ import package::shaders::common::map_light::{MAP_SUN_DIRECTION, MAP_SUN_GROUND_D
 // Lighting is intentionally stylized: fixed material tones carry most of the form, while the shared
 // map sun adds restrained diffuse, rim and specular terms. Shadows are contact-only.
 //
-// Constants follow one rule: shading response is named, shape distribution stays inline. A face
-// colour, edge width or light coefficient gets a constant; the ranges a crystal's proportions are
-// drawn from stay as literal `mix(low, high, roll)` so the shape reads where it is built.
+// Shading parameters (colours, line widths, lighting weights) are named constants; per-crystal
+// geometric ranges stay inline as `mix(low, high, roll)` at the construction site.
 
 const STAIN_LOW: vec3<f32> = vec3<f32>(0.0014, 0.0044, 0.0062);
 const STAIN_HIGH: vec3<f32> = vec3<f32>(0.0038, 0.0124, 0.0174);
@@ -79,16 +78,13 @@ const RIM_CAP_OF_GIRTH: f32 = 0.45;
 // from becoming entirely edge.
 const EDGE_TEXELS: f32 = 1.3;
 
-// Projected crystal width in screen pixels over which crest, outline, rim, lustre, growth bands and
-// the inner depth band fade in. Narrower than `DETAIL_HIGH_TEXELS` a crystal cannot carry an
-// `EDGE_TEXELS` line and a rim at once, and sampling them yields speckle rather than detail. Body
-// tone, plate noise, root darkening and transmission are exempt: they hold at any zoom, so a
-// distant crystal keeps its coverage as a smooth ore-toned dot. A typical crystal is wider than
-// `DETAIL_HIGH_TEXELS` at full zoom-in.
+// Projected crystal width (in screen pixels) over which fine surface details (crest, outline, rim,
+// lustre, growth bands, inner depth band) fade in. Below `DETAIL_HIGH_TEXELS`, those features
+// alias; body tone, plate noise, root darkening, and transmission remain active at all zoom levels.
 const DETAIL_LOW_TEXELS: f32 = 1.0;
 const DETAIL_HIGH_TEXELS: f32 = 3.0;
 
-// How much of a crystal's own width an edge may take, for the crease and for the outline.
+// Maximum fraction of crystal width occupied by the crest crease and silhouette outline.
 const CREST_OF_GIRTH: f32 = 0.26;
 const OUTLINE_OF_GIRTH: f32 = 0.30;
 
@@ -212,7 +208,7 @@ const FAR: f32 = 1.0e30;
 // Noise
 // --------------------------------------------------------------------------------------------
 
-// Mean of `gradient_fbm_2d` for `octaves` amplitudes starting at 0.5 and halving each octave.
+// Mean of `noise_gradient_fbm_2d` for `octaves` amplitudes starting at 0.5 and halving each octave.
 fn fbm_mean(octaves: i32) -> f32 {
     return 0.5 * (1.0 - pow(0.5, f32(octaves)));
 }
@@ -222,17 +218,12 @@ fn noise_blend(value: f32, octaves: i32, gain: f32) -> f32 {
     return saturate((value - fbm_mean(octaves)) * gain + 0.5);
 }
 
-// Random values are drawn from a lattice cell and a salt. Two draws that read the same cell come
-// out independent only if their salts differ, so every salt is used exactly once:
-//
+// Unique hash salts per lattice cell draw:
 //   50-51  seat position and seat occupancy
 //   60-65  per-face reach
 //   70-91  root and prism shape, and the gather rank
-//
-// A new draw therefore needs a salt that does not already appear in this file. Salts 88 and 89 in
-// `bearing_turn` are the ones to watch: they read a block coordinate, not a cell, and a block
-// coordinate can land on some other cell's coordinate. Their salt being unused elsewhere is the
-// only thing keeping those two draws apart.
+// Salts 88 and 89 (`bearing_turn`) hash block coordinates rather than cell coordinates and must
+// stay distinct from cell salts.
 
 // Two deterministic values in [0, 1).
 fn ore_hash(cell: vec2<f32>, salt: u32) -> vec2<f32> {
@@ -249,8 +240,8 @@ fn ore_roll(cell: vec2<f32>, salt: u32) -> f32 {
 // stretched across the noise's useful range and remain non-negative, so the outline can wander
 // inside an occupied cell but can never invade an empty one.
 fn ore_inset(world: vec2<f32>) -> f32 {
-    let coarse = noise_blend(gradient_fbm_2d(world / INSET_SCALE, 3), 3, INSET_GAIN);
-    let fine = noise_blend(gradient_fbm_2d(world / INSET_FINE_SCALE + vec2<f32>(11.3, 57.8), 2), 2, INSET_GAIN);
+    let coarse = noise_blend(noise_gradient_fbm_2d(world / INSET_SCALE, 3), 3, INSET_GAIN);
+    let fine = noise_blend(noise_gradient_fbm_2d(world / INSET_FINE_SCALE + vec2<f32>(11.3, 57.8), 2), 2, INSET_GAIN);
     return INSET_BASE + coarse * INSET_AMOUNT + fine * INSET_FINE_AMOUNT;
 }
 
@@ -284,7 +275,7 @@ fn single_cell_distance(p: vec2<f32>) -> f32 {
 }
 
 // --------------------------------------------------------------------------------------------
-// Crystal placement and root footprint
+// Crystal placement and roots
 // --------------------------------------------------------------------------------------------
 
 fn seat_of(cell: vec2<f32>) -> vec2<f32> {
@@ -292,10 +283,10 @@ fn seat_of(cell: vec2<f32>) -> vec2<f32> {
 }
 
 // Returns half the nearest-seat distance, capped at half a lattice cell. Using this as the root
-// radius bounds neighboring footprints without rejecting crowded seats.
+// radius bounds neighboring roots without rejecting crowded seats.
 fn room_at(cell: vec2<f32>, seat: vec2<f32>) -> f32 {
     // Seeding the search with the cap makes seats outside the scanned 3x3 neighborhood irrelevant
-    // to footprint overlap. Ranking by squared distance defers the one square root to the result.
+    // to root overlap. Ranking by squared distance defers the one square root to the result.
     var nearest_squared = PRISM_SCALE * PRISM_SCALE;
 
     for (var y = -1; y <= 1; y++) {
@@ -311,16 +302,14 @@ fn room_at(cell: vec2<f32>, seat: vec2<f32>) -> f32 {
     return sqrt(nearest_squared) * 0.5;
 }
 
-// Probability that a seat holds a crystal. Varies well above a cell so the crowding is a property
-// of the deposit rather than of the lattice the crystals are seated on. `CROWDING_TOP` sets the
-// ramp's slope, not a reachable value: the ramp hits 1.0 — every seat filled — at 0.345 of the
-// noise range and is clamped flat above that.
+// Seat occupancy probability. `CROWDING_TOP > 1.0` sets the ramp slope so occupancy saturates at
+// 1.0 across the upper ~65% of the noise range.
 fn ore_crowding(world: vec2<f32>) -> f32 {
-    return min(mix(CROWDING_BASE, CROWDING_TOP, saturate(gradient_fbm_2d(world / CROWDING_SCALE, 3))), 1.0);
+    return min(mix(CROWDING_BASE, CROWDING_TOP, saturate(noise_gradient_fbm_2d(world / CROWDING_SCALE, 3))), 1.0);
 }
 
-// Whether a cell holds a crystal at all. Kept clear of the spacing above, which is settled for
-// every seat whether or not it is occupied, so that thinning the bed never resizes what is left.
+// Whether `cell` spawns a crystal. Evaluated independently of `room_at` so thinning a bed does not
+// alter remaining crystals' radii.
 fn ore_present(cell: vec2<f32>) -> bool {
     let centre = (cell + vec2<f32>(0.5)) * PRISM_SCALE;
     return ore_roll(cell, 51u) <= ore_crowding(centre);
@@ -341,7 +330,7 @@ fn bearing_turn(cell: vec2<f32>) -> f32 {
     return (f32(sector) + ore_roll(cell, 75u)) / f32(SECTORS);
 }
 
-// Where a crystal meets the ground, and how much of the ground it takes.
+// Ground-plane anchor and base dimensions of a crystal.
 struct Root {
     cell: vec2<f32>,
     seat: vec2<f32>,
@@ -352,8 +341,8 @@ struct Root {
 fn root_of(cell: vec2<f32>) -> Root {
     let lean = mix(LEAN_MIN, LEAN_MAX, pow(ore_roll(cell, 74u), LEAN_FALLOFF));
 
-    // Limit the preferred radius so the ground-plane footprint remains within the available room.
-    // The `cos(lean)` factor accounts for the footprint stretching along the lean direction.
+    // Limit the preferred radius so the root's ground area remains within the available room.
+    // The `cos(lean)` factor accounts for the root stretching along the lean direction.
     let seat = seat_of(cell);
     let want = mix(1.5, 4.2, pow(ore_roll(cell, 70u), 1.35));
     let allowed = room_at(cell, seat) * mix(ROOM_MIN, ROOM_MAX, ore_roll(cell, 71u)) * cos(lean);
@@ -458,8 +447,7 @@ fn prism_of(root: Root) -> Prism {
     return prism;
 }
 
-// A prism placed and scaled for one gather; every length is already multiplied by `scale`. Shared
-// by the view ray and the contact probe, which need the same frame and apex.
+// Scaled prism geometry and orthonormal cross-section frame shared by ray clipping and contact probes.
 struct Pose {
     across: vec3<f32>,
     along: vec3<f32>,
@@ -471,8 +459,7 @@ struct Pose {
     height: f32, // Length above the ground plane.
 }
 
-// The crystal shrinks about its own seat rather than moving, so a deposit thinning toward its
-// boundary keeps its crystals where they were.
+// Scales prism dimensions about its ground seat (`base.xy`).
 fn prism_pose(prism: Prism, scale: f32) -> Pose {
     let frame = prism_frame(prism);
     let across = frame[0];
@@ -607,7 +594,7 @@ fn prism_at(prism: Prism, pose: Pose, point: vec2<f32>) -> Sample {
         let reach = prism_face_reach(prism.cell, pose.radius, index);
 
         // Each tapered side plane passes through its root-width edge and tilts inward along the axis.
-        // Keeping the root edge fixed preserves the footprint spacing constraint.
+        // Keeping the root edge fixed preserves the root spacing constraint.
         let slope = prism.taper * reach / (shaft + cap);
         let side = normalize(outward + prism.axis * slope);
         clip = clip_plane(clip, side, dot(side, base + outward * reach), point);
@@ -799,7 +786,7 @@ fn dark_ore_shading(d: f32, fill: f32, texel: f32, world: vec2<f32>) -> vec4<f32
         // Stain is only needed where no crystal covers the ground, and so is the local probe.
         let contact = saturate(contact_strength(here.contact, 1.0) * HUG_WEIGHT + offset * OFFSET_WEIGHT);
         // Read raw rather than through `noise_blend`: the stain keeps to the middle of its colour range.
-        let mottle = saturate(gradient_fbm_2d(world / MOTTLE_SCALE, 4));
+        let mottle = saturate(noise_gradient_fbm_2d(world / MOTTLE_SCALE, 4));
         let stain_colour = mix(STAIN_LOW, STAIN_HIGH, mottle * mix(STAIN_FLOOR, 1.0, visible_fill));
         let stain = smoothstep(0.0, STAIN_FADE, d);
         // Contact alpha remains visible where the underlying stain is faint.
@@ -815,7 +802,7 @@ fn dark_ore_shading(d: f32, fill: f32, texel: f32, world: vec2<f32>) -> vec4<f32
     let detail = smoothstep(DETAIL_LOW_TEXELS, DETAIL_HIGH_TEXELS, here.girth / texel);
 
     // Material tones dominate; diffuse and sky terms provide restrained face variation.
-    let plate = noise_blend(gradient_fbm_2d(world / PLATE_SCALE, 3), 3, PLATE_GAIN);
+    let plate = noise_blend(noise_gradient_fbm_2d(world / PLATE_SCALE, 3), 3, PLATE_GAIN);
     var stone = mix(BODY_LOW, BODY_HIGH, plate) * (1.0 + BODY_LIGHT * key + SKY_LIGHT * sky) * here.tone;
 
     // Darken surfaces near the root to integrate the shaft with the bed.
@@ -829,7 +816,7 @@ fn dark_ore_shading(d: f32, fill: f32, texel: f32, world: vec2<f32>) -> vec4<f32
 
     // Growth bands use world height for size-independent spacing. Crystal tone provides a stable
     // second noise coordinate that decorrelates neighboring bands.
-    let bands = noise_blend(gradient_fbm_2d(vec2<f32>(sample.surface * GRAIN_SPACING, here.tone * GRAIN_OFFSET), 3), 3, GRAIN_GAIN);
+    let bands = noise_blend(noise_gradient_fbm_2d(vec2<f32>(sample.surface * GRAIN_SPACING, here.tone * GRAIN_OFFSET), 3), 3, GRAIN_GAIN);
     stone = stone * mix(1.0 - GRAIN_DEPTH * detail, 1.0 + GRAIN_DEPTH * detail, bands);
 
     // The lustre, gated on length rather than width.

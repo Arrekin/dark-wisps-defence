@@ -8,9 +8,10 @@
 // Seamless animation across the wrap boundary:
 // - Periodic motion: quantize periods (`wrap_period`) or rates (`wrap_rate`) so an integer
 //   number of cycles fits into `CLOCK_WRAP_PERIOD`. Fold per-cycle indices with `wrap_index`.
-// - Drifting value noise: use `*_drift` in `common/value_noise.wesl`, which tiles the noise
-//   lattice to repeat once per wrap.
-// - Non-periodic drift (e.g., gradient or simplex noise scrolling across a plane): crossfade
+// - Drifting noise: use `*_drift` in `common/noise.wesl` (folds `shader_clock_epoch` into the
+//   texture tile period for any velocity) or in `common/value_noise.wesl` (quantizes velocity to
+//   tile the lattice once per wrap).
+// - Non-periodic hash noise (e.g., gradient or simplex noise scrolling across a plane): crossfade
 //   into the wrap-shifted sample (`time - CLOCK_WRAP_PERIOD`) using `wrap_fade` and `wrap_mix`.
 
 // Mirrors `visuals::clock::CLOCK_WRAP_PERIOD`.
