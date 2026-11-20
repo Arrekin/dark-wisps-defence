@@ -83,6 +83,8 @@ pub struct ScanningBeam {
     pub spot: Entity,  // the scan spot entity
 }
 
+/// Ground spot at the end of the scanning beam, drawn above wall tops and the wisps on them. It
+/// wanders within the scanned target while the beam is on.
 #[derive(Component)]
 #[require(MapBound, ZDepth::GroundEffect, DrawLevel::OnElevation)]
 pub struct ScanSpot {

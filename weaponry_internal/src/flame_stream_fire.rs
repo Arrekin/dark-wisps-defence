@@ -13,8 +13,7 @@
 
 use bevy::{prelude::*, reflect::TypePath, render::render_resource::{BlendState, ShaderType}};
 
-use game_core::prelude::{DrawLevel, GridPosition, MapBound, ZDepth};
-use indexes::obstacles::level_gpu_index;
+use game_core::prelude::{CELL_SIZE, DrawLevel, GridPosition, MapBound, ZDepth};
 use session::{GameClock, TimeBound};
 use states::prelude::GameState;
 use visuals::{
@@ -69,7 +68,6 @@ const IMPACT_MESH_HALF_SIZE: f32 = 70.;
 /// Burn duration (seconds) required for a full-strength scorch mark.
 const SCORCH_BUILDUP: f32 = 1.;
 const SCORCH_DURATION: f32 = 1.5;
-const SCORCH_MESH_HALF_SIZE: f32 = 24.;
 
 // Pilot flame
 const PILOT_MESH_SIZE: f32 = 14.;
@@ -194,7 +192,7 @@ impl LaneVisual for ImpactFireVisual {
     }
 }
 
-/// Temporary scorch decal spawned when a tile stops burning.
+/// Temporary scorch decal spawned when a tile stops burning. Its quad covers the tile.
 /// Field order and types mirror `Instance` in `assets/shaders/weaponry/flame_stream_scorch.wesl`.
 #[derive(Component, ShaderType, TypePath, Clone)]
 #[require(MapBound, ZDepth::FlameScorch)]
@@ -205,16 +203,13 @@ struct FlameScorch {
     /// Normalized char intensity in `0.0..=1.0`, from the burn duration.
     strength: f32,
     seed: f32,
-    half_size: f32,
-    /// Level code (`level_gpu_index`).
-    level: u32,
 }
 impl LaneVisual for FlameScorch {
     const LABEL: &'static str = "flame_scorch";
     const LOOK: &'static str = "shaders::weaponry::flame_stream_scorch";
 
     fn quad_size() -> Vec2 {
-        Vec2::splat(2. * SCORCH_MESH_HALF_SIZE)
+        Vec2::splat(CELL_SIZE)
     }
 
     /// Premultiplied alpha: darkens the floor via alpha while cinders add light.
@@ -365,8 +360,6 @@ fn update_impact_fires(
                     duration: time_bound.duration() as f32,
                     strength,
                     seed: (position.coords.x * 31 + position.coords.y) as f32 % 97.,
-                    half_size: SCORCH_MESH_HALF_SIZE,
-                    level: level_gpu_index(position.level),
                 },
                 DrawLevel::from(position.level),
                 time_bound,

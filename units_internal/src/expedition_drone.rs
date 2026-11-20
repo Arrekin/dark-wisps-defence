@@ -52,7 +52,9 @@
 //!
 //! ## Visual Components
 //!
-//! - **ScanSpot**: Ground projection that wanders within target bounds
+//! - **ScanSpot**: Ground projection that wanders within target bounds. It keeps its flat ellipse
+//!   and shows the levels beneath it through its look: the scan rings shear, level-change edges light
+//!   up as seams, higher tops draw brighter, and its outer ring steps with the level.
 //! - **ScanningBeam**: Tapered cone from drone to spot (shader-based)
 
 use bevy::{prelude::*, reflect::TypePath, render::render_resource::ShaderType};
@@ -119,6 +121,8 @@ const HOME_ARRIVAL_DISTANCE: f32 = 10.0;
 const SCAN_SPOT_REACH_DISTANCE: f32 = 2.0;
 /// Fraction of the target diagonal beyond which the spot snaps back onto the target.
 const SCAN_SPOT_SNAP_FACTOR: f32 = 0.75;
+/// Local size of the spot's quad, where the spot's radius is 1; leaves room for its outer ring to step with the levels.
+const SCAN_SPOT_QUAD_SIZE: f32 = 3.0;
 
 /// Refuels drones at home base. Transitions to Deploying when full (auto-redeploy).
 /// The state observer handles the Deploying→Stationed fallback if there is no valid mission.
@@ -497,8 +501,9 @@ impl LaneVisual for ScanningBeamVisual {
     const LOOK: &'static str = "shaders::units::scanning_beam";
 }
 
-/// Ground spot visual stored on the `ScanSpot` entity. Field order and types mirror `Instance` in
-/// `assets/shaders/units/scan_spot.wesl`.
+/// Ground spot visual stored on the `ScanSpot` entity. Its look draws the ellipse at unit radius with
+/// local +x toward the drone, as `scan_spot_update` turns and stretches the transform. Field order and
+/// types mirror `Instance` in `assets/shaders/units/scan_spot.wesl`.
 #[derive(Component, ShaderType, TypePath, Clone)]
 pub(crate) struct ScanSpotVisual {
     /// Phase offset of the scan pulse.
@@ -508,8 +513,8 @@ impl LaneVisual for ScanSpotVisual {
     const LABEL: &'static str = "scan_spot";
     const LOOK: &'static str = "shaders::units::scan_spot";
 
-    fn mesh() -> Mesh {
-        Circle::new(1.0).into()
+    fn quad_size() -> Vec2 {
+        Vec2::splat(SCAN_SPOT_QUAD_SIZE)
     }
 }
 
