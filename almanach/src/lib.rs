@@ -319,7 +319,7 @@ pub struct ShardRecipe {
 }
 impl ShardRecipe {
     /// All cost entries: pickup costs followed by reserved ingredients.
-    pub fn cost(&self) -> impl Iterator<Item = ResourceAmount> + '_ {
+    pub fn cost(&self) -> impl Iterator<Item = ResourceAmount> {
         self.pickup_cost.iter().chain(self.reserved_cost.iter()).copied()
     }
 }

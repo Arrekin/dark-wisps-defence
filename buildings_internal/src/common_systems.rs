@@ -11,6 +11,7 @@ use indexes::{prelude::*, search::targetfinding::target_find_closest_wisp, wisps
 use logging::prelude::*;
 use states::prelude::*;
 use visuals::prelude::*;
+use weaponry::{lob::{Lob, LobInFlight, LobPreviewTarget}, prelude::FiredProjectiles};
 use wisps::prelude::*;
 
 use crate::common::*;
@@ -27,6 +28,7 @@ impl Plugin for CommonSystemsPlugin {
                 (find_tower_targets, rotate_towers_to_targets).chain().run_if(in_state(GameState::Running)),
                 rotate_tower_top,
             ).chain().in_set(TowerAimingSystems))
+            .add_systems(Update, aim_lob_previews.after(TowerAimingSystems))
             .add_systems(Update, BuildingPlacementRules::update_feedback.in_set(PlacementFeedbackSystems))
             .add_observer(on_begin_placing_start_building_session)
             .add_observer(on_grid_placer_changed_highlight_area_suppliers)
@@ -97,6 +99,28 @@ fn find_tower_targets(
             None if wisp_on_edge => TowerWispTarget::SearchForNewTarget,
             None => TowerWispTarget::NoValidTargets(wisps_grid.version),
         };
+    }
+}
+
+/// Updates each lob tower's [`LobPreviewTarget`] to track its latest in-flight projectile's target,
+/// falling back to the predicted aim cell of its current wisp target.
+fn aim_lob_previews(
+    predictive_aim: PredictiveAim,
+    mut towers: Query<(&TowerWispTarget, Option<&FiredProjectiles>, &mut LobPreviewTarget)>,
+    lobs: Query<&Lob, With<LobInFlight>>,
+) {
+    for (target, fired_projectiles, mut preview_target) in towers.iter_mut() {
+        let in_flight_target = fired_projectiles.into_iter().flat_map(FiredProjectiles::newest_first).find_map(|projectile| lobs.get(projectile).ok()).map(Lob::target);
+        let shot_point = in_flight_target.or_else(|| target.wisp().and_then(|wisp| predictive_aim.next_cell(wisp)).map(GridCoords::world_center));
+        match shot_point {
+            Some(shot_point) => { preview_target.set_if_neq(LobPreviewTarget(Some(shot_point))); }
+            None if matches!(*target, TowerWispTarget::NoValidTargets(_) | TowerWispTarget::Suspended) => {
+                preview_target.set_if_neq(LobPreviewTarget(None));
+            }
+            // Keep the last preview point while `SearchForNewTarget` is pending so the arc does not
+            // reset between consecutive targets.
+            None => {}
+        }
     }
 }
 

@@ -67,7 +67,7 @@ impl ModifierContributions {
         self.0.push((modifier, value));
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (ModifierType, f32)> + '_ {
+    pub fn iter(&self) -> impl Iterator<Item = (ModifierType, f32)> {
         self.0.iter().copied()
     }
 

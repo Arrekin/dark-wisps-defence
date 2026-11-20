@@ -25,7 +25,7 @@ impl FiredProjectiles {
     }
 
     /// The fired projectiles, most recent first.
-    pub fn newest_first(&self) -> impl Iterator<Item = Entity> + '_ {
+    pub fn newest_first(&self) -> impl Iterator<Item = Entity> {
         self.0.iter().rev().copied()
     }
 }

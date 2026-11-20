@@ -1,3 +1,13 @@
+//! # Rocket
+//!
+//! Homing projectile fired by the Rocket Launcher. Tracks a target wisp while it remains at the
+//! top of its cell, retargeting to another top-level wisp if its target is lost or enters a
+//! tunnel/underpass (or flying straight if none exist).
+//!
+//! Passing within `ROCKET_HIT_DISTANCE` of the target detonates a 1-step (3x3) blast via
+//! [`BlastHitManager`] at the target wisp's cell, spawning an explosion and damaging wisps in every
+//! hit cell.
+
 use bevy::{
     ecs::query::QueryData,
     prelude::*,
@@ -7,7 +17,7 @@ use bevy::{
 use alteration::modifiers::prelude::AttackDamage;
 use game_core::{
     math::angle_difference,
-    prelude::{AltitudeLevel, DamageMessage, GridArea, GridCoords, GridImprint, Property},
+    prelude::{DamageMessage, GridArea, GridCoords, Property},
 };
 use indexes::{prelude::ObstacleGrid, wisps::WispsGrid};
 use logging::prelude::*;
@@ -16,6 +26,8 @@ use states::prelude::{GameState, MapLoadingStage};
 use visuals::prelude::BuilderExplosion;
 use weaponry::prelude::*;
 use wisps::prelude::Wisp;
+
+use crate::blast::BlastHitManager;
 
 pub(crate) struct RocketPlugin;
 impl Plugin for RocketPlugin {
@@ -43,8 +55,8 @@ const ROCKET_SPEED: f32 = 400.0;
 const ROCKET_TURN_SPEED: f32 = 1.5;
 const ROCKET_HIT_DISTANCE: f32 = 6.0;
 
-// Blast area, in cells from the hit cell
-const BLAST_REACH: i32 = 1;
+// Blast area, in steps from the struck wisp's cell
+const BLAST_REACH: u8 = 1;
 
 #[log_tags(Tag::GameSave)]
 fn collect_rockets(
@@ -148,14 +160,13 @@ fn move_rockets(
     let at_top = |wisp: &RocketTargetWispItem| obstacle_grid.is_top(wisp.area.origin);
     let mut wisps_iter = wisps.iter();
     for (mut rocket, mut transform, mut target) in rockets.iter_mut() {
-        // A rocket retargets when its target goes below the top of its cell.
+        // Retarget if the current target is despawned or no longer at the top of its cell.
         let target_wisp = target.0.and_then(|wisp| wisps.get(wisp).ok()).filter(at_top).or_else(|| {
             let next_wisp = wisps_iter.find(at_top);
             target.0 = next_wisp.as_ref().map(|wisp| wisp.entity);
             next_wisp
         });
 
-        // Turn toward the target. Without one the rocket flies straight on.
         if let Some(wisp) = target_wisp {
             let angle_delta = angle_difference((wisp.transform.translation.xy() - transform.translation.xy()).to_angle(), rocket.heading);
             rocket.heading += angle_delta.clamp(-max_turn, max_turn);
@@ -166,42 +177,38 @@ fn move_rockets(
     }
 }
 
-/// Sweeps the line each rocket travelled this frame. Passing within reach of its target detonates it.
+/// Checks the segment each rocket traveled this frame and detonates if it passed within `ROCKET_HIT_DISTANCE` of its target.
 fn resolve_rocket_hits(
     mut commands: Commands,
     mut damage_messages: MessageWriter<DamageMessage>,
     time: Res<Time>,
-    obstacle_grid: Res<ObstacleGrid>,
     wisps_grid: Res<WispsGrid>,
+    blast_hit_manager: BlastHitManager,
     rockets: Query<(Entity, &Rocket, &Transform, &RocketTarget, &AttackDamage)>,
-    wisps: Query<&Transform, With<Wisp>>,
+    wisps: Query<(&Transform, &GridArea), With<Wisp>>,
 ) {
     let travel = ROCKET_SPEED * time.delta_secs();
     for (entity, rocket, rocket_transform, target, attack_damage) in rockets.iter() {
-        let rocket_coords = GridCoords::from_transform(rocket_transform);
-        if !wisps_grid.bounds.contains(rocket_coords) {
+        if !wisps_grid.bounds.contains(GridCoords::from_transform(rocket_transform)) {
             commands.entity(entity).despawn();
             continue;
         }
 
-        let Some(Ok(wisp_transform)) = target.0.map(|wisp| wisps.get(wisp)) else { continue; };
+        let Some(Ok((wisp_transform, wisp_area))) = target.0.map(|wisp| wisps.get(wisp)) else { continue; };
         let direction = Vec2::from_angle(rocket.heading);
         let start = rocket_transform.translation.xy() - direction * travel;
         let offset = wisp_transform.translation.xy() - start;
         let along = offset.dot(direction).clamp(0., travel);
         if offset.distance(direction * along) > ROCKET_HIT_DISTANCE { continue; }
 
-        let blast_zone = GridArea::centered_on(rocket_coords.at(AltitudeLevel::TopLevel), GridImprint::square_of_reach(BLAST_REACH));
-        for top in obstacle_grid.tops_in(blast_zone) {
-            commands.spawn(BuilderExplosion(top));
-
-            for &wisp in wisps_grid.wisps_at(top) {
-                // A deferred spawn can enter the grid before its components are available to queries.
-                if !wisps.contains(wisp) { continue; }
+        commands.entity(entity).despawn();
+        let Some(blast) = blast_hit_manager.go_off(wisp_area.origin.coords, BLAST_REACH) else { continue; };
+        for hit in blast.hits() {
+            commands.spawn(BuilderExplosion(hit.position));
+            for &wisp in hit.wisps {
                 damage_messages.write(DamageMessage { target: wisp, amount: attack_damage.get() });
             }
         }
-        commands.entity(entity).despawn();
     }
 }
 

@@ -9,11 +9,11 @@
 //!   perspective. Its screen path stays straight, with slower motion near launch and landing.
 //! - `LobShadow` falls away from the sun, spreading and fading with height.
 //!
-//! Focused towers with `LobPreview` show dotted body and shadow paths using their `LobProfile`.
-//! The preview targets the latest shot in flight, or the target wisp's next cell. Target
-//! changes and dot spacing are smoothed; perspective packs dots near launch and landing. Body
-//! dots grow and brighten with height, while shadow dots spread and fade. Each tower reuses a
-//! fixed pool of dots, hidden when the preview has no target. Losing focus clears the preview.
+//! Focused towers with `LobPreview` show dotted body and shadow paths to `LobPreviewTarget` using
+//! their `LobProfile`. Target changes and dot spacing are smoothed; perspective packs dots near
+//! launch and landing. Body dots grow and brighten with height, while shadow dots spread and fade.
+//! Each tower reuses a fixed pool of dots, hidden when the preview has no target. Losing focus
+//! clears the preview.
 //!
 //! `SaveLobExtension` and `LoadLobExtension` store flight state in the shared `lobs` table,
 //! keyed by projectile entity.
@@ -24,15 +24,13 @@ use bevy::{
     render::render_resource::{Extent3d, TextureDimension, TextureFormat},
 };
 
-use buildings::prelude::TowerWispTarget;
 use game_core::prelude::{CELL_SIZE, DrawLevel, ZDepth};
 use hud::prelude::FocusedMapObject;
 use persistence::{prelude::*, rusqlite};
 use session::GameClock;
 use states::prelude::GameState;
 use visuals::map_light::{MAP_SUN_DIRECTION, MAP_SUN_GROUND_DIRECTION};
-use weaponry::{lob::{Lob, LobAwaitingLaunch, LobInFlight, LobPreview, LobProfile}, prelude::FiredProjectiles};
-use wisps::prelude::{Wisp, WispHeading};
+use weaponry::lob::{Lob, LobAwaitingLaunch, LobInFlight, LobPreview, LobPreviewTarget, LobProfile};
 
 pub(crate) struct LobPlugin;
 impl Plugin for LobPlugin {
@@ -43,10 +41,10 @@ impl Plugin for LobPlugin {
                 (launch_awaiting_lobs, advance_lobs).chain().run_if(in_state(GameState::Running)),
                 update_lob_visuals,
             ).chain())
-            .add_systems(Update, (update_lob_preview_targets, update_lob_preview_dots).chain())
+            .add_systems(Update, (ease_lob_preview_targets, update_lob_preview_dots).chain())
             .add_observer(on_add_lob_insert_launch_phase)
             .add_observer(on_add_lob_preview_spawn_dots)
-            .add_observer(on_remove_focused_map_object_clear_lob_preview_target);
+            .add_observer(on_remove_focused_map_object_hide_lob_preview);
     }
 }
 
@@ -93,17 +91,26 @@ const PREVIEW_BODY_ALPHA_HIGH: f32 = 0.8;
 const PREVIEW_END_FADE: f32 = 0.04;
 const PREVIEW_BODY_COLOR: Color = Color::srgb(1., 0.7, 0.4); // warm orange
 
-/// Smoothed landing point for a `LobPreview`. `None` hides the preview.
-#[derive(Component, Default, PartialEq)]
-struct LobPreviewTarget(Option<Vec2>);
-impl LobPreviewTarget {
-    fn point(&self) -> Option<Vec2> {
-        self.0
+/// Smoothed target position for `LobPreview`, exponentially eased toward `LobPreviewTarget`.
+#[derive(Component, Default)]
+struct LobPreviewEasedTarget {
+    /// `None` hides the preview.
+    point: Option<Vec2>,
+}
+impl LobPreviewEasedTarget {
+    fn has_point(&self) -> bool {
+        self.point.is_some()
     }
 
-    /// Interpolates toward `point` by `settle`, or uses it directly if no target is set.
+    /// Clears the smoothed target so the next target snaps into place instead of sliding from the
+    /// previous one.
+    fn hide(&mut self) {
+        self.point = None;
+    }
+
+    /// Lerps toward `point` by `settle`, or snaps directly to `point` when previously hidden.
     fn ease_toward(&mut self, point: Vec2, settle: f32) {
-        self.0 = Some(self.0.map_or(point, |shown| shown.lerp(point, settle)));
+        self.point = Some(self.point.map_or(point, |shown| shown.lerp(point, settle)));
     }
 }
 
@@ -207,7 +214,7 @@ impl FromWorld for LobDiscImage {
 }
 impl LobDiscImage {
     /// Shadow child for a projectile whose ground-level shadow is `diameter` world units across.
-    pub fn make_shadow(&self, diameter: f32) -> impl Bundle {
+    pub(crate) fn make_shadow(&self, diameter: f32) -> impl Bundle {
         (
             LobShadow,
             Sprite {
@@ -282,7 +289,7 @@ fn on_add_lob_preview_spawn_dots(
     mut commands: Commands,
     disc_image: Res<LobDiscImage>,
 ) {
-    commands.entity(trigger.entity).insert(LobPreviewTarget::default()).with_children(|parent| {
+    commands.entity(trigger.entity).insert(LobPreviewEasedTarget::default()).with_children(|parent| {
         for index in 0..PREVIEW_MAX_DOTS {
             for (kind, color, diameter, z_depth, draw_level) in [
                 (LobPreviewDotKind::Shadow, SHADOW_COLOR, PREVIEW_SHADOW_DOT_DIAMETER, ZDepth::GroundEffect, DrawLevel::OnElevation),
@@ -305,45 +312,38 @@ fn on_add_lob_preview_spawn_dots(
     });
 }
 
-fn update_lob_preview_targets(
+fn ease_lob_preview_targets(
     time: Res<Time>,
-    mut previews: Query<(&TowerWispTarget, Option<&FiredProjectiles>, &mut LobPreviewTarget), (With<LobPreview>, With<FocusedMapObject>)>,
-    lobs: Query<&Lob, With<LobInFlight>>,
-    wisps: Query<WispHeading, With<Wisp>>,
+    mut previews: Query<(&LobPreviewTarget, &mut LobPreviewEasedTarget), (With<LobPreview>, With<FocusedMapObject>)>,
 ) {
     let settle = 1. - (-PREVIEW_SETTLE_RATE * time.delta_secs()).exp();
-    for (target, fired_projectiles, mut preview_target) in previews.iter_mut() {
-        let in_flight_target = fired_projectiles.into_iter().flat_map(FiredProjectiles::newest_first).find_map(|projectile| lobs.get(projectile).ok()).map(Lob::target);
-        let shot_point = in_flight_target.or_else(|| {
-            target.wisp().and_then(|wisp| wisps.get(wisp).ok()).map(|wisp_heading| wisp_heading.next_cell_center())
-        });
-        match shot_point {
-            Some(shot_point) => preview_target.ease_toward(shot_point, settle),
-            None if matches!(*target, TowerWispTarget::NoValidTargets(_) | TowerWispTarget::Suspended) => {
-                preview_target.set_if_neq(LobPreviewTarget::default());
-            }
-            None => {} // Between targets: hold the last point.
-        }
+    for (target, mut eased_target) in previews.iter_mut() {
+        let Some(point) = target.0 else {
+            // Avoid mutating when already `None` so `Ref<LobPreviewEasedTarget>` stays unchanged.
+            if eased_target.has_point() { eased_target.hide(); }
+            continue;
+        };
+        eased_target.ease_toward(point, settle);
     }
 }
 
-fn on_remove_focused_map_object_clear_lob_preview_target(
+fn on_remove_focused_map_object_hide_lob_preview(
     trigger: On<Remove<FocusedMapObject>>,
-    mut preview_targets: Query<&mut LobPreviewTarget>,
+    mut eased_targets: Query<&mut LobPreviewEasedTarget>,
 ) {
-    let Ok(mut preview_target) = preview_targets.get_mut(trigger.entity) else { return; };
-    preview_target.set_if_neq(LobPreviewTarget::default());
+    let Ok(mut eased_target) = eased_targets.get_mut(trigger.entity) else { return; };
+    if eased_target.has_point() { eased_target.hide(); }
 }
 
 fn update_lob_preview_dots(
     time: Res<Time>,
-    previews: Query<(&LobProfile, Ref<LobPreviewTarget>, &GlobalTransform, &Children), With<LobPreview>>,
+    previews: Query<(&LobProfile, Ref<LobPreviewEasedTarget>, &GlobalTransform, &Children), With<LobPreview>>,
     mut dots: Query<(&mut LobPreviewDot, &mut Transform, &mut Sprite, &mut Visibility)>,
 ) {
     let settle = 1. - (-PREVIEW_SETTLE_RATE * time.delta_secs()).exp();
-    for (lob_profile, preview_target, owner_transform, children) in previews.iter() {
-        let Some(target) = preview_target.point() else {
-            if preview_target.is_changed() {
+    for (lob_profile, eased_target, owner_transform, children) in previews.iter() {
+        let Some(target) = eased_target.point else {
+            if eased_target.is_changed() {
                 for child in children.iter() {
                     let Ok((mut dot, _, _, mut visibility)) = dots.get_mut(child) else { continue; };
                     dot.reset_progress();

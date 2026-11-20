@@ -1,17 +1,20 @@
+//! # Cannonball
+//!
+//! Cannon tower projectile. On landing, detonates a 1-step (3x3) blast via [`BlastHitManager`],
+//! spawning an explosion and dealing full damage in every hit cell.
+
 use bevy::prelude::*;
 
 use alteration::modifiers::prelude::AttackDamage;
-use game_core::prelude::{AltitudeLevel, CELL_SIZE, DamageMessage, GridArea, GridCoords, GridImprint, OptionalCommands, Property};
-use indexes::{prelude::ObstacleGrid, wisps::WispsGrid};
+use game_core::prelude::{CELL_SIZE, DamageMessage, GridCoords, OptionalCommands, Property};
 use logging::prelude::*;
 use persistence::{prelude::*, rusqlite};
 use session::GameClock;
 use states::prelude::{GameState, MapLoadingStage};
 use visuals::prelude::BuilderExplosion;
 use weaponry::{lob::{Lob, LobInFlight}, prelude::*};
-use wisps::prelude::Wisp;
 
-use crate::lob::{LoadLobExtension, LobBody, LobDiscImage, SaveLobExtension, advance_lobs};
+use crate::{blast::BlastHitManager, lob::{LoadLobExtension, LobBody, LobDiscImage, SaveLobExtension, advance_lobs}};
 
 pub(crate) struct CannonballPlugin;
 impl Plugin for CannonballPlugin {
@@ -26,8 +29,8 @@ impl Plugin for CannonballPlugin {
 
 const CANNONBALL_BASE_IMAGE: &str = "projectiles/cannonball.png";
 
-// Blast area, in cells from the landing cell
-const BLAST_REACH: i32 = 1;
+// Blast area, in steps from the landing cell
+const BLAST_REACH: u8 = 1;
 
 #[log_tags(Tag::GameSave)]
 fn collect_cannonballs(
@@ -99,24 +102,19 @@ fn resolve_cannonball_hits(
     mut commands: Commands,
     mut damage_messages: MessageWriter<DamageMessage>,
     clock: Res<GameClock>,
-    obstacle_grid: Res<ObstacleGrid>,
-    wisps_grid: Res<WispsGrid>,
+    blast_hit_manager: BlastHitManager,
     cannonballs: Query<(Entity, &Lob, &AttackDamage), (With<Cannonball>, With<LobInFlight>)>,
-    wisps: Query<(), With<Wisp>>,
 ) {
     for (entity, lob, attack_damage) in cannonballs.iter() {
         if !lob.is_landed(clock.now()) { continue; }
+        commands.entity(entity).despawn();
 
-        let blast_zone = GridArea::centered_on(GridCoords::from_world_position(lob.target()).at(AltitudeLevel::TopLevel), GridImprint::square_of_reach(BLAST_REACH));
-        for top in obstacle_grid.tops_in(blast_zone) {
-            commands.spawn(BuilderExplosion(top));
-
-            for &wisp in wisps_grid.wisps_at(top) {
-                // A deferred spawn can enter the grid before its components are available to queries.
-                if !wisps.contains(wisp) { continue; }
+        let Some(blast) = blast_hit_manager.go_off(GridCoords::from_world_position(lob.target()), BLAST_REACH) else { continue; };
+        for hit in blast.hits() {
+            commands.spawn(BuilderExplosion(hit.position));
+            for &wisp in hit.wisps {
                 damage_messages.write(DamageMessage { target: wisp, amount: attack_damage.get() });
             }
         }
-        commands.entity(entity).despawn();
     }
 }

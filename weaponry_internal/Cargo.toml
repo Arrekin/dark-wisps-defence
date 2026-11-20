@@ -6,9 +6,10 @@ edition.workspace = true
 [dependencies]
 bevy = { workspace = true }
 weaponry = { workspace = true }
-buildings = { workspace = true }
 hud = { workspace = true }
 indexes = { workspace = true }
+grids = { workspace = true }
+strum = { workspace = true }
 wisps = { workspace = true }
 visuals = { workspace = true }
 alteration = { workspace = true }

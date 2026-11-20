@@ -1,19 +1,20 @@
 //! # Fireball
 //!
-//! Blaze Mortar projectile. On landing, it deals full damage to wisps in a 3x3 area centered on
-//! the landing cell and reduced damage in the surrounding one-cell ring, for a 5x5 area.
-//! The damage zones do not overlap. Damage reaches the top of each cell.
+//! Blaze Mortar projectile. On landing, detonates a 2-step (5x5) blast via [`BlastHitManager`].
+//! Wisps in hit cells within [`MAIN_BLAST_REACH`] (1 step) take full damage; those in the outer
+//! [`RING_REACH`] (2 steps) take [`RING_DAMAGE_SHARE`] of full damage.
 //!
 //! ## Rendering
 //!
-//! The body faces the flight direction. Its tail shortens as it slows near the apex and lengthens
-//! as it falls. An additive glow beneath the projectile spreads and dims with height.
+//! - **In flight:** `FireballBody` faces the travel direction with a speed-scaled tail (shortest at
+//!   the apex). `FireballGlow` projects an additive light pool on the ground that widens and dims
+//!   with height.
+//! - **Impact:** A single shader (`fireball_impact.wesl`) renders two `TimeBound` entities from the
+//!   blast's [`ImpactReachMasks`]: the `Blast` layer (drawn at `OnElevation` above wisps) and the
+//!   longer-lived `Scorch` layer (drawn at the blast's altitude level below wisps).
 //!
-//! One impact shader draws two layers: a blast above wisps and a longer-lived scorch mark below
-//! them. Ground fire and scorch stay on the map.
-//!
-//! Body, glow and impact use dedicated lane layers for batching. Impact instances store a start
-//! instant and duration; the shader derives age from the game clock without per-frame instance updates.
+//! Body, glow, and impact each use a [`LanePlugin`] for instanced batching. Impact instances store
+//! a start timestamp and duration so the shader computes age directly from the game clock.
 
 use bevy::{
     prelude::*,
@@ -22,8 +23,7 @@ use bevy::{
 };
 
 use alteration::modifiers::prelude::AttackDamage;
-use game_core::prelude::{AltitudeLevel, CELL_SIZE, DamageMessage, DrawLevel, GridArea, GridCoords, GridImprint, MapBound, OptionalCommands, Property, ZDepth};
-use indexes::{prelude::ObstacleGrid, wisps::WispsGrid};
+use game_core::prelude::{CELL_SIZE, DamageMessage, DrawLevel, GridCoords, MapBound, OptionalCommands, Property, ZDepth};
 use logging::prelude::*;
 use persistence::{prelude::*, rusqlite};
 use session::{GameClock, TimeBound};
@@ -34,9 +34,11 @@ use visuals::{
     shader::{ADDITIVE_BLENDING, seed_from_entity},
 };
 use weaponry::{lob::{Lob, LobInFlight}, prelude::*};
-use wisps::prelude::Wisp;
 
-use crate::lob::{LoadLobExtension, LobBody, LobDiscImage, SaveLobExtension, advance_lobs};
+use crate::{
+    blast::{Blast, BlastCell, BlastHitManager},
+    lob::{LoadLobExtension, LobBody, LobDiscImage, SaveLobExtension, advance_lobs},
+};
 
 pub(crate) struct FireballPlugin;
 impl Plugin for FireballPlugin {
@@ -57,10 +59,12 @@ impl Plugin for FireballPlugin {
     }
 }
 
-// Blast area, in cells from the landing cell
-const MAIN_BLAST_REACH: i32 = 1;
-const RING_REACH: i32 = 2;
-/// Share of the fireball's damage dealt to cells in the ring.
+// Blast area, in steps from the landing cell
+/// Inner blast radius in steps (full damage). Paired with `MAIN_HALF_SIZE` in `assets/shaders/weaponry/fireball_impact.wesl`.
+const MAIN_BLAST_REACH: u8 = 1;
+/// Outer blast radius in steps (ring damage). Paired with `AREA_RADIUS` in `assets/shaders/weaponry/fireball_impact.wesl`.
+const RING_REACH: u8 = 2;
+/// Damage multiplier for cells hit at `RING_REACH`.
 const RING_DAMAGE_SHARE: f32 = 0.4;
 
 // Body
@@ -85,7 +89,8 @@ const GLOW_FALLOFF: f32 = 0.08;
 const GLOW_MESH_HALF_SIZE: f32 = 2.;
 
 // Impact
-/// Visual reach in cells beyond the landing cell.
+/// Quad extent in cells beyond the landing cell (7x7 total). Paired with `MESH_HALF_SIZE` in
+/// `assets/shaders/weaponry/fireball_impact.wesl`.
 const IMPACT_REACH: i32 = 3;
 /// Long enough for the blast's smoke to clear.
 const BLAST_DURATION: f32 = 1.2;
@@ -142,8 +147,7 @@ enum ImpactLayer {
 }
 
 /// One impact layer on a temporary entity, despawned when its `TimeBound` expires.
-/// Field order and types mirror `Instance` in
-/// `assets/shaders/weaponry/fireball_impact.wesl`.
+/// Field order and types mirror `Instance` in `assets/shaders/weaponry/fireball_impact.wesl`.
 #[derive(Component, ShaderType, TypePath, Clone)]
 #[require(MapBound)]
 struct FireballImpact {
@@ -153,11 +157,7 @@ struct FireballImpact {
     /// An `ImpactLayer`.
     layer: u32,
     duration: f32,
-    /// Mesh extent in cells beyond the landing cell.
-    reach: u32,
-    main_half_size: f32,
-    ring_half_size: f32,
-    landing_cell: IVec2,
+    reach_masks: ImpactReachMasks,
 }
 impl LaneVisual for FireballImpact {
     const LABEL: &'static str = "fireball_impact";
@@ -173,17 +173,41 @@ impl LaneVisual for FireballImpact {
     }
 }
 impl FireballImpact {
-    fn new(layer: ImpactLayer, time_bound: TimeBound, seed: f32, landing_coords: GridCoords) -> Self {
+    fn new(layer: ImpactLayer, time_bound: TimeBound, seed: f32, reach_masks: ImpactReachMasks) -> Self {
         Self {
             start: ClockInstant::at(time_bound.starts_at),
             seed,
             layer: layer as u32,
             duration: time_bound.duration() as f32,
-            reach: IMPACT_REACH as u32,
-            main_half_size: MAIN_BLAST_REACH as f32 + 0.5,
-            ring_half_size: RING_REACH as f32 + 0.5,
-            landing_cell: landing_coords.into(),
+            reach_masks,
         }
+    }
+}
+
+/// 25-bit cell masks for the 5x5 blast area, indexed row-major from the bottom-left corner.
+/// Field order and types mirror `ReachMasks` in `assets/shaders/weaponry/fireball_impact.wesl`.
+#[derive(ShaderType, Clone, Copy, Default)]
+struct ImpactReachMasks {
+    /// Cells reached by the blast (`Passed` or `Hit`).
+    passed: u32,
+    /// Reached cells with a floor at the blast's level (`Hit`).
+    hit: u32,
+    /// Unblocked cells at the blast's level (`!Blocked`).
+    open: u32,
+}
+impl ImpactReachMasks {
+    fn from_blast(blast: &Blast) -> Self {
+        let mut masks = Self::default();
+        for (index, (_, cell)) in blast.cells().enumerate() {
+            let bit = 1 << index;
+            match cell {
+                BlastCell::Blocked => {}
+                BlastCell::OutOfReach => masks.open |= bit,
+                BlastCell::Passed { .. } => { masks.open |= bit; masks.passed |= bit; }
+                BlastCell::Hit { .. } => { masks.open |= bit; masks.passed |= bit; masks.hit |= bit; }
+            }
+        }
+        masks
     }
 }
 
@@ -262,31 +286,27 @@ fn resolve_fireball_hits(
     mut commands: Commands,
     mut damage_messages: MessageWriter<DamageMessage>,
     clock: Res<GameClock>,
-    obstacle_grid: Res<ObstacleGrid>,
-    wisps_grid: Res<WispsGrid>,
+    blast_hit_manager: BlastHitManager,
     fireballs: Query<(Entity, &Lob, &AttackDamage), (With<Fireball>, With<LobInFlight>)>,
-    wisps: Query<(), With<Wisp>>,
 ) {
     for (entity, lob, attack_damage) in fireballs.iter() {
         if !lob.is_landed(clock.now()) { continue; }
+        commands.entity(entity).despawn();
 
         let landing_coords = GridCoords::from_world_position(lob.target());
+        let Some(blast) = blast_hit_manager.go_off(landing_coords, RING_REACH) else { continue; };
+        let reach_masks = ImpactReachMasks::from_blast(&blast);
         let seed = seed_from_entity(entity);
-        let (blast, scorch) = (TimeBound::lasting(&clock, BLAST_DURATION), TimeBound::lasting(&clock, SCORCH_DURATION));
+        let (blast_time, scorch_time) = (TimeBound::lasting(&clock, BLAST_DURATION), TimeBound::lasting(&clock, SCORCH_DURATION));
         let transform = Transform::from_translation(landing_coords.world_center().extend(0.));
-        commands.spawn((FireballImpact::new(ImpactLayer::Blast, blast, seed, landing_coords), blast, transform, ZDepth::FireballBlast, DrawLevel::OnElevation));
-        commands.spawn((FireballImpact::new(ImpactLayer::Scorch, scorch, seed, landing_coords), scorch, transform, ZDepth::FireballScorch, DrawLevel::OnGround));
-        let main_blast = GridArea::centered_on(landing_coords.at(AltitudeLevel::TopLevel), GridImprint::square_of_reach(MAIN_BLAST_REACH));
-        let blast_zone = GridArea::centered_on(landing_coords.at(AltitudeLevel::TopLevel), GridImprint::square_of_reach(RING_REACH));
-        for top in obstacle_grid.tops_in(blast_zone) {
-            let damage = if main_blast.contains(top.coords) { attack_damage.get() } else { attack_damage.get() * RING_DAMAGE_SHARE };
-            for &wisp in wisps_grid.wisps_at(top) {
-                // A deferred spawn can enter the grid before its components are available to queries.
-                if !wisps.contains(wisp) { continue; }
+        commands.spawn((FireballImpact::new(ImpactLayer::Blast, blast_time, seed, reach_masks), blast_time, transform, ZDepth::FireballBlast, DrawLevel::OnElevation));
+        commands.spawn((FireballImpact::new(ImpactLayer::Scorch, scorch_time, seed, reach_masks), scorch_time, transform, ZDepth::FireballScorch, DrawLevel::from(blast.position.level)));
+        for hit in blast.hits() {
+            let damage = if hit.step <= MAIN_BLAST_REACH { attack_damage.get() } else { attack_damage.get() * RING_DAMAGE_SHARE };
+            for &wisp in hit.wisps {
                 damage_messages.write(DamageMessage { target: wisp, amount: damage });
             }
         }
-        commands.entity(entity).despawn();
     }
 }
 

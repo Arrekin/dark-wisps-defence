@@ -4,7 +4,7 @@ use almanach::prelude::Almanach;
 use alteration::modifiers::prelude::{AttackRangeType, ModifierType};
 use buildings::prelude::Tower;
 use game_core::{math::angle_difference, prelude::*};
-use grids::placement::{BeginPlacing, GridPlacerChanged, PlacementFeedback, PlacementObject, PlacementSession, PlacementValidity, ReservedCoords};
+use grids::{base::GridCell, placement::{BeginPlacing, GridPlacerChanged, PlacementFeedback, PlacementObject, PlacementSession, PlacementValidity, ReservedCoords}, prelude::GridPath};
 use hud::prelude::FocusedMapObject;
 use indexes::{energy_supply::EnergySupply, prelude::{ObstacleCell, ObstacleGrid}};
 use logging::prelude::*;
@@ -15,6 +15,7 @@ use overlays::{
 use persistence::{prelude::*, rusqlite};
 use resources::prelude::Stock;
 use states::AdminMode;
+use wisps::prelude::Wisp;
 
 /// Attaches a building image to a UI node or world entity.
 #[log_tags(Tag::Build)]
@@ -218,6 +219,24 @@ pub(crate) fn on_technical_state_changed_recompute_operational(
 /// All activities related to aiming and targeting.
 #[derive(SystemSet, Clone, Copy, Eq, PartialEq, Hash, Debug)]
 pub(crate) struct TowerAimingSystems;
+
+/// Target-leading helper for lobbed projectiles.
+#[derive(SystemParam)]
+pub(crate) struct PredictiveAim<'w, 's> {
+    obstacle_grid: Res<'w, ObstacleGrid>,
+    wisps: Query<'w, 's, (&'static GridPath, &'static GridArea), With<Wisp>>,
+}
+impl PredictiveAim<'_, '_> {
+    /// Returns the cell `wisp` is moving into, or its current cell if it has no path or its next
+    /// path step is a building cell (wisps stop adjacent to buildings to attack).
+    pub(crate) fn next_cell(&self, wisp: Entity) -> Option<GridCoords> {
+        let (grid_path, area) = self.wisps.get(wisp).ok()?;
+        let next = grid_path.next_in_path().filter(|next| {
+            !self.obstacle_grid.get(next.coords).is_some_and(|cell| cell.at(next.level).is_building())
+        });
+        Some(next.unwrap_or(area.origin).coords)
+    }
+}
 
 /// Rotating top sprite of a tower. Displays the tower's `TowerTopRotation`.
 #[derive(Component)]

@@ -16,7 +16,6 @@ use session::GameClock;
 use shards::prelude::*;
 use states::prelude::*;
 use weaponry::{lob::{LobPreview, LobProfile}, prelude::*};
-use wisps::prelude::*;
 
 use crate::common::*;
 
@@ -196,14 +195,14 @@ fn load_tower_cannons(ctx: &mut LoadContext) -> LoadResult {
 fn shoot_targets(
     mut commands: Commands,
     clock: Res<GameClock>,
+    predictive_aim: PredictiveAim,
     mut tower_cannons: Query<(Entity, &Transform, &LobProfile, &mut TowerShootingTimer, &TowerWispTarget, &AttackDamage), (With<TowerCannon>, With<IsOperational>)>,
-    wisps: Query<WispHeading, With<Wisp>>,
 ) {
     for (tower, transform, lob_profile, mut timer, target, attack_damage) in tower_cannons.iter_mut() {
         if !timer.0.is_finished() { continue; }
-        let Some(Ok(wisp_heading)) = target.wisp().map(|wisp| wisps.get(wisp)) else { continue; };
+        let Some(aim_coords) = target.wisp().and_then(|wisp| predictive_aim.next_cell(wisp)) else { continue; };
 
-        let lob = lob_profile.lob(transform.translation.xy(), wisp_heading.next_cell_center(), clock.now());
+        let lob = lob_profile.lob(transform.translation.xy(), aim_coords.world_center(), clock.now());
         commands.spawn(BuilderCannonball::new(lob, *attack_damage).with_shooter(tower));
         timer.0.reset();
     }

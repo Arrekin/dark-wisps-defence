@@ -116,7 +116,7 @@ impl OrderTreeParam<'_, '_> {
 
     /// Required shards that do not yet have ingredient orders, including repeated quantities.
     #[log_tags(Tag::Shards)]
-    pub fn missing(&self, order: Entity) -> impl Iterator<Item = Shard> + '_ {
+    pub fn missing(&self, order: Entity) -> impl Iterator<Item = Shard> {
         let recipe = self.orders.get(order).ok().and_then(|&ShardOrder(shard)| self.almanach.get_shard_info(shard).recipe.as_ref());
         recipe.into_iter().flat_map(|recipe| &recipe.reserved_cost).filter_map(move |entry| {
             #[error_dev("Order {order} requires non-shard ingredient {:?}; ingredient skipped", entry.resource_type)]

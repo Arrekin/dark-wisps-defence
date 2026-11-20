@@ -25,6 +25,6 @@ pub enum AltitudeLevel {
     Airborne,
     /// Effects spanning all levels, such as quantum fields, energy supply, and dome coverage.
     AllEncompassing,
-    /// Areas that reach the top of each cell, such as blasts. Each cell resolves its own top when read.
+    /// Areas that reach the top of each cell, such as flame streams. Each cell resolves its own top when read.
     TopLevel,
 }

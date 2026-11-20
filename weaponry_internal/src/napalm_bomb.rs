@@ -16,7 +16,6 @@ use persistence::prelude::*;
 use session::{GameClock, TimeBound};
 use states::prelude::{GameState, MapLoadingStage};
 use weaponry::{lob::{Lob, LobInFlight}, prelude::*};
-use wisps::prelude::Wisp;
 
 use crate::{
     lob::{LoadLobExtension, LobBody, LobDiscImage, SaveLobExtension, advance_lobs},
@@ -104,7 +103,6 @@ fn resolve_napalm_bomb_hits(
     obstacle_grid: Res<ObstacleGrid>,
     wisps_grid: Res<WispsGrid>,
     napalm_bombs: Query<(Entity, &Lob), (With<NapalmBomb>, With<LobInFlight>)>,
-    wisps: Query<(), With<Wisp>>,
 ) {
     for (entity, lob) in napalm_bombs.iter() {
         if !lob.is_landed(clock.now()) { continue; }
@@ -114,8 +112,6 @@ fn resolve_napalm_bomb_hits(
         if wisps_grid.bounds.contains(landing_coords) {
             let top = obstacle_grid.top_position(landing_coords);
             for &wisp in wisps_grid.wisps_at(top) {
-                // A deferred spawn can enter the grid before its components are available to queries.
-                if !wisps.contains(wisp) { continue; }
                 damage_messages.write(DamageMessage { target: wisp, amount: NAPALM_BOMB_IMPACT_DAMAGE });
             }
             if !obstacle_grid[top].is_building() {

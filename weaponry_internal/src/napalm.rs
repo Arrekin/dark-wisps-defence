@@ -16,7 +16,6 @@ use logging::prelude::*;
 use persistence::prelude::*;
 use session::{GameClock, TimeBound};
 use states::prelude::{GameState, InGame, MapLoadingStage};
-use wisps::prelude::Wisp;
 
 pub(crate) struct NapalmPlugin;
 impl Plugin for NapalmPlugin {
@@ -42,11 +41,11 @@ pub(crate) struct Napalm;
 
 #[derive(Component, SSS)]
 pub(crate) struct BuilderNapalm {
-    pub grid_position: GridPosition,
-    pub time_bound: TimeBound,
+    grid_position: GridPosition,
+    time_bound: TimeBound,
 }
 impl BuilderNapalm {
-    pub fn new(grid_position: GridPosition, time_bound: TimeBound) -> Self {
+    pub(crate) fn new(grid_position: GridPosition, time_bound: TimeBound) -> Self {
         Self { grid_position, time_bound }
     }
 }
@@ -105,13 +104,10 @@ fn burn_wisps_on_napalm(
     time: Res<Time>,
     wisps_grid: Res<WispsGrid>,
     napalms: Query<&GridArea, With<Napalm>>,
-    wisps: Query<(), With<Wisp>>,
 ) {
     let damage = NAPALM_DAMAGE_PER_SECOND * time.delta_secs();
     for area in napalms.iter() {
         for &wisp in wisps_grid.wisps_at(area.origin) {
-            // A deferred spawn can enter the grid before its components are available to queries.
-            if !wisps.contains(wisp) { continue; }
             damage_messages.write(DamageMessage { target: wisp, amount: damage });
         }
     }

@@ -1,11 +1,11 @@
-use bevy::{ecs::query::QueryData, prelude::*};
+use bevy::prelude::*;
 
 use alteration::{
     effects::prelude::EffectVisualState,
     modifiers::prelude::{IncomingDamageMultiplier, MaxAttackRange, MaxIntegrityPoints, MinAttackRange, ModifierBank, MovementSpeed},
 };
 use fields::prelude::FieldAffectable;
-use game_core::{motion::Locomotion, prelude::{GridArea, GridCoords, GridImprint, MapBound}};
+use game_core::{motion::Locomotion, prelude::{GridArea, GridImprint, MapBound}};
 use grids::prelude::{GridPath, GridVersion};
 
 pub mod summoning;
@@ -46,24 +46,6 @@ pub enum WispChargeAttack {
 
 pub const WISP_GRID_IMPRINT: GridImprint = GridImprint::square(1);
 
-/// Wisp path and current cell, used to predict its next position.
-#[derive(QueryData)]
-pub struct WispHeading {
-    grid_path: &'static GridPath,
-    /// Read for its origin, the wisp's current cell.
-    area: &'static GridArea,
-}
-impl WispHeadingItem<'_, '_> {
-    /// The next path cell, or the current cell if no next step exists.
-    pub fn next_cell(&self) -> GridCoords {
-        self.grid_path.next_in_path().map_or(self.area.origin.coords, |position| position.coords)
-    }
-    /// World-space center of [`Self::next_cell`].
-    pub fn next_cell_center(&self) -> Vec2 {
-        self.next_cell().world_center()
-    }
-}
-
 /// Fired when a wisp dies (integrity reaches zero). The wisp entity is
 /// despawned in the same command queue batch — observers must not read it.
 #[derive(EntityEvent, Clone, Copy)]
@@ -72,7 +54,6 @@ pub struct WispDied(pub Entity);
 pub mod prelude {
     pub use super::{
         WISP_GRID_IMPRINT,
-        WispHeading,
         Wisp,
         WispChargeAttack,
         WispDied,

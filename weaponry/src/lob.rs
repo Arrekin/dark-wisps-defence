@@ -38,7 +38,12 @@ impl LobProfile {
 
 /// Shows a dotted flight preview while the tower is focused, using its `LobProfile`.
 #[derive(Component, Default)]
+#[require(LobPreviewTarget)]
 pub struct LobPreview;
+
+/// World-space target position for a [`LobPreview`] arc, or `None` to hide the preview.
+#[derive(Component, Default, PartialEq)]
+pub struct LobPreviewTarget(pub Option<Vec2>);
 
 /// A projectile's flight. The entity's `Transform` tracks its position on the ground.
 #[derive(Component, Clone, Copy, Debug)]

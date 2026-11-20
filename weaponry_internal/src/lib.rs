@@ -1,3 +1,4 @@
+pub(crate) mod blast;
 pub(crate) mod cannonball;
 pub(crate) mod fireball;
 pub(crate) mod flame_stream;
