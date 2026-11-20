@@ -4,6 +4,7 @@ pub mod canvas;
 pub mod clock;
 pub mod color_pulsation;
 pub mod cut_lane;
+pub mod drop_shadow;
 pub mod explosion;
 pub mod lane;
 pub mod map_light;

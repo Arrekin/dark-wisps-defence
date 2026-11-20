@@ -4,7 +4,6 @@
 //! It also ignites napalm on the cell's top floor unless a building occupies the cell. Dark ore
 //! does not prevent ignition.
 //!
-//! `Lob` stores the flight and scheduled launch time for saving and loading.
 //! `NAPALM_BOMB_IMPACT_DAMAGE` sets impact damage independently of tower upgrades.
 
 use bevy::prelude::*;
@@ -15,10 +14,11 @@ use logging::prelude::*;
 use persistence::prelude::*;
 use session::{GameClock, TimeBound};
 use states::prelude::{GameState, MapLoadingStage};
+use visuals::drop_shadow::DropShadow;
 use weaponry::{lob::{Lob, LobInFlight}, prelude::*};
 
 use crate::{
-    lob::{LoadLobExtension, LobBody, LobDiscImage, SaveLobExtension, advance_lobs},
+    lob::{LoadLobExtension, LobBody, SaveLobExtension, advance_lobs},
     napalm::{BuilderNapalm, NAPALM_BURN_DURATION},
 };
 
@@ -70,7 +70,6 @@ fn on_builder_add_spawn_napalm_bomb(
     trigger: On<Add<BuilderNapalmBomb>>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    disc_image: Res<LobDiscImage>,
     builders: Query<&BuilderNapalmBomb>,
 ) {
     let entity = trigger.entity;
@@ -91,7 +90,7 @@ fn on_builder_add_spawn_napalm_bomb(
                         ..default()
                     },
                 ),
-                disc_image.make_shadow(NAPALM_BOMB_SIZE),
+                DropShadow::new(NAPALM_BOMB_SIZE, builder.lob.target()),
             ],
         ));
 }

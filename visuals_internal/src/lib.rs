@@ -11,7 +11,7 @@ pub(crate) mod wisp_attack;
 use bevy::prelude::*;
 
 use states::prelude::GameState;
-use visuals::canvas::UNIT_QUAD;
+use visuals::{canvas::UNIT_QUAD, drop_shadow::DropShadow, lane::LanePlugin};
 
 pub struct VisualsPlugin;
 impl Plugin for VisualsPlugin {
@@ -25,6 +25,7 @@ impl Plugin for VisualsPlugin {
                 explosion::ExplosionPlugin,
                 void_sea::VoidSeaPlugin,
                 wisp_attack::WispAttackEffectPlugin,
+                LanePlugin::<DropShadow>::default(),
             ))
             .add_systems(Startup, |mut meshes: ResMut<Assets<Mesh>>| { meshes.insert(&UNIT_QUAD, Rectangle::new(1., 1.).into()).expect("a uuid mesh id is always valid"); })
             .add_systems(Update, (

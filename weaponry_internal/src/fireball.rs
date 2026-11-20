@@ -30,6 +30,7 @@ use session::{GameClock, TimeBound};
 use states::prelude::{GameState, MapLoadingStage};
 use visuals::{
     clock::ClockInstant,
+    drop_shadow::DropShadow,
     lane::{LanePlugin, LaneVisual},
     shader::{ADDITIVE_BLENDING, seed_from_entity},
 };
@@ -37,7 +38,7 @@ use weaponry::{lob::{Lob, LobInFlight}, prelude::*};
 
 use crate::{
     blast::{Blast, BlastCell, BlastHitManager},
-    lob::{LoadLobExtension, LobBody, LobDiscImage, SaveLobExtension, advance_lobs},
+    lob::{LoadLobExtension, LobBody, SaveLobExtension, advance_lobs},
 };
 
 pub(crate) struct FireballPlugin;
@@ -248,7 +249,6 @@ fn load_fireballs(ctx: &mut LoadContext) -> LoadResult {
 fn on_builder_add_spawn_fireball(
     trigger: On<Add<BuilderFireball>>,
     mut commands: Commands,
-    disc_image: Res<LobDiscImage>,
     builders: Query<&BuilderFireball>,
 ) {
     let entity = trigger.entity;
@@ -277,7 +277,7 @@ fn on_builder_add_spawn_fireball(
                     Transform::from_rotation(Quat::from_rotation_z(lob.heading().to_angle())),
                 ),
                 FireballGlow { intensity: GLOW_INTENSITY, mesh_half_size: GLOW_MESH_HALF_SIZE },
-                disc_image.make_shadow(SHADOW_DIAMETER),
+                DropShadow::new(SHADOW_DIAMETER, lob.target()),
             ],
         ));
 }

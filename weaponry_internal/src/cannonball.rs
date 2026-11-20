@@ -11,10 +11,10 @@ use logging::prelude::*;
 use persistence::{prelude::*, rusqlite};
 use session::GameClock;
 use states::prelude::{GameState, MapLoadingStage};
-use visuals::prelude::BuilderExplosion;
+use visuals::{drop_shadow::DropShadow, prelude::BuilderExplosion};
 use weaponry::{lob::{Lob, LobInFlight}, prelude::*};
 
-use crate::{blast::BlastHitManager, lob::{LoadLobExtension, LobBody, LobDiscImage, SaveLobExtension, advance_lobs}};
+use crate::{blast::BlastHitManager, lob::{LoadLobExtension, LobBody, SaveLobExtension, advance_lobs}};
 
 pub(crate) struct CannonballPlugin;
 impl Plugin for CannonballPlugin {
@@ -28,6 +28,8 @@ impl Plugin for CannonballPlugin {
 }
 
 const CANNONBALL_BASE_IMAGE: &str = "projectiles/cannonball.png";
+/// Body and ground-level shadow diameter, in world units.
+const CANNONBALL_SIZE: f32 = CELL_SIZE / 2.;
 
 // Blast area, in steps from the landing cell
 const BLAST_REACH: u8 = 1;
@@ -70,13 +72,11 @@ fn on_builder_add_spawn_cannonball(
     trigger: On<Add<BuilderCannonball>>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    disc_image: Res<LobDiscImage>,
     builders: Query<&BuilderCannonball>,
 ) {
     let entity = trigger.entity;
     let Ok(builder) = builders.get(entity) else { return; };
 
-    let size = CELL_SIZE / 2.;
     commands.entity(entity)
         .remove::<BuilderCannonball>()
         .insert_some(builder.shooter.map(ProjectileOf))
@@ -89,11 +89,11 @@ fn on_builder_add_spawn_cannonball(
                     LobBody,
                     Sprite {
                         image: asset_server.load(CANNONBALL_BASE_IMAGE),
-                        custom_size: Some(Vec2::splat(size)),
+                        custom_size: Some(Vec2::splat(CANNONBALL_SIZE)),
                         ..default()
                     },
                 ),
-                disc_image.make_shadow(size),
+                DropShadow::new(CANNONBALL_SIZE, builder.lob.target()),
             ],
         ));
 }

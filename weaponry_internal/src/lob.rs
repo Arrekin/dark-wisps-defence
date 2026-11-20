@@ -7,7 +7,8 @@
 //! Each projectile spawns two visual children, which this module updates:
 //! - `LobBody` grows with height and shifts along the flight line away from its midpoint to simulate
 //!   perspective. Its screen path stays straight, with slower motion near launch and landing.
-//! - `LobShadow` falls away from the sun, spreading and fading with height.
+//! - A `DropShadow` with the landing point as its base, so the shadow meets the projectile where it
+//!   lands.
 //!
 //! Focused towers with `LobPreview` show dotted body and shadow paths to `LobPreviewTarget` using
 //! their `LobProfile`. Target changes and dot spacing are smoothed; perspective packs dots near
@@ -29,7 +30,10 @@ use hud::prelude::FocusedMapObject;
 use persistence::{prelude::*, rusqlite};
 use session::GameClock;
 use states::prelude::GameState;
-use visuals::map_light::{MAP_SUN_DIRECTION, MAP_SUN_GROUND_DIRECTION};
+use visuals::{
+    drop_shadow::DropShadow,
+    map_light::{MAP_SUN_ELEVATION_TANGENT, MAP_SUN_GROUND_DIRECTION},
+};
 use weaponry::lob::{Lob, LobAwaitingLaunch, LobInFlight, LobPreview, LobPreviewTarget, LobProfile};
 
 pub(crate) struct LobPlugin;
@@ -57,8 +61,7 @@ const PARALLAX_STRETCH: f32 = 0.5;
 /// Visual height limit as a fraction of `CAMERA_HEIGHT`. Keeps perspective scaling finite.
 const MAX_VISUAL_HEIGHT: f32 = 0.85;
 
-// Shadow
-/// Shared by projectile shadows and preview shadow dots.
+// Preview shadow dots
 const SHADOW_COLOR: Color = Color::srgba(0., 0., 0., 0.35); // black
 /// Height in world units at which shadow spread and fading reach their limits.
 const SHADOW_SPREAD_HEIGHT: f32 = 4. * CELL_SIZE;
@@ -68,7 +71,7 @@ const SHADOW_SPREAD: f32 = 0.5;
 const SHADOW_FADE: f32 = 0.5;
 
 // Disc texture
-/// Width and height of the shared shadow and preview texture, in pixels.
+/// Width and height of the preview dot texture, in pixels.
 const DISC_TEXTURE_SIZE: u32 = 64;
 
 // Preview trace
@@ -164,12 +167,11 @@ impl LobView {
         let height = sample.height.min(CAMERA_HEIGHT * MAX_VISUAL_HEIGHT);
         let body_scale = CAMERA_HEIGHT / (CAMERA_HEIGHT - height);
         let body_offset = (sample.ground_position - lob.sample(0.5).ground_position) * parallax_stretch * (body_scale - 1.);
-        let shadow_length_per_height = MAP_SUN_DIRECTION.truncate().length() / MAP_SUN_DIRECTION.z;
         let shadow_spread = (sample.height / SHADOW_SPREAD_HEIGHT).min(1.);
         Self {
             body_offset,
             body_scale,
-            shadow_offset: -MAP_SUN_GROUND_DIRECTION * sample.height * shadow_length_per_height,
+            shadow_offset: -MAP_SUN_GROUND_DIRECTION * sample.height / MAP_SUN_ELEVATION_TANGENT,
             shadow_scale: 1. + SHADOW_SPREAD * shadow_spread,
             shadow_opacity: 1. - SHADOW_FADE * shadow_spread,
         }
@@ -181,13 +183,7 @@ impl LobView {
 #[require(ZDepth::Projectile, DrawLevel::Airborne)]
 pub(crate) struct LobBody;
 
-/// Projectile shadow attached to a `Lob` entity.
-/// Draws at `OnElevation` above wall tops and the wisps standing on them.
-#[derive(Component)]
-#[require(ZDepth::GroundEffect, DrawLevel::OnElevation)]
-pub(crate) struct LobShadow;
-
-/// Soft round texture shared by lob shadows and preview dots.
+/// Soft round texture shared by preview dots.
 #[derive(Resource)]
 pub(crate) struct LobDiscImage(Handle<Image>);
 impl FromWorld for LobDiscImage {
@@ -210,20 +206,6 @@ impl FromWorld for LobDiscImage {
             RenderAssetUsages::RENDER_WORLD,
         );
         Self(world.resource_mut::<Assets<Image>>().add(image))
-    }
-}
-impl LobDiscImage {
-    /// Shadow child for a projectile whose ground-level shadow is `diameter` world units across.
-    pub(crate) fn make_shadow(&self, diameter: f32) -> impl Bundle {
-        (
-            LobShadow,
-            Sprite {
-                image: self.0.clone(),
-                color: SHADOW_COLOR,
-                custom_size: Some(Vec2::splat(diameter)),
-                ..default()
-            },
-        )
     }
 }
 
@@ -267,18 +249,19 @@ fn update_lob_visuals(
     clock: Res<GameClock>,
     lobs: Query<(&Lob, &Children), With<LobInFlight>>,
     mut bodies: Query<&mut Transform, With<LobBody>>,
-    mut shadows: Query<(&mut Transform, &mut Sprite), (With<LobShadow>, Without<LobBody>)>,
+    mut shadows: Query<(&mut DropShadow, &mut Transform), Without<LobBody>>,
 ) {
     for (lob, children) in lobs.iter() {
-        let view = LobView::at(lob, lob.progress(clock.now()), PARALLAX_STRETCH);
+        let progress = lob.progress(clock.now());
+        let view = LobView::at(lob, progress, PARALLAX_STRETCH);
+        let sample = lob.sample(progress);
         for child in children.iter() {
             if let Ok(mut transform) = bodies.get_mut(child) {
                 transform.translation = view.body_offset.extend(transform.translation.z);
                 transform.scale = Vec3::splat(view.body_scale);
-            } else if let Ok((mut transform, mut sprite)) = shadows.get_mut(child) {
-                transform.translation = view.shadow_offset.extend(transform.translation.z);
-                transform.scale = Vec3::splat(view.shadow_scale);
-                sprite.color.set_alpha(SHADOW_COLOR.alpha() * view.shadow_opacity);
+            } else if let Ok((mut shadow, mut transform)) = shadows.get_mut(child) {
+                shadow.cast(sample.ground_position, sample.height);
+                shadow.place(&mut transform);
             }
         }
     }
