@@ -5,7 +5,7 @@ import package::shaders::grids::obstacles::{LEVEL_ON_GROUND, LEVEL_UNDERGROUND, 
 
 // The round shadow of an object above the map, falling on the top of each cell it covers. A cell's
 // top is the highest level with a floor, as a blast's level is: a wall or building top (2), the
-// ground, ore, a ramp or the ground over a tunnel (1), or a pit floor (0). Each pixel shades the
+// ground, ore, a ramp or the ground floor over an excavation (1), or a pit floor (0). Each pixel shades the
 // disc as seen at its own surface height, so the shadow steps where neighbouring tops differ.
 // Levels count from the top of the base cell, so the shadow meets the object when it comes down
 // there.

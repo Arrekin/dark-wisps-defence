@@ -1,6 +1,7 @@
 import bevy_render::globals::Globals;
 import bevy_ui_render::ui_vertex_output::UiVertexOutput;
 import package::shaders::common::clock::ClockInstant;
+import package::shaders::grids::obstacles::LEVEL_NONE;
 import package::shaders::wisps::water_look::{WispWaterLook, wisp_water};
 
 // Stationary water-wisp UI face with alteration effects disabled.
@@ -26,5 +27,5 @@ fn fragment(in: UiVertexOutput) -> @location(0) vec4<f32> {
     look.stroke_anchor_phase = 0.0;
     look.surf_anchor_phase = 0.0;
     look.anchor = anchor;
-    return wisp_water(in.uv, globals.time, look, 0u);
+    return wisp_water(in.uv, globals.time, look, 0u, vec2<f32>(0.0), LEVEL_NONE);
 }

@@ -283,5 +283,7 @@ Logs are written with the `logging` crate inside functions marked `#[log_tags(Ta
 
 ## BYOAIC / Remote Control
 
+Always start the game with `cargo run`, never by running the built binary directly: Bevy's `dynamic_linking` requires the DLL paths set by `cargo run`.
+
 Where feasible, test changes through the game's built-in HTTP server. See [BYOAIC](documentation/BYOAIC.md) for the available endpoints.
 You can temporarily add endpoints for testing (spawning things, running and returning queries, etc.). Remove test-only endpoints when finished.

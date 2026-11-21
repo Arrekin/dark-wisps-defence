@@ -5,9 +5,10 @@
 //! holds structures and units. The terrain model limits terrain to these three levels.
 //!
 //! [`AltitudeLevel`] also names airborne objects, effects spanning all levels, and areas that reach
-//! the top of each cell. Each index and consumer decides what each level means for it. These
-//! levels describe map occupancy; rendering uses [`DrawLevel`](crate::z_depth::DrawLevel) for draw
-//! order.
+//! the top of each cell. [`AltitudeLevel::three_layer_index`] maps every variant onto the three
+//! terrain layers (`Underground`, `OnGround`, `OnElevation`); indexes and consumers may use this
+//! default mapping or define their own. These levels describe map occupancy; rendering uses
+//! [`DrawLevel`](crate::z_depth::DrawLevel) for draw order.
 
 use strum::{AsRefStr, EnumCount, EnumIter, EnumString};
 
@@ -27,4 +28,35 @@ pub enum AltitudeLevel {
     AllEncompassing,
     /// Areas that reach the top of each cell, such as flame streams. Each cell resolves its own top when read.
     TopLevel,
+}
+impl AltitudeLevel {
+    /// The three terrain layers ordered from bottom to top, indexed by [`Self::three_layer_index`].
+    pub const THREE_LAYERS: [Self; 3] = [Self::Underground, Self::OnGround, Self::OnElevation];
+
+    /// Maps this level to its index in [`Self::THREE_LAYERS`]: `0` for `Underground`, `1` for
+    /// `OnGround`, and `2` for `OnElevation` and all higher or spanning variants.
+    pub const fn three_layer_index(self) -> usize {
+        match self {
+            Self::Underground => 0,
+            Self::OnGround => 1,
+            Self::OnElevation | Self::Airborne | Self::AllEncompassing | Self::TopLevel => 2,
+        }
+    }
+
+    /// Returns [`Self::three_layer_index`] as a `u32` for GPU buffers.
+    pub const fn three_layer_index_gpu(self) -> u32 {
+        self.three_layer_index() as u32
+    }
+
+    /// Returns the terrain layer directly above this one, or `None` at `OnElevation` and above.
+    pub const fn three_layer_above(self) -> Option<Self> {
+        let index = self.three_layer_index();
+        if index + 1 < Self::THREE_LAYERS.len() { Some(Self::THREE_LAYERS[index + 1]) } else { None }
+    }
+
+    /// Returns the terrain layer directly below this one, or `None` at `Underground`.
+    pub const fn three_layer_below(self) -> Option<Self> {
+        let index = self.three_layer_index();
+        if index > 0 { Some(Self::THREE_LAYERS[index - 1]) } else { None }
+    }
 }

@@ -1,4 +1,3 @@
-pub(crate) mod common;
 pub(crate) mod dark_ore;
 pub(crate) mod dark_ore_canvas;
 pub(crate) mod dark_ore_materials;

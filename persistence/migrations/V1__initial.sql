@@ -129,8 +129,8 @@ CREATE TABLE IF NOT EXISTS wall_ramps (
     FOREIGN KEY(id) REFERENCES walls(id)
 );
 
--- One row per tunnel opening in a flat wall. Solid walls and ramps have no opening rows.
-CREATE TABLE IF NOT EXISTS wall_openings (
+-- One row per hollowed side of a flat wall. Solid walls and ramps have no rows.
+CREATE TABLE IF NOT EXISTS wall_hollowed_sides (
     id INTEGER NOT NULL,
     side TEXT NOT NULL,
     PRIMARY KEY (id, side),
@@ -575,8 +575,8 @@ CREATE TABLE IF NOT EXISTS excavation_ramps (
     FOREIGN KEY(x, y) REFERENCES excavation_shapes(x, y)
 );
 
--- One row per open side of an underground tunnel.
-CREATE TABLE IF NOT EXISTS excavation_openings (
+-- One row per hollowed side of a flat excavation. Solid refills and ramps have no rows.
+CREATE TABLE IF NOT EXISTS excavation_hollowed_sides (
     x INTEGER NOT NULL,
     y INTEGER NOT NULL,
     side TEXT NOT NULL,

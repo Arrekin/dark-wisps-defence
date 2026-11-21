@@ -4,7 +4,8 @@
 //! Its child visuals share a start instant but have separate durations:
 //!
 //! - `InfernoDomeFire` — hemisphere shell, interior billows, rim spill light, and falling embers.
-//! - `InfernoDomeGround` — release flash and ground scorch decal.
+//!   Its outer rim adjusts for terrain height, stepping inward on walls and buildings and expanding
+//!   over pits (`assets/shaders/visuals/terrain_rim.wesl`).
 //! - `InfernoDomeDisplacement` — lens bulge and heat shimmer applied before the air band.
 //!   It distorts the ground and surface bands while leaving the dome's fire undistorted.
 //!
@@ -28,7 +29,6 @@ impl Plugin for InfernoDomePlugin {
         app
             .add_plugins((
                 LanePlugin::<InfernoDomeFire>::default(),
-                LanePlugin::<InfernoDomeGround>::default(),
                 LanePlugin::<InfernoDomeDisplacement>::default(),
             ))
             .add_observer(on_add_inferno_dome_spawn_parts);
@@ -41,13 +41,6 @@ impl Plugin for InfernoDomePlugin {
 const FIRE_DURATION: f32 = 1.6;
 /// Extra mesh half-size beyond `radius` for rim noise and spilled light.
 const FIRE_MESH_MARGIN: f32 = 50.;
-
-// Ground
-/// Active duration (seconds) of `InfernoDomeGround`. Matches `SCORCH_DURATION` in
-/// `assets/shaders/weaponry/inferno_dome_ground.wesl`.
-const GROUND_DURATION: f32 = 2.5;
-/// Extra mesh half-size beyond `radius` for ragged scorch edges.
-const GROUND_MESH_MARGIN: f32 = 24.;
 
 // Shimmer
 /// Active duration (seconds) of the dome distortion. Matches `SHIMMER_DURATION` in
@@ -74,28 +67,6 @@ impl LaneVisual for InfernoDomeFire {
     const LOOK: &'static str = "shaders::weaponry::inferno_dome";
 
     /// Premultiplied alpha: opaque/semi-opaque flame shell with additive spill light and embers.
-    fn blend() -> BlendState {
-        BlendState::PREMULTIPLIED_ALPHA_BLENDING
-    }
-}
-
-/// Ground flash and scorch quad. Child of `InfernoDome`. Field order and types mirror `Instance` in
-/// `assets/shaders/weaponry/inferno_dome_ground.wesl`.
-#[derive(Component, ShaderType, TypePath, Clone)]
-#[require(ZDepth::FloorDecal, DrawLevel::OnGround)]
-struct InfernoDomeGround {
-    /// Game clock instant of the discharge.
-    start: ClockInstant,
-    radius: f32,
-    seed: f32,
-    /// Quad half-size in world units.
-    half_size: f32,
-}
-impl LaneVisual for InfernoDomeGround {
-    const LABEL: &'static str = "inferno_dome_ground";
-    const LOOK: &'static str = "shaders::weaponry::inferno_dome_ground";
-
-    /// Premultiplied alpha: darkens ground via scorch alpha while release flash adds light.
     fn blend() -> BlendState {
         BlendState::PREMULTIPLIED_ALPHA_BLENDING
     }
@@ -134,20 +105,14 @@ fn on_add_inferno_dome_spawn_parts(
     let start = ClockInstant::at(clock.now());
     let seed = seed_from_entity(entity);
     let fire_half_size = dome.radius + FIRE_MESH_MARGIN;
-    let ground_half_size = dome.radius + GROUND_MESH_MARGIN;
     // The dome lasts as long as its longest part. The displacement child despawns with it.
     commands.entity(entity).insert((
-        TimeBound::lasting(&clock, FIRE_DURATION.max(GROUND_DURATION).max(SHIMMER_DURATION)),
+        TimeBound::lasting(&clock, FIRE_DURATION.max(SHIMMER_DURATION)),
         children![
             (
                 InfernoDomeFire { start, radius: dome.radius, seed, half_size: fire_half_size },
                 TimeBound::lasting(&clock, FIRE_DURATION),
                 Transform::from_scale(Vec3::new(2. * fire_half_size, 2. * fire_half_size, 1.)),
-            ),
-            (
-                InfernoDomeGround { start, radius: dome.radius, seed, half_size: ground_half_size },
-                TimeBound::lasting(&clock, GROUND_DURATION),
-                Transform::from_scale(Vec3::new(2. * ground_half_size, 2. * ground_half_size, 1.)),
             ),
             InfernoDomeDisplacement { start, radius: dome.radius, half_size: dome.radius + SHIMMER_MARGIN },
         ],

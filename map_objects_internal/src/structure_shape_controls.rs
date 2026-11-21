@@ -1,13 +1,13 @@
 //! # Structure shape controls
 //!
-//! Shared controls for wall and excavation placement: tunnel openings, ramp orientation,
+//! Shared controls for wall and excavation placement: hollowed sides, ramp orientation,
 //! and replacement of existing walls or excavations.
 //! The shape controls replace a [`SelectableShape`] component on the session, then send
-//! `GridPlacerGhostRebuildRequest` to update both the preview and the opening buttons. The replace
+//! `GridPlacerGhostRebuildRequest` to update both the preview and the hollowed side buttons. The replace
 //! switch toggles `ReplaceExisting` and updates only its own border.
 //!
 //! Each placement tool registers [`cycle_shape`] and
-//! [`on_ghost_rebuild_request_refresh_opening_selector`] for its shape type.
+//! [`on_ghost_rebuild_request_refresh_hollowed_side_selector`] for its shape type.
 
 use bevy::{prelude::*, ui_widgets::Button};
 use strum::IntoEnumIterator;
@@ -29,14 +29,14 @@ pub(crate) const SHAPE_KEY: KeyCode = KeyCode::KeyR;
 pub(crate) const CONTROL_FRAME_SELECTED: Color = Color::srgb(0.16, 0.78, 1.00); // cyan
 pub(crate) const CONTROL_FRAME_IDLE: Color = Color::srgb(0.15, 0.15, 0.18); // dark grey
 
-// Tunnel opening buttons
-const OPENING_EDGE_OPEN: Color = CONTROL_FRAME_SELECTED;
-const OPENING_EDGE_CLOSED: Color = Color::srgb(0.30, 0.30, 0.34); // grey
-const OPENING_EDGE_THICKNESS: f32 = 6.0;
+// Hollowed side buttons
+const HOLLOWED_SIDE_SELECTED: Color = CONTROL_FRAME_SELECTED;
+const HOLLOWED_SIDE_IDLE: Color = Color::srgb(0.30, 0.30, 0.34); // grey
+const HOLLOWED_SIDE_THICKNESS: f32 = 6.0;
 
 /// Adapts a placement session's shape component to the shared controls.
 pub(crate) trait SelectableShape: Component + Copy {
-    /// Selection after the last ramp direction or after closing the last tunnel opening.
+    /// Selection after the last ramp direction or after removing the last hollowed side.
     const BASE: Self;
 
     /// Returns the selected structure shape, or `None` for an open pit.
@@ -44,12 +44,12 @@ pub(crate) trait SelectableShape: Component + Copy {
 
     fn from_structure_shape(shape: StructureShape) -> Self;
 
-    fn openings(self) -> EdgeSides {
-        self.structure_shape().map_or(EdgeSides::NONE, StructureShape::openings)
+    fn hollowed_sides(self) -> EdgeSides {
+        self.structure_shape().map_or(EdgeSides::NONE, StructureShape::hollowed_sides)
     }
 
     /// Cycles uphill direction through top, right, bottom and left, then returns to [`Self::BASE`].
-    /// Other shapes start at the top ramp, discarding any tunnel openings.
+    /// Other shapes start at the top ramp, discarding any hollowed sides.
     fn next_in_cycle(self) -> Self {
         let next_high_side = match self.structure_shape() {
             Some(StructureShape::Ramp { high_side: EdgeSide::Top }) => EdgeSide::Right,
@@ -61,11 +61,11 @@ pub(crate) trait SelectableShape: Component + Copy {
         Self::from_structure_shape(StructureShape::Ramp { high_side: next_high_side })
     }
 
-    /// Toggles the tunnel opening on `side`. Opening a ramp or pit creates a flat tunnel.
-    /// Closing the last opening returns to [`Self::BASE`].
-    fn with_opening_toggled(self, side: EdgeSide) -> Self {
-        let openings = self.openings().toggled(side);
-        if openings.is_empty() { Self::BASE } else { Self::from_structure_shape(StructureShape::Flat { openings }) }
+    /// Toggles the hollowed side `side`. Hollowing a side of a ramp or pit creates a flat shape.
+    /// Removing the last hollowed side returns to [`Self::BASE`].
+    fn with_hollowed_side_toggled(self, side: EdgeSide) -> Self {
+        let hollowed_sides = self.hollowed_sides().toggled(side);
+        if hollowed_sides.is_empty() { Self::BASE } else { Self::from_structure_shape(StructureShape::Flat { hollowed_sides }) }
     }
 }
 
@@ -81,8 +81,8 @@ pub(crate) fn controls_bar_node() -> Node {
     }
 }
 
-/// Spawns the opening selector: a cell-sized square with one button per side, labelled "openings".
-pub(crate) fn spawn_opening_selector<S: SelectableShape>(parent: &mut ChildSpawnerCommands, shape: S) {
+/// Spawns the hollowed side selector: a cell-sized square with one button per side, labelled "hollowed sides".
+pub(crate) fn spawn_hollowed_side_selector<S: SelectableShape>(parent: &mut ChildSpawnerCommands, shape: S) {
     parent
         .spawn((
             Node {
@@ -107,14 +107,14 @@ pub(crate) fn spawn_opening_selector<S: SelectableShape>(parent: &mut ChildSpawn
                     for side in EdgeSide::iter() {
                         square
                             .spawn((
-                                OpeningEdgeButton(side),
-                                OpeningEdgeButton::node(side),
-                                BackgroundColor(OpeningEdgeButton::color(side, shape.openings())),
+                                HollowedSideButton(side),
+                                HollowedSideButton::node(side),
+                                BackgroundColor(HollowedSideButton::color(side, shape.hollowed_sides())),
                             ))
-                            .observe(OpeningEdgeButton::on_click_toggle_opening::<S>);
+                            .observe(HollowedSideButton::on_click_toggle_hollowed_side::<S>);
                     }
                 });
-            control.spawn((Text::new("openings"), TextFont::from_font_size(10.0)));
+            control.spawn((Text::new("hollowed sides"), TextFont::from_font_size(10.0)));
         });
 }
 
@@ -128,26 +128,26 @@ pub(crate) fn cycle_shape<S: SelectableShape>(
     commands.trigger(GridPlacerGhostRebuildRequest);
 }
 
-/// Updates the opening buttons to match the session's shape.
-pub(crate) fn on_ghost_rebuild_request_refresh_opening_selector<S: SelectableShape>(
+/// Updates the hollowed side buttons to match the session's shape.
+pub(crate) fn on_ghost_rebuild_request_refresh_hollowed_side_selector<S: SelectableShape>(
     _trigger: On<GridPlacerGhostRebuildRequest>,
     placement_session: Single<&S, With<PlacementSession>>,
-    mut edges: Query<(&OpeningEdgeButton, &mut BackgroundColor)>,
+    mut buttons: Query<(&HollowedSideButton, &mut BackgroundColor)>,
 ) {
-    let openings = placement_session.openings();
-    for (&OpeningEdgeButton(side), mut color) in edges.iter_mut() {
-        color.0 = OpeningEdgeButton::color(side, openings);
+    let hollowed_sides = placement_session.hollowed_sides();
+    for (&HollowedSideButton(side), mut color) in buttons.iter_mut() {
+        color.0 = HollowedSideButton::color(side, hollowed_sides);
     }
 }
 
-/// Button for one side of the opening selector.
+/// Button for one side of the hollowed side selector.
 #[derive(Component, Clone, Copy)]
 #[require(Button)]
-pub(crate) struct OpeningEdgeButton(pub EdgeSide);
-impl OpeningEdgeButton {
+pub(crate) struct HollowedSideButton(EdgeSide);
+impl HollowedSideButton {
     /// Places an edge bar with gaps at the corners so adjacent buttons do not overlap.
     fn node(side: EdgeSide) -> Node {
-        let thickness = Val::Px(OPENING_EDGE_THICKNESS);
+        let thickness = Val::Px(HOLLOWED_SIDE_THICKNESS);
         let mut node = Node { position_type: PositionType::Absolute, ..default() };
         match side {
             EdgeSide::Top | EdgeSide::Bottom => {
@@ -170,19 +170,19 @@ impl OpeningEdgeButton {
         node
     }
 
-    fn color(side: EdgeSide, openings: EdgeSides) -> Color {
-        if openings.contains(side) { OPENING_EDGE_OPEN } else { OPENING_EDGE_CLOSED }
+    fn color(side: EdgeSide, hollowed_sides: EdgeSides) -> Color {
+        if hollowed_sides.contains(side) { HOLLOWED_SIDE_SELECTED } else { HOLLOWED_SIDE_IDLE }
     }
 
-    fn on_click_toggle_opening<S: SelectableShape>(
+    fn on_click_toggle_hollowed_side<S: SelectableShape>(
         trigger: On<PointerClick>,
         mut commands: Commands,
         placement_session: Single<(Entity, &S), With<PlacementSession>>,
-        edges: Query<&OpeningEdgeButton>,
+        buttons: Query<&HollowedSideButton>,
     ) {
-        let Ok(&OpeningEdgeButton(side)) = edges.get(trigger.entity) else { return; };
+        let Ok(&HollowedSideButton(side)) = buttons.get(trigger.entity) else { return; };
         let (placement_session, &shape) = placement_session.into_inner();
-        commands.entity(placement_session).insert(shape.with_opening_toggled(side));
+        commands.entity(placement_session).insert(shape.with_hollowed_side_toggled(side));
         commands.trigger(GridPlacerGhostRebuildRequest);
     }
 }

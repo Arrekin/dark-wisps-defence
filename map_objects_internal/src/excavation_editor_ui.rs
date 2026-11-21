@@ -1,4 +1,4 @@
-//! Excavation placement uses the shared tunnel opening buttons and ramp cycle to edit
+//! Excavation placement uses the shared hollowed side buttons and ramp cycle to edit
 //! [`ExcavationShape`] on the placer's session entity.
 //!
 //! In admin mode the bar also carries the replace switch, which toggles `ReplaceExisting` on the
@@ -13,7 +13,7 @@ use states::AdminMode;
 
 use crate::structure_shape_controls::{
     ReplaceToggleButton, SHAPE_KEY, SelectableShape,
-    controls_bar_node, cycle_shape, on_ghost_rebuild_request_refresh_opening_selector, spawn_opening_selector,
+    controls_bar_node, cycle_shape, on_ghost_rebuild_request_refresh_hollowed_side_selector, spawn_hollowed_side_selector,
 };
 use crate::{excavations::EXCAVATION_GRID_IMPRINT, tunnel_reveal::RevealsTunnels};
 
@@ -24,7 +24,7 @@ impl Plugin for ExcavationEditorUiPlugin {
             .add_systems(Update, cycle_shape::<ExcavationShape>.run_if(input_just_pressed(SHAPE_KEY)).run_if(any_with_component::<GridPlacerUiForExcavation>))
             .add_observer(GridPlacerUiForExcavation::on_add_construct_grid_placer_ui)
             .add_observer(GridPlacerUiForExcavation::on_begin_placing_start_excavation_session)
-            .add_observer(on_ghost_rebuild_request_refresh_opening_selector::<ExcavationShape>);
+            .add_observer(on_ghost_rebuild_request_refresh_hollowed_side_selector::<ExcavationShape>);
     }
 }
 
@@ -59,7 +59,7 @@ impl GridPlacerUiForExcavation {
         commands.entity(trigger.entity)
             .insert(controls_bar_node())
             .with_children(|parent| {
-                spawn_opening_selector(parent, shape);
+                spawn_hollowed_side_selector(parent, shape);
                 if admin_mode.get().is_enabled() {
                     parent.spawn(ReplaceToggleButton);
                 }

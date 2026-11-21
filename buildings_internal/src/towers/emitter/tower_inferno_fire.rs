@@ -4,7 +4,9 @@
 //! Each child uses a lane visual:
 //!
 //! - `InfernoCore` — core and seam glow masked by the tower sprite in its shared material.
-//! - `InfernoEmberRing` — ground ember ring at the radius given by `MaxAttackRange`.
+//! - `InfernoEmberRing` — ember ring at the radius given by `MaxAttackRange`, spawned once per
+//!   terrain draw level (`Underground`, `OnGround`, `OnElevation`) so each ring draws beneath wisps
+//!   at its level.
 //! - `InfernoHaze` — distortion of the ground and surface bands, applied before the air band.
 //!   Shimmer rings start one tile beyond the imprint and reach the core at full charge.
 
@@ -75,10 +77,11 @@ pub(crate) struct InfernoCoreMaterial {
 }
 impl MaterialExtension2d for InfernoCoreMaterial {}
 
-/// Ground ember ring at the tower's range boundary. Child of `TowerInferno`. Field order and types
-/// mirror `Instance` in `assets/shaders/towers/inferno/ember_ring.wesl`.
-#[derive(Component, ShaderType, TypePath, Clone, Default, PartialEq)]
-#[require(ZDepth::FloorDecal, DrawLevel::OnGround)]
+/// Ember ring at the tower's range boundary, lighting the floors at one level. Child of
+/// `TowerInferno`. Field order and types mirror `Instance` in
+/// `assets/shaders/towers/inferno/ember_ring.wesl`.
+#[derive(Component, ShaderType, TypePath, Clone)]
+#[require(ZDepth::FloorDecal)]
 pub(crate) struct InfernoEmberRing {
     /// Range radius in world units.
     range: f32,
@@ -86,6 +89,8 @@ pub(crate) struct InfernoEmberRing {
     charge: f32,
     /// Quad half-size in world units.
     half_size: f32,
+    /// [`AltitudeLevel::three_layer_index_gpu`] of the level whose floors this ring lights.
+    altitude_index: u32,
 }
 impl LaneVisual for InfernoEmberRing {
     const LABEL: &'static str = "inferno_ember_ring";
@@ -93,6 +98,13 @@ impl LaneVisual for InfernoEmberRing {
 
     fn blend() -> BlendState {
         ADDITIVE_BLENDING
+    }
+}
+
+impl InfernoEmberRing {
+    /// Creates an ember ring for `level` paired with the matching [`DrawLevel`].
+    pub(crate) fn at(level: AltitudeLevel) -> (Self, DrawLevel) {
+        (Self { range: 0., charge: 0., half_size: 0., altitude_index: level.three_layer_index_gpu() }, DrawLevel::from(level))
     }
 }
 
@@ -142,10 +154,17 @@ fn update_ember_rings(
 ) {
     for (child_of, mut transform, mut ember_ring) in ember_rings.iter_mut() {
         let Ok((attack_range, timer)) = towers.get(child_of.parent()) else { continue; };
+        let charge = timer.0.fraction();
+        if ember_ring.charge != charge {
+            ember_ring.charge = charge;
+        }
         let range = attack_range.in_world_units();
-        let half_size = range + EMBER_RING_MESH_MARGIN;
-        transform.set_if_neq(Transform { scale: Vec3::new(2. * half_size, 2. * half_size, 1.), ..*transform });
-        ember_ring.set_if_neq(InfernoEmberRing { range, charge: timer.0.fraction(), half_size });
+        if ember_ring.range != range {
+            let half_size = range + EMBER_RING_MESH_MARGIN;
+            ember_ring.range = range;
+            ember_ring.half_size = half_size;
+            transform.scale = Vec3::new(2. * half_size, 2. * half_size, 1.);
+        }
     }
 }
 

@@ -3,6 +3,7 @@ import package::shaders::common::clock::{ClockInstant, game_time_since};
 import package::shaders::common::fire_ramp::fire_ramp;
 import package::shaders::common::hash::{hash_coords, hash_mix, hash_unit};
 import package::shaders::common::noise::{noise_3d, noise_fbm_3d};
+import package::shaders::visuals::terrain_rim::{pit_reach_at, shell_point, terrain_rim};
 
 // `InfernoDomeFire` shader: full-radius hemisphere that erodes in place via rising noise thresholds.
 //
@@ -11,6 +12,9 @@ import package::shaders::common::noise::{noise_3d, noise_fbm_3d};
 // - `inner_fire`: raymarched interior volume (`INNER_STEPS`) that outlasts `skin` by `INNER_LAG`.
 // - `spill`: additive ground glow outside the rim during breakup.
 // - `embers`: additive falling particles spawned on a 2D cell grid (`EMBER_CELL`).
+//
+// The outer rim conforms to terrain height (`visuals::terrain_rim`): `skin`, `inner_fire`, and
+// `spill` follow the stepped/expanded rim, and `shell_point` stretches the hemisphere over pits.
 
 // Field order and types mirror `InfernoDomeFire` in weaponry_internal/src/inferno_dome.rs.
 struct Instance {
@@ -94,9 +98,10 @@ fn rim_heat(r: f32, n: f32, veins: f32) -> f32 {
 }
 
 // Outer hemisphere shell (premultiplied). `progress = age / BREAKUP_TIME`.
-fn skin(p: vec2<f32>, radius: f32, age: f32, progress: f32) -> vec4<f32> {
+// `rim` is signed distance in world px to the terrain-adjusted rim (positive inside).
+fn skin(p: vec2<f32>, rim: f32, radius: f32, age: f32, progress: f32) -> vec4<f32> {
     let d = length(p);
-    if d > radius + RAGGED_RIM || progress >= LATTICE_SLOWDOWN {
+    if rim < -RAGGED_RIM || progress >= LATTICE_SLOWDOWN {
         return vec4<f32>(0.0);
     }
     let r = d / radius;
@@ -104,7 +109,7 @@ fn skin(p: vec2<f32>, radius: f32, age: f32, progress: f32) -> vec4<f32> {
     // Sample rim noise via the unit direction vector to avoid an angular seam at +-pi.
     let around = p / max(d, 0.001) * radius / 18.0;
     let rim_noise = noise_fbm_3d(vec3<f32>(around, churn * 1.7), 3);
-    let inside = smoothstep(1.0, 0.985, r + (rim_noise - 0.5) * 2.0 * RAGGED_RIM / radius);
+    let inside = smoothstep(0.0, 0.015 * radius, rim - (rim_noise - 0.5) * 2.0 * RAGGED_RIM);
     if inside <= 0.0 {
         return vec4<f32>(0.0);
     }
@@ -155,9 +160,10 @@ fn skin(p: vec2<f32>, radius: f32, age: f32, progress: f32) -> vec4<f32> {
 }
 
 // Front-to-back vertical raymarch through the dome interior (premultiplied).
-fn inner_fire(p: vec2<f32>, radius: f32, age: f32, b: f32) -> vec4<f32> {
-    let r = length(p) / radius;
-    if r >= 1.0 || b >= 1.0 {
+// `rim` is signed distance in world px to the terrain-adjusted rim (positive inside).
+fn inner_fire(p: vec2<f32>, rim: f32, radius: f32, age: f32, b: f32) -> vec4<f32> {
+    let r = min(length(p) / radius, 0.999);
+    if rim <= 0.0 || b >= 1.0 {
         return vec4<f32>(0.0);
     }
     let top = sqrt(1.0 - r * r) * radius;
@@ -183,7 +189,7 @@ fn inner_fire(p: vec2<f32>, radius: f32, age: f32, b: f32) -> vec4<f32> {
         color += transmit * flame_color(heat) * alpha * 1.2;
         transmit *= 1.0 - alpha;
     }
-    let edge = smoothstep(1.0, 0.95, r);
+    let edge = smoothstep(0.0, 0.05 * radius, rim);
     let soft = (1.0 - transmit) * edge * OPACITY;
     let hard = hard_alpha(soft);
     return vec4<f32>(color * edge * hard / max(soft, 0.0001), hard);
@@ -237,16 +243,22 @@ fn look(mesh: VertexOutput, instance: Instance) -> vec4<f32> {
     let radius = dome.radius;
     let progress = age / BREAKUP_TIME;
 
-    var result = inner_fire(p, radius, age, clamp(age / (BREAKUP_TIME * (1.0 + INNER_LAG)), 0.0, 1.0));
-    let outer = skin(p, radius, age, progress);
+    // Terrain-adjusted rim distance and pit-stretched shell coordinates.
+    let world_position = mesh.world_position.xy;
+    let center = world_position - p;
+    let reach = pit_reach_at(world_position);
+    let rim = terrain_rim(world_position, radius - length(p), reach);
+    let shell = shell_point(world_position, center, radius, reach) - center;
+
+    var result = inner_fire(shell, rim, radius, age, clamp(age / (BREAKUP_TIME * (1.0 + INNER_LAG)), 0.0, 1.0));
+    let outer = skin(shell, rim, radius, age, progress);
     result = outer + result * (1.0 - outer.a);
 
     // Additive ground glow outside the rim during breakup (`past_rim < 3.0` bounds Gaussian falloff).
-    let r = length(p) / radius;
-    let past_rim = (r - 1.0) * radius / SPILL_WIDTH;
+    let past_rim = -rim / SPILL_WIDTH;
     var spill = 0.0;
     if progress < 1.0 && past_rim < 3.0 {
-        spill = SPILL * smoothstep(0.97, 1.02, r) * exp(-past_rim * past_rim) * (1.0 - progress)
+        spill = SPILL * smoothstep(0.03 * radius, -0.02 * radius, rim) * exp(-past_rim * past_rim) * (1.0 - progress)
             * (0.7 + 0.6 * noise_3d(vec3<f32>(p / 12.0, age * 2.0)));
     }
     let added = flame_color(0.5) * spill * 0.45 + embers(p, radius, age);

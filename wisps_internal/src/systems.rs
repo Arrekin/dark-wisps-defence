@@ -15,7 +15,7 @@ use visuals::{clock::ClockInstant, prelude::*};
 use wisps::prelude::*;
 
 use super::{
-    looks::{WispMotionVisual, WispWaterVisual, wisp_motion},
+    looks::{WispMotionVisual, WispVisual, WispWaterVisual, wisp_motion},
     spawning::DeathLoot,
 };
 
@@ -80,6 +80,13 @@ pub(crate) fn drive_wisp_motion_look<V: WispMotionVisual>(mut wisps: Query<(&Loc
 
         let look = visual.motion_look_mut();
         (look.vigor, look.heading) = (vigor, heading);
+    }
+}
+
+/// Syncs a wisp visual's GPU altitude index when its [`GridArea`] changes.
+pub(crate) fn drive_wisp_altitude_index<V: WispVisual>(mut wisps: Query<(&GridArea, &mut V), Changed<GridArea>>) {
+    for (area, visual) in wisps.iter_mut() {
+        visual.map_unchanged(V::altitude_index_mut).set_if_neq(area.origin.level.three_layer_index_gpu());
     }
 }
 

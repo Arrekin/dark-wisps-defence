@@ -1,4 +1,4 @@
-//! Wall placement controls for selecting a style, toggling tunnel openings, and cycling ramp direction.
+//! Wall placement controls for selecting a style, toggling hollowed sides, and cycling ramp direction.
 //!
 //! Controls replace `WallStyleKey` or `StructureShape` on the placer's session entity and request a new
 //! ghost preview. The same request refreshes the controls to reflect the selection.
@@ -15,7 +15,7 @@ use states::AdminMode;
 
 use crate::structure_shape_controls::{
     CONTROL_FRAME_IDLE, CONTROL_FRAME_SELECTED, ReplaceToggleButton, SHAPE_KEY, SelectableShape,
-    controls_bar_node, cycle_shape, on_ghost_rebuild_request_refresh_opening_selector, spawn_opening_selector,
+    controls_bar_node, cycle_shape, on_ghost_rebuild_request_refresh_hollowed_side_selector, spawn_hollowed_side_selector,
 };
 use crate::{tunnel_reveal::RevealsTunnels, walls::WALL_GRID_IMPRINT};
 
@@ -27,12 +27,12 @@ impl Plugin for WallEditorUiPlugin {
             .add_observer(GridPlacerUiForWall::on_add_construct_grid_placer_ui)
             .add_observer(GridPlacerUiForWall::on_begin_placing_start_wall_session)
             .add_observer(GridPlacerUiForWall::on_ghost_rebuild_request_refresh_style_swatches)
-            .add_observer(on_ghost_rebuild_request_refresh_opening_selector::<StructureShape>);
+            .add_observer(on_ghost_rebuild_request_refresh_hollowed_side_selector::<StructureShape>);
     }
 }
 
 impl SelectableShape for StructureShape {
-    const BASE: Self = Self::Flat { openings: EdgeSides::NONE };
+    const BASE: Self = Self::Flat { hollowed_sides: EdgeSides::NONE };
 
     fn structure_shape(self) -> Option<StructureShape> {
         Some(self)
@@ -48,7 +48,7 @@ impl SelectableShape for StructureShape {
 #[require(PlacementControls, RevealsTunnels)]
 pub(crate) struct GridPlacerUiForWall;
 impl GridPlacerUiForWall {
-    /// Builds the controls with the style and openings selected in the placement session.
+    /// Builds the controls with the style and hollowed sides selected in the placement session.
     fn on_add_construct_grid_placer_ui(
         trigger: On<Add<GridPlacerUiForWall>>,
         mut commands: Commands,
@@ -92,7 +92,7 @@ impl GridPlacerUiForWall {
                     .observe(WallStyleButton::on_click_select_style);
                 }
 
-                spawn_opening_selector(parent, shape);
+                spawn_hollowed_side_selector(parent, shape);
                 if admin_mode.get().is_enabled() {
                     parent.spawn(ReplaceToggleButton);
                 }
@@ -131,7 +131,7 @@ impl GridPlacerUiForWall {
 /// The selection border surrounds the button so it does not obscure the preview.
 #[derive(Component, Clone, Copy)]
 #[require(Button)]
-pub(crate) struct WallStyleButton(pub WallStyleKey);
+pub(crate) struct WallStyleButton(WallStyleKey);
 impl WallStyleButton {
     fn frame_color(key: WallStyleKey, selected: WallStyleKey) -> Color {
         if key == selected { CONTROL_FRAME_SELECTED } else { CONTROL_FRAME_IDLE }

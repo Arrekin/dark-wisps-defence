@@ -133,7 +133,7 @@ impl SlotTable {
 #[component(immutable)]
 #[require(Transform)]
 pub enum ZDepth {
-    /// Pit floors, ramps, cliffs and tunnel interiors, below underground wisps and floor covers.
+    /// Pit floors, ramps, cliffs, and hollow excavation interiors, below underground wisps and floor covers.
     UndergroundBottom,
     /// Ground and excavation rims, above underground wisps and floor covers.
     UndergroundTop,
@@ -143,7 +143,7 @@ pub enum ZDepth {
     FloorDecal,
     FireballScorch,
     FlameScorch,
-    /// Wall contact shadows, entrance recesses, tunnel interiors, and lower ramp halves, drawn above
+    /// Wall contact shadows, entrance recesses, hollow wall interiors, and lower ramp halves, drawn above
     /// floor covers and below wisps.
     WallBottom,
     FlameGlow,

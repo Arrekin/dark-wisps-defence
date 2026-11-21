@@ -6,7 +6,7 @@ import package::shaders::units::scan_pulse::scan_pulse;
 // Scan spot shader: the ground spot of a drone's scanning beam. Its outline is a flat ellipse,
 // unit-sized in the mesh's local space, with local +x toward the drone. The spot shows the levels
 // beneath it through its own style rather than geometry. A cell's level is its top: a wall or
-// building top, the ground (ore, ramps and the ground over a tunnel included), or a pit floor.
+// building top, the ground (ore, ramps and the ground floor over an excavation included), or a pit floor.
 // - The scan pulse reaches higher levels first, so its rings shear where the level changes.
 // - Cell edges where the level changes light up inside the spot as seams, brighter as a ring
 //   passes.

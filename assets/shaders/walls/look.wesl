@@ -4,6 +4,7 @@
 import package::shaders::common::core::{CELL_HALF, CELL_SIZE};
 import package::shaders::common::map_light::MAP_SUN_GROUND_DIRECTION;
 import package::shaders::common::noise::noise_gradient_fbm_2d;
+import package::shaders::grids::structure_shape::ramp_up;
 
 // Distances and erosion amplitude are measured in world pixels.
 struct WallStyleGeometry {
@@ -63,8 +64,6 @@ const RECESS_FALLOFF: f32 = 1.0;
 // Sentinel distance for an absent mouth, beyond the visible edge layers.
 const NO_MOUTH_DISTANCE: f32 = 1e6;
 
-// Width of the passage inside a hollow wall, in world pixels.
-const PASSAGE_WIDTH: f32 = 21.0;
 // Interior stone brightness, relative to the style's body colours.
 const STONE_TONE: f32 = 0.5;
 // Lit line where the stone meets the passage: width in world pixels and brightness.
@@ -122,15 +121,6 @@ fn recess_colour(mouth: Mouth, style: WallStyle) -> vec3<f32> {
     return style.body_low.rgb * mix(RECESS_LIP, RECESS_DEEP, pow(mouth.depth, RECESS_FALLOFF));
 }
 
-// Signed distance in world pixels to the passage arm running from the cell centre across the
-// edge facing `outward`, a cardinal unit vector. Negative inside the passage.
-// `p` is relative to the cell centre, in [-0.5, 0.5] on each axis.
-fn passage_arm_distance(p: vec2<f32>, outward: vec2<f32>) -> f32 {
-    let local = p * CELL_SIZE;
-    let along = clamp(dot(local, outward), 0.0, CELL_SIZE);
-    return length(local - outward * along) - PASSAGE_WIDTH * 0.5;
-}
-
 // Shades a hollow wall's interior, returning colour and coverage as alpha. Stone is opaque;
 // the passage floor is left to the ground beneath, darkened by the stone's shadow.
 // `distance` is the signed distance to the passage in world pixels, positive in stone.
@@ -141,17 +131,6 @@ fn interior_shading(distance: f32, plate: f32, texel: f32, style: WallStyle) -> 
     let shadow = shadow_falloff(distance, PASSAGE_SHADOW_REACH) * PASSAGE_SHADOW_STRENGTH;
     let alpha = stone + shadow * (1.0 - stone);
     return vec4<f32>(colour * stone / max(alpha, 1e-4), alpha);
-}
-
-// Converts a nonzero ramp code to its uphill grid direction; positive y points up.
-// Mirrors the ramp codes of `StructureShape::gpu_code` in map_objects/src/lib.rs.
-fn ramp_up(ramp: u32) -> vec2<i32> {
-    switch ramp {
-        case 1u: { return vec2<i32>(1, 0); }
-        case 2u: { return vec2<i32>(-1, 0); }
-        case 3u: { return vec2<i32>(0, 1); }
-        default: { return vec2<i32>(0, -1); }
-    }
 }
 
 // Returns height in [0, 1]. `p` is in cell units relative to the ramp cell's center.

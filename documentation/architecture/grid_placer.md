@@ -57,7 +57,7 @@ While in `UiInteraction::PlaceGridObject`, three paths mutate the session withou
 
 - **Cursor movement (`follow_mouse` in `PreUpdate`):** When the cursor enters a different grid cell, the placer updates `GridArea` on the session (preserving altitude level and imprint) and triggers `GridPlacerChanged`.
 - **Imprint change:** A control that changes the imprint after the session has started (e.g. quantum field size buttons) inserts a new `GridArea` at the session's origin and triggers both `GridPlacerGhostRebuildRequest` and `GridPlacerChanged`.
-- **Domain setting change:** Controls that affect the ghost's appearance (such as wall style swatches and ramp/opening selectors) replace their component on `PlacementSession` and trigger `GridPlacerGhostRebuildRequest`, which both rebuilds the ghost and refreshes those controls' selection frames. Settings that only affect validation—such as `ReplaceToggleButton`, which toggles `ReplaceExisting`—update the session component and their own border directly without rebuilding the ghost.
+- **Domain setting change:** Controls that affect the ghost's appearance (such as wall style swatches and ramp/hollowed side selectors) replace their component on `PlacementSession` and trigger `GridPlacerGhostRebuildRequest`, which both rebuilds the ghost and refreshes those controls' selection frames. Settings that only affect validation—such as `ReplaceToggleButton`, which toggles `ReplaceExisting`—update the session component and their own border directly without rebuilding the ghost.
 
 ### 3. Per-frame validation (`PlacementFeedbackSystems`)
 
@@ -112,7 +112,7 @@ Each domain groups validation and request handling in a `*PlacementRules` `Syste
 | Rules | File | Notes |
 |---|---|---|
 | `WallPlacementRules` | `map_objects_internal/src/walls.rs` | Supports `ReplaceExisting` and right-click removal (clearing `OnElevation` occupants). |
-| `ExcavationPlacementRules` | `map_objects_internal/src/excavations.rs` | Mutates `ObstacleGrid` directly and requests emissions recalculation; digging pits/ramps or filling excavations clears occupants, while tunnels preserve structures above. |
+| `ExcavationPlacementRules` | `map_objects_internal/src/excavations.rs` | Mutates `ObstacleGrid` directly and requests emissions recalculation; digging pits/ramps or filling excavations clears occupants, while flat excavations keep the ground floor and the structures on it. |
 | `DarkOrePlacementRules` | `map_objects_internal/src/dark_ore.rs` | Places/removes dark ore on unreserved ground. |
 | `QuantumFieldPlacementRules` | `map_objects_internal/src/quantum_field.rs` | Supports a variable square imprint, resized by its size buttons. |
 | `WispPlacementRules` | `wisps_internal/src/spawning.rs` | Checks `ObstacleGrid` support and `WispsGrid` occupancy. |

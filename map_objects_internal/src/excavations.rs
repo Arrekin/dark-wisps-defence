@@ -1,16 +1,16 @@
 //! # Excavations
 //!
-//! Excavations store pits, ramps and tunnels directly in the obstacle grid's `Underground` level.
+//! Excavations store pits, ramps and flat shapes directly in the obstacle grid's `Underground` level.
 //! Placement digs an [`ExcavationShape`] into solid earth. With [`ReplaceExisting`], it can also
 //! reshape an existing excavation. Removal fills the excavation with solid earth.
 //!
-//! Tunnels preserve the ground floor, so they can be dug beneath walls and buildings. Digging a
+//! Flat shapes keep the ground floor, so they can be dug beneath walls and buildings. Digging a
 //! pit or ramp removes that floor and clears wisps and floor covers at every level of the cell.
 //! Filling an excavation also clears every level. Each edit explicitly requests an emissions
 //! rebuild because emissions do not track obstacle grid versions.
 //!
 //! Save collectors read excavations from the grid; loaders restore them during `LoadResources`.
-//! Pits have their own table; shaped excavations store ramp directions and tunnel openings in
+//! Pits have their own table; shaped excavations store ramp directions and hollowed sides in
 //! child tables.
 
 use bevy::{ecs::system::SystemParam, prelude::*};
@@ -19,13 +19,11 @@ use almanach::{Almanach, AlmanachAppExt, ExcavationInfo};
 use game_core::{prelude::{AltitudeLevel, EdgeSide, EdgeSides, GridArea, GridCoords, GridImprint, MapObject, MapObjectTooltipRequest}, request_flag::RequestFlag};
 use grids::placement::{PlacementFeedback, PlacementObject, PlacementSession, PlacementValidity, PlacementFeedbackSystems, PlaceRequest, RemoveRequest, ReplaceExisting, ReservedCoords};
 use hud::prelude::BuilderSideMenuItemTooltip;
-use indexes::{emissions::EmissionsRecalculation, obstacles::GridStructure, prelude::{ObstacleCell, ObstacleGrid}};
+use indexes::{emissions::EmissionsRecalculation, floor_cover::FloorCoverGrid, obstacles::GridStructure, prelude::{ObstacleCell, ObstacleGrid}, wisps::WispsGrid};
 use logging::prelude::*;
 use map_objects::prelude::{ExcavationShape, StructureShape};
 use persistence::{prelude::*, rusqlite};
 use states::prelude::MapLoadingStage;
-
-use crate::common::CellClearing;
 
 pub(crate) struct ExcavationPlugin;
 impl Plugin for ExcavationPlugin {
@@ -58,7 +56,8 @@ pub(crate) struct ExcavationPlacementRules<'w, 's> {
     commands: Commands<'w, 's>,
     obstacle_grid: ResMut<'w, ObstacleGrid>,
     reserved_coords: Res<'w, ReservedCoords>,
-    cell_clearing: CellClearing<'w, 's>,
+    wisps_grid: ResMut<'w, WispsGrid>,
+    floor_cover_grid: Res<'w, FloorCoverGrid>,
     emissions_recalculation: ResMut<'w, RequestFlag<EmissionsRecalculation>>,
     placement_session: Single<'w, 's, (&'static GridArea, &'static ExcavationShape, Has<ReplaceExisting>), With<PlacementSession>>,
 }
@@ -72,7 +71,7 @@ impl ExcavationPlacementRules<'_, '_> {
         PlacementFeedback::every_cell(area, &self.reserved_coords, |coords| {
             self.obstacle_grid.get(coords).is_some_and(|cell| {
                 let can_be_dug = cell.underground == GridStructure::Solid || replaceable(cell);
-                can_be_dug && (shape.is_tunnel() || !cell.has_structure())
+                can_be_dug && (shape.keeps_ground_floor() || !cell.has_structure())
             })
         }).replacing(area, |coords| self.obstacle_grid.get(coords).is_some_and(replaceable))
     }
@@ -82,19 +81,22 @@ impl ExcavationPlacementRules<'_, '_> {
     }
 
     /// Digs `shape` at `coords` and requests an emissions rebuild.
-    /// Pits and ramps remove the ground floor, so they also clear occupants at every level.
     fn excavate(&mut self, coords: GridCoords, shape: ExcavationShape) {
         self.obstacle_grid.excavate(coords, shape);
-        if !shape.is_tunnel() {
-            self.cell_clearing.clear_from(coords, AltitudeLevel::Underground);
+        // Pits and ramps remove the ground floor, invalidating occupants at all levels.
+        if !shape.keeps_ground_floor() {
+            self.wisps_grid.despawn_from_level_upwards(&mut self.commands, coords, AltitudeLevel::Underground);
+            self.floor_cover_grid.despawn_from_level_upwards(&mut self.commands, coords, AltitudeLevel::Underground);
         }
         self.emissions_recalculation.request();
     }
 
-    /// Fills the excavation, clears occupants at every level, and requests an emissions rebuild.
+    /// Fills the excavation and requests an emissions rebuild.
     fn fill(&mut self, coords: GridCoords) {
         self.obstacle_grid.fill_excavation(coords);
-        self.cell_clearing.clear_from(coords, AltitudeLevel::Underground);
+        // Filling removes the underground space and any occupants in the cell.
+        self.wisps_grid.despawn_from_level_upwards(&mut self.commands, coords, AltitudeLevel::Underground);
+        self.floor_cover_grid.despawn_from_level_upwards(&mut self.commands, coords, AltitudeLevel::Underground);
         self.emissions_recalculation.request();
     }
 
@@ -163,9 +165,9 @@ fn collect_excavations(
                             ctx.tx.prepare_cached("INSERT INTO excavation_ramps (x, y, high_side) VALUES (?1, ?2, ?3)")?
                                 .execute(rusqlite::params![x, y, high_side.as_ref()])?;
                         }
-                        StructureShape::Flat { openings } => {
-                            for side in openings.iter() {
-                                ctx.tx.prepare_cached("INSERT INTO excavation_openings (x, y, side) VALUES (?1, ?2, ?3)")?
+                        StructureShape::Flat { hollowed_sides } => {
+                            for side in hollowed_sides.iter() {
+                                ctx.tx.prepare_cached("INSERT INTO excavation_hollowed_sides (x, y, side) VALUES (?1, ?2, ?3)")?
                                     .execute(rusqlite::params![x, y, side.as_ref()])?;
                             }
                         }
@@ -190,17 +192,14 @@ fn load_excavation_shapes(ctx: &mut LoadContext) -> LoadResult {
         LEFT JOIN excavation_ramps ON excavation_ramps.x = excavation_shapes.x AND excavation_ramps.y = excavation_shapes.y";
     ctx.for_each_row(query, |ctx, row| {
         let coords = GridCoords { x: row.get(0)?, y: row.get(1)? };
-        // Load openings only for flat shapes; ramps cannot have tunnels.
+        // Load hollowed sides only for flat shapes; ramps have none.
         let shape = match row.get_parsed_optional::<EdgeSide>(2)? {
             Some(high_side) => StructureShape::Ramp { high_side },
             None => {
-                let mut statement = ctx.conn.prepare_cached("SELECT side FROM excavation_openings WHERE x = ?1 AND y = ?2")?;
-                let mut opening_rows = statement.query([coords.x, coords.y])?;
-                let mut openings = EdgeSides::NONE;
-                while let Some(opening_row) = opening_rows.next()? {
-                    openings = openings.with(opening_row.get_parsed(0)?);
-                }
-                StructureShape::Flat { openings }
+                let hollowed_sides = ctx.conn.prepare_cached("SELECT side FROM excavation_hollowed_sides WHERE x = ?1 AND y = ?2")?
+                    .query_and_then([coords.x, coords.y], |row| row.get_parsed(0))?
+                    .collect::<LoadResult<EdgeSides>>()?;
+                StructureShape::Flat { hollowed_sides }
             }
         };
         ctx.push(excavate_loaded_cell(coords, ExcavationShape::Shaped(shape)));

@@ -52,6 +52,12 @@ impl Plugin for WispsPlugin {
                 systems::drive_wisp_motion_look::<looks::WispLightVisual>,
                 systems::drive_wisp_motion_look::<looks::WispFireVisual>,
             ).after(MotionSystems::Track))
+            .add_systems(PostUpdate, (
+                systems::drive_wisp_altitude_index::<looks::WispFireVisual>,
+                systems::drive_wisp_altitude_index::<looks::WispWaterVisual>,
+                systems::drive_wisp_altitude_index::<looks::WispLightVisual>,
+                systems::drive_wisp_altitude_index::<looks::WispElectricVisual>,
+            ))
             .add_observer(spawning::BuilderWisp::on_builder_add_spawn_wisp)
             .add_observer(spawning::on_begin_placing_start_wisp_session)
             .add_observer(spawning::WispPlacementRules::on_place_request_do_so)

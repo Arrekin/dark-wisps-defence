@@ -3,21 +3,30 @@
 
 import package::shaders::common::map_info::{grid_contains, grid_index};
 
-// One packed u32 per cell, row major. The layout mirrors `pack_obstacle_cell` in
-// indexes_internal/src/obstacles.rs:
-//   bits 0-3    underground structure kind (STRUCTURE_*)
-//   bits 4-7    on-ground structure kind
-//   bits 8-11   on-elevation structure kind
-//   bit 12      quantum field present
-//   bits 16-23  building type (BUILDING_* or TOWER_*) at OnGround, or 0 if absent
-//   bits 24-30  underground excavation shape (`StructureShape::gpu_code`), or 0 if absent
-@group(3) @binding(103) var<storage, read> obstacle_cells: array<u32>;
+// One cell, row major. The layout mirrors `pack_obstacle_cell` in
+// indexes_internal/src/obstacles.rs.
+struct ObstacleCell {
+    // bits 0-3    underground structure kind (STRUCTURE_*)
+    // bits 4-7    on-ground structure kind
+    // bits 8-11   on-elevation structure kind
+    // bit 12      quantum field present
+    // bits 16-23  building type (BUILDING_* or TOWER_*) at OnGround, or 0 if absent
+    // bits 24-31  `WallStyleKey::gpu_index` of the wall at OnGround, or 0 if absent
+    structures: u32,
+    // Packed `StructureShape::gpu_code` (1 byte per level at bit offset `level * SHAPE_BITS`) for
+    // walls and excavations, or 0 for other structures. Decoded by `shaders::grids::structure_shape`.
+    shapes: u32,
+};
+@group(3) @binding(103) var<storage, read> obstacle_cells: array<ObstacleCell>;
 
-// Level codes, mirroring `level_gpu_index` in indexes/src/obstacles.rs. A level's structure
-// code sits at bit offset `level * STRUCTURE_BITS` in the packed cell.
+// Level indices matching `AltitudeLevel::three_layer_index` in `game_core/src/altitude.rs`.
+// A level's structure kind sits at bit offset `level * STRUCTURE_BITS` in `structures`, and its
+// shape code at `level * SHAPE_BITS` in `shapes`.
 const LEVEL_UNDERGROUND: u32 = 0u;
 const LEVEL_ON_GROUND: u32 = 1u;
 const LEVEL_ON_ELEVATION: u32 = 2u;
+// Sentinel level for off-map rendering (such as UI faces); not valid for grid indexing.
+const LEVEL_NONE: u32 = 0xFFFFFFFFu;
 
 // Mirrors `GridStructure::gpu_index` in indexes/src/obstacles.rs.
 const STRUCTURE_EMPTY: u32 = 0u;
@@ -33,10 +42,11 @@ const STRUCTURE_BITS: u32 = 4u;
 const STRUCTURE_MASK: u32 = 15u;
 const QUANTUM_FIELD_BIT: u32 = 4096u;
 const BUILDING_TYPE_SHIFT: u32 = 16u;
-const UNDERGROUND_SHAPE_SHIFT: u32 = 24u;
-const UNDERGROUND_SHAPE_MASK: u32 = 127u;
-// Packed sentinel with STRUCTURE_OFF_MAP at all three levels.
-const OFF_MAP_CELL: u32 = 0x0FFFu;
+const WALL_STYLE_SHIFT: u32 = 24u;
+const SHAPE_BITS: u32 = 8u;
+const SHAPE_MASK: u32 = 0x7Fu;
+// Sentinel with STRUCTURE_OFF_MAP at all three levels and no shapes.
+const OFF_MAP_CELL: ObstacleCell = ObstacleCell(0x0FFFu, 0u);
 
 // Mirrors `BuildingType::gpu_index` in game_core/src/types.rs.
 const BUILDING_NONE: u32 = 0u;
@@ -57,27 +67,42 @@ const TOWER_INFERNO: u32 = 39u;
 const TOWER_CRUCIBLE: u32 = 40u;
 const TOWER_NAPALM_BATTERY: u32 = 41u;
 
-// Returns the packed cell, or OFF_MAP_CELL outside the map.
-fn obstacle_cell_at(coords: vec2<i32>) -> u32 {
+// Returns the cell, or OFF_MAP_CELL outside the map.
+fn obstacle_cell_at(coords: vec2<i32>) -> ObstacleCell {
     if !grid_contains(coords) {
         return OFF_MAP_CELL;
     }
     return obstacle_cells[grid_index(coords)];
 }
 
+// Unpacks `cell`'s structure kind (`STRUCTURE_*`) at `level` (`LEVEL_*`).
+fn cell_structure(cell: ObstacleCell, level: u32) -> u32 {
+    return (cell.structures >> (level * STRUCTURE_BITS)) & STRUCTURE_MASK;
+}
+
+// Unpacks `cell`'s `StructureShape::gpu_code` at `level` (`LEVEL_*`).
+fn cell_structure_shape(cell: ObstacleCell, level: u32) -> u32 {
+    return (cell.shapes >> (level * SHAPE_BITS)) & SHAPE_MASK;
+}
+
 // Returns the structure code at `coords`; `level` is a LEVEL_* code.
 fn structure_at(coords: vec2<i32>, level: u32) -> u32 {
-    return (obstacle_cell_at(coords) >> (level * STRUCTURE_BITS)) & STRUCTURE_MASK;
+    return cell_structure(obstacle_cell_at(coords), level);
+}
+
+// Returns the `StructureShape::gpu_code` at `coords` and `level` (`LEVEL_*`), or 0 if unshaped.
+fn structure_shape_at(coords: vec2<i32>, level: u32) -> u32 {
+    return cell_structure_shape(obstacle_cell_at(coords), level);
+}
+
+// Unpacks `cell`'s one-based wall style index (`WallStyleKey::gpu_index` in
+// `map_objects/src/wall_style.rs`) at `LEVEL_ON_GROUND`, or 0 if `cell` has no wall.
+fn cell_wall_style_index(cell: ObstacleCell) -> u32 {
+    return cell.structures >> WALL_STYLE_SHIFT;
 }
 
 fn building_type_at(coords: vec2<i32>) -> u32 {
-    return (obstacle_cell_at(coords) >> BUILDING_TYPE_SHIFT) & 0xFFu;
-}
-
-// Extracts the underground shape bits, encoded by `StructureShape::gpu_code`.
-// Decode with `shape_ramp` and `shape_openings` from `shaders::walls::styles`.
-fn underground_shape(cell: u32) -> u32 {
-    return (cell >> UNDERGROUND_SHAPE_SHIFT) & UNDERGROUND_SHAPE_MASK;
+    return (obstacle_cell_at(coords).structures >> BUILDING_TYPE_SHIFT) & 0xFFu;
 }
 
 fn is_tower_at(coords: vec2<i32>) -> bool {
@@ -85,5 +110,5 @@ fn is_tower_at(coords: vec2<i32>) -> bool {
 }
 
 fn is_within_quantum_field_at(coords: vec2<i32>) -> bool {
-    return (obstacle_cell_at(coords) & QUANTUM_FIELD_BIT) != 0u;
+    return (obstacle_cell_at(coords).structures & QUANTUM_FIELD_BIT) != 0u;
 }

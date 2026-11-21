@@ -1,8 +1,9 @@
 import package::shaders::common::clock::{CLOCK_WRAP_PERIOD, wrap_fade, wrap_mix, wrap_rate};
-import package::shaders::common::core::TAU;
+import package::shaders::common::core::{CELL_SIZE, TAU};
 import package::shaders::common::effect_visuals::BRITTLE_BIT;
 import package::shaders::common::fire_ramp::fire_ramp;
 import package::shaders::common::voronoi_border::voronoi_border_2d;
+import package::shaders::grids::openings::{closed_border_distance, is_clear_of_closed_borders};
 import package::shaders::wisps::motion_look::WispMotionLook;
 
 // Pure-procedural fire wisp: a molten orb on fire.
@@ -17,6 +18,9 @@ import package::shaders::wisps::motion_look::WispMotionLook;
 // translucent over the orb. While the wisp travels, the licks stretch and lean
 // into its wake — a light suggestion of a fireball trail. Nothing is sampled from
 // a texture.
+//
+// Inside a hollow wall or excavation, flame licks shorten before hitting closed cell sides, and
+// fragments occluded by a closed border are clipped.
 
 // Mesh padding factor. Mirrors `WispFireVisual::QUAD_SCALE` in wisps_internal/src/looks.rs:
 // the mesh is built this many times the grid imprint and we scale UV by it, so the
@@ -38,6 +42,9 @@ const LICK_SWAY_SPEED: f32 = 1.5;  // how fast it swings — the chaos, in place
 // the wake — a light physical suggestion that the flames lag the moving core.
 const LICK_LEN_BIAS: f32 = 0.45;   // how much back licks lengthen / front licks shorten with speed
 const LICK_COMB: f32 = 0.9;        // how hard the sides sweep back toward the wake (radians per unit speed)
+// Closed borders: licks shorten to stop `CLOSED_SIDE_GAP` before a closed hollow-structure side.
+const CLOSED_SIDE_GAP: f32 = 0.06; // orb-space gap between a shortened lick's tip and the closed side
+const MIN_LICK_LEN: f32 = 0.05;    // shorter licks are dropped
 
 // ── Flame shape mask (one lick) ──────────────────────────────────────────────
 const FLAME_SIZE: f32 = 2.2;
@@ -133,8 +140,9 @@ fn flame_mask(fx: f32, fy: f32, t: f32, seed: f32) -> f32 {
 // the same flame, rooted just inside the orb and growing outward in its own frame,
 // on an evenly-spaced slot that swings tangentially, with its own length and phase —
 // so they read chaotic yet cover the orb uniformly. `wind` (locomotion) then biases
-// each lick's length and growth direction toward the wake.
-fn fire_corona(p: vec2<f32>, t: f32, seed: f32, wind: vec2<f32>) -> f32 {
+// each lick's length and growth direction toward the wake. `centre` (world position) and `level`
+// (`LEVEL_*`) clip licks against closed hollow-structure sides.
+fn fire_corona(p: vec2<f32>, t: f32, seed: f32, wind: vec2<f32>, centre: vec2<f32>, level: u32) -> f32 {
     var best = 0.0;
     for (var k = 0; k < NUM_LICKS; k = k + 1) {
         let fk = f32(k);
@@ -158,7 +166,11 @@ fn fire_corona(p: vec2<f32>, t: f32, seed: f32, wind: vec2<f32>) -> f32 {
         // `flame_mask` is zero outside this box: its teardrop needs |px| < 1 and |py| < 1, which
         // bounds fy to (0.04, 0.96) and |fx| below 0.45.
         if along < 0.0 || along > len || abs(lateral) > 0.5 * len { continue; }
-        let fl = flame_mask(lateral / len, along / len, t, seed + fk * 7.3);
+        let root = centre + orb_to_world(slot_dir * BASE_RADIUS);
+        let free = closed_border_distance(root, orb_to_world(dir) / CELL_SIZE, len * CELL_SIZE, level) / CELL_SIZE;
+        let fitted = min(len, free - CLOSED_SIDE_GAP);
+        if fitted < MIN_LICK_LEN || along > fitted { continue; }
+        let fl = flame_mask(lateral / len, along / fitted, t, seed + fk * 7.3);
         best = max(best, fl);
     }
     return best;
@@ -185,7 +197,14 @@ fn brittle(color: vec4<f32>, c: vec2<f32>, seed: f32) -> vec4<f32> {
     return vec4<f32>(rgb, max(color.a, crack)); // opaque so the cage always reads
 }
 
-fn wisp_fire(uv: vec2<f32>, time: f32, look: WispMotionLook, effects_mask: u32) -> vec4<f32> {
+// Orb-space offset (one unit per cell, y down) in world pixels.
+fn orb_to_world(offset: vec2<f32>) -> vec2<f32> {
+    return vec2<f32>(offset.x, -offset.y) * CELL_SIZE;
+}
+
+// `centre` is the orb's world position; `level` (`LEVEL_*` in `grids/obstacles.wesl`) clips flames
+// against closed hollow-structure borders (`LEVEL_NONE` disables clipping for UI faces).
+fn wisp_fire(uv: vec2<f32>, time: f32, look: WispMotionLook, effects_mask: u32, centre: vec2<f32>, level: u32) -> vec4<f32> {
     let p = (uv - vec2<f32>(0.5)) * QUAD_SCALE; // y points down
     let r = length(p);
 
@@ -199,7 +218,7 @@ fn wisp_fire(uv: vec2<f32>, time: f32, look: WispMotionLook, effects_mask: u32) 
     // ── Flame licks all around it ─────────────────────────────────────────────
     // Locomotion wind: points opposite to travel, scaled by (bounded) speed; 0 at rest.
     let wind = -look.heading * min(look.vigor, 1.5);
-    let flame = fire_corona(p, time, look.seed, wind);
+    let flame = fire_corona(p, time, look.seed, wind, centre, level);
 
     // ── Compose: additive HDR so the flames stay translucent over the orb ─────
     let orb_rgb = fire_ramp(orb_heat);
@@ -208,7 +227,8 @@ fn wisp_fire(uv: vec2<f32>, time: f32, look: WispMotionLook, effects_mask: u32) 
 
     let energy = clamp(orb_heat + flame, 0.0, 1.0);
     let edge = 1.0 - smoothstep(1.0, 1.2, r); // trim before the (padded) quad edge
-    let alpha = clamp(energy * edge, 0.0, 1.0);
+    let reachable = select(0.0, 1.0, is_clear_of_closed_borders(centre, centre + orb_to_world(p), level));
+    let alpha = clamp(energy * edge * reachable, 0.0, 1.0);
 
     var color = vec4<f32>(rgb, alpha);
     if ((effects_mask & BRITTLE_BIT) != 0u) {

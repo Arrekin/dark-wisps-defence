@@ -11,6 +11,7 @@ struct Instance {
     look: WispMotionLook,
     effects: EffectVisuals,
     alpha: f32, // below 1.0 for a placement ghost
+    altitude_index: u32, // LEVEL_* code in grids/obstacles.wesl of the level the wisp is on
 };
 
 fn look(mesh: VertexOutput, instance: Instance) -> vec4<f32> {

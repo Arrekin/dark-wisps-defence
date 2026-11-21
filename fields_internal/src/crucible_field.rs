@@ -4,7 +4,9 @@
 //!
 //! Each `CrucibleField` carries a `CrucibleFieldDome`: a dome of heat. Before the air band draws,
 //! a haze bends the ground and surface beneath it, then fire strands, glow, tendrils and embers add
-//! their light. The shader uses the shared field index to draw only within the field's territory.
+//! their light. The shader uses the shared field index to clip to the field's territory, while
+//! adjusting the outer rim for terrain height: stepping inward on walls and buildings and expanding
+//! over pits (`assets/shaders/visuals/terrain_rim.wesl`).
 
 use bevy::{prelude::*, reflect::TypePath, render::render_resource::{BlendState, ShaderType}};
 
@@ -18,6 +20,8 @@ use visuals::{
     lane::{LaneParts, LanePlugin, LaneVisual},
     shader::{ADDITIVE_BLENDING, seed_from_entity},
 };
+
+use crate::field::PIT_REACH;
 
 pub(crate) struct CrucibleFieldPlugin;
 impl Plugin for CrucibleFieldPlugin {
@@ -69,7 +73,7 @@ impl LaneVisual for CrucibleFieldDome {
     const PARTS: LaneParts = LaneParts::DISPLACE.and(LaneParts::OVERLAY);
 
     fn cut_quad_size(&self) -> Vec2 {
-        Vec2::splat(2. * self.radius)
+        Vec2::splat(2. * (self.radius + PIT_REACH))
     }
 
     fn overlay_blend() -> BlendState {

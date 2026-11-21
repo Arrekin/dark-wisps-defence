@@ -8,22 +8,26 @@
 //! and fill its cells; [`ObstacleGrid::deprint`] clears the cells and frees the slot.
 //!
 //! Excavations store their state directly in the `Underground` level: `Empty` for a pit, or
-//! `Excavation` with an inline shape for a ramp or tunnel. [`ObstacleGrid::excavate`] and
+//! `Excavation` with an inline shape for a ramp or a flat excavation. [`ObstacleGrid::excavate`] and
 //! [`ObstacleGrid::fill_excavation`] update one cell at a time.
+//!
+//! ## Geometry vs. traversal
+//!
+//! [`ObstacleCell`] and [`GridStructure`] expose raw cell geometry: open sides, hollowed passages,
+//! floor support, and edge-to-edge floor continuity ([`ObstacleGrid::connects_floor`]).
+//!
+//! Traversal queries build on top of those primitives. [`ObstacleGrid::walkable_neighbors`] and
+//! [`ObstacleGrid::walkable_cardinals`] implement the standard ground-unit and emission step rules;
+//! systems with different movement constraints (such as blasts) query the cell primitives directly.
 
 use std::ops::Deref;
 
 use bevy::prelude::*;
+use strum::IntoEnumIterator;
 
 use game_core::prelude::{AltitudeLevel, Bounds, BuildingType, EdgeSide, EdgeSides, GridArea, GridCoords, GridPosition};
-use grids::{GridVersion, base::{BaseGrid, GridCell, stack_level_below, stack_slot}, slot_index::{Slot, Slots}};
+use grids::{GridVersion, base::{BaseGrid, GridCell}, slot_index::{Slot, Slots}};
 use map_objects::{prelude::{ExcavationShape, StructureShape}, wall_style::WallStyleKey};
-
-/// GPU code of the stack level holding `level`, matching `LEVEL_*` in
-/// `assets/shaders/grids/obstacles.wesl`.
-pub const fn level_gpu_index(level: AltitudeLevel) -> u32 {
-    stack_slot(level) as u32
-}
 
 /// Contents of one level of a cell, including empty space and solid earth.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -35,9 +39,10 @@ pub enum GridStructure {
     DarkOre { slot: Slot<DarkOreData> },
     Wall { slot: Slot<WallData>, style: WallStyleKey, shape: StructureShape },
     Building { slot: Slot<BuildingData>, building_type: BuildingType },
-    /// An underground ramp or tunnel that supports the floor above.
+    /// An underground ramp or flat excavation that supports the ground floor above.
     ///
-    /// A flat shape without openings blocks movement like solid earth.
+    /// A [`StructureShape::Flat`] with no hollowed sides represents a refilled excavation, kept
+    /// distinct from [`Self::Solid`] earth.
     Excavation { shape: StructureShape },
 }
 
@@ -85,11 +90,18 @@ impl GridStructure {
         }
     }
 
-    /// Tunnel openings for a wall or excavation; an empty set for other structures.
-    pub const fn openings(self) -> EdgeSides {
-        match self.shape() {
-            Some(shape) => shape.openings(),
-            None => EdgeSides::NONE,
+    /// True if the cell is open on `side` at this structure's level.
+    pub const fn has_side_open(self, side: EdgeSide) -> bool {
+        self.open_sides().contains(side)
+    }
+
+    /// Cell edges open at this structure's level: all sides for empty space and buildings, none for
+    /// solid earth and ore, and [`StructureShape::open_sides`] for walls and excavations.
+    const fn open_sides(self) -> EdgeSides {
+        match self {
+            Self::Empty | Self::Building { .. } => EdgeSides::ALL,
+            Self::Solid | Self::DarkOre { .. } => EdgeSides::NONE,
+            Self::Wall { shape, .. } | Self::Excavation { shape } => shape.open_sides(),
         }
     }
 
@@ -102,10 +114,19 @@ impl GridStructure {
     }
 
     /// Returns the style of a wall, or `None` for other structures.
-    pub const fn style(self) -> Option<WallStyleKey> {
+    pub const fn wall_style(self) -> Option<WallStyleKey> {
         match self {
             Self::Wall { style, .. } => Some(style),
             _ => None,
+        }
+    }
+
+    /// True if floors supported by `self` and `other` can connect across an edge.
+    /// Walls of different styles remain separated by a gap; all other floor pairs connect.
+    fn wall_style_meets(self, other: Self) -> bool {
+        match (self.wall_style(), other.wall_style()) {
+            (Some(style), Some(other_style)) => style == other_style,
+            _ => true,
         }
     }
 
@@ -190,13 +211,39 @@ impl ObstacleCell {
     pub fn is_within_quantum_field(&self) -> bool {
         self.quantum_field.is_some()
     }
-    /// The structure at the stack level below `level`. Solid earth lies below the lowest level.
+    /// The structure at the layer below `level`. Solid earth lies below the lowest level.
     pub fn structure_under(&self, level: AltitudeLevel) -> GridStructure {
-        stack_level_below(level).map_or(GridStructure::Solid, |below| *self.at(below))
+        level.three_layer_below().map_or(GridStructure::Solid, |below| *self.at(below))
     }
     /// Returns whether `level` has a floor in this cell, provided by the structure beneath it.
     pub fn has_floor(&self, level: AltitudeLevel) -> bool {
         self.structure_under(level).provides_floor()
+    }
+    /// Elevation at which the floor of `level` meets `side`:
+    /// - `Some(level)` for a flat floor or a ramp's crest (`high_side`),
+    /// - `level.three_layer_below()` at a ramp's foot (`high_side.opposite()`),
+    /// - `None` if `level` has no floor or `side` is a ramp's sloped side.
+    fn floor_edge_base(&self, level: AltitudeLevel, side: EdgeSide) -> Option<AltitudeLevel> {
+        let floor = self.structure_under(level);
+        if !floor.provides_floor() { return None; }
+        match floor.ramp_high_side() {
+            None => Some(level),
+            Some(high_side) if side == high_side => Some(level),
+            Some(high_side) if side == high_side.opposite() => level.three_layer_below(),
+            Some(_) => None,
+        }
+    }
+    /// Level in this cell whose floor meets `side` at elevation `edge_level`.
+    ///
+    /// A ramp at `edge_level` covers the floor beneath it: if its foot faces `side`, the connected
+    /// surface is the ramp itself (occupying `edge_level.three_layer_above()`); otherwise the ramp
+    /// blocks the edge. Without a ramp at `edge_level`, returns `Some(edge_level)` when this cell's
+    /// floor at `edge_level` meets `side` at that height.
+    fn floor_level_reaching(&self, edge_level: AltitudeLevel, side: EdgeSide) -> Option<AltitudeLevel> {
+        match self.at(edge_level).ramp_high_side() {
+            Some(high_side) => if side == high_side.opposite() { edge_level.three_layer_above() } else { None },
+            None => (self.floor_edge_base(edge_level, side) == Some(edge_level)).then_some(edge_level),
+        }
     }
     /// The highest of `Underground`, `OnGround` and `OnElevation` with a floor.
     pub fn top_level(&self) -> AltitudeLevel {
@@ -213,12 +260,12 @@ impl ObstacleCell {
         self.underground == GridStructure::Solid && self.is_clear_above()
     }
     /// Whether the underground structure supports a flat floor at `OnGround`.
-    /// Solid earth, ore and flat tunnels qualify; pits and ramps do not.
+    /// Solid earth, ore and flat excavations qualify; pits and ramps do not.
     pub fn has_flat_ground(&self) -> bool {
         self.underground.provides_floor() && !self.underground.is_ramp()
     }
     /// Whether ground is flat, has no ore, and has empty levels above it with no quantum field.
-    /// Allows placement over tunnels.
+    /// Allows placement over flat excavations.
     pub fn is_placeable_ground(&self) -> bool {
         self.has_flat_ground() && !self.has_dark_ore() && self.is_clear_above()
     }
@@ -279,6 +326,51 @@ impl ObstacleGrid {
     pub fn tops_in(&self, area: GridArea) -> impl Iterator<Item = GridPosition> {
         area.iter_in_bounds(self.bounds).map(|coords| self.top_position(coords))
     }
+    /// Returns the neighbor position across `side` whose floor connects with `position`'s floor,
+    /// or `None` if either floor is missing, the shared edge is blocked, or adjacent walls use
+    /// different styles.
+    ///
+    /// Floors connect when they meet the shared edge at the same elevation and both cells are open
+    /// at that elevation. Because a ramp's surface belongs to the level above the ramp structure,
+    /// stepping onto a ramp's foot transitions to the level above, and stepping off its foot
+    /// transitions to the level below.
+    pub fn connects_floor(&self, position: GridPosition, side: EdgeSide) -> Option<GridPosition> {
+        let from_cell = self.get(position.coords)?;
+        let coords = position.coords.neighbor(side);
+        let target_cell = self.get(coords)?;
+        let base = from_cell.floor_edge_base(position.level, side)?;
+        if !from_cell.at(base).has_side_open(side) || !target_cell.at(base).has_side_open(side.opposite()) { return None; }
+        let level = target_cell.floor_level_reaching(base, side.opposite())?;
+        let meets = from_cell.structure_under(position.level).wall_style_meets(target_cell.structure_under(level));
+        meets.then(|| coords.at(level))
+    }
+    /// Cardinal neighbors reachable from `position` via [`Self::connects_floor`], in [`EdgeSide`]
+    /// iteration order.
+    pub fn walkable_cardinals(&self, position: GridPosition) -> impl Iterator<Item = GridPosition> + '_ {
+        EdgeSide::iter().filter_map(move |side| self.connects_floor(position, side))
+    }
+    /// All neighbors reachable from `position` in one step: [`Self::walkable_cardinals`] followed
+    /// by [`Self::walkable_diagonals`]. `position.coords` must be in bounds.
+    pub fn walkable_neighbors(&self, position: GridPosition) -> impl Iterator<Item = GridPosition> + '_ {
+        self.walkable_cardinals(position).chain(self.walkable_diagonals(position))
+    }
+    /// Diagonal neighbors reachable from `position` in one step, in [`EdgeSide::DIAGONALS`] order.
+    ///
+    /// A diagonal step requires all four cardinal edges around the shared corner to connect to the
+    /// same target position via [`Self::connects_floor`], both orthogonal side cells to be empty at
+    /// their connected levels, and neither `position` nor the target to be inside a hollow
+    /// structure. `position.coords` must be in bounds.
+    pub fn walkable_diagonals(&self, position: GridPosition) -> impl Iterator<Item = GridPosition> + '_ {
+        let is_hollow = |position: GridPosition| self[position].shape().is_some_and(StructureShape::is_hollow);
+        let diagonals: &[_] = if is_hollow(position) { &[] } else { &EdgeSide::DIAGONALS };
+        diagonals.iter().filter_map(move |&(first_side, second_side)| {
+            let first = self.connects_floor(position, first_side)?;
+            let second = self.connects_floor(position, second_side)?;
+            let target = self.connects_floor(first, second_side)?;
+            let is_corner_free = self[first].is_empty() && self[second].is_empty() && !is_hollow(target);
+            (is_corner_free && self.connects_floor(second, first_side) == Some(target)).then_some(target)
+        })
+    }
     /// True if `position` is the top of its cell.
     pub fn is_top(&self, position: GridPosition) -> bool {
         position == self.top_position(position.coords)
@@ -334,8 +426,8 @@ impl ObstacleGrid {
         self.cells.advance_version();
     }
 
-    /// Replaces underground solid earth with `shape` and advances the grid version.
-    /// The caller must ensure `coords` is in bounds and contains solid earth.
+    /// Replaces the underground solid earth or excavation with `shape` and advances the grid
+    /// version. The caller must ensure `coords` is in bounds.
     pub fn excavate(&mut self, coords: GridCoords, shape: ExcavationShape) {
         self.cells[coords.at(AltitudeLevel::Underground)] = match shape {
             ExcavationShape::Pit => GridStructure::Empty,

@@ -41,6 +41,11 @@ impl Plugin for FieldPlugin {
 /// Radius change per second, in world pixels.
 const RESIZE_SPEED: f32 = 180.;
 
+// Dome rim
+/// Maximum outward rim expansion over a pit, in world pixels.
+/// Mirrors `PIT_REACH` in `assets/shaders/visuals/terrain_rim.wesl`.
+pub(crate) const PIT_REACH: f32 = 4.0;
+
 // ── Index ──────────────────────────────────────────────────────────────────────────────
 
 fn on_add_field_join_index(

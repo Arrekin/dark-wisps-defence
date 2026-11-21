@@ -8,12 +8,12 @@
 //! [`FloorCoverGrid`] records each effect's entity, kind, and level per cell, allowing lookups
 //! without an ECS query. Loading the entities rebuilds the index; the grid itself is not saved.
 
-use std::ops::{Deref, DerefMut};
+use std::ops::Deref;
 
 use bevy::prelude::*;
 
 use game_core::prelude::{AltitudeLevel, Bounds, GridArea, GridCoords, MapBound};
-use grids::{GridVersion, base::{BaseGrid, GridSingle, STACK_LEVELS, stack_slot}};
+use grids::{GridVersion, base::{BaseGrid, GridSingle}};
 
 /// A floor cover effect on the floor of the entity's `GridArea` level.
 ///
@@ -53,9 +53,6 @@ impl Deref for FloorCoverGrid {
     type Target = BaseGrid<GridSingle<Vec<FloorCoverEntry>>, GridVersion>;
     fn deref(&self) -> &Self::Target { &self.0 }
 }
-impl DerefMut for FloorCoverGrid {
-    fn deref_mut(&mut self) -> &mut Self::Target { &mut self.0 }
-}
 
 impl FloorCoverGrid {
     pub fn new_with_size(bounds: impl Into<Bounds>) -> Self {
@@ -64,26 +61,33 @@ impl FloorCoverGrid {
     /// Adds `entity` with `kind` to every in-bounds cell of the area, on the floor of the area's
     /// level.
     pub fn imprint(&mut self, area: GridArea, entity: Entity, kind: FloorCoverKind) {
-        let level = STACK_LEVELS[stack_slot(area.origin.level)];
+        let level = AltitudeLevel::THREE_LAYERS[area.origin.level.three_layer_index()];
         let entry = FloorCoverEntry { entity, kind, level };
         for coords in area.iter_in_bounds(self.bounds) {
-            self[coords].push(entry);
+            self.0[coords].push(entry);
         }
-        self.advance_version();
+        self.0.advance_version();
     }
 
     /// Removes `entity` from every in-bounds cell of the area without preserving entry order.
     pub fn deprint(&mut self, area: GridArea, entity: Entity) {
         for coords in area.iter_in_bounds(self.bounds) {
-            let entries = &mut self[coords];
+            let entries = &mut self.0[coords];
             let Some(position) = entries.iter().position(|entry| entry.entity == entity) else { continue; };
             entries.swap_remove(position);
         }
-        self.advance_version();
+        self.0.advance_version();
     }
 
     /// Returns entries for all floors at `coords`, or an empty slice outside the map.
     pub fn entries_at(&self, coords: GridCoords) -> &[FloorCoverEntry] {
         self.get(coords).map_or(&[], |cell| cell.as_slice())
+    }
+
+    /// Despawns floor covers at `coords` on `lowest` and all levels above it.
+    pub fn despawn_from_level_upwards(&self, commands: &mut Commands, coords: GridCoords, lowest: AltitudeLevel) {
+        for entry in self.entries_at(coords).iter().filter(|entry| entry.level.three_layer_index() >= lowest.three_layer_index()) {
+            commands.entity(entry.entity).despawn();
+        }
     }
 }

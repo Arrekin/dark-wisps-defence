@@ -2,12 +2,12 @@
 //!
 //! Two quads cover the map and render terrain from the shared obstacle grid.
 //!
-//! The bottom pass draws pit floors, ramps, cliffs and tunnel interiors below underground wisps
-//! and floor covers. The top pass draws ground and overhanging rims above them, hiding tunnel
-//! interiors and their occupants.
+//! The bottom pass draws pit floors, ramps, cliffs, and hollow excavation interiors below
+//! underground wisps and floor covers. The top pass draws ground and overhanging rims above them,
+//! hiding those interiors and their occupants.
 //!
-//! Both passes read [`TunnelReveal`]: the bottom pass draws tunnel interiors while reveal is active,
-//! and the top pass makes the ground above them translucent.
+//! Both passes read [`TunnelReveal`]: the bottom pass draws the interiors while reveal is active,
+//! and the top pass makes the ground floor above them translucent.
 
 use bevy::{
     prelude::*,
@@ -64,7 +64,7 @@ impl Material2d for UndergroundCanvasMaterial {
 /// Places terrain below underground occupants and ground cover above them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, EnumIter)]
 enum UndergroundCanvasPass {
-    /// Pit floors, ramps, cliff faces, tunnel mouths and tunnel interiors.
+    /// Pit floors, ramps, cliff faces, entrance mouths, and hollow excavation interiors.
     Bottom,
     /// The ground and the rims of pits and ramps.
     Top,

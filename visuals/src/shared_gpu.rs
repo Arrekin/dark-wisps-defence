@@ -41,10 +41,8 @@ pub enum SharedGpuBinding {
     GameClock = 101,
     /// Dark ore fill, one `f32` per cell, read through `shaders::dark_ore::fill`.
     DarkOreFill = 102,
-    /// Obstacle cells, one packed `u32` per cell, read through `shaders::grids::obstacles`.
+    /// Obstacle cells, two packed `u32`s per cell, read through `shaders::grids::obstacles`.
     ObstacleCells = 103,
-    /// Wall style index and shape code per cell, read through `shaders::walls::styles`.
-    WallCells = 104,
     /// The wall style table, read through `shaders::walls::styles`.
     WallStyles = 105,
     /// Emitted energy, one `f32` per cell, read through `shaders::grids::emissions`.
@@ -91,7 +89,6 @@ impl SharedGpuBinding {
             | Self::GameClock
             | Self::DarkOreFill
             | Self::ObstacleCells
-            | Self::WallCells
             | Self::WallStyles
             | Self::EmissionsEnergy
             | Self::FieldShapes

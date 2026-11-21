@@ -9,6 +9,9 @@
 // - lens distortion and slow wobble bend the scene near the rim;
 // - a faint film marks seams between domes;
 // - wisp impacts send ripples across the shell.
+//
+// The outer rim conforms to terrain height (`visuals::terrain_rim`), stepping inward on walls and
+// buildings and expanding into unclaimed pits at the territory edge.
 
 import bevy_sprite_render::mesh2d::{vertex_output::VertexOutput, view_bindings::globals};
 import package::shaders::common::clock::wrap_rate;
@@ -19,6 +22,7 @@ import package::shaders::common::hash::{HASH_GOLDEN, hash_mix, hash_unit};
 import package::shaders::common::map_light::MAP_SUN_GROUND_DIRECTION;
 import package::shaders::common::noise::{noise_3d_drift, noise_fbm_3d};
 import package::shaders::fields::fields::{FieldBoundary, FieldShape, NO_FIELD, field_boundary, field_owners_at, field_shapes};
+import package::shaders::visuals::terrain_rim::{pit_reach_at, shell_point, terrain_rim};
 
 // Mirrors `MAX_FIELD_IMPACTS` in fields_internal/src/force_field.rs.
 const MAX_FIELD_IMPACTS: u32 = 8u;
@@ -356,8 +360,11 @@ struct Surface {
 
 // With `for_light`, skips web calculations where neither strands nor veils are visible.
 fn surface_at(world_position: vec2<f32>, field: Instance, shape: FieldShape, time: f32, for_light: bool) -> Surface {
-    let shell = shell_at(world_position, shape.center, shape.current_radius);
-    let boundary = field_boundary(field.slot, world_position);
+    let reach = pit_reach_at(world_position);
+    let shell = shell_at(shell_point(world_position, shape.center, shape.current_radius, reach), shape.center, shape.current_radius);
+    var boundary = field_boundary(field.slot, world_position);
+    boundary.rim = terrain_rim(world_position, boundary.rim, reach);
+    boundary.edge = min(boundary.rim, boundary.first.distance);
     let dark = for_light && shell.reach < 1.0 - VEIL_REACH && boundary.edge > STRAND_REACH;
     var cuts = vec3<f32>(0.0);
     if !dark {
@@ -371,10 +378,19 @@ fn surface_at(world_position: vec2<f32>, field: Instance, shape: FieldShape, tim
     return Surface(shell, boundary, shift, burn, ripples.z);
 }
 
+// True if `world_position` lies inside the pit-expanded rim beyond the circular territory.
+fn reaches_past_territory(world_position: vec2<f32>, shape: FieldShape) -> bool {
+    return terrain_rim(world_position, shape.current_radius - distance(world_position, shape.center), pit_reach_at(world_position)) > 0.0;
+}
+
 fn displace(in: VertexOutput, field: Instance) -> vec4<f32> {
     let world_position = in.world_position.xy;
     let shape = field_shapes[field.slot];
-    if shape.current_radius <= 0.0 || field_owners_at(world_position).first.slot != field.slot {
+    if shape.current_radius <= 0.0 {
+        return vec4<f32>(0.0);
+    }
+    let owner = field_owners_at(world_position).first.slot;
+    if owner != field.slot && !(owner == NO_FIELD && reaches_past_territory(world_position, shape)) {
         return vec4<f32>(0.0);
     }
     let surface = surface_at(world_position, field, shape, globals.time, false);
@@ -400,14 +416,15 @@ fn overlay(in: VertexOutput, field: Instance) -> vec4<f32> {
     let owner = field_owners_at(world_position).first.slot;
 
     // Let the outer strands extend onto nearby unclaimed ground.
-    if owner == NO_FIELD {
+    let extended = owner == NO_FIELD && reaches_past_territory(world_position, shape);
+    if owner == NO_FIELD && !extended {
         let shell = shell_at(world_position, shape.center, shape.current_radius);
-        let edge = shape.current_radius - length(shell.offset);
+        let edge = terrain_rim(world_position, shape.current_radius - length(shell.offset), pit_reach_at(world_position));
         if -edge > OUTER_REACH { return vec4<f32>(0.0); }
         let light = shimmering_strands(shell, shell.around, edge, time, field.seed) * smoothstep(OUTER_REACH, OUTER_REACH * 0.6, -edge);
         return vec4<f32>(light * field.progress, 0.0);
     }
-    if owner != field.slot {
+    if owner != field.slot && !extended {
         return vec4<f32>(0.0);
     }
 

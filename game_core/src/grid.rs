@@ -189,6 +189,7 @@ impl EdgeSide {
 pub struct EdgeSides(u8);
 impl EdgeSides {
     pub const NONE: Self = Self(0);
+    pub const ALL: Self = Self(0b1111);
 
     pub const fn is_empty(self) -> bool {
         self.0 == 0
@@ -211,6 +212,11 @@ impl EdgeSides {
     /// A bitmask with bits 0–3 representing top, right, bottom, and left.
     pub const fn bits(self) -> u8 {
         self.0
+    }
+}
+impl FromIterator<EdgeSide> for EdgeSides {
+    fn from_iter<I: IntoIterator<Item = EdgeSide>>(sides: I) -> Self {
+        sides.into_iter().fold(Self::NONE, Self::with)
     }
 }
 

@@ -13,35 +13,12 @@ pub trait GridCell {
     fn at_mut(&mut self, level: AltitudeLevel) -> &mut Self::Data;
 }
 
-/// The levels a [`GridStack`] keeps a value for, from the lowest up.
-pub const STACK_LEVELS: [AltitudeLevel; 3] = [AltitudeLevel::Underground, AltitudeLevel::OnGround, AltitudeLevel::OnElevation];
-
-/// The index in [`STACK_LEVELS`] of the stack level that holds `level`.
-/// `Airborne`, `AllEncompassing` and `TopLevel` belong to `OnElevation`.
-pub const fn stack_slot(level: AltitudeLevel) -> usize {
-    match level {
-        AltitudeLevel::Underground => 0,
-        AltitudeLevel::OnGround => 1,
-        AltitudeLevel::OnElevation | AltitudeLevel::Airborne | AltitudeLevel::AllEncompassing | AltitudeLevel::TopLevel => 2,
-    }
-}
-/// The stack level directly above the one holding `level`, or `None` at `OnElevation` and above.
-pub const fn stack_level_above(level: AltitudeLevel) -> Option<AltitudeLevel> {
-    let slot = stack_slot(level);
-    if slot + 1 < STACK_LEVELS.len() { Some(STACK_LEVELS[slot + 1]) } else { None }
-}
-/// The stack level directly below the one holding `level`, or `None` at `Underground`.
-pub const fn stack_level_below(level: AltitudeLevel) -> Option<AltitudeLevel> {
-    let slot = stack_slot(level);
-    if slot > 0 { Some(STACK_LEVELS[slot - 1]) } else { None }
-}
-
-/// One value per level in [`STACK_LEVELS`].
-pub type GridStack<T> = [T; STACK_LEVELS.len()];
+/// One value per level in [`AltitudeLevel::THREE_LAYERS`].
+pub type GridStack<T> = [T; AltitudeLevel::THREE_LAYERS.len()];
 impl<T> GridCell for GridStack<T> {
     type Data = T;
-    fn at(&self, level: AltitudeLevel) -> &T { &self[stack_slot(level)] }
-    fn at_mut(&mut self, level: AltitudeLevel) -> &mut T { &mut self[stack_slot(level)] }
+    fn at(&self, level: AltitudeLevel) -> &T { &self[level.three_layer_index()] }
+    fn at_mut(&mut self, level: AltitudeLevel) -> &mut T { &mut self[level.three_layer_index()] }
 }
 
 /// One value per grid coordinate.
@@ -100,9 +77,6 @@ impl<CellType, GridVersionType> BaseGrid<CellType, GridVersionType> where CellTy
 }
 
 impl<CellType, GridVersionType> BaseGrid<CellType, GridVersionType> {
-    pub fn index_of(&self, coords: GridCoords) -> usize {
-        self.bounds.index(coords)
-    }
     /// Returns the entire cell at `coords`. Coordinates must be in bounds.
     pub fn cell(&self, coords: GridCoords) -> &CellType {
         &self.grid[self.bounds.index(coords)]

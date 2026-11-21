@@ -1,17 +1,24 @@
 //! Paint-lane components for the four wisp types, containing appearance parameters, active effect
-//! visuals and opacity for placement ghosts. Each type has a dedicated layer to keep its
-//! instances adjacent for batching.
+//! visuals, and opacity for placement ghosts. Each type has a dedicated layer to keep its
+//! instances adjacent for batching, and stores the wisp's altitude index
+//! (`AltitudeLevel::three_layer_index_gpu`) so shaders can clip against closed sides at that level.
 
 use bevy::{ecs::component::Mutable, prelude::*, reflect::TypePath, render::render_resource::ShaderType};
 use nanorand::Rng;
 
 use alteration::effects::visual::{EffectVisualTarget, EffectVisuals};
-use game_core::{motion::Locomotion, prelude::{DrawLevel, ZDepth}};
+use game_core::{motion::Locomotion, prelude::{AltitudeLevel, DrawLevel, ZDepth}};
 use visuals::{clock::ClockInstant, lane::LaneVisual};
 use wisps::prelude::WISP_GRID_IMPRINT;
 
-/// Wisp visuals driven by measured speed and heading through `WispMotionLook`.
-pub(crate) trait WispMotionVisual: Component<Mutability = Mutable> {
+/// Paint-lane component for a wisp type.
+pub(crate) trait WispVisual: Component<Mutability = Mutable> {
+    /// [`AltitudeLevel::three_layer_index_gpu`] of the wisp's level.
+    fn altitude_index_mut(&mut self) -> &mut u32;
+}
+
+/// A wisp visual driven by measured speed and heading through `WispMotionLook`.
+pub(crate) trait WispMotionVisual: WispVisual {
     fn motion_look(&self) -> &WispMotionLook;
     fn motion_look_mut(&mut self) -> &mut WispMotionLook;
 }
@@ -49,6 +56,8 @@ pub(crate) struct WispFireVisual {
     pub look: WispMotionLook,
     pub effects: EffectVisuals,
     pub alpha: f32,
+    /// [`AltitudeLevel::three_layer_index_gpu`] of the wisp's level.
+    pub altitude_index: u32,
 }
 impl WispFireVisual {
     /// Transparent padding around the orb so its flame licks have room to reach beyond the cell;
@@ -56,9 +65,10 @@ impl WispFireVisual {
     /// `assets/shaders/wisps/fire_look.wesl`.
     pub const QUAD_SCALE: f32 = 2.5;
 
-    /// A visual with fresh per-wisp look parameters, drawn at `alpha` (below 1.0 for a ghost).
+    /// A visual with fresh per-wisp look parameters on the ground level, drawn at `alpha` (below
+    /// 1.0 for a ghost).
     pub fn new(alpha: f32) -> Self {
-        Self { look: WispMotionLook::new(), effects: default(), alpha }
+        Self { look: WispMotionLook::new(), effects: default(), alpha, altitude_index: AltitudeLevel::OnGround.three_layer_index_gpu() }
     }
 }
 impl LaneVisual for WispFireVisual {
@@ -75,6 +85,9 @@ impl WispMotionVisual for WispFireVisual {
 }
 impl EffectVisualTarget for WispFireVisual {
     fn effects_mut(&mut self) -> &mut EffectVisuals { &mut self.effects }
+}
+impl WispVisual for WispFireVisual {
+    fn altitude_index_mut(&mut self) -> &mut u32 { &mut self.altitude_index }
 }
 
 /// Look parameters of the water wisp. Field order and types mirror `WispWaterLook` in
@@ -108,6 +121,8 @@ pub(crate) struct WispWaterVisual {
     pub look: WispWaterLook,
     pub effects: EffectVisuals,
     pub alpha: f32,
+    /// [`AltitudeLevel::three_layer_index_gpu`] of the wisp's level.
+    pub altitude_index: u32,
 }
 impl WispWaterVisual {
     /// Transparent padding around the droplet so its energetic wobble and lunge have room inside
@@ -115,8 +130,8 @@ impl WispWaterVisual {
     /// `QUAD_SCALE` in `assets/shaders/wisps/water_look.wesl` (which scales UV by it).
     pub const QUAD_SCALE: f32 = 2.4;
 
-    /// A visual with fresh per-wisp look parameters, anchored at `now` and drawn at `alpha`
-    /// (below 1.0 for a ghost).
+    /// A visual with fresh per-wisp look parameters on the ground level, anchored at `now` and
+    /// drawn at `alpha` (below 1.0 for a ghost).
     pub fn new(alpha: f32, now: ClockInstant) -> Self {
         let mut rng = nanorand::tls_rng();
         let look = WispWaterLook {
@@ -127,7 +142,7 @@ impl WispWaterVisual {
             anchor: now,
             ..default() // a still wisp still ripples: the shader derives rest cadence from vigor 0
         };
-        Self { look, effects: default(), alpha }
+        Self { look, effects: default(), alpha, altitude_index: AltitudeLevel::OnGround.three_layer_index_gpu() }
     }
 }
 impl LaneVisual for WispWaterVisual {
@@ -141,6 +156,9 @@ impl LaneVisual for WispWaterVisual {
 impl EffectVisualTarget for WispWaterVisual {
     fn effects_mut(&mut self) -> &mut EffectVisuals { &mut self.effects }
 }
+impl WispVisual for WispWaterVisual {
+    fn altitude_index_mut(&mut self) -> &mut u32 { &mut self.altitude_index }
+}
 
 /// A light wisp. Field order and types mirror `Instance` in `assets/shaders/wisps/light_quad.wesl`.
 #[derive(Component, ShaderType, TypePath, Clone)]
@@ -150,11 +168,14 @@ pub(crate) struct WispLightVisual {
     pub look: WispMotionLook,
     pub effects: EffectVisuals,
     pub alpha: f32,
+    /// [`AltitudeLevel::three_layer_index_gpu`] of the wisp's level.
+    pub altitude_index: u32,
 }
 impl WispLightVisual {
-    /// A visual with fresh per-wisp look parameters, drawn at `alpha` (below 1.0 for a ghost).
+    /// A visual with fresh per-wisp look parameters on the ground level, drawn at `alpha` (below
+    /// 1.0 for a ghost).
     pub fn new(alpha: f32) -> Self {
-        Self { look: WispMotionLook::new(), effects: default(), alpha }
+        Self { look: WispMotionLook::new(), effects: default(), alpha, altitude_index: AltitudeLevel::OnGround.three_layer_index_gpu() }
     }
 }
 impl LaneVisual for WispLightVisual {
@@ -172,6 +193,9 @@ impl WispMotionVisual for WispLightVisual {
 impl EffectVisualTarget for WispLightVisual {
     fn effects_mut(&mut self) -> &mut EffectVisuals { &mut self.effects }
 }
+impl WispVisual for WispLightVisual {
+    fn altitude_index_mut(&mut self) -> &mut u32 { &mut self.altitude_index }
+}
 
 /// An electric wisp. Field order and types mirror `Instance` in
 /// `assets/shaders/wisps/electric_quad.wesl`.
@@ -182,11 +206,14 @@ pub(crate) struct WispElectricVisual {
     pub look: WispMotionLook,
     pub effects: EffectVisuals,
     pub alpha: f32,
+    /// [`AltitudeLevel::three_layer_index_gpu`] of the wisp's level.
+    pub altitude_index: u32,
 }
 impl WispElectricVisual {
-    /// A visual with fresh per-wisp look parameters, drawn at `alpha` (below 1.0 for a ghost).
+    /// A visual with fresh per-wisp look parameters on the ground level, drawn at `alpha` (below
+    /// 1.0 for a ghost).
     pub fn new(alpha: f32) -> Self {
-        Self { look: WispMotionLook::new(), effects: default(), alpha }
+        Self { look: WispMotionLook::new(), effects: default(), alpha, altitude_index: AltitudeLevel::OnGround.three_layer_index_gpu() }
     }
 }
 impl LaneVisual for WispElectricVisual {
@@ -203,4 +230,7 @@ impl WispMotionVisual for WispElectricVisual {
 }
 impl EffectVisualTarget for WispElectricVisual {
     fn effects_mut(&mut self) -> &mut EffectVisuals { &mut self.effects }
+}
+impl WispVisual for WispElectricVisual {
+    fn altitude_index_mut(&mut self) -> &mut u32 { &mut self.altitude_index }
 }

@@ -4,7 +4,7 @@
 //! and expose the passages beneath.
 //!
 //! Reveal is active while any entity carries [`RevealsTunnels`], or while the cursor is outside UI
-//! and over a wall or excavation with tunnel openings. The fade uses real time so it works while
+//! and over a wall or excavation with hollowed sides. The fade uses real time so it works while
 //! paused.
 
 use bevy::prelude::*;
@@ -32,7 +32,7 @@ pub(crate) struct RevealsTunnels;
 /// Shared reveal amount, from 0 (opaque roofs) to 1 (translucent roofs).
 #[derive(Resource, Default)]
 pub(crate) struct TunnelReveal {
-    pub amount: f32,
+    pub(crate) amount: f32,
 }
 
 fn fade_tunnel_reveal(

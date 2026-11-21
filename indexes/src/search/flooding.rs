@@ -9,13 +9,10 @@ use crate::{
     prelude::*,
 };
 
-use super::{
-    scratch::{SEARCH_SCRATCH, SearchScratch},
-    stepping::walkable_neighbors,
-};
+use super::scratch::{SEARCH_SCRATCH, SearchScratch};
 
 /// Spreads emissions from the area's level through reachable cardinal neighbors.
-/// Follows [`walkable_neighbors`], including level changes through ramps.
+/// Follows [`ObstacleGrid::walkable_cardinals`], including level changes through ramps.
 /// Distance counts steps from the area; the area's own cells are at distance 0.
 pub fn flood_emissions<'a>(
     emissions_grid: &mut EmissionsGrid,
@@ -36,7 +33,7 @@ pub fn flood_emissions<'a>(
             }
         });
         while let Some((distance, position)) = position_distance_queue.pop_front() {
-            for new_position in walkable_neighbors(obstacles_grid, position) {
+            for new_position in obstacles_grid.walkable_cardinals(position) {
                 if position_visited.is_visited(new_position) {
                     continue;
                 }

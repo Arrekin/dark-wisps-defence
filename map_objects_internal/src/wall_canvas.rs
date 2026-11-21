@@ -1,10 +1,10 @@
 //! Renders walls and ramps in two passes, each using a quad that covers the map. Wisps render
 //! between the passes, allowing wall tops to hide wisps inside tunnels.
 //!
-//! Shared GPU buffers supply the wall shaders with each cell's style and shape and the map's
-//! wall style table.
+//! The wall shaders read each wall's style and shape from the obstacle cells, and the map's wall
+//! style table from a shared GPU buffer.
 //!
-//! The tunnel reveal makes the tops of all hollow walls semi-transparent, showing the tunnel
+//! The tunnel reveal makes the tops of all hollow walls semi-transparent, showing their
 //! interiors beneath.
 
 use bevy::{
@@ -16,8 +16,8 @@ use bevy::{
 };
 use strum::{EnumIter, IntoEnumIterator};
 
-use game_core::{prelude::{DrawLevel, GridArea, MapInfo, ZDepth}, request_flag::RequestFlag};
-use map_objects::{prelude::{StructureShape, Wall}, wall_style::{WallCanvasDebug, WallStyleKey, WallStyles}};
+use game_core::prelude::{DrawLevel, MapInfo, ZDepth};
+use map_objects::wall_style::{WallCanvasDebug, WallStyles};
 use states::prelude::MapLoadingStage;
 use visuals::{canvas::MapCanvasBundle, shared_gpu::{SharedGpuBinding, SharedGpuWriter}, specialize_with_shared_gpu};
 
@@ -28,24 +28,16 @@ impl Plugin for WallCanvasPlugin {
     fn build(&self, app: &mut App) {
         app
             .add_plugins(Material2dPlugin::<WallCanvasMaterial>::default())
-            .init_resource::<RequestFlag<WallCellsGpuUpload>>()
             .init_resource::<WallCanvasDebug>()
             .add_systems(OnEnter(MapLoadingStage::Init), |mut commands: Commands| { commands.insert_resource(WallStyles::presets()); })
             .add_systems(OnEnter(MapLoadingStage::LoadResources), WallCanvas::create)
             .add_systems(Update, apply_tunnel_reveal.run_if(resource_changed::<TunnelReveal>))
             .add_systems(PostUpdate, (
-                upload_gpu_wall_cells.run_if(RequestFlag::<WallCellsGpuUpload>::is_requested),
                 upload_gpu_wall_styles.run_if(resource_changed::<WallStyles>),
                 apply_wall_canvas_debug.run_if(resource_changed::<WallCanvasDebug>),
-            ))
-            .add_observer(on_insert_wall_request_wall_cells_gpu_upload)
-            .add_observer(on_remove_wall_request_wall_cells_gpu_upload);
+            ));
     }
 }
-
-/// Shift applied to [`StructureShape::gpu_code`] in a packed cell; bits 0–7 store the style index.
-/// Mirrors `SHAPE_SHIFT` in `assets/shaders/walls/styles.wesl`.
-const SHAPE_SHIFT: u32 = 8;
 
 /// Field order and types mirror `WallCanvasSettings` in `assets/shaders/walls/canvas.wesl`.
 #[derive(Clone, Copy, Debug, PartialEq, ShaderType, Default)]
@@ -77,7 +69,7 @@ impl Material2d for WallCanvasMaterial {
 /// Separates wall surfaces into layers below and above wisps.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, EnumIter)]
 enum WallCanvasPass {
-    /// Contact shadows, entrance recesses, tunnel interiors, and lower ramp halves.
+    /// Contact shadows, entrance recesses, hollow wall interiors, and lower ramp halves.
     Bottom,
     /// Flat wall tops and upper ramp halves, starting at half the wall height.
     Top,
@@ -110,10 +102,8 @@ impl WallCanvas {
         debug: Res<WallCanvasDebug>,
         reveal: Res<TunnelReveal>,
         mut materials: ResMut<Assets<WallCanvasMaterial>>,
-        mut upload_requested: ResMut<RequestFlag<WallCellsGpuUpload>>,
     ) {
         commands.despawn_all::<With<WallCanvas>>();
-        upload_requested.request();
 
         for pass in WallCanvasPass::iter() {
             let material = materials.add(WallCanvasMaterial {
@@ -126,40 +116,6 @@ impl WallCanvas {
             ));
         }
     }
-}
-
-/// Request marker for uploading packed wall cell data.
-struct WallCellsGpuUpload;
-
-fn on_insert_wall_request_wall_cells_gpu_upload(
-    _trigger: On<Insert<Wall>>,
-    mut upload_requested: ResMut<RequestFlag<WallCellsGpuUpload>>,
-) {
-    upload_requested.request();
-}
-
-fn on_remove_wall_request_wall_cells_gpu_upload(
-    _trigger: On<Remove<Wall>>,
-    mut upload_requested: ResMut<RequestFlag<WallCellsGpuUpload>>,
-) {
-    upload_requested.request();
-}
-
-fn upload_gpu_wall_cells(
-    mut shared_gpu: SharedGpuWriter,
-    mut upload_requested: ResMut<RequestFlag<WallCellsGpuUpload>>,
-    map_info: Res<MapInfo>,
-    walls: Query<(&StructureShape, &GridArea, &WallStyleKey), With<Wall>>,
-) {
-    upload_requested.clear();
-
-    let map_bounds = map_info.grid_bounds;
-    let mut cells = vec![0u32; map_bounds.area()];
-    for (shape, area, key) in walls.iter() {
-        let Some(index) = map_bounds.index_checked(area.origin.coords) else { continue; };
-        cells[index] = key.gpu_index() | shape.gpu_code() << SHAPE_SHIFT;
-    }
-    shared_gpu.write(SharedGpuBinding::WallCells, cells);
 }
 
 fn upload_gpu_wall_styles(

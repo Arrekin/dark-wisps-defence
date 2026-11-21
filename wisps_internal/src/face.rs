@@ -34,6 +34,8 @@ impl Plugin for WispFacePlugin {
 #[derive(Asset, AsBindGroup, TypePath, Clone, Copy, Debug)]
 pub(crate) struct WispFireFaceMaterial {}
 impl UiMaterial for WispFireFaceMaterial {
+    visuals::specialize_ui_with_shared_gpu!();
+
     fn fragment_shader() -> ShaderRef {
         "shaders/wisps/fire_face.wesl".into()
     }

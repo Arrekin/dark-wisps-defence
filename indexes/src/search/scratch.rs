@@ -20,7 +20,7 @@ pub struct SearchScratch {
     pub tracking: TrackingGrid,
     /// Visit stamps per coordinate, shared across altitude levels.
     pub coords_visited: VisitedGrid<GridSingle<u8>>,
-    /// Visit stamps per coordinate and stack level.
+    /// Visit stamps per coordinate and layer.
     pub position_visited: VisitedGrid<GridStack<u8>>,
     /// Best-first queue ordered by floating-point cost.
     pub cost_queue: BinaryHeap<State<f32, GridPosition>>,

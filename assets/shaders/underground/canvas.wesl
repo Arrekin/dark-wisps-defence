@@ -5,32 +5,33 @@
 // cliff along the shared edge or corner; overlapping cliffs use the highest surface. Cells outside
 // the map have ground height, so excavations at the map boundary also have cliffs.
 //
-// The bottom pass draws floors, ramps, cliffs, shadows and tunnel interiors below underground
-// wisps and floor covers. The top pass draws ground and overhanging rims above them. Ground covers
-// tunnels and becomes translucent during tunnel reveal.
+// The bottom pass draws floors, ramps, cliffs, shadows, and hollow excavation interiors below
+// underground wisps and floor covers. The top pass draws ground and overhanging rims above them.
+// Ground over flat excavations becomes translucent during tunnel reveal.
 //
-// A tunnel entrance requires an opening facing a pit or the foot of a ramp. Its arch is cut into
-// that cell's cliff, leaving the ground above the tunnel intact. The cliff face and rim use the
-// same mouth shape so their edges align.
+// Where a hollow excavation opens onto a pit or ramp, an entrance arch is cut into the adjacent
+// cliff while keeping the ground above the excavation intact. The cliff face and rim share the
+// same mouth SDF so their edges align.
 
 import bevy_sprite_render::mesh2d::vertex_output::VertexOutput;
 import package::shaders::common::core::CELL_SIZE;
-import package::shaders::common::map_info::{grid_bounds, grid_contains};
+import package::shaders::common::map_info::grid_bounds;
 import package::shaders::common::map_light::{MAP_SUN_ELEVATION_TANGENT, MAP_SUN_GROUND_DIRECTION};
-import package::shaders::grids::obstacles::{STRUCTURE_EMPTY, STRUCTURE_EXCAVATION, STRUCTURE_MASK, obstacle_cell_at, underground_shape};
+import package::shaders::grids::obstacles::{LEVEL_UNDERGROUND, STRUCTURE_EMPTY, STRUCTURE_EXCAVATION, ObstacleCell, cell_structure_shape, obstacle_cell_at};
+import package::shaders::grids::openings::is_entrance;
+import package::shaders::grids::structure_shape::{passage_distance, ramp_up, shape_hollowed_sides};
 import package::shaders::underground::look::{
     ARCH_HEIGHT, FACE_WIDTH, FOOT_OCCLUSION, FOOT_OCCLUSION_REACH, GROUND_COLOUR, MOUTH_WIDTH, PASSAGE_FLOOR_TONE,
     PIT_DEPTH, RECESS_TONE, REVEALED_COVER_OPACITY, RIM_OVERHANG, RIM_WIDTH, SHADOW_SOFTNESS, SHADOW_STRENGTH, erosion_noise, face_colour,
     interior_colour, pit_floor_colour, ramp_colour, ramp_rise, rim_colour,
 };
-import package::shaders::walls::look::{passage_arm_distance, ramp_up};
-import package::shaders::walls::styles::{opens_toward, shape_openings, shape_ramp};
+import package::shaders::underground::surface::{STEP_EPSILON, Cliff, height_in, highest_cliff, is_ramp, underground_kind, underground_ramp};
 
 // Field order and types mirror `UndergroundCanvasSettings` in
 // map_objects_internal/src/underground_canvas.rs.
 struct UndergroundCanvasSettings {
     canvas_pass: u32, // PASS_* value.
-    tunnel_reveal: f32, // 0 keeps ground opaque; 1 uses REVEALED_COVER_OPACITY over tunnels.
+    tunnel_reveal: f32, // 0 keeps ground opaque; 1 uses REVEALED_COVER_OPACITY over excavations.
 }
 
 @group(2) @binding(0) var<uniform> settings: UndergroundCanvasSettings;
@@ -38,104 +39,20 @@ struct UndergroundCanvasSettings {
 const PASS_BOTTOM: u32 = 0u;
 const PASS_TOP: u32 = 1u;
 
-// Smallest height difference that forms a face.
-const STEP_EPSILON: f32 = 0.02;
-// Sentinel distance for searches with no candidate yet.
-const FAR_DISTANCE: f32 = 1e6;
-
-fn underground_kind(cell: u32) -> u32 {
-    return cell & STRUCTURE_MASK;
+// True if the cell holds a flat excavation (preserving the ground floor above it).
+// Mirrors `ExcavationShape::keeps_ground_floor` in `map_objects/src/lib.rs`.
+fn keeps_ground_floor(cell: ObstacleCell) -> bool {
+    return underground_kind(cell) == STRUCTURE_EXCAVATION && underground_ramp(cell) == 0u;
 }
 
-fn cell_ramp(cell: u32) -> u32 {
-    return shape_ramp(underground_shape(cell));
-}
-
-fn is_ramp(cell: u32) -> bool {
-    return underground_kind(cell) == STRUCTURE_EXCAVATION && cell_ramp(cell) != 0u;
-}
-
-// Flat excavations count as tunnels here, including those with no openings.
-fn is_tunnel(cell: u32) -> bool {
-    return underground_kind(cell) == STRUCTURE_EXCAVATION && cell_ramp(cell) == 0u;
-}
-
-// Whether the cell is open to the sky: a pit or a ramp.
-fn is_open(cell: u32) -> bool {
+// Whether the cell holds an excavation open to the air above it: a pit or a ramp.
+fn is_open_air_excavation(cell: ObstacleCell) -> bool {
     return underground_kind(cell) == STRUCTURE_EMPTY || is_ramp(cell);
-}
-
-// Surface height from 0 (pit floor) to 1 (ground). `p` is in cell units from the cell centre.
-fn height_in(cell: u32, p: vec2<f32>) -> f32 {
-    if underground_kind(cell) == STRUCTURE_EMPTY { return 0.0; }
-    if is_ramp(cell) { return ramp_rise(cell_ramp(cell), p); }
-    return 1.0;
-}
-
-// A cliff surface sampled at a point inside a pit or ramp cell.
-struct Cliff {
-    // Surface height from 0 (pit floor) to 1 (ground); negative values lie below the floor.
-    height: f32,
-    // Distance from the cliff's rim, in world pixels.
-    distance: f32,
-    // Height difference at the rim, from 0 to 1; zero when no cliff was found.
-    step: f32,
-    // Unit normal in the map plane, pointing into the open cell.
-    normal: vec2<f32>,
-    // Grid offset to the higher neighbour, across an edge or corner.
-    offset: vec2<i32>,
 }
 
 // Cardinal offset to the higher neighbour, or zero for a corner cliff.
 fn cliff_side(cliff: Cliff) -> vec2<i32> {
     return select(vec2<i32>(0), cliff.offset, abs(cliff.offset.x) + abs(cliff.offset.y) == 1);
-}
-
-fn higher_cliff(a: Cliff, b: Cliff) -> Cliff {
-    if b.height > a.height { return b; }
-    return a;
-}
-
-// Finds the highest cliff at `p`, in cell units from the cell centre.
-// All cliffs use the same slope, so taking the maximum joins their surfaces at intersections.
-fn highest_cliff(coords: vec2<i32>, cell: u32, p: vec2<f32>) -> Cliff {
-    var best = Cliff(-FAR_DISTANCE, FAR_DISTANCE, 0.0, vec2<f32>(0.0), vec2<i32>(0));
-
-    var cardinals = array<vec2<i32>, 4>(vec2<i32>(1, 0), vec2<i32>(-1, 0), vec2<i32>(0, 1), vec2<i32>(0, -1));
-    for (var i = 0; i < 4; i++) {
-        let side = cardinals[i];
-        let outward = vec2<f32>(side);
-        let to_edge = 0.5 - dot(p, outward);
-        let on_edge = p + outward * to_edge;
-        let rim = height_in(obstacle_cell_at(coords + side), on_edge - outward);
-        let step = rim - height_in(cell, on_edge);
-        if step <= STEP_EPSILON { continue; }
-        let distance = to_edge * CELL_SIZE;
-        best = higher_cliff(best, Cliff(rim - distance / FACE_WIDTH, distance, step, -outward, side));
-    }
-
-    var diagonals = array<vec2<i32>, 4>(vec2<i32>(1, 1), vec2<i32>(-1, 1), vec2<i32>(1, -1), vec2<i32>(-1, -1));
-    for (var i = 0; i < 4; i++) {
-        let offset = diagonals[i];
-        let corner = vec2<f32>(offset) * 0.5;
-        let rim = height_in(obstacle_cell_at(coords + offset), corner - vec2<f32>(offset));
-        let step = rim - height_in(cell, corner);
-        if step <= STEP_EPSILON { continue; }
-        let from_corner = p - corner;
-        let distance = length(from_corner) * CELL_SIZE;
-        best = higher_cliff(best, Cliff(rim - distance / FACE_WIDTH, distance, step, normalize(from_corner + vec2<f32>(1e-6)), offset));
-    }
-    return best;
-}
-
-// Whether the tunnel at `coords` opens toward `side` onto a pit or onto the foot of a ramp.
-fn is_entrance(coords: vec2<i32>, side: vec2<i32>) -> bool {
-    let cell = obstacle_cell_at(coords);
-    if !is_tunnel(cell) || !opens_toward(shape_openings(underground_shape(cell)), side) { return false; }
-    let across = coords + side;
-    if !grid_contains(across) { return false; }
-    let across_cell = obstacle_cell_at(across);
-    return underground_kind(across_cell) == STRUCTURE_EMPTY || (is_ramp(across_cell) && all(ramp_up(cell_ramp(across_cell)) == side));
 }
 
 // Distance along a cardinal edge facing `outward` from its midpoint, in world pixels.
@@ -144,21 +61,21 @@ fn along_edge(p: vec2<f32>, outward: vec2<f32>) -> f32 {
 }
 
 // Surface colour at `p`, in cell units from the cell centre.
-fn surface_colour(cell: u32, p: vec2<f32>) -> vec3<f32> {
+fn surface_colour(cell: ObstacleCell, p: vec2<f32>) -> vec3<f32> {
     if underground_kind(cell) == STRUCTURE_EMPTY { return pit_floor_colour(); }
     if is_ramp(cell) {
-        let ramp = cell_ramp(cell);
+        let ramp = underground_ramp(cell);
         return ramp_colour(pit_floor_colour(), ramp_rise(ramp, p), vec2<f32>(ramp_up(ramp)));
     }
     return GROUND_COLOUR;
 }
 
-// Approximate signed distance to a tunnel arch: negative inside, scaled by its smaller radius.
+// Approximate signed distance to an entrance's arch: negative inside, scaled by its smaller radius.
 // Coordinates are in world pixels: `along` measures from the shared edge's midpoint;
-// `into_open` measures from that edge into the pit or ramp. The arch lies entirely in its cliff.
-fn mouth_distance(along: f32, into_open: f32) -> f32 {
+// `into_pit_or_ramp` measures from that edge into the pit or ramp. The arch lies entirely in its cliff.
+fn mouth_distance(along: f32, into_pit_or_ramp: f32) -> f32 {
     let radii = vec2<f32>(MOUTH_WIDTH * 0.5, FACE_WIDTH * ARCH_HEIGHT);
-    let local = vec2<f32>(along, FACE_WIDTH - into_open);
+    let local = vec2<f32>(along, FACE_WIDTH - into_pit_or_ramp);
     return (length(local / radii) - 1.0) * min(radii.x, radii.y);
 }
 
@@ -191,12 +108,12 @@ fn sun_shadow(coords: vec2<i32>, p: vec2<f32>, height: f32) -> f32 {
 }
 
 // A pit floor or ramp, with its cliffs and the shadow its rims cast on it.
-fn open_surface(coords: vec2<i32>, cell: u32, p: vec2<f32>, texel: f32) -> vec3<f32> {
+fn pit_or_ramp_surface(coords: vec2<i32>, cell: ObstacleCell, p: vec2<f32>, texel: f32) -> vec3<f32> {
     let height = height_in(cell, p);
     let floor = pit_floor_colour();
     var colour = floor;
     if is_ramp(cell) {
-        colour = ramp_colour(floor, height, vec2<f32>(ramp_up(cell_ramp(cell))));
+        colour = ramp_colour(floor, height, vec2<f32>(ramp_up(underground_ramp(cell))));
     }
 
     // Apply cast shadows to the floor or ramp; cliff lighting uses the face normal.
@@ -213,29 +130,21 @@ fn open_surface(coords: vec2<i32>, cell: u32, p: vec2<f32>, texel: f32) -> vec3<
     let depth = saturate(cliff.distance / max(FACE_WIDTH * cliff.step, texel));
     var face = face_colour(cliff.normal, depth);
     let side = cliff_side(cliff);
-    if any(side != vec2<i32>(0)) && is_entrance(coords + side, -side) {
-        let opening = 1.0 - smoothstep(-texel, texel, mouth_distance(along_edge(p, vec2<f32>(side)), cliff.distance));
-        face = mix(face, floor * PASSAGE_FLOOR_TONE * RECESS_TONE, opening);
+    if any(side != vec2<i32>(0)) && is_entrance(coords + side, -side, LEVEL_UNDERGROUND) {
+        let mouth = 1.0 - smoothstep(-texel, texel, mouth_distance(along_edge(p, vec2<f32>(side)), cliff.distance));
+        face = mix(face, floor * PASSAGE_FLOOR_TONE * RECESS_TONE, mouth);
     }
     return mix(face, colour, smoothstep(-texel, texel, beyond_foot));
 }
 
-// A tunnel's interior: earth around a passage from the cell centre to each open side.
-fn tunnel_interior(cell: u32, p: vec2<f32>, texel: f32) -> vec3<f32> {
-    let openings = shape_openings(underground_shape(cell));
-    var sides = array<vec2<i32>, 4>(vec2<i32>(0, 1), vec2<i32>(1, 0), vec2<i32>(0, -1), vec2<i32>(-1, 0));
-    var passage = FAR_DISTANCE;
-    for (var i = 0; i < 4; i++) {
-        if opens_toward(openings, sides[i]) {
-            passage = min(passage, passage_arm_distance(p, vec2<f32>(sides[i])));
-        }
-    }
-    return interior_colour(passage, texel);
+// Shades the underground interior of a flat excavation around its carved passage.
+fn interior(cell: ObstacleCell, p: vec2<f32>, texel: f32) -> vec3<f32> {
+    return interior_colour(passage_distance(shape_hollowed_sides(cell_structure_shape(cell, LEVEL_UNDERGROUND)), p), texel);
 }
 
-// Ground opacity, reduced over tunnels according to the reveal amount.
-fn reveal_opacity(cell: u32) -> f32 {
-    return select(1.0, mix(1.0, REVEALED_COVER_OPACITY, settings.tunnel_reveal), is_tunnel(cell));
+// Ground alpha, faded over flat excavations according to `settings.tunnel_reveal`.
+fn reveal_opacity(cell: ObstacleCell) -> f32 {
+    return select(1.0, mix(1.0, REVEALED_COVER_OPACITY, settings.tunnel_reveal), keeps_ground_floor(cell));
 }
 
 @fragment
@@ -249,18 +158,18 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
     let texel = max(max(fwidth(world.x), fwidth(world.y)), 0.0001);
 
     let cell = obstacle_cell_at(coords);
-    let open = is_open(cell);
+    let open_air_excavation = is_open_air_excavation(cell);
 
     if settings.canvas_pass == PASS_BOTTOM {
-        if open { return vec4<f32>(open_surface(coords, cell, p, texel), 1.0); }
-        // Opaque ground hides a tunnel's interior until the reveal begins.
-        if is_tunnel(cell) && settings.tunnel_reveal > 0.0 {
-            return vec4<f32>(tunnel_interior(cell, p, texel), 1.0);
+        if open_air_excavation { return vec4<f32>(pit_or_ramp_surface(coords, cell, p, texel), 1.0); }
+        // Opaque ground hides the interior until the reveal begins.
+        if keeps_ground_floor(cell) && settings.tunnel_reveal > 0.0 {
+            return vec4<f32>(interior(cell, p, texel), 1.0);
         }
         return vec4<f32>(0.0);
     }
 
-    if !open { return vec4<f32>(GROUND_COLOUR, reveal_opacity(cell)); }
+    if !open_air_excavation { return vec4<f32>(GROUND_COLOUR, reveal_opacity(cell)); }
 
     // Skip pixels beyond the maximum rim width before searching for a cliff.
     let from_edges = (0.5 - max(abs(p.x), abs(p.y))) * CELL_SIZE;
@@ -270,8 +179,8 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
     let overhang = (RIM_WIDTH + RIM_OVERHANG * erosion_noise(world)) * cliff.step;
     var lip_edge = overhang - cliff.distance;
     let side = cliff_side(cliff);
-    if any(side != vec2<i32>(0)) && is_entrance(coords + side, -side) {
-        // Clip the overhang to the arch so the rim does not cover the tunnel mouth.
+    if any(side != vec2<i32>(0)) && is_entrance(coords + side, -side, LEVEL_UNDERGROUND) {
+        // Clip the overhang to the arch so the rim does not cover the mouth.
         lip_edge = min(lip_edge, mouth_distance(along_edge(p, vec2<f32>(side)), cliff.distance));
     }
     let coverage = smoothstep(-texel, texel, lip_edge);

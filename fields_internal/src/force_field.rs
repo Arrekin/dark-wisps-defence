@@ -5,7 +5,9 @@
 //! Each `ForceField` carries a `ForceFieldDome`: a transparent shell with a lit rim. Before the
 //! air band draws, the dome distorts the ground and surface beneath it, then adds its light.
 //! The shader uses the shared field index to draw within the field's territory, with a small
-//! amount of rim light extending onto unclaimed ground.
+//! amount of rim light extending onto unclaimed ground. The outer rim adjusts for terrain height,
+//! stepping inward on walls and buildings and expanding over pits
+//! (`assets/shaders/visuals/terrain_rim.wesl`).
 //!
 //! Wisps entering from outside all fields start impact ripples; crossing between fields does
 //! not. [`ForceFieldImpacts`] stores the recent hits for each dome.
@@ -22,6 +24,8 @@ use visuals::{
     lane::{LaneParts, LanePlugin, LaneVisual},
     shader::{ADDITIVE_BLENDING, seed_from_entity},
 };
+
+use crate::field::PIT_REACH;
 
 pub(crate) struct ForceFieldPlugin;
 impl Plugin for ForceFieldPlugin {
@@ -90,7 +94,7 @@ impl LaneVisual for ForceFieldDome {
     const PARTS: LaneParts = LaneParts::DISPLACE.and(LaneParts::OVERLAY);
 
     fn cut_quad_size(&self) -> Vec2 {
-        Vec2::splat(2. * (self.radius + OUTER_REACH))
+        Vec2::splat(2. * (self.radius + PIT_REACH + OUTER_REACH))
     }
 
     fn overlay_blend() -> BlendState {

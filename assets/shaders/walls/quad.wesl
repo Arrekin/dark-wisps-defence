@@ -1,9 +1,10 @@
-// Renders an isolated wall cell for placement previews, with an entrance notch at each opening.
+// Renders an isolated wall cell for placement previews, with an entrance notch at each hollowed side.
 
 import bevy_sprite_render::mesh2d::vertex_output::VertexOutput;
 import package::shaders::common::core::CELL_SIZE;
+import package::shaders::grids::structure_shape::{has_side, shape_hollowed_sides, shape_ramp};
 import package::shaders::walls::look::{mouth_toward, nearer_mouth, no_mouth, single_cell_ramp, single_cell_wall};
-import package::shaders::walls::styles::{opens_toward, shape_openings, shape_ramp, wall_style};
+import package::shaders::walls::styles::wall_style;
 
 // Field order and types mirror `WallQuadMaterial` in map_objects_internal/src/wall_materials.rs.
 struct WallQuad {
@@ -27,12 +28,12 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     if ramp != 0u {
         wall = single_cell_ramp(world, texel, ramp, style);
     } else {
-        let openings = shape_openings(settings.shape);
+        let hollowed_sides = shape_hollowed_sides(settings.shape);
         let p = world / CELL_SIZE - vec2<f32>(0.5);
         var mouth = no_mouth();
         var sides = array<vec2<i32>, 4>(vec2<i32>(0, 1), vec2<i32>(1, 0), vec2<i32>(0, -1), vec2<i32>(-1, 0));
         for (var i = 0; i < 4; i++) {
-            if opens_toward(openings, sides[i]) {
+            if has_side(hollowed_sides, sides[i]) {
                 mouth = nearer_mouth(mouth, mouth_toward(p, vec2<f32>(sides[i])));
             }
         }

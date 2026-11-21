@@ -1,7 +1,8 @@
 import package::shaders::common::clock::{ClockInstant, shader_time_since, wrap_rate};
-import package::shaders::common::core::TAU;
+import package::shaders::common::core::{CELL_SIZE, TAU};
 import package::shaders::common::effect_visuals::BRITTLE_BIT;
 import package::shaders::common::voronoi_border::voronoi_border_2d;
+import package::shaders::grids::openings::closed_border_distance;
 
 // Pure-procedural water wisp: a living droplet of liquid.
 //
@@ -9,6 +10,9 @@ import package::shaders::common::voronoi_border::voronoi_border_2d;
 // core, lit by a roaming specular glint. The silhouette bulges, pinches and
 // lunges with surface tension as it swims along its path. Nothing is sampled
 // from a texture — every feature is generated from the UV and time.
+//
+// Inside a hollow wall or excavation, the droplet flattens against closed cell sides so its bright
+// Fresnel rim contours along the obstacle.
 
 // Field order and types mirror `WispWaterLook` in wisps_internal/src/looks.rs.
 struct WispWaterLook {
@@ -67,7 +71,19 @@ const SWAY: f32 = 0.07;         // side-to-side wriggle
 const TAIL_TAPER: f32 = 0.22;   // how sharply the trailing edge pinches
 const CHURN_AMP_GAIN: f32 = 1.6;// extra rim amplitude at full travel
 
-fn wisp_water(uv: vec2<f32>, time: f32, look: WispWaterLook, effects_mask: u32) -> vec4<f32> {
+// Closed sides
+const CLOSED_SIDE_GAP: f32 = 0.04; // cell-unit gap between the flattened rim and the closed side
+const FLATTEN_SOFTNESS: f32 = 0.06; // cell units over which the rim eases into the closed side's line
+
+// Smooth minimum of `a` and `b`, blending over `k`.
+fn smooth_min(a: f32, b: f32, k: f32) -> f32 {
+    let h = saturate(0.5 + 0.5 * (b - a) / k);
+    return mix(b, a, h) - k * h * (1.0 - h);
+}
+
+// `centre` is the droplet's world position; `level` (`LEVEL_*` in `grids/obstacles.wesl`) flattens
+// the silhouette against closed hollow-structure borders (`LEVEL_NONE` disables clipping for UI faces).
+fn wisp_water(uv: vec2<f32>, time: f32, look: WispWaterLook, effects_mask: u32, centre: vec2<f32>, level: u32) -> vec4<f32> {
     // Saturating geometry deform from raw vigor: 0 at rest, ≈1 at the sweet spot,
     // asymptotes at DEFORM_ASYMP so the body deforms more with speed but never tears.
     let deform = DEFORM_ASYMP * look.vigor / (look.vigor + DEFORM_ASYMP - 1.0);
@@ -99,7 +115,7 @@ fn wisp_water(uv: vec2<f32>, time: f32, look: WispWaterLook, effects_mask: u32) 
     let perp = p - h * along;
     let q = h * (along / (1.0 + lunge)) + perp * (1.0 + lunge * 0.5);
 
-    let r = length(q) * 2.0; // 0 at centre, ~1 at the inscribed edge
+    var r = length(q) * 2.0; // 0 at centre, ~1 at the inscribed edge
     let ang = atan2(q.y, q.x);
 
     // ── Surface-tension silhouette + trailing teardrop taper ──────────────────
@@ -115,6 +131,17 @@ fn wisp_water(uv: vec2<f32>, time: f32, look: WispWaterLook, effects_mask: u32) 
         + wob * 0.55 * sin(ang * 5.0 - surf_t * 1.3 + look.seed * 2.0)
         + wob * 0.35 * deform * sin(ang * 8.0 + surf_t * 1.9); // choppy crests at speed
     edge *= 1.0 - TAIL_TAPER * deform * trailing; // pinch the wake into a tail
+
+    // Along the ray from the center through this fragment, clamp the outer radius before the first
+    // closed hollow-structure border so the Fresnel rim follows the obstacle.
+    let u_distance = length(u);
+    if u_distance > 1e-3 {
+        let rim = 0.5 * edge * u_distance / max(length(q), 1e-4); // rim distance along this ray, cells
+        let direction = vec2<f32>(u.x, -u.y) / u_distance; // world y points up
+        let free = closed_border_distance(centre, direction, (rim + FLATTEN_SOFTNESS + CLOSED_SIDE_GAP) * CELL_SIZE, level) / CELL_SIZE;
+        let fitted = smooth_min(rim, free - CLOSED_SIDE_GAP, FLATTEN_SOFTNESS);
+        r *= rim / max(fitted, 1e-3);
+    }
     let body = smoothstep(edge, edge - 0.14, r);
     if (body <= 0.0) {
         return vec4<f32>(0.0);

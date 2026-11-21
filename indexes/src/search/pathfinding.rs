@@ -4,10 +4,7 @@ use game_core::prelude::GridPosition;
 
 use crate::{emissions::EmissionsGrid, obstacles::GridStructure, prelude::*};
 
-use super::{
-    scratch::{SEARCH_SCRATCH, SearchScratch, State},
-    stepping::{walkable_diagonals, walkable_neighbors},
-};
+use super::scratch::{SEARCH_SCRATCH, SearchScratch, State};
 
 const EMPTY_FIELD_MODIFIER: f32 = 1.0;
 const BUILDING_FIELD_MODIFIER: f32 = 0.1;
@@ -28,7 +25,7 @@ pub fn path_find_energy_beckon(
         cost_queue.push(State { cost: f32::MIN, distance: 0, key: start });
         tracking.set_tracked(start, start);
         while let Some(State { distance, key: position, .. }) = cost_queue.pop() {
-            for new_position in walkable_neighbors(obstacle_grid, position).chain(walkable_diagonals(obstacle_grid, position)) {
+            for new_position in obstacle_grid.walkable_neighbors(position) {
                 if tracking.is_tracked(new_position) {
                     continue;
                 }

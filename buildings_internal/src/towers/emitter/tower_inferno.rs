@@ -122,7 +122,9 @@ impl BuilderTowerInferno {
                 children![
                     IndicatorDisplay::default(),
                     (InfernoCore::default(), Transform::from_scale(world_size.extend(1.))),
-                    InfernoEmberRing::default(),
+                    InfernoEmberRing::at(AltitudeLevel::Underground),
+                    InfernoEmberRing::at(AltitudeLevel::OnGround),
+                    InfernoEmberRing::at(AltitudeLevel::OnElevation),
                     InfernoHaze::default(),
                 ],
             ))

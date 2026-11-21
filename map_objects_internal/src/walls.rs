@@ -4,7 +4,7 @@ use almanach::{Almanach, AlmanachAppExt, WallInfo};
 use game_core::prelude::{AltitudeLevel, EdgeSide, EdgeSides, GridArea, GridCoords, GridImprint, GridPosition, MapObject, MapObjectTooltipRequest, SSS};
 use grids::placement::{PlacementFeedback, PlacementObject, PlacementSession, PlacementValidity, PlacementFeedbackSystems, PlaceRequest, RemoveRequest, ReplaceExisting, ReservedCoords};
 use hud::prelude::BuilderSideMenuItemTooltip;
-use indexes::{obstacles::GridStructure, prelude::{ObstacleCell, ObstacleGrid}};
+use indexes::{floor_cover::FloorCoverGrid, obstacles::GridStructure, prelude::{ObstacleCell, ObstacleGrid}, wisps::WispsGrid};
 use logging::prelude::*;
 use map_objects::{
     prelude::{StructureShape, Wall},
@@ -12,8 +12,6 @@ use map_objects::{
 };
 use persistence::{prelude::*, rusqlite};
 use states::prelude::MapLoadingStage;
-
-use crate::common::CellClearing;
 
 pub(crate) struct WallPlugin;
 impl Plugin for WallPlugin {
@@ -53,12 +51,12 @@ impl From<String> for WallStyleSource {
 
 #[derive(Component, SSS)]
 pub(crate) struct BuilderWall {
-    pub grid_position: GridPosition,
-    pub style: WallStyleSource,
-    pub shape: StructureShape,
+    grid_position: GridPosition,
+    style: WallStyleSource,
+    shape: StructureShape,
 }
 impl BuilderWall {
-    pub fn almanach_info() -> WallInfo {
+    pub(crate) fn almanach_info() -> WallInfo {
         WallInfo {
             name: "Wall".to_string(),
             description: "Blocks ground movement and shapes the paths wisps take.".to_string(),
@@ -66,11 +64,11 @@ impl BuilderWall {
         }
     }
 
-    pub fn new(grid_position: GridPosition, style: impl Into<WallStyleSource>) -> Self {
+    pub(crate) fn new(grid_position: GridPosition, style: impl Into<WallStyleSource>) -> Self {
         Self { grid_position, style: style.into(), shape: StructureShape::default() }
     }
 
-    pub fn with_shape(mut self, shape: StructureShape) -> Self {
+    pub(crate) fn with_shape(mut self, shape: StructureShape) -> Self {
         self.shape = shape;
         self
     }
@@ -135,9 +133,9 @@ fn collect_walls(
                     ctx.tx.prepare_cached("INSERT INTO wall_ramps (id, high_side) VALUES (?1, ?2)")?
                         .execute(rusqlite::params![id, high_side.as_ref()])?;
                 }
-                StructureShape::Flat { openings } => {
-                    for side in openings.iter() {
-                        ctx.tx.prepare_cached("INSERT INTO wall_openings (id, side) VALUES (?1, ?2)")?
+                StructureShape::Flat { hollowed_sides } => {
+                    for side in hollowed_sides.iter() {
+                        ctx.tx.prepare_cached("INSERT INTO wall_hollowed_sides (id, side) VALUES (?1, ?2)")?
                             .execute(rusqlite::params![id, side.as_ref()])?;
                     }
                 }
@@ -152,17 +150,14 @@ fn load_walls(ctx: &mut LoadContext) -> LoadResult {
     let query = "SELECT walls.id, walls.style, wall_ramps.high_side FROM walls LEFT JOIN wall_ramps ON wall_ramps.id = walls.id";
     ctx.for_each_entity(query, |ctx, old_id, entity, row| {
         let style: String = row.get(1)?;
-        // Load openings only for flat walls; ramps cannot have tunnels.
+        // Load hollowed sides only for flat walls; ramps have none.
         let shape = match row.get_parsed_optional::<EdgeSide>(2)? {
             Some(high_side) => StructureShape::Ramp { high_side },
             None => {
-                let mut statement = ctx.conn.prepare_cached("SELECT side FROM wall_openings WHERE id = ?1")?;
-                let mut opening_rows = statement.query([old_id])?;
-                let mut openings = EdgeSides::NONE;
-                while let Some(opening_row) = opening_rows.next()? {
-                    openings = openings.with(opening_row.get_parsed(0)?);
-                }
-                StructureShape::Flat { openings }
+                let hollowed_sides = ctx.conn.prepare_cached("SELECT side FROM wall_hollowed_sides WHERE id = ?1")?
+                    .query_and_then([old_id], |row| row.get_parsed(0))?
+                    .collect::<LoadResult<EdgeSides>>()?;
+                StructureShape::Flat { hollowed_sides }
             }
         };
         let grid_position = ctx.grid_position(old_id)?;
@@ -198,6 +193,8 @@ pub(crate) struct WallPlacementRules<'w, 's> {
     commands: Commands<'w, 's>,
     obstacle_grid: Res<'w, ObstacleGrid>,
     reserved_coords: ResMut<'w, ReservedCoords>,
+    wisps_grid: ResMut<'w, WispsGrid>,
+    floor_cover_grid: Res<'w, FloorCoverGrid>,
     placement_session: Single<'w, 's, (&'static GridArea, Has<ReplaceExisting>), With<PlacementSession>>,
 }
 impl WallPlacementRules<'_, '_> {
@@ -246,6 +243,13 @@ impl WallPlacementRules<'_, '_> {
                 }
             }
         }
+        // Solid and ramp walls fill `OnGround`, displacing occupants at `OnGround` and above.
+        if !shape.is_hollow() {
+            for coords in area {
+                rules.wisps_grid.despawn_from_level_upwards(&mut rules.commands, coords, AltitudeLevel::OnGround);
+                rules.floor_cover_grid.despawn_from_level_upwards(&mut rules.commands, coords, AltitudeLevel::OnGround);
+            }
+        }
         #[debug_player("Wall placed at {}", area.origin)]
         rules.commands.spawn(BuilderWall::new(area.origin, style).with_shape(shape));
         rules.reserved_coords.reserve(area);
@@ -255,7 +259,6 @@ impl WallPlacementRules<'_, '_> {
     fn on_remove_request_do_so(
         trigger: On<RemoveRequest>,
         mut rules: WallPlacementRules,
-        mut cell_clearing: CellClearing,
     ) {
         let RemoveRequest(MapObject::Wall) = *trigger else { return };
         let (area, _) = *rules.placement_session;
@@ -263,8 +266,9 @@ impl WallPlacementRules<'_, '_> {
         #[debug_player("Wall removed at {coords}")]
         if let Some(wall) = rules.wall_at(coords) {
             rules.commands.entity(wall).despawn();
-            // Remove occupants of the wall's upper floor; lower levels keep their supporting floors.
-            cell_clearing.clear_from(coords, AltitudeLevel::OnElevation);
+            // Removing the wall removes the `OnElevation` floor above it.
+            rules.wisps_grid.despawn_from_level_upwards(&mut rules.commands, coords, AltitudeLevel::OnElevation);
+            rules.floor_cover_grid.despawn_from_level_upwards(&mut rules.commands, coords, AltitudeLevel::OnElevation);
         }
     }
 }

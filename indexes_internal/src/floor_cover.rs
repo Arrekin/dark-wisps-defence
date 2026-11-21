@@ -10,7 +10,7 @@ use bytemuck::{Pod, Zeroable};
 
 use game_core::{prelude::{GridArea, MapInfo}, request_flag::RequestFlag};
 use grids::base::{GridCell, GridStack};
-use indexes::{floor_cover::{FloorCover, FloorCoverGrid}, obstacles::level_gpu_index};
+use indexes::floor_cover::{FloorCover, FloorCoverGrid};
 use logging::prelude::*;
 use session::TimeBound;
 use states::prelude::MapLoadingStage;
@@ -47,7 +47,7 @@ struct GpuFloorCoverEntry {
     start: ClockInstant,
     /// Lifetime in seconds, or `PERMANENT_DURATION`.
     duration: f32,
-    /// Level code from `level_gpu_index`.
+    /// `AltitudeLevel::three_layer_index_gpu` of the cover's level.
     level: u32,
 }
 
@@ -132,7 +132,7 @@ fn upload_gpu_floor_cover(
                 Ok(time_bound) => (ClockInstant::at(time_bound.starts_at), time_bound.duration() as f32),
                 Err(_) => (ClockInstant::default(), PERMANENT_DURATION),
             };
-            GpuFloorCoverEntry { kind: entry.kind.gpu_index(), start, duration, level: level_gpu_index(entry.level) }
+            GpuFloorCoverEntry { kind: entry.kind.gpu_index(), start, duration, level: entry.level.three_layer_index_gpu() }
         }));
     }
     offsets.push(entries.len() as u32);

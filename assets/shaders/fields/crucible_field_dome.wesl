@@ -4,6 +4,9 @@
 //
 // `overlay` evaluates fire at the haze-displaced world position so the shell tracks the refracted
 // scene beneath it.
+//
+// The outer rim conforms to terrain height (`visuals::terrain_rim`), stepping inward on walls and
+// buildings and expanding into unclaimed pits at the territory edge.
 
 import bevy_sprite_render::mesh2d::{vertex_output::VertexOutput, view_bindings::globals};
 import package::shaders::common::clock::{wrap_count, wrap_index, wrap_period, wrap_rate};
@@ -13,7 +16,8 @@ import package::shaders::common::fire_ramp::fire_ramp;
 import package::shaders::common::hash::{HASH_GOLDEN, hash_coords, hash_mix, hash_unit};
 import package::shaders::common::map_light::MAP_SUN_DIRECTION;
 import package::shaders::common::noise::{noise_3d_drift, noise_fbm_3d_drift};
-import package::shaders::fields::fields::{FieldShape, field_boundary, field_owners_at, field_shapes};
+import package::shaders::fields::fields::{FieldShape, NO_FIELD, field_boundary, field_owners_at, field_shapes};
+import package::shaders::visuals::terrain_rim::{pit_reach_at, shell_point, terrain_rim};
 
 // Field order and types mirror `CrucibleFieldDome` in fields_internal/src/crucible_field.rs.
 struct Instance {
@@ -91,12 +95,16 @@ fn churn_noise(q: vec2<f32>, offset: f32, time: f32, rate: f32) -> f32 {
 
 // ── Place ────────────────────────────────────────────────────────────────────
 
-// Where a point sits in the field: whether the field owns it, its distance to the field's boundary
-// in px (0 at the rim or at a seam), and its distance from the centre relative to the radius.
+// Field membership and boundary coordinates for a sample point:
+// - `mine`: true if this dome covers the point (including pit expansion into unclaimed cells).
+// - `edge`: signed distance in world px to the nearest boundary (outer terrain rim or neighbor seam).
+// - `relative_distance`: normalized radial distance (`0..1`) on the terrain-stretched shell.
+// - `shell_offset`: offset from `shape.center` to the terrain-stretched shell sample point.
 struct Place {
     mine: bool,
     edge: f32,
     relative_distance: f32,
+    shell_offset: vec2<f32>,
 };
 
 fn owns(world_position: vec2<f32>, field: Instance) -> bool {
@@ -104,11 +112,18 @@ fn owns(world_position: vec2<f32>, field: Instance) -> bool {
 }
 
 fn place_of(world_position: vec2<f32>, field: Instance, shape: FieldShape) -> Place {
-    if !owns(world_position, field) {
-        return Place(false, 0.0, 1.0);
+    let owner = field_owners_at(world_position).first.slot;
+    if owner != field.slot && owner != NO_FIELD {
+        return Place(false, 0.0, 1.0, vec2<f32>(0.0));
     }
-    let edge = field_boundary(field.slot, world_position).edge;
-    return Place(true, edge, distance(world_position, shape.center) / shape.current_radius);
+    let reach = pit_reach_at(world_position);
+    let boundary = field_boundary(field.slot, world_position);
+    let edge = min(terrain_rim(world_position, boundary.rim, reach), boundary.first.distance);
+    if edge <= 0.0 {
+        return Place(false, 0.0, 1.0, vec2<f32>(0.0));
+    }
+    let shell_offset = shell_point(world_position, shape.center, shape.current_radius, reach) - shape.center;
+    return Place(true, edge, length(shell_offset) / shape.current_radius, shell_offset);
 }
 
 // ── Haze ─────────────────────────────────────────────────────────────────────
@@ -222,7 +237,7 @@ fn fire_light(world_position: vec2<f32>, field: Instance, shape: FieldShape, tim
         return vec3<f32>(0.0);
     }
     let radius = shape.current_radius;
-    let from_center = seen - shape.center;
+    let from_center = place.shell_offset;
     let distance_from_center = max(length(from_center), 0.001);
     let direction = from_center / distance_from_center;
     let edge = place.edge;

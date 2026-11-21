@@ -5,12 +5,11 @@
 import package::shaders::common::core::CELL_SIZE;
 import package::shaders::common::map_light::{MAP_SUN_ELEVATION_TANGENT, MAP_SUN_GROUND_DIRECTION};
 import package::shaders::common::noise::noise_gradient_fbm_2d;
-import package::shaders::walls::look::{passage_arm_distance, ramp_up};
-import package::shaders::walls::styles::{opens_toward, shape_openings, shape_ramp};
+import package::shaders::grids::structure_shape::{passage_distance, ramp_up, shape_hollowed_sides, shape_ramp};
 
 // Ground colour and exposed earth palette
 const GROUND_COLOUR: vec3<f32> = vec3<f32>(0.00651, 0.00699, 0.00802);
-// Earth exposed in cliff faces and around tunnel passages.
+// Earth exposed in cliff faces and around passages.
 const EARTH_LIT_COLOUR: vec3<f32> = vec3<f32>(0.060, 0.048, 0.036);
 const EARTH_SHADE_COLOUR: vec3<f32> = vec3<f32>(0.0030, 0.0029, 0.0032);
 
@@ -62,7 +61,7 @@ const RAMP_FOOT_CREASE: f32 = -0.3;
 // Earth tint strength; preserves the ramp's luminance.
 const RAMP_EARTH_TINT: f32 = 0.5;
 
-// Tunnels
+// Passages
 // Passage floor brightness relative to the pit floor.
 const PASSAGE_FLOOR_TONE: f32 = 0.6;
 // Earth brightness around the passage, between the face shade and lit colours.
@@ -73,7 +72,7 @@ const INTERIOR_EDGE_WIDTH: f32 = 1.5;
 // Shadow the earth casts onto the passage floor.
 const PASSAGE_SHADOW_REACH: f32 = 4.0;
 const PASSAGE_SHADOW_STRENGTH: f32 = 0.6;
-// Tunnel mouth width in world pixels.
+// Mouth width in world pixels.
 const MOUTH_WIDTH: f32 = 20.0;
 // Arch height as a fraction of the cliff height: 0 at the floor, 1 at the rim.
 const ARCH_HEIGHT: f32 = 1.0;
@@ -81,7 +80,7 @@ const ARCH_HEIGHT: f32 = 1.0;
 const RECESS_TONE: f32 = 0.08;
 
 // Cover
-// Opacity of the ground over a tunnel at full reveal.
+// Opacity of the ground floor over an excavation at full reveal.
 const REVEALED_COVER_OPACITY: f32 = 0.3;
 
 fn erosion_noise(world: vec2<f32>) -> f32 {
@@ -132,7 +131,7 @@ fn rim_colour(surface: vec3<f32>, normal: vec2<f32>, distance: f32) -> vec3<f32>
     return mix(surface, EARTH_LIT_COLOUR, lip * RIM_LIGHT);
 }
 
-// A tunnel interior: earth around the passage, and the passage floor darkened by the earth's
+// A hollow excavation's interior: earth around the passage, and the passage floor darkened by the earth's
 // shadow. `distance` is the signed distance to the passage, positive in earth.
 fn interior_colour(distance: f32, texel: f32) -> vec3<f32> {
     let earth = smoothstep(-texel, texel, distance);
@@ -211,7 +210,7 @@ fn single_cell_shadow(p: vec2<f32>, height: f32) -> f32 {
 }
 
 // Isolated pit or ramp with cliffs, cast shadows and rims. A zero `ramp` selects a pit.
-fn single_cell_open(ramp: u32, p: vec2<f32>, world: vec2<f32>, texel: f32) -> vec3<f32> {
+fn single_cell_pit_or_ramp(ramp: u32, p: vec2<f32>, world: vec2<f32>, texel: f32) -> vec3<f32> {
     let height = single_cell_height(ramp, p);
     let floor = pit_floor_colour();
     var colour = floor;
@@ -233,17 +232,10 @@ fn single_cell_open(ramp: u32, p: vec2<f32>, world: vec2<f32>, texel: f32) -> ve
     return mix(colour, rim_colour(GROUND_COLOUR, cliff.normal, max(lip_edge, 0.0)), smoothstep(-texel, texel, lip_edge));
 }
 
-// Isolated tunnel interior under translucent ground at full reveal.
-// `openings` uses the bitmask returned by `shape_openings`.
-fn single_cell_tunnel(openings: u32, p: vec2<f32>, texel: f32) -> vec3<f32> {
-    var sides = array<vec2<i32>, 4>(vec2<i32>(0, 1), vec2<i32>(1, 0), vec2<i32>(0, -1), vec2<i32>(-1, 0));
-    var passage = 1e6;
-    for (var i = 0; i < 4; i++) {
-        if opens_toward(openings, sides[i]) {
-            passage = min(passage, passage_arm_distance(p, vec2<f32>(sides[i])));
-        }
-    }
-    return mix(interior_colour(passage, texel), GROUND_COLOUR, REVEALED_COVER_OPACITY);
+// Isolated interior under the translucent ground floor at full reveal.
+// `hollowed_sides` uses the bitmask returned by `shape_hollowed_sides`.
+fn single_cell_interior(hollowed_sides: u32, p: vec2<f32>, texel: f32) -> vec3<f32> {
+    return mix(interior_colour(passage_distance(hollowed_sides, p), texel), GROUND_COLOUR, REVEALED_COVER_OPACITY);
 }
 
 // Excavation preview: a nonzero `pit` selects a pit; otherwise `shape` is a `StructureShape::gpu_code`.
@@ -251,8 +243,8 @@ fn single_cell_tunnel(openings: u32, p: vec2<f32>, texel: f32) -> vec3<f32> {
 // screen pixel.
 fn single_cell_excavation(pit: u32, shape: u32, world: vec2<f32>, texel: f32) -> vec3<f32> {
     let p = world / CELL_SIZE - vec2<f32>(0.5);
-    if pit != 0u { return single_cell_open(0u, p, world, texel); }
+    if pit != 0u { return single_cell_pit_or_ramp(0u, p, world, texel); }
     let ramp = shape_ramp(shape);
-    if ramp != 0u { return single_cell_open(ramp, p, world, texel); }
-    return single_cell_tunnel(shape_openings(shape), p, texel);
+    if ramp != 0u { return single_cell_pit_or_ramp(ramp, p, world, texel); }
+    return single_cell_interior(shape_hollowed_sides(shape), p, texel);
 }

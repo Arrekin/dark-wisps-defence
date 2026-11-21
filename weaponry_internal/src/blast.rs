@@ -11,7 +11,7 @@
 //!   fixed [`AltitudeLevel`]. Diagonal steps require at least one shared cardinal neighbor to be
 //!   open (no corner-cutting).
 //! - **Barriers:** Any cell occupied at the blast's level (walls, buildings, dark ore, solid
-//!   earth, tunnels) or outside map bounds blocks propagation (`BlastCell::Blocked`).
+//!   earth, excavations) or outside map bounds blocks propagation (`BlastCell::Blocked`).
 //! - **Floors and gaps:** Reached cells with a floor at the blast's level are `BlastCell::Hit` and
 //!   damage wisps at that level. Reached cells without a floor (e.g. an open pit below `OnGround`,
 //!   or open ground below `OnElevation`) are `BlastCell::Passed`: the blast crosses them without
@@ -24,7 +24,7 @@ use bevy::{ecs::system::SystemParam, prelude::*};
 use strum::IntoEnumIterator;
 
 use game_core::prelude::{AltitudeLevel, Bounds, EdgeSide, GridArea, GridCoords, GridImprint, GridPosition};
-use grids::base::{GridCell, STACK_LEVELS};
+use grids::base::GridCell;
 use indexes::{obstacles::ObstacleCell, prelude::ObstacleGrid, wisps::WispsGrid};
 
 /// Maximum supported blast radius in grid steps; sizes the fixed stack buffers.
@@ -42,7 +42,7 @@ impl BlastHitManager<'_> {
     /// [`MAX_REACH`]) at that level. Returns `None` if `coords` is out of bounds.
     pub(crate) fn go_off(&self, coords: GridCoords, reach: u8) -> Option<Blast<'_>> {
         let cell = self.obstacle_grid.get(coords)?;
-        let level = STACK_LEVELS.into_iter().rfind(|&level| has_blast_floor(cell, level)).unwrap_or(AltitudeLevel::Underground);
+        let level = AltitudeLevel::THREE_LAYERS.into_iter().rfind(|&level| has_blast_floor(cell, level)).unwrap_or(AltitudeLevel::Underground);
         Some(Blast::search(&self.obstacle_grid, &self.wisps_grid, coords.at(level), reach))
     }
 }

@@ -1,6 +1,6 @@
-// Renders one of two wall passes on a quad covering the map. Packed cell data from
-// `shaders::walls::styles` supplies each wall's style and shape. Cells outside the map count as
-// open ground, giving walls at the map boundary visible edges.
+// Renders one of two wall passes on a quad covering the map. `shaders::walls::styles` supplies
+// each wall's style and shape. Cells outside the map count as open ground, giving walls at the
+// map boundary visible edges.
 //
 // Neighboring cells define a signed distance field for surface edges. Surfaces connect where
 // their heights and styles match. A ramp's low edge lies at ground level and has no boundary of
@@ -11,22 +11,25 @@
 // Open ground uses the nearest wall's style for contact shadows. Flat walls estimate edge normals
 // from the distance field; ramps use explicit normals. `shaders::walls::look` shades the surfaces.
 //
-// Tunnel entrances appear as notches ("mouths") in the wall top, with shaded rims and dark recesses.
+// Entrances appear as notches ("mouths") in the wall top, with shaded rims and dark recesses.
 // Mouths have a separate distance field, so they do not affect the wall's contact shadows.
 //
-// The bottom pass draws contact shadows, entrance recesses, tunnel interiors, and surfaces below
+// The bottom pass draws contact shadows, entrance recesses, hollow wall interiors, and surfaces below
 // TOP_PASS_HEIGHT. The top pass draws surfaces at or above that height. Drawing wisps between these
 // passes lets wall tops hide them while entrance recesses remain underneath.
 //
-// A tunnel interior is stone around a passage that runs from the cell centre to each open side.
-// The opaque top hides it; the tunnel reveal makes hollow walls' tops semi-transparent.
+// A hollow wall's interior is stone surrounding the passage carved through its hollowed sides.
+// The opaque top hides it until tunnel reveal makes hollow wall tops semi-transparent.
 
 import bevy_sprite_render::mesh2d::vertex_output::VertexOutput;
 import package::shaders::common::core::CELL_SIZE;
-import package::shaders::common::map_info::{grid_bounds, grid_contains};
+import package::shaders::common::map_info::grid_bounds;
 import package::shaders::common::map_light::MAP_SUN_GROUND_DIRECTION;
-import package::shaders::walls::look::{BASE_INSET, CREST_BREAK, LIGHT_PROBE, Mouth, edge_layers_reach, eroded_distance, has_mouth, interior_shading, mouth_toward, nearer_mouth, no_mouth, passage_arm_distance, plate_noise, ramp_height, ramp_tone, ramp_up, recess_colour, shadow_falloff, wall_shading};
-import package::shaders::walls::styles::{cell_openings, cell_ramp, cell_style, opens_toward, wall_cell_at, wall_style, wall_style_index_at};
+import package::shaders::grids::obstacles::LEVEL_ON_GROUND;
+import package::shaders::grids::openings::is_entrance;
+import package::shaders::grids::structure_shape::{passage_distance, ramp_up, shape_hollowed_sides, shape_ramp};
+import package::shaders::walls::look::{BASE_INSET, CREST_BREAK, LIGHT_PROBE, Mouth, edge_layers_reach, eroded_distance, has_mouth, interior_shading, mouth_toward, nearer_mouth, no_mouth, plate_noise, ramp_height, ramp_tone, recess_colour, shadow_falloff, wall_shading};
+import package::shaders::walls::styles::{WallCell, wall_cell_at, wall_style};
 
 // Field order and types mirror `WallCanvasSettings` in map_objects_internal/src/wall_canvas.rs.
 struct WallCanvasSettings {
@@ -88,9 +91,9 @@ fn closer(a: WallSurface, b: WallSurface) -> WallSurface {
 }
 
 // Classifies the height of `cell` at `side`; returns EDGE_NONE for a ramp's sloping side.
-fn edge_height(cell: u32, side: vec2<i32>) -> u32 {
-    if cell_style(cell) == 0u { return EDGE_GROUND; }
-    let ramp = cell_ramp(cell);
+fn edge_height(cell: WallCell, side: vec2<i32>) -> u32 {
+    if cell.style == 0u { return EDGE_GROUND; }
+    let ramp = shape_ramp(cell.shape);
     if ramp == 0u { return EDGE_WALL_TOP; }
     let up = ramp_up(ramp);
     if all(side == up) { return EDGE_WALL_TOP; }
@@ -99,20 +102,20 @@ fn edge_height(cell: u32, side: vec2<i32>) -> u32 {
 }
 
 // Checks whether cells across `offset` meet at the same constant height with compatible styles.
-fn connects(cell: u32, neighbour_cell: u32, offset: vec2<i32>) -> bool {
+fn connects(cell: WallCell, neighbour_cell: WallCell, offset: vec2<i32>) -> bool {
     let height = edge_height(cell, offset);
     if height == EDGE_NONE || height != edge_height(neighbour_cell, -offset) { return false; }
-    let style = cell_style(cell);
-    let neighbour = cell_style(neighbour_cell);
+    let style = cell.style;
+    let neighbour = neighbour_cell.style;
     return style == neighbour || style == 0u || neighbour == 0u;
 }
 
 // Builds the surface field within a ramp cell. Beside a flat wall of the same style, the gap
 // and edge details narrow toward the crest. Adjacent ramps of the same style and direction
 // merge into one continuous slope. The crest has an edge unless it connects; the foot has none.
-fn ramp_surface(coords: vec2<i32>, cell: u32, p: vec2<f32>) -> WallSurface {
-    let region = cell_style(cell);
-    let ramp = cell_ramp(cell);
+fn ramp_surface(coords: vec2<i32>, cell: WallCell, p: vec2<f32>) -> WallSurface {
+    let region = cell.style;
+    let ramp = shape_ramp(cell.shape);
     let up_cell = ramp_up(ramp);
     let up = vec2<f32>(up_cell);
     let across_axis = vec2<f32>(-up.y, up.x);
@@ -123,8 +126,8 @@ fn ramp_surface(coords: vec2<i32>, cell: u32, p: vec2<f32>) -> WallSurface {
     let side_sign = select(-1.0, 1.0, across >= 0.0);
     let side_normal = across_axis * side_sign;
     let side_cell = wall_cell_at(coords + vec2<i32>(side_normal));
-    let side_style = cell_style(side_cell);
-    let side_ramp = cell_ramp(side_cell);
+    let side_style = side_cell.style;
+    let side_ramp = shape_ramp(side_cell.shape);
     let beside_flat_wall = side_style == region && side_ramp == 0u;
     let beside_same_ramp = side_style == region && side_ramp == ramp;
 
@@ -151,11 +154,11 @@ fn ramp_surface(coords: vec2<i32>, cell: u32, p: vec2<f32>) -> WallSurface {
     return best;
 }
 
-// Samples the surface boundary and edge properties for the packed `cell` at `coords`.
+// Samples the surface boundary and edge properties for the wall `cell` at `coords`.
 // `p` is relative to the cell center, in [-0.5, 0.5] on each axis.
-fn wall_surface(coords: vec2<i32>, cell: u32, p: vec2<f32>) -> WallSurface {
-    if cell_ramp(cell) != 0u { return ramp_surface(coords, cell, p); }
-    let region = cell_style(cell);
+fn wall_surface(coords: vec2<i32>, cell: WallCell, p: vec2<f32>) -> WallSurface {
+    if shape_ramp(cell.shape) != 0u { return ramp_surface(coords, cell, p); }
+    let region = cell.style;
 
     let toward_positive = vec2<f32>(0.5) - p;
     let toward_negative = vec2<f32>(0.5) + p;
@@ -169,10 +172,10 @@ fn wall_surface(coords: vec2<i32>, cell: u32, p: vec2<f32>) -> WallSurface {
         let offset = cardinals[i];
         // Flat cells of the same style connect directly; ramp neighbors also need an edge-height check.
         let neighbour_cell = wall_cell_at(coords + offset);
-        let neighbour_ramp = cell_ramp(neighbour_cell);
-        if neighbour_ramp == 0u && cell_style(neighbour_cell) == region { continue; }
+        let neighbour_ramp = shape_ramp(neighbour_cell.shape);
+        if neighbour_ramp == 0u && neighbour_cell.style == region { continue; }
         if neighbour_ramp != 0u && connects(cell, neighbour_cell, offset) { continue; }
-        let neighbour = cell_style(neighbour_cell);
+        let neighbour = neighbour_cell.style;
         let edges = select(toward_negative, toward_positive, offset > vec2<i32>(0));
         var edge = select(edges.y, edges.x, offset.x != 0);
 
@@ -196,10 +199,10 @@ fn wall_surface(coords: vec2<i32>, cell: u32, p: vec2<f32>) -> WallSurface {
     for (var i = 0; i < 4; i++) {
         let offset = diagonals[i];
         let neighbour_cell = wall_cell_at(coords + offset);
-        let neighbour = cell_style(neighbour_cell);
+        let neighbour = neighbour_cell.style;
         if neighbour == region { continue; }
         let edge = select(toward_negative, toward_positive, offset > vec2<i32>(0));
-        let neighbour_ramp = cell_ramp(neighbour_cell);
+        let neighbour_ramp = shape_ramp(neighbour_cell.shape);
         var height = 1.0;
         if neighbour_ramp != 0u {
             height = ramp_height(neighbour_ramp, p - vec2<f32>(offset));
@@ -211,40 +214,15 @@ fn wall_surface(coords: vec2<i32>, cell: u32, p: vec2<f32>) -> WallSurface {
     return best;
 }
 
-// An opening is visible as an entrance when the neighboring cell is inside the map and contains
-// either no wall or a ramp with its low edge facing the opening.
-fn is_entrance(coords: vec2<i32>, side: vec2<i32>) -> bool {
-    let across = coords + side;
-    if !grid_contains(across) { return false; }
-    let across_cell = wall_cell_at(across);
-    if cell_style(across_cell) == 0u { return true; }
-    let ramp = cell_ramp(across_cell);
-    return ramp != 0u && all(ramp_up(ramp) == side);
-}
-
-// Samples the nearest entrance mouth for the flat wall at `coords` with the opening mask `openings`.
+// Samples the nearest entrance mouth for the hollow wall at `coords`.
 // `p` is relative to the cell centre, in [-0.5, 0.5] on each axis.
-fn mouth_at(coords: vec2<i32>, openings: u32, p: vec2<f32>) -> Mouth {
+fn mouth_at(coords: vec2<i32>, p: vec2<f32>) -> Mouth {
     var nearest = no_mouth();
     var sides = array<vec2<i32>, 4>(vec2<i32>(0, 1), vec2<i32>(1, 0), vec2<i32>(0, -1), vec2<i32>(-1, 0));
     for (var i = 0; i < 4; i++) {
         let side = sides[i];
-        if !opens_toward(openings, side) || !is_entrance(coords, side) { continue; }
+        if !is_entrance(coords, side, LEVEL_ON_GROUND) { continue; }
         nearest = nearer_mouth(nearest, mouth_toward(p, vec2<f32>(side)));
-    }
-    return nearest;
-}
-
-// Signed distance in world pixels to the passage inside a hollow flat wall with the opening mask
-// `openings`, negative inside. One arm runs from the cell centre across each open side.
-// `p` is relative to the cell centre, in [-0.5, 0.5] on each axis.
-fn passage_at(openings: u32, p: vec2<f32>) -> f32 {
-    var nearest = 1e6;
-    var sides = array<vec2<i32>, 4>(vec2<i32>(0, 1), vec2<i32>(1, 0), vec2<i32>(0, -1), vec2<i32>(-1, 0));
-    for (var i = 0; i < 4; i++) {
-        let side = sides[i];
-        if !opens_toward(openings, side) { continue; }
-        nearest = min(nearest, passage_arm_distance(p, vec2<f32>(side)));
     }
     return nearest;
 }
@@ -267,10 +245,10 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
     let texel = max(max(fwidth(world.x), fwidth(world.y)), 0.0001);
 
     let cell = wall_cell_at(coords);
-    let region = cell_style(cell);
-    let ramp = cell_ramp(cell);
-    let openings = cell_openings(cell);
-    let hollow = openings != 0u;
+    let region = cell.style;
+    let ramp = shape_ramp(cell.shape);
+    let hollowed_sides = shape_hollowed_sides(cell.shape);
+    let hollow = hollowed_sides != 0u;
     let p = f - base - vec2<f32>(0.5);
     let surface = wall_surface(coords, cell, p);
 
@@ -310,7 +288,7 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
     // Sample entrance notches separately from the outer wall edge.
     var mouth = no_mouth();
     if hollow {
-        mouth = mouth_at(coords, openings, p);
+        mouth = mouth_at(coords, p);
         if has_mouth(mouth) && erosion > 0.0 {
             mouth.distance = eroded_distance(mouth.distance, world, 1.0, style);
         }
@@ -337,7 +315,7 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
         }
 
         // Fade coverage at the foot where the ramp meets open ground.
-        if wall_style_index_at(coords - up) == 0u {
+        if wall_cell_at(coords - up).style == 0u {
             coverage *= smoothstep(0.0, texel * 2.0, rise * CELL_SIZE);
         }
     }
@@ -355,7 +333,7 @@ fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
 
     // Beneath a hollow wall's top, the bottom pass draws the interior, with the recess over it.
     if hollow && !top_pass && !debugging {
-        let interior = interior_shading(passage_at(openings, p), plate_noise(world, style), texel, style);
+        let interior = interior_shading(passage_distance(hollowed_sides, p), plate_noise(world, style), texel, style);
         let inside = recess + interior.a * (1.0 - recess);
         let inside_colour = (recess_colour(mouth, style) * recess + interior.rgb * interior.a * (1.0 - recess)) / max(inside, 1e-4);
         let inside_coverage = inside * coverage;

@@ -12,8 +12,6 @@ use bevy::{
 };
 
 use game_core::prelude::{AltitudeLevel, DrawLevel, MapInfo, ZDepth};
-use grids::base::STACK_LEVELS;
-use indexes::obstacles::level_gpu_index;
 use states::prelude::MapLoadingStage;
 use visuals::{canvas::MapCanvasBundle, shader::set_blend, shared_gpu::add_shared_gpu_layout};
 
@@ -28,7 +26,7 @@ impl Plugin for FloorCoverCanvasPlugin {
 
 #[derive(Asset, AsBindGroup, TypePath, Debug, Clone)]
 struct FloorCoverCanvasMaterial {
-    /// Level code (`level_gpu_index`) of the covers this canvas draws.
+    /// [`AltitudeLevel::three_layer_index_gpu`] of the level whose covers this canvas draws.
     #[uniform(0)]
     level: u32,
 }
@@ -66,8 +64,8 @@ impl FloorCoverCanvas {
     ) {
         commands.despawn_all::<With<FloorCoverCanvas>>();
 
-        for level in STACK_LEVELS {
-            let material = materials.add(FloorCoverCanvasMaterial { level: level_gpu_index(level) });
+        for level in AltitudeLevel::THREE_LAYERS {
+            let material = materials.add(FloorCoverCanvasMaterial { level: level.three_layer_index_gpu() });
             commands.spawn((
                 MapCanvasBundle::new(material, &map_info),
                 FloorCoverCanvas(level),

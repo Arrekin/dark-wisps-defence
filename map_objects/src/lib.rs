@@ -26,49 +26,63 @@ pub struct DarkOre {
 }
 
 /// Drawn by the wall canvas from `GridArea`, so the entity itself carries no transform or render layer.
-/// [`StructureShape`] defines its slope and tunnel openings.
+/// [`StructureShape`] defines its slope and hollowed sides.
 #[derive(Component)]
 #[require(MapBound, EmissionsGridSpreadAffector)]
 pub struct Wall;
 
-/// Surface slope and tunnel openings shared by walls and underground excavations.
+/// Geometry of a wall or shaped underground excavation.
+///
+/// Both variants support a floor at the level above them, but differ in how they open at their own
+/// level:
+/// - **Hollowed sides** ([`Self::hollowed_sides`]) are passages carved underneath a flat top.
+/// - **Open sides** ([`Self::open_sides`]) are cell edges open at the structure's own level: every
+///   hollowed side of a [`Self::Flat`] shape, or the low edge (foot) of a [`Self::Ramp`] where the
+///   slope meets the floor below.
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[component(immutable)]
 pub enum StructureShape {
-    /// A flat top with tunnel openings on the specified sides. An empty set makes it solid.
-    Flat { openings: EdgeSides },
-    /// A solid ramp rising toward `high_side`, with no tunnel openings.
+    /// Full-height block with a flat top and optional passages carved through `hollowed_sides`.
+    /// Empty `hollowed_sides` represents a solid wall or a refilled excavation.
+    Flat { hollowed_sides: EdgeSides },
+    /// Solid slope rising toward `high_side` from the floor of its own level to the floor above.
     Ramp { high_side: EdgeSide },
 }
 impl Default for StructureShape {
     fn default() -> Self {
-        Self::Flat { openings: EdgeSides::NONE }
+        Self::Flat { hollowed_sides: EdgeSides::NONE }
     }
 }
 impl StructureShape {
-    /// The tunnel openings; none for a ramp.
-    pub const fn openings(self) -> EdgeSides {
+    /// Sides with a passage carved underneath the top (`EdgeSides::NONE` for ramps).
+    pub const fn hollowed_sides(self) -> EdgeSides {
         match self {
-            Self::Flat { openings } => openings,
+            Self::Flat { hollowed_sides } => hollowed_sides,
             Self::Ramp { .. } => EdgeSides::NONE,
         }
     }
 
-    /// Whether the shape has at least one tunnel opening.
-    pub const fn is_hollow(self) -> bool {
-        !self.openings().is_empty()
+    /// Sides open at the structure's own level: `hollowed_sides` for [`Self::Flat`], or the foot
+    /// (`high_side.opposite()`) for [`Self::Ramp`].
+    pub const fn open_sides(self) -> EdgeSides {
+        match self {
+            Self::Flat { hollowed_sides } => hollowed_sides,
+            Self::Ramp { high_side } => EdgeSides::NONE.with(high_side.opposite()),
+        }
     }
 
-    /// Encodes the shape for shaders in seven bits.
-    ///
-    /// Bits 0–2 hold the ramp code: 0 for flat, 1–4 for right, left, top, and bottom.
-    /// Bits 3–6 hold the tunnel openings from [`EdgeSides::bits`], or zero for a ramp.
-    /// This layout must match `assets/shaders/walls/styles.wesl` and the `ramp_up` mapping in
-    /// `assets/shaders/walls/look.wesl`.
+    /// True if at least one side has a carved passage.
+    pub const fn is_hollow(self) -> bool {
+        !self.hollowed_sides().is_empty()
+    }
+
+    /// Packs the shape into 7 bits for GPU buffers (`assets/shaders/grids/structure_shape.wesl`):
+    /// bits 0..=2 store the ramp code (`0` = flat, `1..=4` = right, left, top, bottom), and
+    /// bits 3..=6 store [`EdgeSides::bits`] for flat shapes (`0` for ramps).
     pub const fn gpu_code(self) -> u32 {
-        const OPENINGS_SHIFT: u32 = 3;
+        const HOLLOWED_SIDES_SHIFT: u32 = 3;
         match self {
-            Self::Flat { openings } => (openings.bits() as u32) << OPENINGS_SHIFT,
+            Self::Flat { hollowed_sides } => (hollowed_sides.bits() as u32) << HOLLOWED_SIDES_SHIFT,
             Self::Ramp { high_side: EdgeSide::Right } => 1,
             Self::Ramp { high_side: EdgeSide::Left } => 2,
             Self::Ramp { high_side: EdgeSide::Top } => 3,
@@ -77,7 +91,8 @@ impl StructureShape {
     }
 }
 
-/// Underground terrain created by excavation: an open pit, ramp or tunnel.
+/// Underground excavation state: an open-air [`Self::Pit`] or a [`Self::Shaped`] ramp or flat
+/// excavation.
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[component(immutable)]
 pub enum ExcavationShape {
@@ -86,8 +101,8 @@ pub enum ExcavationShape {
     Shaped(StructureShape),
 }
 impl ExcavationShape {
-    /// Returns whether this shape is a tunnel beneath an intact ground floor.
-    pub const fn is_tunnel(self) -> bool {
+    /// True if the ground floor above the excavation remains intact ([`StructureShape::Flat`]).
+    pub const fn keeps_ground_floor(self) -> bool {
         matches!(self, Self::Shaped(StructureShape::Flat { .. }))
     }
 }
