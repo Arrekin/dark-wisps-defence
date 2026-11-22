@@ -1,12 +1,12 @@
 import bevy_sprite_render::mesh2d::vertex_output::VertexOutput;
 import package::shaders::common::core::CELL_SIZE;
 import package::shaders::common::map_light::{MAP_SUN_ELEVATION_TANGENT, MAP_SUN_GROUND_DIRECTION};
-import package::shaders::grids::obstacles::{LEVEL_ON_GROUND, LEVEL_UNDERGROUND, STRUCTURE_EMPTY, STRUCTURE_OFF_MAP, structure_at};
+import package::shaders::common::map_info::grid_contains;
+import package::shaders::grids::obstacles::{LEVEL_ON_GROUND, STRUCTURE_BUILDING, cell_structure, cell_top_level, obstacle_cell_at};
 
-// The round shadow of an object above the map, falling on the top of each cell it covers. A cell's
-// top is the highest level with a floor, as a blast's level is: a wall or building top (2), the
-// ground, ore, a ramp or the ground floor over an excavation (1), or a pit floor (0). Each pixel shades the
-// disc as seen at its own surface height, so the shadow steps where neighbouring tops differ.
+// The round shadow of an object above the map, falling on the highest surface of each cell it covers:
+// a wall or building top (2), the ground (1), or a pit floor (0). Each pixel shades the disc as seen
+// at its own surface height, so the shadow steps where neighbouring tops differ.
 // Levels count from the top of the base cell, so the shadow meets the object when it comes down
 // there.
 //
@@ -37,11 +37,10 @@ const LEVEL_STEP: f32 = 24.0;    // world units between levels for the shadow's 
 // Level of the top of the cell at `coords`, from 0 (pit floor) to 2 (wall or building top).
 // Cells off the map count as ground.
 fn top_level(coords: vec2<i32>) -> f32 {
-    let on_ground = structure_at(coords, LEVEL_ON_GROUND);
-    if on_ground == STRUCTURE_OFF_MAP { return 1.0; }
-    if on_ground != STRUCTURE_EMPTY { return 2.0; }
-    if structure_at(coords, LEVEL_UNDERGROUND) != STRUCTURE_EMPTY { return 1.0; }
-    return 0.0;
+    if !grid_contains(coords) { return 1.0; }
+    let cell = obstacle_cell_at(coords);
+    if cell_structure(cell, LEVEL_ON_GROUND) == STRUCTURE_BUILDING { return 2.0; }
+    return f32(cell_top_level(cell));
 }
 
 // Distance along `direction` from `p` to the next cell boundary on one axis, or a large value when

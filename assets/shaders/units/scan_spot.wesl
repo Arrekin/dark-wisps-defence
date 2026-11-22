@@ -1,6 +1,7 @@
 import bevy_sprite_render::mesh2d::vertex_output::VertexOutput;
 import package::shaders::common::core::{CELL_SIZE, TAU};
-import package::shaders::grids::obstacles::{LEVEL_ON_GROUND, LEVEL_UNDERGROUND, STRUCTURE_EMPTY, STRUCTURE_OFF_MAP, structure_at};
+import package::shaders::common::map_info::grid_contains;
+import package::shaders::grids::obstacles::{LEVEL_ON_GROUND, STRUCTURE_BUILDING, cell_structure, cell_top_level, obstacle_cell_at};
 import package::shaders::units::scan_pulse::scan_pulse;
 
 // Scan spot shader: the ground spot of a drone's scanning beam. Its outline is a flat ellipse,
@@ -41,13 +42,12 @@ const SEAM_GLOW: f32 = 1.5;       // colour gain on the seam, above 1 for bloom
 const SEAM_PULSE: f32 = 0.6;      // share of the seam that brightens only as a scan ring passes
 
 // Level of the top of the cell at `coords`, from 0 (pit floor) to 2 (wall or building top).
-// Cells off the map count as ground.
+// Buildings raise the spot as walls do. Cells off the map count as ground.
 fn top_level(coords: vec2<i32>) -> f32 {
-    let on_ground = structure_at(coords, LEVEL_ON_GROUND);
-    if on_ground == STRUCTURE_OFF_MAP { return 1.0; }
-    if on_ground != STRUCTURE_EMPTY { return 2.0; }
-    if structure_at(coords, LEVEL_UNDERGROUND) != STRUCTURE_EMPTY { return 1.0; }
-    return 0.0;
+    if !grid_contains(coords) { return 1.0; }
+    let cell = obstacle_cell_at(coords);
+    if cell_structure(cell, LEVEL_ON_GROUND) == STRUCTURE_BUILDING { return 2.0; }
+    return f32(cell_top_level(cell));
 }
 
 // Distance from `p` to the nearest edge or corner of `cell` that borders a different level, in

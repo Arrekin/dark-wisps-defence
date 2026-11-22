@@ -1,7 +1,11 @@
 import bevy_sprite_render::mesh2d::vertex_output::VertexOutput;
 import package::shaders::common::map_info::{grid_bounds, grid_contains, grid_index};
+import package::shaders::grids::obstacles::top_level_at;
 
 // Energy Supply Overlay Shader
+//
+// Each canvas draws one floor: only the cells whose top floor is its `altitude_index`. Fill and
+// edges are decided per cell regardless of level, so a level change draws no edge.
 //
 // Layers (back to front):
 //  1. Fill: yellow (powered) / orange (unpowered) tint over cells with active supply.
@@ -30,6 +34,8 @@ struct EnergySupplyCell {
 }
 
 @group(2) @binding(0) var<storage, read> energy_cells: array<EnergySupplyCell>;
+// Level code (`LEVEL_*` in grids/obstacles.wesl) of the floor this canvas draws on.
+@group(2) @binding(1) var<uniform> altitude_index: u32;
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -172,6 +178,9 @@ fn edge_color(edge: EdgeCandidate, cell: EnergySupplyCell) -> vec4<f32> {
 fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
     let uv = mesh.uv;
     let grid_size = vec2<f32>(grid_bounds());
+    if top_level_at(vec2<i32>(floor(uv * grid_size))) != altitude_index {
+        return BASE_COLOR;
+    }
     let block_position = fract(uv * grid_size);
     let step_size = 1.0 / grid_size;
 

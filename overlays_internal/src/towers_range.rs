@@ -3,6 +3,10 @@
 //! Uploads cell coverage and circular boundaries from [`TowerRangeIndex`] for the range shader.
 //! Index versions control buffer refreshes. A separate uniform describes the highlight a caller
 //! wants, so changing the highlight does not require rebuilding the coverage buffers.
+//!
+//! Ranges cover cells regardless of level. The overlay draws one canvas per floor, each showing
+//! the cells whose top floor is its level, so a range lies on wall tops and pit floors beneath
+//! whatever stands on them. The canvases share the coverage buffers.
 
 use bevy::{
     input::common_conditions::input_just_released,
@@ -16,7 +20,7 @@ use bevy::{
     sprite_render::{AlphaMode2d, Material2d, Material2dPlugin, MeshMaterial2d},
 };
 
-use game_core::prelude::{AreaRange, CELL_SIZE, DrawLevel, GridCoords, GridImprint, MapInfo, RangeType, ZDepth};
+use game_core::prelude::{AltitudeLevel, AreaRange, CELL_SIZE, DrawLevel, GridCoords, GridImprint, MapInfo, RangeType, ZDepth};
 use grids::prelude::GridVersion;
 use indexes::tower_ranges::TowerRangeIndex;
 use overlays::towers_range::{TowersRangeOverlayConfig, TowersRangeOverlaySecondaryMode};
@@ -73,6 +77,9 @@ struct TowersRangeMaterial {
     circle_indexes: Handle<ShaderBuffer>,
     #[uniform(3)]
     highlight: TowerRangeHighlight,
+    /// [`AltitudeLevel::three_layer_index_gpu`] of the floor this canvas draws on.
+    #[uniform(4)]
+    altitude_index: u32,
 }
 impl Material2d for TowersRangeMaterial {
     fn fragment_shader() -> ShaderRef {
@@ -86,9 +93,18 @@ impl Material2d for TowersRangeMaterial {
     specialize_with_shared_gpu!();
 }
 
-#[derive(Component, Default)]
-#[require(ZDepth::OverlayTowerRanges, DrawLevel::OnGround)]
+/// Coverage buffers shared by the overlay's canvases.
+#[derive(Clone)]
+struct TowersRangeBuffers {
+    cells: Handle<ShaderBuffer>,
+    circles: Handle<ShaderBuffer>,
+    circle_indexes: Handle<ShaderBuffer>,
+}
+
+/// The overlay's state and visibility. Its children are the canvases.
+#[derive(Component)]
 struct TowersRangeOverlay {
+    buffers: TowersRangeBuffers,
     /// Index version used to populate the buffers; `None` before the first refresh.
     shown_version: Option<GridVersion>,
     /// Mode used to populate the highlight uniform. The first refresh always populates it, because
@@ -98,6 +114,10 @@ struct TowersRangeOverlay {
     circle_indexes: Vec<u32>,
 }
 impl TowersRangeOverlay {
+    fn new(buffers: TowersRangeBuffers) -> Self {
+        Self { buffers, shown_version: None, shown_mode: None, circle_indexes: Vec::new() }
+    }
+
     /// Records the index version and returns whether the buffers need a refresh.
     fn record_version(&mut self, version: GridVersion) -> bool {
         if self.shown_version == Some(version) { return false; }
@@ -160,27 +180,44 @@ impl TowersRangeOverlay {
         commands.despawn_all::<With<TowersRangeOverlay>>();
 
         // Bind an initialized buffer on the material's spawn frame.
-        let cells = buffers.add(ShaderBuffer::from(vec![TowerRangeCell::default(); map_info.grid_bounds.area()]));
-        // Storage buffers cannot be empty, so these start with one unused row.
-        let circles = buffers.add(ShaderBuffer::from(vec![TowerRangeCircle::default()]));
-        let circle_indexes = buffers.add(ShaderBuffer::from(vec![0u32]));
-        let material = materials.add(TowersRangeMaterial { cells, circles, circle_indexes, highlight: default() });
+        let shared = TowersRangeBuffers {
+            cells: buffers.add(ShaderBuffer::from(vec![TowerRangeCell::default(); map_info.grid_bounds.area()])),
+            // Storage buffers cannot be empty, so these start with one unused row.
+            circles: buffers.add(ShaderBuffer::from(vec![TowerRangeCircle::default()])),
+            circle_indexes: buffers.add(ShaderBuffer::from(vec![0u32])),
+        };
         commands.spawn((
-            MapCanvasBundle::new(material, &map_info),
-            TowersRangeOverlay::default(),
+            TowersRangeOverlay::new(shared.clone()),
+            Transform::default(),
             if *overlay_state.get() == TowersRangeOverlayState::Show { Visibility::Inherited } else { Visibility::Hidden },
-        ));
+        )).with_children(|overlay| {
+            for level in AltitudeLevel::THREE_LAYERS {
+                let material = materials.add(TowersRangeMaterial {
+                    cells: shared.cells.clone(),
+                    circles: shared.circles.clone(),
+                    circle_indexes: shared.circle_indexes.clone(),
+                    highlight: default(),
+                    altitude_index: level.three_layer_index_gpu(),
+                });
+                overlay.spawn((MapCanvasBundle::new(material, &map_info), TowersRangeOverlayCanvas, DrawLevel::from(level)));
+            }
+        });
     }
 }
+
+/// One floor's canvas of the tower range overlay.
+#[derive(Component)]
+#[require(ZDepth::OverlayTowerRanges)]
+struct TowersRangeOverlayCanvas;
 
 fn refresh_display(
     mut buffers: ResMut<Assets<ShaderBuffer>>,
     mut materials: ResMut<Assets<TowersRangeMaterial>>,
     tower_range_index: Res<TowerRangeIndex>,
     overlay_config: Res<TowersRangeOverlayConfig>,
-    towers_range_overlay: Single<(&MeshMaterial2d<TowersRangeMaterial>, &mut TowersRangeOverlay)>,
+    mut overlay: Single<&mut TowersRangeOverlay>,
+    canvases: Query<&MeshMaterial2d<TowersRangeMaterial>, With<TowersRangeOverlayCanvas>>,
 ) {
-    let (overlay_material, mut overlay) = towers_range_overlay.into_inner();
     let version_changed = overlay.record_version(tower_range_index.version());
     let mode_changed = overlay.record_mode(&overlay_config.secondary_mode);
 
@@ -191,16 +228,21 @@ fn refresh_display(
             Some(TowersRangeOverlaySecondaryMode::HighlightTower { tower }) => tower_range_index.get(*tower).map(|indexed| indexed.range),
             Some(TowersRangeOverlaySecondaryMode::HighlightRange { range }) => Some(*range),
         };
-        materials.get_mut(overlay_material).unwrap().highlight = highlighted_range.map(TowerRangeHighlight::from).unwrap_or_default();
+        let highlight = highlighted_range.map(TowerRangeHighlight::from).unwrap_or_default();
+        for canvas in canvases.iter() {
+            let Some(mut material) = materials.get_mut(canvas) else { continue; };
+            material.highlight = highlight;
+        }
     }
     if !version_changed { return; }
 
-    let material = materials.get(overlay_material).unwrap();
-    overlay.stage_cells(&tower_range_index, &mut buffers.get_mut(&material.cells).unwrap());
-    TowersRangeOverlay::write_circles(&tower_range_index, &mut buffers.get_mut(&material.circles).unwrap());
-    let mut circle_indexes = buffers.get_mut(&material.circle_indexes).unwrap();
-    circle_indexes.clear();
-    circle_indexes.extend_from_slice(&overlay.circle_indexes);
+    let shared = overlay.buffers.clone();
+    if let Some(mut cells) = buffers.get_mut(&shared.cells) { overlay.stage_cells(&tower_range_index, &mut cells); }
+    if let Some(mut circles) = buffers.get_mut(&shared.circles) { TowersRangeOverlay::write_circles(&tower_range_index, &mut circles); }
+    if let Some(mut circle_indexes) = buffers.get_mut(&shared.circle_indexes) {
+        circle_indexes.clear();
+        circle_indexes.extend_from_slice(&overlay.circle_indexes);
+    }
 }
 
 /// Cell coverage and circle list offsets for the GPU.

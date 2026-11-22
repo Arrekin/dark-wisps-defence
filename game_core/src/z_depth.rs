@@ -187,14 +187,14 @@ impl ZDepth {
             | Self::OverlayEmissions
             | Self::DarkOre
             | Self::WallBottom
-            | Self::OverlayEnergySupply
-            | Self::OverlayTowerRanges
             | Self::WallTop => DrawLevels::only(DrawLevel::OnGround),
             Self::FloorCover
             | Self::FloorDecal
             | Self::FireballScorch
             | Self::FlameScorch
             | Self::FlameGlow
+            | Self::OverlayEnergySupply
+            | Self::OverlayTowerRanges
             | Self::Building
             | Self::BuildingEffect
             | Self::WispFire

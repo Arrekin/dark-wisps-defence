@@ -1,15 +1,19 @@
 import bevy_sprite_render::mesh2d::vertex_output::VertexOutput;
 import package::shaders::common::core::{CELL_SIZE, TAU};
 import package::shaders::common::map_info::{grid_bounds, grid_contains, grid_index};
+import package::shaders::grids::obstacles::top_level_at;
 
 // Tower range overlay.
+//
+// Each canvas draws one floor: only the cells whose top floor is its `altitude_index`. Coverage
+// and outlines are decided per cell regardless of level, so a level change draws no outline.
 //
 // Cell ranges draw dashed borders where neighbouring coverage signatures differ.
 // Circular ranges draw dashed arcs using the circle slots listed in each cell.
 // A separate uniform supplies the selected or previewed range. Its inner and outer boundaries
 // draw over a glow that fades toward the interior. Highlights also outline covered map borders.
 
-// Field order and types must match `TowerRangeCell` in overlays/src/towers_range.rs.
+// Field order and types must match `TowerRangeCell` in overlays_internal/src/towers_range.rs.
 struct TowerRangeCell {
     // XOR of the entity indexes of towers whose cell ranges cover this cell.
     signature: u32,
@@ -22,7 +26,7 @@ struct TowerRangeCell {
 }
 
 // Circular range data in world units. Free slots and cell ranges use zeroed entries.
-// Field order and types must match `TowerRangeCircle` in overlays/src/towers_range.rs.
+// Field order and types must match `TowerRangeCircle` in overlays_internal/src/towers_range.rs.
 struct TowerRangeCircle {
     center: vec2<f32>,
     min_radius: f32,
@@ -34,12 +38,12 @@ struct TowerRangeCircle {
 // Circle slot indexes grouped by cell, addressed by each cell's start offset and count.
 @group(2) @binding(2) var<storage, read> circle_indexes: array<u32>;
 
-// Must match the `kind` values of `TowerRangeHighlight` in overlays/src/towers_range.rs.
+// Must match the `kind` values of `TowerRangeHighlight` in overlays_internal/src/towers_range.rs.
 const HIGHLIGHT_NONE: u32 = 0u;
 const HIGHLIGHT_CELLS: u32 = 1u;
 const HIGHLIGHT_CIRCLE: u32 = 2u;
 
-// Field order and types must match `TowerRangeHighlight` in overlays/src/towers_range.rs.
+// Field order and types must match `TowerRangeHighlight` in overlays_internal/src/towers_range.rs.
 struct TowerRangeHighlight {
     kind: u32,
     // 1 for a plus imprint, 0 for a rectangle.
@@ -57,9 +61,11 @@ struct TowerRangeHighlight {
 }
 
 @group(2) @binding(3) var<uniform> highlight: TowerRangeHighlight;
+// Level code (`LEVEL_*` in grids/obstacles.wesl) of the floor this canvas draws on.
+@group(2) @binding(4) var<uniform> altitude_index: u32;
 
 // Rendering constants
-// Outline width in cells. Must match `OUTLINE_RATIO` in overlays/src/towers_range.rs.
+// Outline width in cells. Must match `OUTLINE_RATIO` in overlays_internal/src/towers_range.rs.
 const OUTLINE_RATIO: f32 = 2.0 / 16.0;
 const ARC_WIDTH: f32 = OUTLINE_RATIO * CELL_SIZE; // World units
 
@@ -241,6 +247,9 @@ fn draws_signature_edge(cell: TowerRangeCell, neighbor: TowerRangeCell) -> bool 
 fn fragment(mesh: VertexOutput) -> @location(0) vec4<f32> {
     let uv = mesh.uv;
     let cell_position = uv * vec2<f32>(grid_bounds());
+    if top_level_at(vec2<i32>(floor(cell_position))) != altitude_index {
+        return BASE_COLOR;
+    }
     let world_position = cell_position * CELL_SIZE;
 
     let position_in_cell = fract(cell_position);

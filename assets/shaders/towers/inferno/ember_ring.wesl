@@ -3,7 +3,8 @@ import bevy_sprite_render::mesh2d::view_bindings::globals;
 import package::shaders::common::core::CELL_SIZE;
 import package::shaders::common::fire_ramp::fire_ramp;
 import package::shaders::common::noise::noise_fbm_3d_drift;
-import package::shaders::grids::obstacles::{LEVEL_NONE, LEVEL_ON_ELEVATION, LEVEL_ON_GROUND, LEVEL_UNDERGROUND, STRUCTURE_BUILDING, STRUCTURE_EMPTY, STRUCTURE_OFF_MAP, structure_at};
+import package::shaders::common::map_info::grid_contains;
+import package::shaders::grids::obstacles::{LEVEL_NONE, LEVEL_ON_GROUND, top_level_at};
 
 // Ember ring at the outer edge of `TowerInferno` range, scaling with `charge`.
 // The tower spawns one ring per terrain draw level (`LEVEL_UNDERGROUND`, `LEVEL_ON_GROUND`,
@@ -35,11 +36,8 @@ const LEVEL_SHIFT: f32 = 4.0;  // radial inward shift per level above ground (ou
 
 // Exposed floor level at `coords`, or `LEVEL_NONE` outside the map. Buildings do not raise the ring.
 fn top_level(coords: vec2<i32>) -> u32 {
-    let on_ground = structure_at(coords, LEVEL_ON_GROUND);
-    if on_ground == STRUCTURE_OFF_MAP { return LEVEL_NONE; }
-    if on_ground != STRUCTURE_EMPTY && on_ground != STRUCTURE_BUILDING { return LEVEL_ON_ELEVATION; }
-    if structure_at(coords, LEVEL_UNDERGROUND) != STRUCTURE_EMPTY { return LEVEL_ON_GROUND; }
-    return LEVEL_UNDERGROUND;
+    if !grid_contains(coords) { return LEVEL_NONE; }
+    return top_level_at(coords);
 }
 
 fn look(mesh: VertexOutput, ember_ring: Instance) -> vec4<f32> {

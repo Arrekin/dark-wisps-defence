@@ -95,6 +95,40 @@ fn structure_shape_at(coords: vec2<i32>, level: u32) -> u32 {
     return cell_structure_shape(obstacle_cell_at(coords), level);
 }
 
+// True if `structure` (`STRUCTURE_*`) provides a floor for the level above it. Mirrors
+// `GridStructure::provides_floor` in indexes/src/obstacles.rs.
+fn structure_provides_floor(structure: u32) -> bool {
+    return structure == STRUCTURE_SOLID || structure == STRUCTURE_DARK_ORE || structure == STRUCTURE_WALL
+        || structure == STRUCTURE_EXCAVATION;
+}
+
+// Structure (`STRUCTURE_*`) in the layer below `level`. Solid earth lies below the lowest level.
+// Mirrors `ObstacleCell::structure_under` in indexes/src/obstacles.rs.
+fn cell_structure_under(cell: ObstacleCell, level: u32) -> u32 {
+    if level == LEVEL_UNDERGROUND { return STRUCTURE_SOLID; }
+    return cell_structure(cell, level - 1u);
+}
+
+// True if `level` has a floor in `cell`, provided by the structure beneath it. Mirrors
+// `ObstacleCell::has_floor` in indexes/src/obstacles.rs.
+fn cell_has_floor(cell: ObstacleCell, level: u32) -> bool {
+    return structure_provides_floor(cell_structure_under(cell, level));
+}
+
+// The highest level of `cell` with a floor (`LEVEL_*`). Mirrors `ObstacleCell::top_level` in
+// indexes/src/obstacles.rs: a building provides no floor, so its cell's top is the ground under it.
+// OFF_MAP_CELL has no floor and returns LEVEL_UNDERGROUND.
+fn cell_top_level(cell: ObstacleCell) -> u32 {
+    if cell_has_floor(cell, LEVEL_ON_ELEVATION) { return LEVEL_ON_ELEVATION; }
+    if cell_has_floor(cell, LEVEL_ON_GROUND) { return LEVEL_ON_GROUND; }
+    return LEVEL_UNDERGROUND;
+}
+
+// The top level (`LEVEL_*`) of the cell at `coords`, as `cell_top_level` gives it.
+fn top_level_at(coords: vec2<i32>) -> u32 {
+    return cell_top_level(obstacle_cell_at(coords));
+}
+
 // Unpacks `cell`'s one-based wall style index (`WallStyleKey::gpu_index` in
 // `map_objects/src/wall_style.rs`) at `LEVEL_ON_GROUND`, or 0 if `cell` has no wall.
 fn cell_wall_style_index(cell: ObstacleCell) -> u32 {

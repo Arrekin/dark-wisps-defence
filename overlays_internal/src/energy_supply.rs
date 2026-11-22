@@ -1,6 +1,10 @@
 //! # Energy supply overlay
 //!
 //! Draws the energy supply grid, or its preview while one exists, with the highlight a caller wants.
+//!
+//! Supply covers cells regardless of level. The overlay draws one canvas per floor, each showing
+//! the cells whose top floor is its level, so supply lies on wall tops and pit floors beneath
+//! whatever stands on them. The canvases share one supply buffer.
 
 use bevy::{
     input::common_conditions::input_just_released,
@@ -11,11 +15,11 @@ use bevy::{
         storage::ShaderBuffer,
     },
     shader::ShaderRef,
-    sprite_render::{AlphaMode2d, Material2d, Material2dPlugin, MeshMaterial2d},
+    sprite_render::{AlphaMode2d, Material2d, Material2dPlugin},
 };
 use smallvec::{SmallVec, smallvec};
 
-use game_core::prelude::{DrawLevel, MapInfo, ZDepth};
+use game_core::prelude::{AltitudeLevel, DrawLevel, MapInfo, ZDepth};
 use grids::prelude::GridVersion;
 use indexes::energy_supply::{self, EnergySupply};
 use overlays::energy_supply::{EnergySupplyOverlayConfig, EnergySupplyOverlaySecondaryMode};
@@ -60,6 +64,9 @@ fn apply_config_change(
 struct EnergySupplyHeatmapMaterial {
     #[storage(0, read_only)]
     energy_cells: Handle<ShaderBuffer>,
+    /// [`AltitudeLevel::three_layer_index_gpu`] of the floor this canvas draws on.
+    #[uniform(1)]
+    altitude_index: u32,
 }
 impl Material2d for EnergySupplyHeatmapMaterial {
     fn fragment_shader() -> ShaderRef {
@@ -81,9 +88,11 @@ struct ShownState {
     mode: Option<EnergySupplyOverlaySecondaryMode>,
 }
 
-#[derive(Component, Default)]
-#[require(ZDepth::OverlayEnergySupply, DrawLevel::OnGround)]
+/// The overlay's state and visibility. Its children are the canvases.
+#[derive(Component)]
 struct EnergySupplyOverlay {
+    /// Supply buffer shared by the canvases.
+    energy_cells: Handle<ShaderBuffer>,
     /// `None` before the first refresh.
     shown: Option<ShownState>,
 }
@@ -106,24 +115,34 @@ impl EnergySupplyOverlay {
 
         // Bind an initialized buffer on the material's spawn frame.
         let energy_cells = buffers.add(ShaderBuffer::from(vec![EnergySupplyCell::none(); map_info.grid_bounds.area()]));
-        let material = materials.add(EnergySupplyHeatmapMaterial { energy_cells });
         commands.spawn((
-            MapCanvasBundle::new(material, &map_info),
-            EnergySupplyOverlay::default(),
+            EnergySupplyOverlay { energy_cells: energy_cells.clone(), shown: None },
+            Transform::default(),
             if *overlay_state.get() == EnergySupplyOverlayState::Show { Visibility::Inherited } else { Visibility::Hidden },
-        ));
+        )).with_children(|overlay| {
+            for level in AltitudeLevel::THREE_LAYERS {
+                let material = materials.add(EnergySupplyHeatmapMaterial {
+                    energy_cells: energy_cells.clone(),
+                    altitude_index: level.three_layer_index_gpu(),
+                });
+                overlay.spawn((MapCanvasBundle::new(material, &map_info), EnergySupplyOverlayCanvas, DrawLevel::from(level)));
+            }
+        });
     }
 }
+
+/// One floor's canvas of the energy supply overlay.
+#[derive(Component)]
+#[require(ZDepth::OverlayEnergySupply)]
+struct EnergySupplyOverlayCanvas;
 
 /// Draws the preview while one exists, otherwise the real grid, with the wanted highlight.
 fn refresh_display(
     mut buffers: ResMut<Assets<ShaderBuffer>>,
-    materials: Res<Assets<EnergySupplyHeatmapMaterial>>,
     energy_supply: Res<EnergySupply>,
     overlay_config: Res<EnergySupplyOverlayConfig>,
-    energy_supply_overlay: Single<(&MeshMaterial2d<EnergySupplyHeatmapMaterial>, &mut EnergySupplyOverlay)>,
+    mut overlay: Single<&mut EnergySupplyOverlay>,
 ) {
-    let (overlay_material, mut overlay) = energy_supply_overlay.into_inner();
     let preview = energy_supply.preview();
     let grid = preview.unwrap_or(&energy_supply.grid);
     let shown = ShownState { is_preview: preview.is_some(), version: grid.version, mode: overlay_config.secondary_mode.clone() };
@@ -145,8 +164,7 @@ fn refresh_display(
         }
     };
 
-    let Some(overlay_material) = materials.get(overlay_material) else { return; };
-    let Some(mut buffer) = buffers.get_mut(&overlay_material.energy_cells) else { return; };
+    let Some(mut buffer) = buffers.get_mut(&overlay.energy_cells) else { return; };
     buffer.clear();
     buffer.extend(grid.grid.iter().map(|grid_cell| EnergySupplyCell::from_grid_cell(grid_cell, &highlight_mode)));
 }

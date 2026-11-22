@@ -1,6 +1,6 @@
-// Burning napalm and char marks for the floor cover canvas. Adjacent cells of the same kind
-// join into a continuous surface. Game time controls expiry and fading; the shader clock
-// animates the flames. Both shaders return premultiplied colour.
+// Burning napalm and char marks for the floor cover canvas. Neighbouring cells of the same kind
+// whose floors connect join into a continuous surface. Game time controls expiry and fading; the
+// shader clock animates the flames. Both shaders return premultiplied colour.
 //
 // Napalm and char entities always carry a `TimeBound`, so `entry.duration` is always a finite
 // positive lifetime (`FLOOR_COVER_PERMANENT_DURATION` is never used here).
@@ -9,9 +9,11 @@ import bevy_sprite_render::mesh2d::view_bindings::globals;
 import package::shaders::common::clock::game_time_since;
 import package::shaders::common::fire_ramp::{FIRE_HEAT_CAP, fire_ramp};
 import package::shaders::common::noise::noise_fbm_2d;
+import package::shaders::grids::floor_connections::connects_floor;
 import package::shaders::grids::floor_cover::{
     FLOOR_COVER_CHAR, FLOOR_COVER_NAPALM, FloorCoverEntry, floor_cover_cell_entries, floor_cover_entries_at, floor_cover_has_kind_at,
 };
+import package::shaders::grids::obstacles::LEVEL_NONE;
 import package::shaders::weaponry::ground_fire::{
     GROUND_FIRE_OPEN_BOTTOM, GROUND_FIRE_OPEN_BOTTOM_LEFT, GROUND_FIRE_OPEN_BOTTOM_RIGHT, GROUND_FIRE_OPEN_LEFT,
     GROUND_FIRE_OPEN_RIGHT, GROUND_FIRE_OPEN_TOP, GROUND_FIRE_OPEN_TOP_LEFT, GROUND_FIRE_OPEN_TOP_RIGHT,
@@ -37,21 +39,42 @@ const CHAR_DARKNESS: f32 = 0.5;
 // Exponential cinder decay rate over the mark's normalized age.
 const CHAR_CINDER_DECAY: f32 = 6.0;
 
-// Opens boundaries toward neighbouring cells with the same kind on the same floor.
+// Level of the floor across `side` that connects with the floor of `level` at `cell` and holds a
+// cover of `kind`, or `LEVEL_NONE`.
+fn joined_level(cell: vec2<i32>, level: u32, side: vec2<i32>, kind: u32) -> u32 {
+    let across = connects_floor(cell, level, side);
+    if across == LEVEL_NONE || !floor_cover_has_kind_at(cell + side, kind, across) { return LEVEL_NONE; }
+    return across;
+}
+
+// True if the diagonal neighbour in direction `first + second` holds a cover of `kind` on the floor
+// that both side neighbours' floors connect to.
+fn joins_corner(cell: vec2<i32>, first: vec2<i32>, first_joined: u32, second: vec2<i32>, second_joined: u32, kind: u32) -> bool {
+    if first_joined == LEVEL_NONE || second_joined == LEVEL_NONE { return false; }
+    let through_first = joined_level(cell + first, first_joined, second, kind);
+    return through_first != LEVEL_NONE && through_first == joined_level(cell + second, second_joined, first, kind);
+}
+
+// Opens boundaries toward neighbouring cells whose floors connect with this cell's floor and hold
+// a cover of the same kind.
 fn open_sides(cell: vec2<i32>, kind: u32, level: u32) -> u32 {
-    let right = floor_cover_has_kind_at(cell + vec2<i32>(1, 0), kind, level);
-    let top = floor_cover_has_kind_at(cell + vec2<i32>(0, 1), kind, level);
-    let left = floor_cover_has_kind_at(cell + vec2<i32>(-1, 0), kind, level);
-    let bottom = floor_cover_has_kind_at(cell + vec2<i32>(0, -1), kind, level);
+    let right = vec2<i32>(1, 0);
+    let top = vec2<i32>(0, 1);
+    let left = vec2<i32>(-1, 0);
+    let bottom = vec2<i32>(0, -1);
+    let right_joined = joined_level(cell, level, right, kind);
+    let top_joined = joined_level(cell, level, top, kind);
+    let left_joined = joined_level(cell, level, left, kind);
+    let bottom_joined = joined_level(cell, level, bottom, kind);
     var open = 0u;
-    if right { open |= GROUND_FIRE_OPEN_RIGHT; }
-    if top { open |= GROUND_FIRE_OPEN_TOP; }
-    if left { open |= GROUND_FIRE_OPEN_LEFT; }
-    if bottom { open |= GROUND_FIRE_OPEN_BOTTOM; }
-    if right && top && floor_cover_has_kind_at(cell + vec2<i32>(1, 1), kind, level) { open |= GROUND_FIRE_OPEN_TOP_RIGHT; }
-    if left && top && floor_cover_has_kind_at(cell + vec2<i32>(-1, 1), kind, level) { open |= GROUND_FIRE_OPEN_TOP_LEFT; }
-    if left && bottom && floor_cover_has_kind_at(cell + vec2<i32>(-1, -1), kind, level) { open |= GROUND_FIRE_OPEN_BOTTOM_LEFT; }
-    if right && bottom && floor_cover_has_kind_at(cell + vec2<i32>(1, -1), kind, level) { open |= GROUND_FIRE_OPEN_BOTTOM_RIGHT; }
+    if right_joined != LEVEL_NONE { open |= GROUND_FIRE_OPEN_RIGHT; }
+    if top_joined != LEVEL_NONE { open |= GROUND_FIRE_OPEN_TOP; }
+    if left_joined != LEVEL_NONE { open |= GROUND_FIRE_OPEN_LEFT; }
+    if bottom_joined != LEVEL_NONE { open |= GROUND_FIRE_OPEN_BOTTOM; }
+    if joins_corner(cell, right, right_joined, top, top_joined, kind) { open |= GROUND_FIRE_OPEN_TOP_RIGHT; }
+    if joins_corner(cell, left, left_joined, top, top_joined, kind) { open |= GROUND_FIRE_OPEN_TOP_LEFT; }
+    if joins_corner(cell, left, left_joined, bottom, bottom_joined, kind) { open |= GROUND_FIRE_OPEN_BOTTOM_LEFT; }
+    if joins_corner(cell, right, right_joined, bottom, bottom_joined, kind) { open |= GROUND_FIRE_OPEN_BOTTOM_RIGHT; }
     return open;
 }
 
