@@ -2,6 +2,7 @@ pub(crate) mod blaster;
 pub(crate) mod cannon;
 pub(crate) mod emitter;
 pub(crate) mod field;
+pub(crate) mod lob_preview;
 pub(crate) mod rocket_launcher;
 
 use bevy::prelude::*;
@@ -22,6 +23,7 @@ impl Plugin for TowersPlugin {
                 emitter::tower_inferno_fire::TowerInfernoFirePlugin,
                 field::tower_field::TowerFieldPlugin,
                 field::tower_crucible::TowerCruciblePlugin,
+                lob_preview::TowerLobPreviewPlugin,
             ));
     }
 }

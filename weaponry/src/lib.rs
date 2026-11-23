@@ -11,7 +11,7 @@ pub mod ripple;
 
 pub mod prelude {
     pub use super::cannonball::{BuilderCannonball, Cannonball};
-    pub use super::components::{FiredProjectiles, Projectile, ProjectileDirection, ProjectileOf};
+    pub use super::components::{FiredProjectiles, Projectile, ProjectileDirection, ProjectileLaunchCounter, ProjectileLaunched, ProjectileOf};
     pub use super::fireball::{BuilderFireball, Fireball};
     pub use super::flame_stream::FlameStream;
     pub use super::inferno_dome::InfernoDome;

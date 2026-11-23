@@ -1,14 +1,16 @@
-//! # Drop shadow
+//! # Drop Shadow
 //!
-//! The round shadow an object above the map casts onto it. The shadow falls on the top of each cell
-//! it covers, read from the shared obstacle cells by its look (`shaders::visuals::drop_shadow`). It
-//! steps toward the object on tops higher than the base cell's and away on lower ones. Below an edge
-//! where a top drops, it follows a slope as steep as the sun is high, so its parts on the two tops
-//! join across the edge.
+//! Circular shadow cast by an airborne entity onto cell top surfaces via
+//! `shaders::visuals::drop_shadow` and `shaders::visuals::drop_shadow_cast`.
 //!
-//! The owner decides where the object is: it spawns a `DropShadow` as a child standing at the
-//! object's ground position, reports the object's position each frame with [`DropShadow::cast`],
-//! and fits the child's transform with [`DropShadow::place`].
+//! Heights are measured relative to a reference `base` cell's top surface so the shadow meets the
+//! caster when `height` reaches zero on that surface. Across cells of different elevations, the
+//! shader shifts the shadow offset per level and ramps across leeward elevation drops so the shadow
+//! stays connected.
+//!
+//! Spawn [`DropShadow`] as a child of an entity positioned at the caster's ground projection. Each
+//! frame, update the shadow with [`DropShadow::cast`] and size/offset its quad with
+//! [`DropShadow::place`].
 
 use bevy::{prelude::*, reflect::TypePath, render::render_resource::ShaderType};
 
@@ -16,23 +18,25 @@ use game_core::prelude::{DrawLevel, ZDepth};
 
 use crate::{lane::LaneVisual, map_light::{MAP_SUN_ELEVATION_TANGENT, MAP_SUN_GROUND_DIRECTION}};
 
-// Mirrors of `assets/shaders/visuals/drop_shadow.wesl`, for fitting the quad
-const SHADOW_SPREAD: f32 = 0.35;
-const LEVEL_STEP: f32 = 24.;
-/// Levels a cell's top can lie above or below the base cell's top.
-const MAX_RISE: f32 = 2.;
+// Mirrored from `assets/shaders/visuals/drop_shadow_cast.wesl` to bound shadow quad transforms.
+/// Fractional shadow diameter increase at maximum height spread.
+pub const SHADOW_SPREAD: f32 = 0.35;
+/// Vertical height per elevation level, in world units.
+pub const LEVEL_STEP: f32 = 24.;
+/// Maximum level difference between any cell top and the base cell (`top_level` spans `0..=2`).
+pub const MAX_RISE: f32 = 2.;
 
-/// Round shadow of an object above the map, drawn by a paint lane at `OnElevation` above wall tops
-/// and the wisps standing on them. Field order and types mirror `Instance` in
-/// `assets/shaders/visuals/drop_shadow.wesl`.
+/// Circular drop shadow rendered at [`DrawLevel::OnElevation`] (above walls and ground wisps).
+///
+/// Field order and types mirror `Instance` in `assets/shaders/visuals/drop_shadow.wesl`.
 #[derive(Component, ShaderType, TypePath, Clone)]
 #[require(ZDepth::GroundEffect, DrawLevel::OnElevation)]
 pub struct DropShadow {
-    /// World position below the object.
+    /// World position directly below the caster.
     ground: Vec2,
-    /// World position whose cell top `height` is measured from.
+    /// World position of the reference cell whose top `height` is measured from.
     base: Vec2,
-    /// Object height above the base cell's top, in world units.
+    /// Caster height above the `base` cell's top surface, in world units.
     height: f32,
     /// Shadow diameter at zero height, in world units.
     diameter: f32,
@@ -43,19 +47,20 @@ impl LaneVisual for DropShadow {
     const LOOK: &'static str = "shaders::visuals::drop_shadow";
 }
 impl DropShadow {
-    /// A shadow `diameter` world units across at zero height, with heights measured from the top of
-    /// the cell at `base`.
+    /// Creates a shadow with zero-height `diameter` (world units) and heights measured relative to
+    /// the cell top at `base`.
     pub fn new(diameter: f32, base: Vec2) -> Self {
         Self { ground: base, base, height: 0., diameter, opacity: 1. }
     }
 
-    /// Places the object above `ground` at `height` over the base cell's top.
+    /// Updates the caster's `ground` projection and `height` above the base cell's top.
     pub fn cast(&mut self, ground: Vec2, height: f32) {
         self.ground = ground;
         self.height = height;
     }
 
-    /// Fits `transform` to cover the shadow on any top. The entity's parent stands at `ground`.
+    /// Positions and scales `transform` (relative to a parent at `ground`) so the quad covers the
+    /// shadow across all possible surface elevations.
     pub fn place(&self, transform: &mut Transform) {
         let offset = -MAP_SUN_GROUND_DIRECTION * self.height / MAP_SUN_ELEVATION_TANGENT;
         let level_shift = MAX_RISE * LEVEL_STEP / MAP_SUN_ELEVATION_TANGENT;

@@ -8,6 +8,7 @@ bevy = { workspace = true }
 game_core = { workspace = true }
 grids = { workspace = true }
 alteration = { workspace = true }
+weaponry = { workspace = true }
 
 [lints]
 workspace = true

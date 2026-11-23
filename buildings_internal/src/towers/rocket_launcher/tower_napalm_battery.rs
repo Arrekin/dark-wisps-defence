@@ -1,9 +1,12 @@
 //! # Napalm Battery
 //!
-//! The Fire evolution of the Rocket Launcher. Fires salvos of napalm bombs at distinct random
-//! cells around the target wisp's next cell.
+//! Fire evolution of the Rocket Launcher. Fires salvos of napalm bombs: the first targets the wisp's
+//! predicted next cell, and the remaining bombs target distinct random cells within
+//! [`SALVO_AREA_REACH`].
 //!
-//! All bombs in a salvo spawn at once with staggered launch times stored in their `Lob`s.
+//! All bombs in a salvo spawn at once; bombs after the first carry a staggered
+//! [`ProjectileLaunchCounter`]. While queued bombs are waiting to launch, the battery's lob preview
+//! displays the next queued bomb's arc rather than predictive aim.
 
 use bevy::{
     prelude::*,
@@ -26,17 +29,20 @@ use resources::prelude::*;
 use session::GameClock;
 use shards::prelude::*;
 use states::prelude::*;
-use weaponry::{lob::{LobPreview, LobProfile}, prelude::*};
+use weaponry::{lob::{LobArc, LobPreviewShown, LobProfile}, prelude::*};
 use wisps::prelude::*;
 
-use crate::common::*;
+use crate::{common::*, towers::lob_preview::TowerLobArcSystems};
 
 pub(crate) struct TowerNapalmBatteryPlugin;
 impl Plugin for TowerNapalmBatteryPlugin {
     fn build(&self, app: &mut App) {
         let almanach_info = BuilderTowerNapalmBattery::almanach_info(app.world().resource::<AssetServer>());
         app
-            .add_systems(Update, shoot_targets.after(TowerAimingSystems).run_if(in_state(GameState::Running)))
+            .add_systems(Update, (
+                shoot_targets.after(TowerAimingSystems).run_if(in_state(GameState::Running)),
+                sync_lob_arc_with_salvo_or_predictive_aiming.in_set(TowerLobArcSystems),
+            ))
             .add_observer(BuilderTowerNapalmBattery::on_builder_add_spawn_tower_napalm_battery)
             .add_observer(on_tower_napalm_battery_place_request_do_so)
             .add_systems(CollectSave, collect_tower_napalm_batteries)
@@ -58,7 +64,7 @@ const SALVO_SIZE: usize = 6;
 /// Maximum offset from the aim cell along either grid axis, in cells.
 const SALVO_AREA_REACH: i32 = 2;
 const SALVO_AREA_SIDE: usize = (2 * SALVO_AREA_REACH + 1) as usize;
-/// Candidate landing cells relative to the aim cell.
+/// Candidate landing cells relative to the aim cell, the aim cell first.
 const SALVO_AREA_OFFSETS: [(i32, i32); SALVO_AREA_SIDE * SALVO_AREA_SIDE] = salvo_area_offsets();
 /// Seconds between the launches of consecutive bombs in a salvo.
 const SALVO_LAUNCH_GAP: f32 = 0.1;
@@ -70,6 +76,10 @@ const fn salvo_area_offsets() -> [(i32, i32); SALVO_AREA_SIDE * SALVO_AREA_SIDE]
         offsets[index] = ((index % SALVO_AREA_SIDE) as i32 - SALVO_AREA_REACH, (index / SALVO_AREA_SIDE) as i32 - SALVO_AREA_REACH);
         index += 1;
     }
+    // Swap the aim cell, at the centre of the area, to the front.
+    let centre = offsets.len() / 2;
+    offsets[centre] = offsets[0];
+    offsets[0] = (0, 0);
     offsets
 }
 
@@ -151,7 +161,6 @@ impl BuilderTowerNapalmBattery {
             .insert((
                 TowerNapalmBattery,
                 NAPALM_BATTERY_LOB,
-                LobPreview,
                 building_info.world_sprite(),
                 area,
                 TowerTopRotation { current_angle: builder.top_angle },
@@ -262,22 +271,54 @@ fn shoot_targets(
         let tower_center = transform.translation.xy();
         if !top_rotation.is_facing(wisp_transform.translation.xy() - tower_center) { continue; }
 
-        // A partial Fisher-Yates shuffle selects distinct cells without shuffling the entire area.
+        // The first bomb takes the aim cell. A partial Fisher-Yates shuffle selects distinct cells for
+        // the rest without shuffling the entire area.
         let mut offsets = SALVO_AREA_OFFSETS;
         let mut rng = nanorand::tls_rng();
         let mut launched = 0;
         for index in 0..offsets.len() {
             if launched == SALVO_SIZE { break; }
-            let swap_index = rng.generate_range(index..offsets.len());
-            offsets.swap(index, swap_index);
+            if index > 0 { offsets.swap(index, rng.generate_range(index..SALVO_AREA_OFFSETS.len())); }
             let landing_coords = aim_coords.shifted(offsets[index]);
             if !map_info.grid_bounds.contains(landing_coords) { continue; }
 
             let landing_point = landing_coords.world_center();
-            let lob = lob_profile.lob(tower_center, landing_point, clock.from_now(launched as f32 * SALVO_LAUNCH_GAP));
-            commands.spawn(BuilderNapalmBomb::new(lob).with_shooter(tower));
+            let arc = lob_profile.arc(tower_center, landing_point);
+            let launch_counter = (launched > 0).then(|| ProjectileLaunchCounter::new(clock.from_now(launched as f32 * SALVO_LAUNCH_GAP)));
+            commands.spawn(BuilderNapalmBomb::new(arc).with_shooter(tower).with_launch_counter(launch_counter));
             launched += 1;
         }
         timer.0.reset();
+    }
+}
+
+/// Updates [`LobArc`] on previewed batteries to the soonest-launching queued bomb in the active
+/// salvo, or to the target wisp's predicted next cell when no salvo is mid-launch.
+///
+/// Removes [`LobArc`] when no bomb is queued and the battery is non-operational or has no targets;
+/// retains the previous arc while [`TowerWispTarget::SearchForNewTarget`] is pending.
+fn sync_lob_arc_with_salvo_or_predictive_aiming(
+    mut commands: Commands,
+    predictive_aim: PredictiveAim,
+    batteries: Query<(Entity, &Transform, &LobProfile, &TowerWispTarget, Has<IsOperational>, Option<&FiredProjectiles>, Option<&LobArc>), (With<TowerNapalmBattery>, With<LobPreviewShown>)>,
+    waiting_bombs: Query<(&LobArc, &ProjectileLaunchCounter)>,
+) {
+    for (battery, transform, lob_profile, target, is_operational, fired_projectiles, current_arc) in batteries.iter() {
+        let soonest_bomb_arc = fired_projectiles.into_iter().flat_map(FiredProjectiles::iter)
+            .filter_map(|bomb| waiting_bombs.get(bomb).ok())
+            .min_by(|(_, a), (_, b)| a.launch_at.total_cmp(&b.launch_at))
+            .map(|(arc, _)| *arc);
+        let arc = match soonest_bomb_arc {
+            Some(arc) => arc,
+            None => {
+                if !is_operational || target.has_no_targets() {
+                    if current_arc.is_some() { commands.entity(battery).remove::<LobArc>(); }
+                    continue;
+                }
+                let Some(aim_coords) = target.wisp().and_then(|wisp| predictive_aim.next_cell(wisp)) else { continue; };
+                lob_profile.arc(transform.translation.xy(), aim_coords.world_center())
+            }
+        };
+        if current_arc != Some(&arc) { commands.entity(battery).insert(arc); }
     }
 }

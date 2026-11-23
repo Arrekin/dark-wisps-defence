@@ -6,8 +6,11 @@ pub(crate) mod flame_stream_fire;
 pub(crate) mod inferno_dome;
 pub(crate) mod laser_dart;
 pub(crate) mod lob;
+pub(crate) mod lob_preview;
+pub(crate) mod lob_preview_paths;
 pub(crate) mod napalm;
 pub(crate) mod napalm_bomb;
+pub(crate) mod projectile_launch;
 pub(crate) mod ripple;
 pub(crate) mod rocket;
 
@@ -19,7 +22,10 @@ impl Plugin for WeaponryPlugin {
         app
             .add_plugins((
                 laser_dart::LaserDartPlugin,
+                projectile_launch::ProjectileLaunchPlugin,
                 lob::LobPlugin,
+                lob_preview::LobPreviewPlugin,
+                lob_preview_paths::LobPreviewPathsPlugin,
                 cannonball::CannonballPlugin,
                 fireball::FireballPlugin,
                 flame_stream::FlameStreamPlugin,

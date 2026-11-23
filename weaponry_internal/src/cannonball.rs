@@ -9,19 +9,18 @@ use alteration::modifiers::prelude::AttackDamage;
 use game_core::prelude::{CELL_SIZE, DamageMessage, GridCoords, OptionalCommands, Property};
 use logging::prelude::*;
 use persistence::{prelude::*, rusqlite};
-use session::GameClock;
-use states::prelude::{GameState, MapLoadingStage};
+use states::prelude::MapLoadingStage;
 use visuals::{drop_shadow::DropShadow, prelude::BuilderExplosion};
-use weaponry::{lob::{Lob, LobInFlight}, prelude::*};
+use weaponry::{lob::{Lob, LobArc, LobArcProgress, LobLanded}, prelude::*};
 
-use crate::{blast::BlastHitManager, lob::{LoadLobExtension, LobBody, SaveLobExtension, advance_lobs}};
+use crate::{blast::BlastHitManager, lob::{LoadLobExtension, LobBody, SaveLobExtension}};
 
 pub(crate) struct CannonballPlugin;
 impl Plugin for CannonballPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_systems(Update, resolve_cannonball_hits.after(advance_lobs).run_if(in_state(GameState::Running)))
             .add_observer(on_builder_add_spawn_cannonball)
+            .add_observer(on_lob_landed_detonate_cannonball)
             .add_systems(CollectSave, collect_cannonballs)
             .register_loader(MapLoadingStage::SpawnMapElements, "cannonballs", load_cannonballs);
     }
@@ -36,24 +35,24 @@ const BLAST_REACH: u8 = 1;
 
 #[log_tags(Tag::GameSave)]
 fn collect_cannonballs(
-    cannonballs: Query<(Entity, &Lob, &AttackDamage), With<Cannonball>>,
+    cannonballs: Query<(Entity, &LobArc, &LobArcProgress, &AttackDamage), With<Cannonball>>,
     mut save: SaveWriter,
 ) {
     if cannonballs.is_empty() { return; }
 
     #[debug_dev("Saving {} cannonballs", rows.len())]
-    let rows: Vec<(u32, f32, Lob)> = cannonballs
+    let rows: Vec<(u32, f32, LobArc, LobArcProgress)> = cannonballs
         .iter()
-        .map(|(entity, lob, damage)| (entity.index_u32(), damage.get(), *lob))
+        .map(|(entity, arc, progress, damage)| (entity.index_u32(), damage.get(), *arc, *progress))
         .collect();
     save.submit(move |ctx| {
-        for (id, damage, lob) in rows {
+        for (id, damage, arc, progress) in rows {
             ctx.register_entity(id)?;
             ctx.tx.execute(
                 "INSERT OR REPLACE INTO cannonballs (id, damage) VALUES (?1, ?2)",
                 rusqlite::params![id, damage],
             )?;
-            ctx.save_lob(id, &lob)?;
+            ctx.save_lob(id, arc, progress)?;
         }
         Ok(())
     });
@@ -62,7 +61,8 @@ fn collect_cannonballs(
 fn load_cannonballs(ctx: &mut LoadContext) -> LoadResult {
     ctx.for_each_entity("SELECT id, damage FROM cannonballs", |ctx, old_id, entity, row| {
         let damage: f32 = row.get(1)?;
-        let builder = BuilderCannonball::new(ctx.lob(old_id)?, AttackDamage::new(damage));
+        let (arc, progress) = ctx.lob(old_id)?;
+        let builder = BuilderCannonball::new(arc, AttackDamage::new(damage)).with_progress(progress);
         ctx.insert(entity, builder);
         Ok(())
     })
@@ -82,7 +82,9 @@ fn on_builder_add_spawn_cannonball(
         .insert_some(builder.shooter.map(ProjectileOf))
         .insert((
             Cannonball,
-            builder.lob,
+            builder.arc,
+            builder.progress,
+            Lob,
             builder.damage,
             children![
                 (
@@ -93,28 +95,27 @@ fn on_builder_add_spawn_cannonball(
                         ..default()
                     },
                 ),
-                DropShadow::new(CANNONBALL_SIZE, builder.lob.target()),
+                DropShadow::new(CANNONBALL_SIZE, builder.arc.target),
             ],
         ));
 }
 
-fn resolve_cannonball_hits(
+fn on_lob_landed_detonate_cannonball(
+    trigger: On<LobLanded>,
     mut commands: Commands,
     mut damage_messages: MessageWriter<DamageMessage>,
-    clock: Res<GameClock>,
     blast_hit_manager: BlastHitManager,
-    cannonballs: Query<(Entity, &Lob, &AttackDamage), (With<Cannonball>, With<LobInFlight>)>,
+    cannonballs: Query<(&LobArc, &AttackDamage), With<Cannonball>>,
 ) {
-    for (entity, lob, attack_damage) in cannonballs.iter() {
-        if !lob.is_landed(clock.now()) { continue; }
-        commands.entity(entity).despawn();
+    let entity = trigger.0;
+    let Ok((arc, attack_damage)) = cannonballs.get(entity) else { return; };
+    commands.entity(entity).despawn();
 
-        let Some(blast) = blast_hit_manager.go_off(GridCoords::from_world_position(lob.target()), BLAST_REACH) else { continue; };
-        for hit in blast.hits() {
-            commands.spawn(BuilderExplosion(hit.position));
-            for &wisp in hit.wisps {
-                damage_messages.write(DamageMessage { target: wisp, amount: attack_damage.get() });
-            }
+    let Some(blast) = blast_hit_manager.go_off(GridCoords::from_world_position(arc.target), BLAST_REACH) else { return; };
+    for hit in blast.hits() {
+        commands.spawn(BuilderExplosion(hit.position));
+        for &wisp in hit.wisps {
+            damage_messages.write(DamageMessage { target: wisp, amount: attack_damage.get() });
         }
     }
 }

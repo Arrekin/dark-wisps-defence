@@ -27,14 +27,14 @@ use game_core::prelude::{CELL_SIZE, DamageMessage, DrawLevel, GridCoords, MapBou
 use logging::prelude::*;
 use persistence::{prelude::*, rusqlite};
 use session::{GameClock, TimeBound};
-use states::prelude::{GameState, MapLoadingStage};
+use states::prelude::MapLoadingStage;
 use visuals::{
     clock::ClockInstant,
     drop_shadow::DropShadow,
     lane::{LanePlugin, LaneVisual},
     shader::{ADDITIVE_BLENDING, seed_from_entity},
 };
-use weaponry::{lob::{Lob, LobInFlight}, prelude::*};
+use weaponry::{lob::{Lob, LobArc, LobArcProgress, LobLanded}, prelude::*};
 
 use crate::{
     blast::{Blast, BlastCell, BlastHitManager},
@@ -50,20 +50,20 @@ impl Plugin for FireballPlugin {
                 LanePlugin::<FireballGlow>::default(),
                 LanePlugin::<FireballImpact>::default(),
             ))
-            .add_systems(Update, (
-                resolve_fireball_hits.after(advance_lobs).run_if(in_state(GameState::Running)),
-                update_fireball_visuals.after(advance_lobs),
-            ))
+            .add_systems(Update, update_fireball_visuals.after(advance_lobs))
             .add_observer(on_builder_add_spawn_fireball)
+            .add_observer(on_lob_landed_detonate_fireball)
             .add_systems(CollectSave, collect_fireballs)
             .register_loader(MapLoadingStage::SpawnMapElements, "fireballs", load_fireballs);
     }
 }
 
 // Blast area, in steps from the landing cell
-/// Inner blast radius in steps (full damage). Paired with `MAIN_HALF_SIZE` in `assets/shaders/weaponry/fireball_impact.wesl`.
+/// Inner blast radius in steps (full damage).
+/// Paired with `MAIN_HALF_SIZE` in `assets/shaders/weaponry/fireball_impact.wesl`.
 const MAIN_BLAST_REACH: u8 = 1;
-/// Outer blast radius in steps (ring damage). Paired with `AREA_RADIUS` in `assets/shaders/weaponry/fireball_impact.wesl`.
+/// Outer blast radius in steps (ring damage).
+/// Paired with `AREA_RADIUS` in `assets/shaders/weaponry/fireball_impact.wesl`.
 const RING_REACH: u8 = 2;
 /// Damage multiplier for cells hit at `RING_REACH`.
 const RING_DAMAGE_SHARE: f32 = 0.4;
@@ -214,24 +214,24 @@ impl ImpactReachMasks {
 
 #[log_tags(Tag::GameSave)]
 fn collect_fireballs(
-    fireballs: Query<(Entity, &Lob, &AttackDamage), With<Fireball>>,
+    fireballs: Query<(Entity, &LobArc, &LobArcProgress, &AttackDamage), With<Fireball>>,
     mut save: SaveWriter,
 ) {
     if fireballs.is_empty() { return; }
 
     #[debug_dev("Saving {} fireballs", rows.len())]
-    let rows: Vec<(u32, f32, Lob)> = fireballs
+    let rows: Vec<(u32, f32, LobArc, LobArcProgress)> = fireballs
         .iter()
-        .map(|(entity, lob, damage)| (entity.index_u32(), damage.get(), *lob))
+        .map(|(entity, arc, progress, damage)| (entity.index_u32(), damage.get(), *arc, *progress))
         .collect();
     save.submit(move |ctx| {
-        for (id, damage, lob) in rows {
+        for (id, damage, arc, progress) in rows {
             ctx.register_entity(id)?;
             ctx.tx.execute(
                 "INSERT OR REPLACE INTO fireballs (id, damage) VALUES (?1, ?2)",
                 rusqlite::params![id, damage],
             )?;
-            ctx.save_lob(id, &lob)?;
+            ctx.save_lob(id, arc, progress)?;
         }
         Ok(())
     });
@@ -240,7 +240,8 @@ fn collect_fireballs(
 fn load_fireballs(ctx: &mut LoadContext) -> LoadResult {
     ctx.for_each_entity("SELECT id, damage FROM fireballs", |ctx, old_id, entity, row| {
         let damage: f32 = row.get(1)?;
-        let builder = BuilderFireball::new(ctx.lob(old_id)?, AttackDamage::new(damage));
+        let (arc, progress) = ctx.lob(old_id)?;
+        let builder = BuilderFireball::new(arc, AttackDamage::new(damage)).with_progress(progress);
         ctx.insert(entity, builder);
         Ok(())
     })
@@ -254,7 +255,7 @@ fn on_builder_add_spawn_fireball(
     let entity = trigger.entity;
     let Ok(builder) = builders.get(entity) else { return; };
 
-    let lob = builder.lob;
+    let arc = builder.arc;
     let body = FireballBody {
         seed: seed_from_entity(entity),
         tail: 1.,
@@ -266,7 +267,9 @@ fn on_builder_add_spawn_fireball(
         .insert_some(builder.shooter.map(ProjectileOf))
         .insert((
             Fireball,
-            lob,
+            arc,
+            builder.progress,
+            Lob,
             builder.damage,
             children![
                 (
@@ -274,56 +277,55 @@ fn on_builder_add_spawn_fireball(
                     body,
                     // Override the generic lob layer to keep fireball bodies adjacent for batching.
                     ZDepth::FireballBody,
-                    Transform::from_rotation(Quat::from_rotation_z(lob.heading().to_angle())),
+                    Transform::from_rotation(Quat::from_rotation_z(arc.heading().to_angle())),
                 ),
                 FireballGlow { intensity: GLOW_INTENSITY, mesh_half_size: GLOW_MESH_HALF_SIZE },
-                DropShadow::new(SHADOW_DIAMETER, lob.target()),
+                DropShadow::new(SHADOW_DIAMETER, arc.target),
             ],
         ));
 }
 
-fn resolve_fireball_hits(
+fn on_lob_landed_detonate_fireball(
+    trigger: On<LobLanded>,
     mut commands: Commands,
     mut damage_messages: MessageWriter<DamageMessage>,
     clock: Res<GameClock>,
     blast_hit_manager: BlastHitManager,
-    fireballs: Query<(Entity, &Lob, &AttackDamage), (With<Fireball>, With<LobInFlight>)>,
+    fireballs: Query<(&LobArc, &AttackDamage), With<Fireball>>,
 ) {
-    for (entity, lob, attack_damage) in fireballs.iter() {
-        if !lob.is_landed(clock.now()) { continue; }
-        commands.entity(entity).despawn();
+    let entity = trigger.0;
+    let Ok((arc, attack_damage)) = fireballs.get(entity) else { return; };
+    commands.entity(entity).despawn();
 
-        let landing_coords = GridCoords::from_world_position(lob.target());
-        let Some(blast) = blast_hit_manager.go_off(landing_coords, RING_REACH) else { continue; };
-        let reach_masks = ImpactReachMasks::from_blast(&blast);
-        let seed = seed_from_entity(entity);
-        let (blast_time, scorch_time) = (TimeBound::lasting(&clock, BLAST_DURATION), TimeBound::lasting(&clock, SCORCH_DURATION));
-        let transform = Transform::from_translation(landing_coords.world_center().extend(0.));
-        commands.spawn((FireballImpact::new(ImpactLayer::Blast, blast_time, seed, reach_masks), blast_time, transform, ZDepth::FireballBlast, DrawLevel::OnElevation));
-        commands.spawn((FireballImpact::new(ImpactLayer::Scorch, scorch_time, seed, reach_masks), scorch_time, transform, ZDepth::FireballScorch, DrawLevel::from(blast.position.level)));
-        for hit in blast.hits() {
-            let damage = if hit.step <= MAIN_BLAST_REACH { attack_damage.get() } else { attack_damage.get() * RING_DAMAGE_SHARE };
-            for &wisp in hit.wisps {
-                damage_messages.write(DamageMessage { target: wisp, amount: damage });
-            }
+    let landing_coords = GridCoords::from_world_position(arc.target);
+    let Some(blast) = blast_hit_manager.go_off(landing_coords, RING_REACH) else { return; };
+    let reach_masks = ImpactReachMasks::from_blast(&blast);
+    let seed = seed_from_entity(entity);
+    let (blast_time, scorch_time) = (TimeBound::lasting(&clock, BLAST_DURATION), TimeBound::lasting(&clock, SCORCH_DURATION));
+    let transform = Transform::from_translation(landing_coords.world_center().extend(0.));
+    commands.spawn((FireballImpact::new(ImpactLayer::Blast, blast_time, seed, reach_masks), blast_time, transform, ZDepth::FireballBlast, DrawLevel::OnElevation));
+    commands.spawn((FireballImpact::new(ImpactLayer::Scorch, scorch_time, seed, reach_masks), scorch_time, transform, ZDepth::FireballScorch, DrawLevel::from(blast.position.level)));
+    for hit in blast.hits() {
+        let damage = if hit.step <= MAIN_BLAST_REACH { attack_damage.get() } else { attack_damage.get() * RING_DAMAGE_SHARE };
+        for &wisp in hit.wisps {
+            damage_messages.write(DamageMessage { target: wisp, amount: damage });
         }
     }
 }
 
 fn update_fireball_visuals(
-    clock: Res<GameClock>,
-    lobs: Query<&Lob, (With<Fireball>, With<LobInFlight>)>,
+    fireballs: Query<(&LobArc, &LobArcProgress), With<Fireball>>,
     mut bodies: Query<(&ChildOf, &mut FireballBody)>,
     mut glows: Query<(&ChildOf, &mut Transform, &mut FireballGlow)>,
 ) {
     for (child_of, mut body) in bodies.iter_mut() {
-        let Ok(lob) = lobs.get(child_of.parent()) else { continue; };
-        let tail = 1. + (lob.speed_ratio(clock.now()) - 1.) * TAIL_SPEED_RESPONSE;
+        let Ok((arc, progress)) = fireballs.get(child_of.parent()) else { continue; };
+        let tail = 1. + (arc.speed_ratio(progress.0) - 1.) * TAIL_SPEED_RESPONSE;
         body.set_if_neq(FireballBody { tail, ..*body });
     }
     for (child_of, mut transform, mut glow) in glows.iter_mut() {
-        let Ok(lob) = lobs.get(child_of.parent()) else { continue; };
-        let height_in_cells = lob.current(clock.now()).height / CELL_SIZE;
+        let Ok((arc, progress)) = fireballs.get(child_of.parent()) else { continue; };
+        let height_in_cells = arc.sample(progress.0).height / CELL_SIZE;
         transform.scale = Vec3::splat(1. + GLOW_SPREAD * height_in_cells);
         let intensity = GLOW_INTENSITY / (1. + height_in_cells * height_in_cells * GLOW_FALLOFF);
         glow.set_if_neq(FireballGlow { intensity, ..*glow });

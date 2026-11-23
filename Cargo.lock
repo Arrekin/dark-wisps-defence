@@ -2172,6 +2172,7 @@ dependencies = [
  "bevy",
  "game_core",
  "grids",
+ "weaponry",
 ]
 
 [[package]]

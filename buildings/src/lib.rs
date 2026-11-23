@@ -5,6 +5,7 @@ use bevy::prelude::*;
 use alteration::modifiers::prelude::{AttackDamage, AttackSpeed, MaxAttackRange, MaxIntegrityPoints, MinAttackRange, ModifierBank};
 use game_core::prelude::{AutoGridSnap, BuildingType, DrawLevel, MapBound, TargetLevels, TowerType, ZDepth};
 use grids::prelude::GridVersion;
+use weaponry::lob::LobPreview;
 
 #[derive(Component, Default)]
 #[require(Building, MinAttackRange, MaxAttackRange)]
@@ -48,7 +49,7 @@ impl ExplorationCenter {
 pub struct TowerBlaster;
 
 #[derive(Component)]
-#[require(Tower, BuildingType = BuildingType::Tower(TowerType::Cannon), AttackSpeed, AttackDamage, TowerShootingTimer, TowerWispTarget)]
+#[require(Tower, BuildingType = BuildingType::Tower(TowerType::Cannon), AttackSpeed, AttackDamage, TowerShootingTimer, TowerWispTarget, LobPreview)]
 pub struct TowerCannon;
 
 #[derive(Component)]
@@ -72,7 +73,7 @@ pub struct TowerCrucible;
 pub struct TowerFlamethrower;
 
 #[derive(Component)]
-#[require(Tower, BuildingType = BuildingType::Tower(TowerType::BlazeMortar), AttackSpeed, AttackDamage, TowerShootingTimer, TowerWispTarget)]
+#[require(Tower, BuildingType = BuildingType::Tower(TowerType::BlazeMortar), AttackSpeed, AttackDamage, TowerShootingTimer, TowerWispTarget, LobPreview)]
 pub struct TowerBlazeMortar;
 
 #[derive(Component)]
@@ -80,7 +81,7 @@ pub struct TowerBlazeMortar;
 pub struct TowerInferno;
 
 #[derive(Component)]
-#[require(Tower, BuildingType = BuildingType::Tower(TowerType::NapalmBattery), AttackSpeed, TowerShootingTimer, TowerWispTarget)]
+#[require(Tower, BuildingType = BuildingType::Tower(TowerType::NapalmBattery), AttackSpeed, TowerShootingTimer, TowerWispTarget, LobPreview)]
 pub struct TowerNapalmBattery;
 
 #[derive(Component, Clone, Default)]
@@ -112,6 +113,12 @@ impl TowerWispTarget {
             TowerWispTarget::Wisp(wisp) => Some(*wisp),
             _ => None,
         }
+    }
+
+    /// Returns `true` when no target is available (`NoValidTargets` or `Suspended`), excluding a
+    /// pending `SearchForNewTarget`.
+    pub fn has_no_targets(&self) -> bool {
+        matches!(self, TowerWispTarget::NoValidTargets(_) | TowerWispTarget::Suspended)
     }
 }
 

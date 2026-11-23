@@ -12,19 +12,21 @@ use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
 use logging::prelude::*;
 use persistence::prelude::*;
 use resources::prelude::*;
-use session::GameClock;
 use shards::prelude::*;
 use states::prelude::*;
-use weaponry::{lob::{LobPreview, LobProfile}, prelude::*};
+use weaponry::{lob::LobProfile, prelude::*};
 
-use crate::common::*;
+use crate::{common::*, towers::lob_preview::{TowerLobArcSystems, sync_lob_arc_with_predictive_aiming}};
 
 pub(crate) struct TowerCannonPlugin;
 impl Plugin for TowerCannonPlugin {
     fn build(&self, app: &mut App) {
         let almanach_info = BuilderTowerCannon::almanach_info(app.world().resource::<AssetServer>());
         app
-            .add_systems(Update, shoot_targets.after(TowerAimingSystems).run_if(in_state(GameState::Running)))
+            .add_systems(Update, (
+                shoot_targets.after(TowerAimingSystems).run_if(in_state(GameState::Running)),
+                sync_lob_arc_with_predictive_aiming::<TowerCannon>.in_set(TowerLobArcSystems),
+            ))
             .add_observer(BuilderTowerCannon::on_builder_add_spawn_tower_cannon)
             .add_observer(on_tower_cannon_place_request_do_so)
             .add_systems(CollectSave, collect_tower_cannons)
@@ -111,7 +113,6 @@ impl BuilderTowerCannon {
             .insert((
                 TowerCannon,
                 CANNON_LOB,
-                LobPreview,
                 building_info.world_sprite(),
                 GridArea::new(builder.grid_position, building_info.grid_imprint),
                 NeedsPower,
@@ -194,7 +195,6 @@ fn load_tower_cannons(ctx: &mut LoadContext) -> LoadResult {
 
 fn shoot_targets(
     mut commands: Commands,
-    clock: Res<GameClock>,
     predictive_aim: PredictiveAim,
     mut tower_cannons: Query<(Entity, &Transform, &LobProfile, &mut TowerShootingTimer, &TowerWispTarget, &AttackDamage), (With<TowerCannon>, With<IsOperational>)>,
 ) {
@@ -202,8 +202,8 @@ fn shoot_targets(
         if !timer.0.is_finished() { continue; }
         let Some(aim_coords) = target.wisp().and_then(|wisp| predictive_aim.next_cell(wisp)) else { continue; };
 
-        let lob = lob_profile.lob(transform.translation.xy(), aim_coords.world_center(), clock.now());
-        commands.spawn(BuilderCannonball::new(lob, *attack_damage).with_shooter(tower));
+        let arc = lob_profile.arc(transform.translation.xy(), aim_coords.world_center());
+        commands.spawn(BuilderCannonball::new(arc, *attack_damage).with_shooter(tower));
         timer.0.reset();
     }
 }

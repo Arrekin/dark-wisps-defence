@@ -1,10 +1,11 @@
-//! # Napalm bomb
+//! # Napalm Bomb
 //!
-//! The Napalm Battery's lobbed projectile. On landing, a bomb damages wisps at the top of its cell.
-//! It also ignites napalm on the cell's top floor unless a building occupies the cell. Dark ore
-//! does not prevent ignition.
+//! Projectile lobbed by the Napalm Battery. Bombs spawned with a [`ProjectileLaunchCounter`] stay
+//! hidden until [`ProjectileLaunched`] starts their [`Lob`] flight.
 //!
-//! `NAPALM_BOMB_IMPACT_DAMAGE` sets impact damage independently of tower upgrades.
+//! On [`LobLanded`], the bomb deals [`NAPALM_BOMB_IMPACT_DAMAGE`] (fixed, independent of tower
+//! modifiers) to wisps on the landing cell's top surface and spawns [`BuilderNapalm`] there unless
+//! a building occupies the cell.
 
 use bevy::prelude::*;
 
@@ -13,21 +14,23 @@ use indexes::{prelude::ObstacleGrid, wisps::WispsGrid};
 use logging::prelude::*;
 use persistence::prelude::*;
 use session::{GameClock, TimeBound};
-use states::prelude::{GameState, MapLoadingStage};
+use states::prelude::MapLoadingStage;
 use visuals::drop_shadow::DropShadow;
-use weaponry::{lob::{Lob, LobInFlight}, prelude::*};
+use weaponry::{lob::{Lob, LobArc, LobArcProgress, LobLanded}, prelude::*};
 
 use crate::{
-    lob::{LoadLobExtension, LobBody, SaveLobExtension, advance_lobs},
+    lob::{LoadLobExtension, LobBody, SaveLobExtension},
     napalm::{BuilderNapalm, NAPALM_BURN_DURATION},
+    projectile_launch::{LoadProjectileLaunchCounterExtension, SaveProjectileLaunchCounterExtension},
 };
 
 pub(crate) struct NapalmBombPlugin;
 impl Plugin for NapalmBombPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_systems(Update, resolve_napalm_bomb_hits.after(advance_lobs).run_if(in_state(GameState::Running)))
             .add_observer(on_builder_add_spawn_napalm_bomb)
+            .add_observer(on_projectile_launched_start_napalm_bomb_flight)
+            .add_observer(on_lob_landed_ignite_napalm_bomb)
             .add_systems(CollectSave, collect_napalm_bombs)
             .register_loader(MapLoadingStage::SpawnMapElements, "napalm_bombs", load_napalm_bombs);
     }
@@ -40,20 +43,23 @@ const NAPALM_BOMB_IMPACT_DAMAGE: f32 = 20.;
 
 #[log_tags(Tag::GameSave)]
 fn collect_napalm_bombs(
-    napalm_bombs: Query<(Entity, &Lob), With<NapalmBomb>>,
+    napalm_bombs: Query<(Entity, &LobArc, &LobArcProgress, Option<&ProjectileLaunchCounter>), With<NapalmBomb>>,
     mut save: SaveWriter,
 ) {
     if napalm_bombs.is_empty() { return; }
 
     #[debug_dev("Saving {} napalm bombs", rows.len())]
-    let rows: Vec<(u32, Lob)> = napalm_bombs
+    let rows: Vec<(u32, LobArc, LobArcProgress, Option<ProjectileLaunchCounter>)> = napalm_bombs
         .iter()
-        .map(|(entity, lob)| (entity.index_u32(), *lob))
+        .map(|(entity, arc, progress, launch_counter)| (entity.index_u32(), *arc, *progress, launch_counter.copied()))
         .collect();
     save.submit(move |ctx| {
-        for (id, lob) in rows {
+        for (id, arc, progress, launch_counter) in rows {
             ctx.save_marker("napalm_bombs", id)?;
-            ctx.save_lob(id, &lob)?;
+            ctx.save_lob(id, arc, progress)?;
+            if let Some(launch_counter) = launch_counter {
+                ctx.save_projectile_launch_counter(id, launch_counter)?;
+            }
         }
         Ok(())
     });
@@ -61,7 +67,11 @@ fn collect_napalm_bombs(
 
 fn load_napalm_bombs(ctx: &mut LoadContext) -> LoadResult {
     ctx.for_each_entity("SELECT id FROM napalm_bombs", |ctx, old_id, entity, _| {
-        ctx.insert(entity, BuilderNapalmBomb::new(ctx.lob(old_id)?));
+        let (arc, progress) = ctx.lob(old_id)?;
+        let builder = BuilderNapalmBomb::new(arc)
+            .with_progress(progress)
+            .with_launch_counter(ctx.projectile_launch_counter(old_id)?);
+        ctx.insert(entity, builder);
         Ok(())
     })
 }
@@ -75,12 +85,14 @@ fn on_builder_add_spawn_napalm_bomb(
     let entity = trigger.entity;
     let Ok(builder) = builders.get(entity) else { return; };
 
-    commands.entity(entity)
+    let mut bomb = commands.entity(entity);
+    bomb
         .remove::<BuilderNapalmBomb>()
         .insert_some(builder.shooter.map(ProjectileOf))
         .insert((
             NapalmBomb,
-            builder.lob,
+            builder.arc,
+            builder.progress,
             children![
                 (
                     LobBody,
@@ -90,33 +102,47 @@ fn on_builder_add_spawn_napalm_bomb(
                         ..default()
                     },
                 ),
-                DropShadow::new(NAPALM_BOMB_SIZE, builder.lob.target()),
+                DropShadow::new(NAPALM_BOMB_SIZE, builder.arc.target),
             ],
         ));
+    match builder.launch_counter {
+        Some(launch_counter) => { bomb.insert((launch_counter, Visibility::Hidden)); }
+        None => { bomb.insert(Lob); }
+    }
 }
 
-fn resolve_napalm_bomb_hits(
+fn on_projectile_launched_start_napalm_bomb_flight(
+    trigger: On<ProjectileLaunched>,
+    mut commands: Commands,
+    napalm_bombs: Query<(), With<NapalmBomb>>,
+) {
+    let entity = trigger.0;
+    if !napalm_bombs.contains(entity) { return; }
+    commands.entity(entity).insert((Lob, Visibility::Inherited));
+}
+
+fn on_lob_landed_ignite_napalm_bomb(
+    trigger: On<LobLanded>,
     mut commands: Commands,
     mut damage_messages: MessageWriter<DamageMessage>,
     clock: Res<GameClock>,
     obstacle_grid: Res<ObstacleGrid>,
     wisps_grid: Res<WispsGrid>,
-    napalm_bombs: Query<(Entity, &Lob), (With<NapalmBomb>, With<LobInFlight>)>,
+    napalm_bombs: Query<&LobArc, With<NapalmBomb>>,
 ) {
-    for (entity, lob) in napalm_bombs.iter() {
-        if !lob.is_landed(clock.now()) { continue; }
+    let entity = trigger.0;
+    let Ok(arc) = napalm_bombs.get(entity) else { return; };
 
-        let landing_coords = GridCoords::from_world_position(lob.target());
-        // TODO: Add a napalm impact visual.
-        if wisps_grid.bounds.contains(landing_coords) {
-            let top = obstacle_grid.top_position(landing_coords);
-            for &wisp in wisps_grid.wisps_at(top) {
-                damage_messages.write(DamageMessage { target: wisp, amount: NAPALM_BOMB_IMPACT_DAMAGE });
-            }
-            if !obstacle_grid[top].is_building() {
-                commands.spawn(BuilderNapalm::new(top, TimeBound::lasting(&clock, NAPALM_BURN_DURATION)));
-            }
+    let landing_coords = GridCoords::from_world_position(arc.target);
+    // TODO: Add a napalm impact visual.
+    if wisps_grid.bounds.contains(landing_coords) {
+        let top = obstacle_grid.top_position(landing_coords);
+        for &wisp in wisps_grid.wisps_at(top) {
+            damage_messages.write(DamageMessage { target: wisp, amount: NAPALM_BOMB_IMPACT_DAMAGE });
         }
-        commands.entity(entity).despawn();
+        if !obstacle_grid[top].is_building() {
+            commands.spawn(BuilderNapalm::new(top, TimeBound::lasting(&clock, NAPALM_BURN_DURATION)));
+        }
     }
+    commands.entity(entity).despawn();
 }

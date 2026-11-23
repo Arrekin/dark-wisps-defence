@@ -1,101 +1,69 @@
 //! # Lob
 //!
-//! A `Lob` moves from origin to target at constant ground speed with a parabolic height curve.
-//! Its duration and peak height are fixed at launch.
+//! Parabolic projectile trajectories ([`LobArc`]), flight progression ([`Lob`], [`LobArcProgress`]),
+//! and trajectory preview state ([`LobPreview`], [`LobPreviewScope`], [`LobPreviewShown`]).
 //!
-//! Launchers use `LobProfile` to create flights. Launch angle and distance determine the peak
-//! height, with a soft cap that flattens long shots. Gravity determines flight duration.
+//! Launchers construct [`LobArc`]s through a [`LobProfile`], which derives peak height from launch
+//! angle and horizontal distance (with a soft cap at `max_apex`) and flight duration from gravity.
 //!
-//! Flight progress is calculated from the current game time and a stored launch timestamp.
-//! A lob can spawn before launch; `LobAwaitingLaunch` and `LobInFlight` distinguish waiting
-//! projectiles from launched ones.
+//! Adding [`Lob`] to an entity advances its [`LobArcProgress`] and ground [`Transform`] each frame
+//! and triggers [`LobLanded`] on arrival.
 
 use bevy::prelude::*;
 
 /// Sharpness of the transition from uncapped peak height to `max_apex`.
 const APEX_CAP_HARDNESS: f32 = 4.;
 
-/// Launch parameters used to create lobbed flights.
+/// Ballistic parameters used by a launcher to construct [`LobArc`] trajectories.
 #[derive(Component, Clone, Copy, Debug)]
 pub struct LobProfile {
-    /// Launch angle in radians. Sets the uncapped apex: distance · tan(angle) / 4.
+    /// Launch angle in radians. Sets the uncapped apex: `distance * tan(angle) / 4`.
     pub launch_angle: f32,
-    /// World units per second². Flight time = √(8 · apex / gravity).
+    /// Downward acceleration in world units/s². Sets flight duration: `sqrt(8 * apex / gravity)`.
     pub gravity: f32,
-    /// Soft cap on the apex, in world units.
+    /// Soft cap on peak height, in world units.
     pub max_apex: f32,
 }
 impl LobProfile {
-    /// The flight from `origin` to `target`, launching at game time `launch_at`.
-    pub fn lob(&self, origin: Vec2, target: Vec2, launch_at: f64) -> Lob {
+    /// Computes the trajectory from `origin` to `target`.
+    pub fn arc(&self, origin: Vec2, target: Vec2) -> LobArc {
         let distance = origin.distance(target).max(1.);
         let uncapped_apex = distance * self.launch_angle.tan() / 4.;
         let apex = uncapped_apex / (1. + (uncapped_apex / self.max_apex).powf(APEX_CAP_HARDNESS)).powf(1. / APEX_CAP_HARDNESS);
         let duration = (8. * apex / self.gravity).sqrt();
-        Lob { origin, target, duration, apex, launch_at }
+        LobArc::new(origin, target, duration, apex)
     }
 }
 
-/// Shows a dotted flight preview while the tower is focused, using its `LobProfile`.
-#[derive(Component, Default)]
-#[require(LobPreviewTarget)]
-pub struct LobPreview;
-
-/// World-space target position for a [`LobPreview`] arc, or `None` to hide the preview.
-#[derive(Component, Default, PartialEq)]
-pub struct LobPreviewTarget(pub Option<Vec2>);
-
-/// A projectile's flight. The entity's `Transform` tracks its position on the ground.
-#[derive(Component, Clone, Copy, Debug)]
-#[require(Transform, Visibility)]
-pub struct Lob {
-    origin: Vec2,
-    target: Vec2,
-    /// Seconds.
-    duration: f32,
+/// Parabolic trajectory between `origin` and `target` with fixed `duration` and peak height `apex`.
+#[derive(Component, Clone, Copy, Debug, PartialEq)]
+#[component(immutable)]
+#[require(LobArcProgress)]
+pub struct LobArc {
+    pub origin: Vec2,
+    pub target: Vec2,
+    /// Total flight time in seconds.
+    pub duration: f32,
     /// Peak height above ground, in world units.
-    apex: f32,
-    /// Absolute game-clock time of the launch, in seconds.
-    launch_at: f64,
+    pub apex: f32,
 }
-impl Lob {
-    /// Rebuilds a flight from its saved state.
-    pub fn restore(origin: Vec2, target: Vec2, duration: f32, apex: f32, launch_at: f64) -> Self {
-        Self { origin, target, duration, apex, launch_at }
+impl LobArc {
+    pub fn new(origin: Vec2, target: Vec2, duration: f32, apex: f32) -> Self {
+        Self { origin, target, duration, apex }
     }
 
-    pub fn origin(&self) -> Vec2 { self.origin }
-    pub fn target(&self) -> Vec2 { self.target }
-    pub fn duration(&self) -> f32 { self.duration }
-    pub fn apex(&self) -> f32 { self.apex }
-    pub fn launch_at(&self) -> f64 { self.launch_at }
-
-    /// Whether `now` is before the scheduled launch time.
-    pub fn is_awaiting_launch(&self, now: f64) -> bool {
-        self.launch_at > now
-    }
-
-    /// Seconds of flight at game time `now`: 0 before launch, `duration` after landing.
-    pub fn elapsed(&self, now: f64) -> f32 {
-        ((now - self.launch_at) as f32).clamp(0., self.duration)
-    }
-
-    pub fn is_landed(&self, now: f64) -> bool {
-        self.elapsed(now) >= self.duration
-    }
-
-    /// Fraction of flight time elapsed at game time `now`: 0 at launch, 1 at landing.
-    pub fn progress(&self, now: f64) -> f32 {
+    /// Fraction of the trajectory covered in `seconds`.
+    pub fn progress_over(&self, seconds: f32) -> f32 {
         if self.duration <= 0. { return 1.; }
-        self.elapsed(now) / self.duration
+        seconds / self.duration
     }
 
-    /// Unit direction of travel over the ground.
+    /// Unit ground-plane direction from `origin` toward `target`.
     pub fn heading(&self) -> Vec2 {
         (self.target - self.origin).normalize_or(Vec2::X)
     }
 
-    /// The flight's state at `progress` (0 = launch, 1 = landing).
+    /// Ground position and height at normalized `progress` (`0.0` at origin, `1.0` at target).
     pub fn sample(&self, progress: f32) -> LobSample {
         LobSample {
             ground_position: self.origin.lerp(self.target, progress),
@@ -103,28 +71,25 @@ impl Lob {
         }
     }
 
-    /// The flight's state at game time `now`.
-    pub fn current(&self, now: f64) -> LobSample {
-        self.sample(self.progress(now))
-    }
-
-    /// Speed at game time `now` relative to the launch speed, counting both ground and vertical
-    /// motion. 1 at launch and landing, lowest at the apex.
-    pub fn speed_ratio(&self, now: f64) -> f32 {
+    /// 3D speed at `progress` normalized to the launch/landing speed (`1.0` at endpoints, minimum at
+    /// the apex).
+    pub fn speed_ratio(&self, progress: f32) -> f32 {
         let distance = self.origin.distance(self.target);
         let launch = distance.hypot(4. * self.apex);
         if launch <= 0. { return 1.; }
-        distance.hypot(4. * self.apex * (1. - 2. * self.progress(now))) / launch
+        distance.hypot(4. * self.apex * (1. - 2. * progress)) / launch
+    }
+
+    /// Linearly interpolates all trajectory parameters between `self` (`t = 0.0`) and `other` (`t = 1.0`).
+    pub fn lerp(&self, other: &LobArc, t: f32) -> LobArc {
+        LobArc {
+            origin: self.origin.lerp(other.origin, t),
+            target: self.target.lerp(other.target, t),
+            duration: self.duration.lerp(other.duration, t),
+            apex: self.apex.lerp(other.apex, t),
+        }
     }
 }
-
-/// A projectile waiting for its launch time, hidden at its origin.
-#[derive(Component, Default)]
-pub struct LobAwaitingLaunch;
-
-/// A launched projectile, visible and moving along its flight.
-#[derive(Component, Default)]
-pub struct LobInFlight;
 
 #[derive(Clone, Copy, Debug)]
 pub struct LobSample {
@@ -133,3 +98,62 @@ pub struct LobSample {
     /// Height above ground, in world units.
     pub height: f32,
 }
+
+/// Normalized progress along a [`LobArc`], from `0.0` (origin) to `1.0` (target).
+#[derive(Component, Clone, Copy, Default, Debug, PartialEq)]
+pub struct LobArcProgress(pub f32);
+impl LobArcProgress {
+    pub fn is_at_target(&self) -> bool {
+        self.0 >= 1.
+    }
+
+    /// Advances progress by `fraction`, clamping at `1.0`.
+    pub fn advance(&mut self, fraction: f32) {
+        self.0 = (self.0 + fraction).min(1.);
+    }
+}
+
+/// Marker for an active lob flight. Advances [`LobArcProgress`] and [`Transform`] along [`LobArc`]
+/// each frame and triggers [`LobLanded`] on arrival.
+#[derive(Component, Default)]
+#[require(Transform)]
+pub struct Lob;
+
+/// Triggered on a [`Lob`] entity when its [`LobArcProgress`] reaches `1.0`.
+#[derive(EntityEvent)]
+pub struct LobLanded(pub Entity);
+
+/// Opts an entity into trajectory preview rendering when covered by [`LobPreviewScope`].
+#[derive(Component, Default)]
+pub struct LobPreview;
+
+/// Controls which [`LobPreview`] entities display their trajectory preview.
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum LobPreviewScope {
+    #[default]
+    None,
+    Global,
+    Entity(Entity),
+}
+impl LobPreviewScope {
+    pub fn covers(&self, entity: Entity) -> bool {
+        match self {
+            LobPreviewScope::None => false,
+            LobPreviewScope::Global => true,
+            LobPreviewScope::Entity(scoped) => *scoped == entity,
+        }
+    }
+}
+
+/// Added to [`LobPreview`] entities currently covered by [`LobPreviewScope`].
+#[derive(Component, Default)]
+pub struct LobPreviewShown {
+    /// Currently displayed trajectory. Snaps to [`LobArc`] when initialized from `None`, eases
+    /// toward subsequent [`LobArc`] changes, and resets to `None` when [`LobArc`] is removed.
+    pub arc: Option<LobArc>,
+}
+
+/// Syncs [`LobPreviewShown`] with [`LobPreviewScope`] and eases displayed arcs toward [`LobArc`].
+/// Systems updating [`LobArc`] should run before this set.
+#[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
+pub struct LobPreviewSystems;
