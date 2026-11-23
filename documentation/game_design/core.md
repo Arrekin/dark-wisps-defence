@@ -111,7 +111,7 @@ Slow, massive lobbing projectile that deals massive AoE damage.
 - **Electric → Sky Hammer** - Summons a thunderbolt within range, telegraphed by a small circle that shrinks until the strike lands. The bolt is drawn to **Charged** objects inside the circle. Hooks same as base. Adds a Projectile Count stat shard socket.
 - **Fire → Blaze Mortar** - Lobs fireballs that hit hard over a bigger area at the cost of a slower reload: a 3x3 main blast surrounded by a one-cell ring (5x5 in total) that takes 40% of the damage. Hooks TBD.
 - **Water → Deluge** - Lobs a huge ball of water splashing a 3x3 area. Creates no crater. The center takes water damage; the outer ring gets essence infusion with brief displacement and slow, as in other water effects. If the center lands in a cell with walls on both opposing sides (either axis; only walls count), the water fits the gap like a blob and forms a temporary **Water Wall**. Mostly a tool for effects: the Water Wall is a potent spot for creating **Mist**. Hooks TBD.
-- **Light → Starshell** - Throws a flare into the air on a not-too-fast lob, applying a bit of light essence around it. In the air it bursts, casting a targeted cone of light from the air down to the ground in its general flight direction; every wisp inside the cone's footprint gets **Daze**. Hooks TBD.
+- **Light → Sunlance** - A bulky, massive laser that fires only in the four cardinal directions, aiming at the one that holds the nearest target. The beam covers a set number of cells and hits everything along its path. It stays on the tower's own altitude level: only cells on that level count toward its length, and a wall or a drop into a pit ends it. Hooks TBD.
 
 ## Tower Rocket Launcher
 Medium reload speed and medium damage to target + reduced AoE damage. Massive range. Launches guided projectile that switches target if current target is destroyed. Has a minimum range limitation.
@@ -122,14 +122,12 @@ Baseline hook proposal:
 **Stat shard sockets**: Attack Speed, Range, Projectile Speed
 **Base hooks**: Hit moment: Apply `Tier 2` affliction to direct target. Shower surroundings with `Tier 1` essence damage. 
 **Evolutions**:
-- **Electric → Lightning Spire** - Launches a slow orb of ball lightning that hunts its target, zapping everything it passes. Has its own lifetime, draining more on zaps and picks new random target within tower range on target destruction. `Tier 2` passive short aura of given essence expanding from the orb. `Tier 1` %X chance to flavor the zap. 
+- **Electric → Lightning Spire** - The launcher becomes a spire that sends a long-range arc of thin lightning, zigzagging across the distance to a far-away target. On hit, the arc chains onward from wisp to wisp. Each jump shortens the distance the next one may cover, while every hop must still cover a minimum distance, so the chain never jumps to a neighbour and makes a few wild hops in the distance instead. Hooks TBD.
 - **Fire → Napalm Battery** - Launches a swarm of tiny, lobbed projectiles that blanket target area with napalm(over-time burning ground)
 	- Hooks TBD.
 - **Water → Water Hose** - Shoots a lobbed stream of water at a far-away target; only the target area is hit. Deals basic water damage, infuses water essence and fills any **Crater** it hits. The stream slowly drags after a moving target during ejection, so fast wisps can outrun it. Leaves small **Mist** pockets along the lob, which sink onto whatever lies beneath. Hooks TBD.
-- **Light → Mirror Array** - Fires a laser up to a mirror drone in the air, which bounces it down onto a single grid cell, frying everything that passes through it when it fires. Massive damage at the cost of manual setup, making it strongest at chokepoints.
-	- **Drones** - bought separately and reuse the existing drone logic: they fly to their position and have to return to refuel after some time, coming back automatically afterwards. They fly in the air, out of reach of normal wisps; ways they can be endangered are TBD.
-	- **Targeting** - the player selects the grid cell to target and the drone positions itself so the bounced laser hits it. One cell per drone, a single bounce only. The tower may have more than one drone slot, aiming at several cells at once.
-	- Hooks TBD.
+- **Light → Starshell** - Launches a flare that quickly reaches its destination above the target, then slowly falls to the ground. While falling it lights the area beneath it, dealing light damage and applying light essence. At the very end it flashes, and only the wisps caught in the flash get **Daze**. Hooks TBD.
+
 
 ## Tower Emitter
 Emits waves spreading in all directions. Deals no damage; applies Brittle effect. When modified beyond base level its main identity is to provide disruptive shockwaves capable injecting enough essence in one shot to instantly turn it into affliction.
@@ -137,13 +135,11 @@ Emits waves spreading in all directions. Deals no damage; applies Brittle effect
 **Stat shard sockets**: Attack Speed, Range, Projectile Speed
 **Base hooks**: The wave front(`Tier 2`), and fall off (`Tier 1`). Both adding only corresponding essence damage. 
 **Evolutions**:
-- **Electric → Synapse Coil** - Each pulse throws out tendrils (plasma globe) instead of a uniform wave. Every tendril bends toward targets within a forward cone; its attraction strength is randomized per tendril, so some swing in hard while others wander past. A lone target typically draws a few tendrils, a cluster gets hit by chains of forks. Adds a Projectile Count stat shard socket.
-	1. **Seek** - the tendril grows outward, bending toward a target.
-	2. **Connect** - it touches the target.
-	3. **Pulse** - a single essence-colored pulse travels along the connection and delivers the whole `Tier 2` dose at once.
-	4. **Fork** - the arc splits onward toward the next targets, then fades. Forks carry `Tier 1`, weaker with each fork generation.
-	- `Tier 3` (Electric) is the tendrils' base damage. `Tier 2` is the afflictor, delivered by the pulse. `Tier 1` dusts the spread through forks.
-	- Only hits create real forks. Without targets, tendrils run out to range as wandering spokes with short cosmetic twigs that cannot hit; each pulse starts at a random angle. 
+- **Electric → Tesla Coil** - Builds up charge, then releases it as a short discharge of a limited number of arcs. Each arc thrashes through the range for a brief moment, so a few arcs can still sweep across many wisps. Every wisp an arc touches becomes **Charged**. The arcs deal no damage themselves; damage comes from Charged wisps sparking against each other and from its stuns. Adds a Projectile Count stat shard socket, raising the number of arcs.
+	- **Charging** - small arcs crawl up the coil's rings, faster and higher as charge builds, while the sphere on top brightens from dim to blue-white, telling the player how close the discharge is.
+	- **Discharge** - jagged arcs burst from the sphere and whip erratically around the range, anchored at the coil. The discharge is not instant: the arcs thrash for a moment, then snap off.
+	- Without targets, the arcs strike the ground and nearby walls harmlessly, so the rhythm stays visible.
+	- Hooks TBD.
 - **Fire → Inferno** - Hoards heat and releases it all at once, instantly applying **Burn** to every wisp in range. The flash deals no additional damage; Burn does the work over time.
 	- **Charging** - heat haze shimmers inward from the edge of range and the core glows from dull red to bright orange, telling the player how close the release is.
 	- **Flash** - a dome of deep orange-red fire covering the whole range appears at full size in a single frame; it never grows from the centre, so nothing reads as travelling. Every wisp inside flares at the same moment. The dome breaks up in place into falling embers and fading heat haze, and the tower drops back to dark, cooling metal.
@@ -158,7 +154,10 @@ Constant field applying slow effect. When modified beyond base level its main id
 **Stat shard sockets**: Range, Strength 
 **Base hooks**: The boundary, `Tier 2`, spike essence injection into target. `Tier 1`, in range, constant slow injection.
 **Evolutions**:
-- **Electric → Circuit Lattice** - Ground tiles in range turn into a lattice board of glowing circuit traces. Current pulses along the traces; objects on a trace when a pulse passes are hit. Pulses crossing at a junction flare. `Tier 2` on junction flares, `Tier 1` as constant hum along the traces. Its steady injection pairs with **Charged** stuns across the path.
+- **Electric → Ionizer** - Ionizes the air in range, applying constant electric essence pressure that slowly builds toward **Charged**. Inside the field, Charged wisps spark from a short distance instead of on contact, as the ionized air carries the arc. Hooks TBD.
+	- **Boundary** - an aurora curtain: a shimmering, gently rippling wall of violet-blue light fading to green at the top. Where a wisp crosses it, the curtain flares and ripples outward from that point.
+	- **Inside** - the air holds a faint violet-blue glow with fine static motes drifting and occasionally crackling.
+	- **Sparks** - when two Charged wisps come within reach, a thin arc snaps between them and flickers out; a crowd inside turns into a visible web of sparks.
 - **Fire → Crucible** - A dome of heat that deals no direct damage; everything inside takes fire essence impact.
 	- **Enemies** - constant fire essence pressure, building toward **Burn**.
 	- **Towers** - a tower with an empty `Tier 1` slot gains an ephemeral Fire `Tier 1` while inside; a tower with `Tier 1` already filled gains extra fire damage instead.
@@ -167,8 +166,15 @@ Constant field applying slow effect. When modified beyond base level its main id
 	- Hooks TBD.
 - **Water → Humidifier** - A rotating dispenser sprays **Mist** around the tower. The mist slowly drifts away from the tower while fading. On its own it only applies water essence pressure; what the mist conducts is TBD, in line with Water's role as an effect conductor.
 	- Hooks TBD.
-- **Light → Lighthouse** - Shines a big spot of light on the ground that constantly moves through the tower's range, applying light essence pressure to everything it passes over. The spot follows a mechanical sweep, giving the tower a readable rhythm. Other sweep patterns may come from world rule alterations found on the map and/or research. Hooks TBD.
+- **Light → Watchtower** - Shines a big spot of light on the ground that constantly moves through the tower's range, applying light essence pressure to everything it passes over. The spot follows a mechanical sweep, giving the tower a readable rhythm. Other sweep patterns may come from world rule alterations found on the map and/or research. Hooks TBD.
 
+## Legendary Towers
+Mechanics/details TBD
+
+- **Light | Mirror Array** - Fires a laser up to a mirror drone in the air, which bounces it down onto a single grid cell, frying everything that passes through it when it fires. Massive damage at the cost of manual setup, making it strongest at chokepoints.
+	- **Drones** - bought separately and reuse the existing drone logic: they fly to their position and have to return to refuel after some time, coming back automatically afterwards. They fly in the air, out of reach of normal wisps; ways they can be endangered are TBD.
+	- **Targeting** - the player selects the grid cell to target and the drone positions itself so the bounced laser hits it. One cell per drone, a single bounce only. The tower may have more than one drone slot, aiming at several cells at once.
+	- Hooks TBD.
 
 Ideas for future:
-- Light & Darkness - Moth Lamp - charms wisps for a while to stay near the lamp 
+- Light & Darkness - Moth Lamp - charms wisps for a while to stay near the lamp

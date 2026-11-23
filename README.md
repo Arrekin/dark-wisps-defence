@@ -20,6 +20,35 @@ Development preview(v0.2): [Youtube video >>>](https://youtu.be/w-w71CizF3s)
 Older previews:
 - [v0.1](https://youtu.be/9lJq3Hm-R4I?si=J8USUYoAFk2XkjRv)
 
+# Running the game locally (Windows)
+
+## 1. Install the tools
+Use the normal installers and keep their default options.
+1. **Git** - [git-scm.com/download/win](https://git-scm.com/download/win). Git LFS comes included and enabled.
+2. **Rust** - run `rustup-init.exe` from [rustup.rs](https://rustup.rs). If it reports missing Visual Studio C++ build tools, pick the option to install them and accept the defaults.
+
+Open a new PowerShell window once both are installed.
+
+## 2. Get the game and run it
+```powershell
+git clone https://github.com/Arrekin/dark-wisps-defence.git
+cd dark-wisps-defence
+rustup default nightly
+cargo run
+```
+
+The first `cargo run` compiles the whole engine and takes a long time; later runs start much faster.
+
+## Updating to the latest version
+From the `dark-wisps-defence` folder:
+```powershell
+git restore maps/
+git pull
+cargo run
+```
+
+`git restore maps/` discards local changes to the maps. Playing or saving a map modifies its file, which otherwise blocks `git pull`.
+
 # Controls
 
 ## Camera Controls
@@ -49,6 +78,7 @@ Older previews:
 - **6**: Toggle emissions overlay (Wisps follow its gradient)
 - **7**: Toggle energy supply overlay (shows power grid coverage)
 - **8**: Toggle towers range overlay
+- **9**: Toggle lob preview
 
 ## Mouse Controls
 - **Left Click**: Place selected building/tower or interact with objects
