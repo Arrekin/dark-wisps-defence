@@ -101,7 +101,7 @@ Fast, single target, blaster bullets that aim at general target direction. If ta
 	- **Overcharged Railgun** - Railgun + a second `Tier 3` Electric shard (2x `Tier 3` Electric in total), requires special research(name TBD) - whenever bullet hits enemy, the spark links all nearby bullets, spreading outwards. 
 - **Fire → Flamethrower** - The fire rate turns into a continuous stream of fire in the target direction. The stream stops at the first wisp it meets and engulfs it, damaging every wisp on that tile. Trades the bullet's unlimited flight for short range. Hooks TBD.
 - **Water → Drizzle Gun** - Fires fast droplets that deal little water damage and mostly deliver essence infusions. On hit, a droplet bursts into a small puff of **Mist** that quickly fades (mini AoE). A steady stream into one area builds up Mist toward **Fog**. Hooks TBD.
-- **Light → Laser** - Shots travel at the speed of light: each is an instant beam from the tower to the target, with no travel time and no misses. Hooks TBD.
+- **Light → Laser** - The shots turn into one continuous beam of light locked onto the target. The light arrives instantly, never misses, and hits only the target. Hooks TBD.
 ## Tower Cannon
 Slow, massive lobbing projectile that deals massive AoE damage. 
 

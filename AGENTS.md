@@ -287,3 +287,5 @@ Always start the game with `cargo run`, never by running the built binary direct
 
 Where feasible, test changes through the game's built-in HTTP server. See [BYOAIC](documentation/BYOAIC.md) for the available endpoints.
 You can temporarily add endpoints for testing (spawning things, running and returning queries, etc.). Remove test-only endpoints when finished.
+
+If you wrote ephemeral BYOAIC endpoints for testing your features, describe them in `workdoc_byoaic.md` for future analysis on what should be useful to have in the baseline.

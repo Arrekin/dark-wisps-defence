@@ -73,6 +73,10 @@ pub struct TowerCrucible;
 pub struct TowerFlamethrower;
 
 #[derive(Component)]
+#[require(Tower, BuildingType = BuildingType::Tower(TowerType::Laser), AttackDamage, TowerWispTarget)]
+pub struct TowerLaser;
+
+#[derive(Component)]
 #[require(Tower, BuildingType = BuildingType::Tower(TowerType::BlazeMortar), AttackSpeed, AttackDamage, TowerShootingTimer, TowerWispTarget, LobPreview)]
 pub struct TowerBlazeMortar;
 
@@ -139,6 +143,7 @@ pub mod prelude {
         TowerField,
         TowerFlamethrower,
         TowerInferno,
+        TowerLaser,
         TowerNapalmBattery,
         TowerRocketLauncher,
         TowerShootingTimer,

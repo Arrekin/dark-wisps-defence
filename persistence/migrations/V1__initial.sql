@@ -199,6 +199,11 @@ CREATE TABLE IF NOT EXISTS tower_flamethrowers (
     FOREIGN KEY(id) REFERENCES entities(id)
 );
 
+CREATE TABLE IF NOT EXISTS tower_lasers (
+    id INTEGER PRIMARY KEY,
+    FOREIGN KEY(id) REFERENCES entities(id)
+);
+
 CREATE TABLE IF NOT EXISTS tower_rocket_launchers (
     id INTEGER PRIMARY KEY,
     FOREIGN KEY(id) REFERENCES entities(id)
@@ -311,7 +316,7 @@ CREATE TABLE IF NOT EXISTS forge_queue (
 -- Projectiles
 -- ========================
 
--- `launch_at` is the launch time in absolute game-clock seconds.
+-- `progress` runs from 0.0 at the origin to 1.0 at the target.
 CREATE TABLE IF NOT EXISTS lobs (
     entity_id INTEGER PRIMARY KEY,
     origin_x REAL NOT NULL,
@@ -320,6 +325,13 @@ CREATE TABLE IF NOT EXISTS lobs (
     target_y REAL NOT NULL,
     duration REAL NOT NULL,
     apex REAL NOT NULL,
+    progress REAL NOT NULL DEFAULT 0,
+    FOREIGN KEY(entity_id) REFERENCES entities(id)
+);
+
+-- `launch_at` is the launch time in absolute game-clock seconds.
+CREATE TABLE IF NOT EXISTS projectile_launch_counters (
+    entity_id INTEGER PRIMARY KEY,
     launch_at REAL NOT NULL,
     FOREIGN KEY(entity_id) REFERENCES entities(id)
 );
@@ -341,7 +353,7 @@ CREATE TABLE IF NOT EXISTS napalm_bombs (
     FOREIGN KEY(id) REFERENCES entities(id)
 );
 
-CREATE TABLE IF NOT EXISTS laser_darts (
+CREATE TABLE IF NOT EXISTS blaster_darts (
     id INTEGER PRIMARY KEY,
     vector_x REAL NOT NULL,
     vector_y REAL NOT NULL,

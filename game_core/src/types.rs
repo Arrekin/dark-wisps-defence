@@ -50,6 +50,7 @@ impl BuildingType {
                 TowerType::Inferno => 7,
                 TowerType::Crucible => 8,
                 TowerType::NapalmBattery => 9,
+                TowerType::Laser => 10,
             },
         }
     }
@@ -64,9 +65,10 @@ pub enum TowerType {
     Field,
     Flamethrower,
     BlazeMortar,
+    NapalmBattery,
     Inferno,
     Crucible,
-    NapalmBattery,
+    Laser,
 }
 
 #[derive(Component, Copy, Clone, Debug, PartialEq, Eq, Hash, EnumString, EnumIter, AsRefStr)]

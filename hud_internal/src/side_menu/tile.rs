@@ -11,7 +11,7 @@ use crate::grid_placer::GridObjectPlacerRequest;
 const FACE_SIZE: f32 = 46.;
 /// Keeps the face clear of the panel contour and its animated surge.
 const TILE_FACE_INSET: f32 = 5.;
-const TILE_SIZE: f32 = FACE_SIZE + 2. * TILE_FACE_INSET;
+pub(crate) const TILE_SIZE: f32 = FACE_SIZE + 2. * TILE_FACE_INSET;
 
 /// Border-surge tuning for a tile-sized perimeter; `span` and `width` are pixels.
 const TILE_BORDER_SURGE: VoidPanelBorderSurge = VoidPanelBorderSurge {

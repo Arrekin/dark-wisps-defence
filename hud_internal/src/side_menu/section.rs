@@ -18,7 +18,7 @@ use widgets::prelude::{BuilderVoidPanel, VoidPanel};
 
 use super::{
     strip::{STRIP_EDGE_BRIGHTNESS, STRIP_TILE_INSET, SideMenuStrip},
-    tile::{PlacementTile, Tile},
+    tile::{PlacementTile, TILE_SIZE, Tile},
 };
 
 // Section frame
@@ -27,6 +27,10 @@ pub(crate) const SIDE_MENU_SECTION_SIZE: f32 = 64.;
 
 /// Overlaps the icon by 1px so crossing into the strip does not interrupt section hover.
 const STRIP_LEFT: f32 = SIDE_MENU_SECTION_SIZE - 1.;
+
+/// Tiles per strip row before it wraps; one per tower family.
+const STRIP_MAX_ROW_TILES: f32 = 5.;
+const STRIP_MAX_WIDTH: f32 = STRIP_MAX_ROW_TILES * TILE_SIZE + (STRIP_MAX_ROW_TILES + 1.) * STRIP_TILE_INSET;
 
 #[derive(Component, Default, Clone)]
 #[require(Button, Hovered, SectionLatch)]
@@ -50,10 +54,15 @@ impl SideMenuSection {
                 SideMenuStrip
                 Node {
                     flex_direction: FlexDirection::Row,
+                    flex_wrap: FlexWrap::Wrap,
+                    flex_shrink: 0.,
+                    align_self: AlignSelf::Start,
                     align_items: AlignItems::Center,
                     left: Val::Px(STRIP_LEFT),
+                    max_width: Val::Px(STRIP_MAX_WIDTH),
                     padding: UiRect::all(Val::Px(STRIP_TILE_INSET)),
                     column_gap: Val::Px(STRIP_TILE_INSET),
+                    row_gap: Val::Px(STRIP_TILE_INSET),
                 }
                 Visibility::Hidden
                 GlobalZIndex(-1)
@@ -109,9 +118,7 @@ pub(crate) fn on_insert_section_state_manage_strip(
 
     let Ok((strip_children, mut strip_visibility)) = strips.get_mut(strip_entity) else { return };
     let wanted = if raised { Visibility::Inherited } else { Visibility::Hidden };
-    if *strip_visibility != wanted {
-        *strip_visibility = wanted;
-    }
+    strip_visibility.set_if_neq(wanted);
 
     // A latch insertion starts, stops, or restores a placement state. Collapse immediately around
     // an active object even if the pointer is still inside the section.
@@ -191,7 +198,7 @@ pub(crate) fn on_stop_placing_release_owning_section(
 #[derive(Component, Default, Clone)]
 pub(crate) struct AdminSection;
 impl AdminSection {
-    pub(crate) fn on_admin_mode_change_update_visibility(
+    pub(crate) fn update_visibility(
         admin_mode: Res<State<AdminMode>>,
         mut sections: Query<&mut Visibility, With<AdminSection>>,
     ) {

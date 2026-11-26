@@ -16,7 +16,7 @@ impl Plugin for SideMenuPlugin {
         app
             .add_systems(Startup, root::SideMenu::setup)
             .add_systems(Update, (
-                section::AdminSection::on_admin_mode_change_update_visibility.run_if(state_changed::<AdminMode>),
+                section::AdminSection::update_visibility.run_if(state_changed::<AdminMode>),
                 strip::trigger_offering_changed.run_if(state_changed::<AdminMode>),
             ))
             .add_systems(OnEnter(MapLoadingStage::Ready), strip::trigger_offering_changed)

@@ -53,7 +53,7 @@ impl BuilderTowerBlaster {
     pub fn almanach_info(asset_server: &AssetServer) -> BuildingInfo {
         BuildingInfo {
             name: "Blaster Tower".to_string(),
-            description: "Rapid laser darts. Little damage per hit, but it almost never stops firing.".to_string(),
+            description: "Rapid blaster darts. Little damage per hit, but it almost never stops firing.".to_string(),
             sprite: asset_server.load("buildings/tower_blaster.png"),
             top_sprite: Some(asset_server.load("buildings/tower_blaster_top.png")),
             grid_imprint: GridImprint::square(2),
@@ -224,7 +224,7 @@ fn shoot_targets(
         let offset = Vec2::from_angle(top_rotation.current_angle) * tower_world_width * MUZZLE_OFFSET;
         let muzzle = transform.translation.xy() + offset;
 
-        commands.spawn(BuilderLaserDart::aimed_at(muzzle, wisp_position, wisp_locomotion.velocity(), *attack_damage));
+        commands.spawn(BuilderBlasterDart::aimed_at(muzzle, wisp_position, wisp_locomotion.velocity(), *attack_damage));
         timer.0.reset();
     }
 }

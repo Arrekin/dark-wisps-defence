@@ -66,6 +66,7 @@ const TOWER_BLAZE_MORTAR: u32 = 38u;
 const TOWER_INFERNO: u32 = 39u;
 const TOWER_CRUCIBLE: u32 = 40u;
 const TOWER_NAPALM_BATTERY: u32 = 41u;
+const TOWER_LASER: u32 = 42u;
 
 // Returns the cell, or OFF_MAP_CELL outside the map.
 fn obstacle_cell_at(coords: vec2<i32>) -> ObstacleCell {

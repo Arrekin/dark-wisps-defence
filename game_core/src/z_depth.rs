@@ -163,6 +163,7 @@ pub enum ZDepth {
     FlameJet,
     FlameImpact,
     FlamePilot,
+    LaserBeam,
     TowerTop,
     MapUi,
     AirEffect,
@@ -208,7 +209,8 @@ impl ZDepth {
             | Self::FlameImpact
             | Self::FlamePilot
             | Self::TowerTop => DrawLevels::BELOW_AIR,
-            Self::MapUi => DrawLevels::only(DrawLevel::OnElevation),
+            Self::LaserBeam
+            | Self::MapUi => DrawLevels::only(DrawLevel::OnElevation),
             Self::AirEffect
             | Self::AerialUnit
             | Self::ProjectileUnder
@@ -262,6 +264,7 @@ impl ZDepth {
             | Self::FlameJet
             | Self::FlameImpact
             | Self::FlamePilot
+            | Self::LaserBeam
             | Self::TowerTop
             | Self::MapUi => Band::Surface,
             Self::AirEffect

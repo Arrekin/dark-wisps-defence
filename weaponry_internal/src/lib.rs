@@ -1,10 +1,11 @@
 pub(crate) mod blast;
+pub(crate) mod blaster_dart;
 pub(crate) mod cannonball;
 pub(crate) mod fireball;
 pub(crate) mod flame_stream;
 pub(crate) mod flame_stream_fire;
 pub(crate) mod inferno_dome;
-pub(crate) mod laser_dart;
+pub(crate) mod laser_beam;
 pub(crate) mod lob;
 pub(crate) mod lob_preview;
 pub(crate) mod lob_preview_paths;
@@ -21,7 +22,7 @@ impl Plugin for WeaponryPlugin {
     fn build(&self, app: &mut App) {
         app
             .add_plugins((
-                laser_dart::LaserDartPlugin,
+                blaster_dart::BlasterDartPlugin,
                 projectile_launch::ProjectileLaunchPlugin,
                 lob::LobPlugin,
                 lob_preview::LobPreviewPlugin,
@@ -31,6 +32,7 @@ impl Plugin for WeaponryPlugin {
                 flame_stream::FlameStreamPlugin,
                 flame_stream_fire::FlameStreamFirePlugin,
                 inferno_dome::InfernoDomePlugin,
+                laser_beam::LaserBeamPlugin,
                 napalm::NapalmPlugin,
                 napalm_bomb::NapalmBombPlugin,
                 rocket::RocketPlugin,
