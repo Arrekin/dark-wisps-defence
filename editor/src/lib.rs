@@ -11,7 +11,7 @@ use bevy_egui::{EguiPrimaryContextPass, egui};
 use strum::{AsRefStr, EnumIter, IntoEnumIterator};
 
 use game_core::prelude::{MapInfo, Shard};
-use persistence::{LoadGameSignal, LoadMapConfig, MapFileName, SaveGameSignal, SaveTarget};
+use persistence::{InvalidFileName, LoadGameSignal, LoadMapConfig, MapFile, MapFileName, SaveGameSignal};
 use resources::prelude::Stock;
 use states::AdminMode;
 
@@ -41,8 +41,8 @@ pub struct EditorState {
     pub selected_summoning: Option<Entity>,
     pub selected_objective: Option<Entity>,
     pub selected_research: Option<Entity>,
-    pub scenario_filename: Option<String>,
-    pub pending_overwrite_confirm: Option<MapFileName>,
+    pub scenario_file_name: String,
+    pub pending_overwrite_confirm: Option<MapFile>,
     pub new_map_form: NewMapForm,
 }
 impl EditorState {
@@ -51,7 +51,7 @@ impl EditorState {
         self.selected_summoning = None;
         self.selected_objective = None;
         self.selected_research = None;
-        self.scenario_filename = Some(name.to_string());
+        self.scenario_file_name = name.to_string();
         self.pending_overwrite_confirm = None;
         self.new_map_form.pending_confirm = false;
     }
@@ -133,45 +133,43 @@ fn tab_general(ui: &mut egui::Ui, world: &mut World) {
 
     ui.heading("Save as Scenario");
 
-    // Filename input
-    let mut filename = world.resource::<EditorState>().scenario_filename.clone().unwrap_or_default();
-    let filename_changed = ui.horizontal(|ui| {
-        ui.label("Filename:");
-        ui.text_edit_singleline(&mut filename)
-    }).inner.changed();
-    world.resource_mut::<EditorState>().scenario_filename = if filename.is_empty() { None } else { Some(filename) };
-    // Clear stale overwrite confirm if the filename changed
-    if filename_changed {
-        world.resource_mut::<EditorState>().pending_overwrite_confirm = None;
+    // File name input
+    let file_name = {
+        let mut editor = world.resource_mut::<EditorState>();
+        let file_name_changed = ui.horizontal(|ui| {
+            ui.label("Filename:");
+            ui.text_edit_singleline(&mut editor.scenario_file_name)
+        }).inner.changed();
+        if file_name_changed {
+            editor.pending_overwrite_confirm = None;
+        }
+        MapFileName::try_new(editor.scenario_file_name.as_str())
+    };
+    if let Err(invalid) = &file_name && *invalid != InvalidFileName::Empty {
+        ui.colored_label(egui::Color32::RED, format!("Invalid filename: {invalid}"));
     }
 
     // Save-as-scenario button
-    let filename = world.resource::<EditorState>().scenario_filename.clone();
-    let can_save = filename.as_ref().is_some_and(|name| !name.is_empty());
-    ui.add_enabled_ui(can_save, |ui| {
+    ui.add_enabled_ui(file_name.is_ok(), |ui| {
         if ui.button("Save as Scenario").clicked()
-            && let Some(ref name) = filename
+            && let Ok(file_name) = file_name
         {
-            let file_name = MapFileName::new(name.clone());
-            if std::path::Path::new(&file_name.path()).exists() {
-                world.resource_mut::<EditorState>().pending_overwrite_confirm = Some(file_name);
+            let file = MapFile::Scenario(file_name);
+            if file.exists() {
+                world.resource_mut::<EditorState>().pending_overwrite_confirm = Some(file);
             } else {
-                world.commands().trigger(SaveGameSignal {
-                    target: SaveTarget::Scenario(file_name),
-                });
+                world.commands().trigger(SaveGameSignal::new(file));
             }
         }
     });
 
     // Overwrite confirm dialog
     let pending = world.resource::<EditorState>().pending_overwrite_confirm.clone();
-    if let Some(pending_file_name) = pending {
+    if let Some(pending_file) = pending {
         ui.horizontal(|ui| {
-            ui.colored_label(egui::Color32::RED, format!("'{}.dwd' exists. Overwrite?", pending_file_name.as_str()));
+            ui.colored_label(egui::Color32::RED, format!("'{}' exists. Overwrite?", pending_file.path()));
             if ui.button("Yes, overwrite").clicked() {
-                world.commands().trigger(SaveGameSignal {
-                    target: SaveTarget::Scenario(pending_file_name),
-                });
+                world.commands().trigger(SaveGameSignal::new(pending_file));
                 world.resource_mut::<EditorState>().pending_overwrite_confirm = None;
             }
             if ui.button("Cancel").clicked() {

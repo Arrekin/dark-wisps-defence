@@ -38,8 +38,8 @@ use states::{AdminMode, prelude::*};
 
 use crate::{
     common::{Migrations, with_db_connection},
-    map_file_name::MapFileName,
-    map_list::GameMapList,
+    map_file::MapFile,
+    scenario_list::ScenarioList,
 };
 
 pub struct MapLoadPlugin;
@@ -48,7 +48,7 @@ impl Plugin for MapLoadPlugin {
         app
             .init_resource::<GameLoadRegistry>()
             .init_resource::<LoadProgress>()
-            .init_resource::<GameMapList>()
+            .init_resource::<ScenarioList>()
             .add_systems(
                 OnEnter(MapLoadingStage::LoadMapInfo),
                 (
@@ -410,7 +410,7 @@ pub(crate) fn build_entity_id_map(world: &mut World) {
             world.resource_mut::<LoadProgress>().total_rows = 0;
             return;
         }
-        MapSource::File(map_path) => map_path.clone(),
+        MapSource::File(file) => file.path(),
     };
     let mut total_rows: usize = 0;
     let mut map: HashMap<u32, Entity> = HashMap::new();
@@ -427,8 +427,8 @@ pub(crate) fn build_entity_id_map(world: &mut World) {
             }
         }
 
-        let mut stmt = conn.prepare("SELECT id FROM entities")?;
-        let rows = stmt.query_map([], |row| row.get::<_, u32>(0))?;
+        let mut statement = conn.prepare("SELECT id FROM entities")?;
+        let rows = statement.query_map([], |row| row.get::<_, u32>(0))?;
         for row in rows {
             let old_id = row?;
             let new_entity = world.spawn_empty().id();
@@ -438,11 +438,8 @@ pub(crate) fn build_entity_id_map(world: &mut World) {
     })
     .expect("Failed to read entity IDs from the map file");
 
-    let entity_id_map = Arc::new(map);
-    world.insert_resource(EntityIdMap(entity_id_map));
-
-    let mut progress = world.resource_mut::<LoadProgress>();
-    progress.total_rows = total_rows;
+    world.insert_resource(EntityIdMap(Arc::new(map)));
+    world.resource_mut::<LoadProgress>().total_rows = total_rows;
 }
 
 /// Starts one IO task and database connection per loader in this stage. Loader errors are
@@ -458,7 +455,7 @@ pub(crate) fn spawn_stage_loaders(
 ) {
     let map_path = match &load_config.source {
         MapSource::New(_) => return,
-        MapSource::File(map_path) => map_path.clone(),
+        MapSource::File(file) => file.path(),
     };
 
     let target_stage = stage.get();
@@ -469,19 +466,15 @@ pub(crate) fn spawn_stage_loaders(
         return;
     }
 
-    let entity_map = entity_id_map.0.clone();
-    let sender = runner.sender.clone();
-    let done_rows = progress.done_rows.clone();
-
     debug_dev!("Spawning {} loader(s) for {target_stage:?}", descriptors.len());
 
     for descriptor in descriptors {
         let table = descriptor.table;
         let run = descriptor.run;
         let map_path = map_path.clone();
-        let entity_map = entity_map.clone();
-        let sender = sender.clone();
-        let done_rows = done_rows.clone();
+        let entity_map = entity_id_map.0.clone();
+        let sender = runner.sender.clone();
+        let done_rows = progress.done_rows.clone();
 
         let task = IoTaskPool::get().spawn(async move {
             let _ = with_db_connection(&map_path, Migrations::Skip, |conn| {
@@ -508,13 +501,8 @@ pub(crate) fn spawn_stage_loaders(
 pub(crate) fn apply_load_queues(mut commands: Commands, runner: Res<LoadRunner>) {
     let start = std::time::Instant::now();
     let budget = std::time::Duration::from_millis(4);
-    while start.elapsed() < budget {
-        match runner.receiver.try_recv() {
-            Ok(mut queue) => {
-                commands.append(&mut queue);
-            }
-            Err(_) => break, // channel empty
-        }
+    while start.elapsed() < budget && let Ok(mut queue) = runner.receiver.try_recv() {
+        commands.append(&mut queue);
     }
 }
 
@@ -528,10 +516,7 @@ pub(crate) fn advance_stage(
 ) {
     runner.tasks.retain(|task| !task.is_finished());
 
-    if !runner.tasks.is_empty() {
-        return;
-    }
-    if !runner.receiver.is_empty() {
+    if !runner.tasks.is_empty() || !runner.receiver.is_empty() {
         return;
     }
 
@@ -544,10 +529,10 @@ pub(crate) fn advance_stage(
 
 // --- Load request ------------------------------------------------------------
 
-/// An existing `.dwd` file or a blank map built from `MapInfo` without creating a file.
+/// An existing map file or a blank map built from `MapInfo` without creating a file.
 #[derive(Clone)]
 pub enum MapSource {
-    File(String),
+    File(MapFile),
     New(MapInfo),
 }
 
@@ -562,18 +547,13 @@ pub struct LoadMapConfig {
 }
 impl LoadMapConfig {
     /// Load a file into normal play (running, admin disabled).
-    pub fn file(map_path: impl Into<String>) -> Self {
+    pub fn file(file: MapFile) -> Self {
         Self {
-            source: MapSource::File(map_path.into()),
+            source: MapSource::File(file),
             game_start_state: GameState::Running,
             admin_mode: AdminMode::Disabled,
             response: ResponseRequest::not_needed(),
         }
-    }
-
-    /// Load a file from `maps/` using the normal play settings.
-    pub fn map(file_name: &MapFileName) -> Self {
-        Self::file(file_name.path())
     }
 
     /// Build a blank map in memory. Paused + admin enabled — ready to author.
@@ -602,11 +582,11 @@ pub fn creating_new_map(config: Res<LoadMapConfig>) -> bool {
 #[derive(Event)]
 pub struct LoadGameSignal(pub LoadMapConfig);
 impl LoadGameSignal {
-    /// Loads the quick save, `test_save.dwd`.
+    /// Loads the quicksave.
     #[log_tags(Tag::GameLoad)]
     fn emit_load_quicksave(mut commands: Commands) {
         #[debug_player("Quicksave load requested")]
-        commands.trigger(LoadGameSignal(LoadMapConfig::file("test_save.dwd")));
+        commands.trigger(LoadGameSignal(LoadMapConfig::file(MapFile::Quick)));
     }
 
     /// Rejects conflicting requests before changing the current map. Accepted file loads run
@@ -632,20 +612,22 @@ impl LoadGameSignal {
             config.response.report(&mut commands, |entity| LoadGameReport { entity, result: LoadGameResult::OtherTransitionAlreadyQueued { state } });
             return;
         }
-        #[warn_player("Map file '{map_path}' not found — skipping")]
-        if let MapSource::File(map_path) = &config.source && !std::path::Path::new(map_path).exists()
-        {
-            let path = map_path.clone();
-            config.response.report(&mut commands, |entity| LoadGameReport { entity, result: LoadGameResult::MapNotFound { path } });
+        #[warn_player("Map file '{}' not found — skipping", file.path())]
+        if let MapSource::File(file) = &config.source && !file.exists() {
+            config.response.report(&mut commands, |entity| LoadGameReport { entity, result: LoadGameResult::MapNotFound { file: file.clone() } });
             return;
         }
 
         match &config.source {
-            #[info_dev("Loading '{map_path}'")]
-            MapSource::File(map_path) => {
+            #[info_dev("Loading '{}'", file.path())]
+            MapSource::File(file) => {
                 // A new map skips this: opening a SQLite connection would create a file.
-                with_db_connection(map_path, Migrations::Apply, |_| Ok(()))
-                    .expect("Failed to run migrations on map load");
+                #[warn_player("Migrating '{}' failed ({error}) — skipping", file.path())]
+                if let Err(error) = with_db_connection(&file.path(), Migrations::Apply, |_| Ok(())) {
+                    let reason = error.to_string();
+                    config.response.report(&mut commands, |entity| LoadGameReport { entity, result: LoadGameResult::MigrationFailed { file: file.clone(), reason } });
+                    return;
+                }
             }
             MapSource::New(map_info) => info_dev!("Creating new map '{}'", map_info.name),
         }
@@ -675,8 +657,10 @@ pub enum LoadGameResult {
     AlreadyLoading,
     /// A `GameState` transition is already queued; loading would overwrite it.
     OtherTransitionAlreadyQueued { state: GameState },
-    /// The map file does not exist.
-    MapNotFound { path: String },
+    /// The file does not exist.
+    MapNotFound { file: MapFile },
+    /// The file could not be brought to the current schema; the current map is untouched.
+    MigrationFailed { file: MapFile, reason: String },
 }
 
 /// All loader stages have finished; transition to the requested play and admin states.

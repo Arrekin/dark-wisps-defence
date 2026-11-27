@@ -72,7 +72,7 @@ fn collect_summonings(
     let snapshots: Vec<Snapshot> = summonings
         .iter()
         .map(|(entity, summoning, state, runtime, activated_by)| {
-            let (state, produced, next_spawn_time) = if save_runner.save_as_scenario {
+            let (state, produced, next_spawn_time) = if save_runner.saves_as_scenario() {
                 (SummoningState::Inactive, 0, 0.0)
             } else {
                 (*state, runtime.produced, runtime.next_spawn_time)

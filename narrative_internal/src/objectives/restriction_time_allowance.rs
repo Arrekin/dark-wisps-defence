@@ -200,13 +200,13 @@ fn collect_time_allowance(
     goals: Query<(Entity, &RestrictionTimeAllowance, &ObjectiveState, &TimeAllowanceRuntime, &ObjectiveGoalOf)>,
 ) {
     if goals.is_empty() { return; }
-    let save_as_scenario = save_runner.save_as_scenario;
+    let saves_as_scenario = save_runner.saves_as_scenario();
     #[debug_dev("Saving {} time allowance restrictions", rows.len())]
     let rows: Vec<(u32, u32, ObjectiveState, f32, f32)> = goals
         .iter()
         .map(|(entity, config, state, runtime, goal_of)| {
-            let state = if save_as_scenario { ObjectiveState::Inactive } else { *state };
-            let elapsed = if save_as_scenario { 0.0 } else { runtime.elapsed };
+            let state = if saves_as_scenario { ObjectiveState::Inactive } else { *state };
+            let elapsed = if saves_as_scenario { 0.0 } else { runtime.elapsed };
             (
                 entity.index_u32(),
                 goal_of.0.index_u32(),

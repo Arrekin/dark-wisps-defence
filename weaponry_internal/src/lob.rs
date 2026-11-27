@@ -103,12 +103,13 @@ fn update_lob_visuals(
 
 pub(crate) trait SaveLobExtension {
     /// Persists `arc` and `progress` into the `lobs` table for an already-registered `entity_id`.
-    fn save_lob(&self, entity_id: u32, arc: LobArc, progress: LobArcProgress) -> rusqlite::Result<usize>;
+    fn save_lob(&self, entity_id: u32, arc: LobArc, progress: LobArcProgress) -> rusqlite::Result<()>;
 }
 impl SaveLobExtension for SaveContext<'_> {
-    fn save_lob(&self, entity_id: u32, arc: LobArc, progress: LobArcProgress) -> rusqlite::Result<usize> {
+    fn save_lob(&self, entity_id: u32, arc: LobArc, progress: LobArcProgress) -> rusqlite::Result<()> {
         self.tx.prepare_cached("INSERT OR REPLACE INTO lobs (entity_id, origin_x, origin_y, target_x, target_y, duration, apex, progress) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)")?
-            .execute(rusqlite::params![entity_id, arc.origin.x, arc.origin.y, arc.target.x, arc.target.y, arc.duration, arc.apex, progress.0])
+            .execute(rusqlite::params![entity_id, arc.origin.x, arc.origin.y, arc.target.x, arc.target.y, arc.duration, arc.apex, progress.0])?;
+        Ok(())
     }
 }
 

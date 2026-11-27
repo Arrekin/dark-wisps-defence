@@ -159,13 +159,13 @@ fn collect_kill_wisps(
     goals: Query<(Entity, &GoalKillWisps, &ObjectiveState, &ObjectiveCounterProgress, &ObjectiveGoalOf)>,
 ) {
     if goals.is_empty() { return; }
-    let save_as_scenario = save_runner.save_as_scenario;
+    let saves_as_scenario = save_runner.saves_as_scenario();
     #[debug_dev("Saving {} kill wisps goals", rows.len())]
     let rows: Vec<(u32, u32, ObjectiveState, usize, usize)> = goals
         .iter()
         .map(|(entity, goal, state, progress, goal_of)| {
-            let state = if save_as_scenario { ObjectiveState::Inactive } else { *state };
-            let current = if save_as_scenario { 0 } else { progress.current };
+            let state = if saves_as_scenario { ObjectiveState::Inactive } else { *state };
+            let current = if saves_as_scenario { 0 } else { progress.current };
             (
                 entity.index_u32(),
                 goal_of.0.index_u32(),

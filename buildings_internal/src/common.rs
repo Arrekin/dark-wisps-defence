@@ -277,16 +277,18 @@ pub(crate) struct BuildingDestroyRequest(pub Entity);
 
 pub(crate) trait SaveTowerExtension {
     /// Writes how far into its reload the tower is to the shared `tower_shooting_timers` table.
-    fn save_shooting_elapsed(&self, entity_id: u32, elapsed: f32) -> rusqlite::Result<usize>;
+    fn save_shooting_elapsed(&self, entity_id: u32, elapsed: f32) -> rusqlite::Result<()>;
     /// Writes the turret angle to the shared `tower_top_rotations` table.
-    fn save_top_angle(&self, entity_id: u32, angle: f32) -> rusqlite::Result<usize>;
+    fn save_top_angle(&self, entity_id: u32, angle: f32) -> rusqlite::Result<()>;
 }
 impl SaveTowerExtension for SaveContext<'_> {
-    fn save_shooting_elapsed(&self, entity_id: u32, elapsed: f32) -> rusqlite::Result<usize> {
-        self.tx.prepare_cached("INSERT OR REPLACE INTO tower_shooting_timers (entity_id, elapsed) VALUES (?1, ?2)")?.execute(rusqlite::params![entity_id, elapsed])
+    fn save_shooting_elapsed(&self, entity_id: u32, elapsed: f32) -> rusqlite::Result<()> {
+        self.tx.prepare_cached("INSERT OR REPLACE INTO tower_shooting_timers (entity_id, elapsed) VALUES (?1, ?2)")?.execute(rusqlite::params![entity_id, elapsed])?;
+        Ok(())
     }
-    fn save_top_angle(&self, entity_id: u32, angle: f32) -> rusqlite::Result<usize> {
-        self.tx.prepare_cached("INSERT OR REPLACE INTO tower_top_rotations (entity_id, angle) VALUES (?1, ?2)")?.execute(rusqlite::params![entity_id, angle])
+    fn save_top_angle(&self, entity_id: u32, angle: f32) -> rusqlite::Result<()> {
+        self.tx.prepare_cached("INSERT OR REPLACE INTO tower_top_rotations (entity_id, angle) VALUES (?1, ?2)")?.execute(rusqlite::params![entity_id, angle])?;
+        Ok(())
     }
 }
 

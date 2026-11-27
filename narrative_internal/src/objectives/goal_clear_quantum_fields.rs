@@ -189,7 +189,7 @@ fn collect_clear_quantum_fields(
     let rows: Vec<(u32, u32, ObjectiveState)> = goals
         .iter()
         .map(|(entity, state, goal_of)| {
-            let state = if save_runner.save_as_scenario { ObjectiveState::Inactive } else { *state };
+            let state = if save_runner.saves_as_scenario() { ObjectiveState::Inactive } else { *state };
             (
                 entity.index_u32(),
                 goal_of.0.index_u32(),

@@ -1,6 +1,6 @@
 use bevy::{prelude::*, window::PresentMode};
 
-use persistence::{LoadGameSignal, LoadMapConfig, MapFileName, MapSource, list_map_file_names, run_migrations_on_paths};
+use persistence::{LoadGameSignal, LoadMapConfig, MapFile, MapSource, run_migrations_on_files};
 use states::{AdminMode, prelude::*};
 
 fn main() {
@@ -64,7 +64,7 @@ impl Default for LaunchAction {
     /// `LoadMapConfig` constructor, even when the values happen to match one.
     fn default() -> Self {
         LaunchAction::StartMap(LoadMapConfig {
-            source: MapSource::File("maps/test_map.dwd".into()),
+            source: MapSource::File(MapFile::scenario("test_map")),
             game_start_state: GameState::Running,
             admin_mode: AdminMode::Disabled,
             response: default(),
@@ -76,23 +76,16 @@ impl Command for LaunchAction {
     fn apply(self, world: &mut World) {
         match self {
             LaunchAction::ApplySQLMigrations => {
-                run_migrations_on_paths(&Self::all_dwd_paths(), false);
+                run_migrations_on_files(&MapFile::list_all(), false);
                 world.write_message(AppExit::Success);
             }
             LaunchAction::RebuildSQLMigrationsMetadata => {
-                run_migrations_on_paths(&Self::all_dwd_paths(), true);
+                run_migrations_on_files(&MapFile::list_all(), true);
                 world.write_message(AppExit::Success);
             }
             LaunchAction::StartMap(config) => {
                 world.trigger(LoadGameSignal(config));
             }
         }
-    }
-}
-impl LaunchAction {
-    fn all_dwd_paths() -> Vec<String> {
-        let mut paths: Vec<String> = list_map_file_names().iter().map(MapFileName::path).collect();
-        paths.push("test_save.dwd".to_string());
-        paths
     }
 }

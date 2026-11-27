@@ -5,8 +5,10 @@ The game starts a local HTTP server at `http://127.0.0.1:7461` on startup. Keep 
 ## Available endpoints
 
 - [`GET /game/status`](../byoaic/src/endpoints/status.rs) — game, admin, UI and map-loading states, current map, game clock.
-- [`GET /game/maps`](../byoaic/src/endpoints/maps.rs) — maps in `maps/` with their headers; `file_name` is the load key.
-- [`POST /game/load-map`](../byoaic/src/endpoints/load_map.rs) — Body: `{"file_name":"<file name without .dwd>"}`
+- [`GET /game/scenarios`](../byoaic/src/endpoints/map_files.rs) — scenarios in `maps/` with their headers; each `file` is the body that loads it.
+- [`GET /game/saves`](../byoaic/src/endpoints/map_files.rs) — saves in `saves/`, each as the body that loads it.
+- [`POST /game/load`](../byoaic/src/endpoints/map_files.rs) — Body: a map file, `{"scenario":"<name>"}`, `{"save":"<name>"}` or `"quick"`; names are file names without `.dwd`.
+- [`POST /game/save`](../byoaic/src/endpoints/map_files.rs) — Body: `{"save":"<name>"}`; writes `saves/<name>.dwd` and reports once the file is in place. Never writes maps or the quicksave.
 - [`POST /game/pause`](../byoaic/src/endpoints/pause.rs) — Body: `{"paused":<bool>}`
 - [`POST /game/screenshot`](../byoaic/src/endpoints/screenshot.rs) — captures the window into `screenshots/`; reports the absolute path.
 - [`POST /game/close`](../byoaic/src/endpoints/close.rs) — request game shutdown.

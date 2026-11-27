@@ -2,7 +2,7 @@ use bevy::{prelude::*, ui_widgets::Button};
 
 use game_core::prelude::ResponseRequest;
 use logging::prelude::*;
-use persistence::{GameMapList, LoadGameSignal, LoadMapConfig, MapFileName};
+use persistence::{LoadGameSignal, LoadMapConfig, MapFile, ScenarioList};
 use states::{SetGamePaused, prelude::*};
 
 pub(crate) struct MainMenuPlugin;
@@ -75,7 +75,7 @@ impl LoadMapButton {
     fn on_click_toggle_map_list(
         _trigger: On<PointerClick>,
         mut commands: Commands,
-        mut map_list: ResMut<GameMapList>,
+        mut scenario_list: ResMut<ScenarioList>,
         map_list_container: Single<(Entity, &mut Node), With<MapListContainer>>,
     ) {
         let (container_entity, mut node) = map_list_container.into_inner();
@@ -89,8 +89,8 @@ impl LoadMapButton {
         commands.entity(container_entity).despawn_children();
 
         commands.entity(container_entity).with_children(|parent| {
-            for entry in map_list.entries() {
-                parent.spawn(MapEntryButton { file_name: entry.file_name.clone(), name: entry.info.name.clone() });
+            for entry in scenario_list.entries() {
+                parent.spawn(MapEntryButton { file: entry.file.clone(), name: entry.info.name.clone() });
             }
         });
     }
@@ -116,7 +116,7 @@ impl MapListContainer {
 #[derive(Component)]
 #[require(Button)]
 struct MapEntryButton {
-    file_name: MapFileName,
+    file: MapFile,
     name: String,
 }
 impl MapEntryButton {
@@ -149,8 +149,8 @@ impl MapEntryButton {
     fn on_click_load_selected_map(trigger: On<PointerClick>, mut commands: Commands, entries: Query<&MapEntryButton>) {
         let entity = trigger.entity;
         let Ok(entry) = entries.get(entity) else { return; };
-        #[debug_dev("Map selected: {} ({})", entry.name, entry.file_name.as_str())]
-        commands.trigger(LoadGameSignal(LoadMapConfig::map(&entry.file_name)));
+        #[debug_dev("Map selected: {} ({})", entry.name, entry.file.path())]
+        commands.trigger(LoadGameSignal(LoadMapConfig::file(entry.file.clone())));
     }
 }
 

@@ -181,7 +181,7 @@ pub(crate) fn collect_objectives(
     let rows: Vec<(u32, String, ObjectiveState, Option<u32>)> = objectives
         .iter()
         .map(|(entity, details, state, activated_by)| {
-            let state = if save_runner.save_as_scenario { ObjectiveState::Inactive } else { *state };
+            let state = if save_runner.saves_as_scenario() { ObjectiveState::Inactive } else { *state };
             (
                 entity.index_u32(),
                 details.id_name.clone(),

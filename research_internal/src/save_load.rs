@@ -44,9 +44,7 @@ pub(crate) fn collect_researches(
     let snapshots: Vec<Snapshot> = researches
         .iter()
         .map(|(entity, research, content_id, name, description, icon, state, runtime)| {
-            // Scenario saves drop runtime: progress becomes NULL regardless of
-            // current progress. Non-scenario saves keep it when present.
-            let progress = if save_runner.save_as_scenario {
+            let progress = if save_runner.saves_as_scenario() {
                 None
             } else {
                 runtime.map(|runtime| runtime.progress)

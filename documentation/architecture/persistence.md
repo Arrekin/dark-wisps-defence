@@ -1,43 +1,46 @@
 # Persistence
 
 The persistence crate provides tooling for domains to save and load their state.
-The data is saved to SQLite databases (one `.dwd` file per map).
+The data is saved to SQLite databases (one `.dwd` file per saved game).
 
 ## Worth knowing
 
 1. **A scenario is just a saved game.** Its `.dwd` file is a snapshot of the map, not a separate scenario format or load path.
-2. Domain collectors and loaders belong to the domain's `_internal` crate.
-3. Fresh spawns and loads use the same builder; loaders set restore values through ordinary builder fields.
-4. `EntityIdMap` maps saved entity IDs to newly allocated entities so saved references survive loading.
-5. Save writes run on a detached IO task. Staged loaders read on IO tasks and stream chunked `CommandQueue`s; `apply_load_queues` drains them within a per-frame time budget.
-6. Schema lives in `persistence/migrations/` and uses refinery
+2. **A `MapFile` names every save and load location, and its place decides the save kind.** `Scenario` (`maps/<name>.dwd`) resets playthrough state on save. `Quick` (`test_save.dwd`, the keybinds) and `Save` (`saves/<name>.dwd`) keep it. Names never carry a path.
+3. Domain collectors and loaders belong to the domain's `_internal` crate.
+4. Fresh spawns and loads use the same builder; loaders set restore values through ordinary builder fields.
+5. `EntityIdMap` maps saved entity IDs to newly allocated entities so saved references survive loading.
+6. Save writes run on a detached IO task. Staged loaders read on IO tasks and stream chunked `CommandQueue`s; `apply_load_queues` drains them within a per-frame time budget.
+7. Schema lives in `persistence/migrations/` and uses refinery
+8. Saves and loads report their outcome (`SaveGameReport`, `LoadGameReport`) to the `ResponseRequest` they carry.
 
 ## Save Flow
 
 ```
-SaveGameSignal { target: SaveTarget }
+SaveGameSignal { file: MapFile, response }
     │
-    ▼  repack observer (On<SaveGameSignal>)
-    │  SaveRunner exists → log + return (in-flight block)
-    │  else: resolve path from target, insert SaveRunner { path, save_as_scenario, done, error }
+    ▼  on_save_game_signal_do_so (On<SaveGameSignal>)
+    │  no map in play (InGame absent) → report NotInGame + return
+    │  SaveRunner exists → report AlreadySaving + return (in-flight block)
+    │  else: insert SaveRunner { file, response, outcome }
     │
     ▼  Last: drive_save (exclusive system, run_if resource_added::<SaveRunner>)
 world.run_schedule(CollectSave)          ← runs ONCE; never part of the main loop
     │       domain collector systems query ECS, read SaveRunner for scenario mode,
     │       SaveWriter::submit(closure)
     ▼
-PendingSaveJobs (Vec<SaveJob>) taken by driver
+PendingSaveJobs (Vec<SaveJob>) taken by driver; none → report NothingToSave, remove SaveRunner
     │
     ▼  detached IoTaskPool task
-write <path>.tmp: migrations → one transaction → all jobs → commit
+create the file's folder; write <path>.tmp: migrations → one transaction → all jobs → commit
     │
     ▼  drop connection → fs::rename(tmp, path) on success
     │
-    ▼  error.store(true) on failure; done.store(true) after the save attempt
+    ▼  outcome.set(Ok | Err(reason)) after the save attempt
     │
     ▼  Update: finalize_save (run_if resource_exists::<SaveRunner>)
-    │  poll done atomic → on completion (success OR error): remove SaveRunner
-    │  if save_as_scenario: GameMapList::refresh() (new map appears in menu)
+    │  poll outcome → once set (success OR error): report Saved / Failed { reason }, remove SaveRunner
+    │  if saves_as_scenario(): ScenarioList::refresh() (new map appears in menu)
 ```
 
 **Why a custom schedule?** `CollectSave` only executes when the driver calls `run_schedule` — zero
@@ -49,10 +52,10 @@ executor.
 target file. The SQLite connection is dropped before the rename (Windows file-handle semantics —
 see `with_db_connection`'s doc comment).
 
-**SaveRunner lifecycle:** `SaveRunner`'s *existence* is the save lifecycle — guard + mode
-carrier + completion signal in one. The repack observer inserts it (one place requests become
-plans); the finalize system removes it on IO completion (success or error — else one bad write
-blocks saving forever).
+**SaveRunner lifecycle:** `SaveRunner`'s *existence* is the save lifecycle: guard, carrier of the
+file and the report recipient, and completion signal in one. `on_save_game_signal_do_so` inserts
+it; `finalize_save` removes it on IO completion (success or error — else one bad write blocks
+saving forever).
 
 ### Writing a collector
 
@@ -60,13 +63,13 @@ blocks saving forever).
 app.add_systems(CollectSave, collect_my_entities);
 
 fn collect_my_entities(
-    q: Query<(Entity, &MyData), With<MyEntity>>,
+    my_entities: Query<(Entity, &MyData), With<MyEntity>>,
     mut save: SaveWriter,
 ) {
-    if q.is_empty() { return; }
+    if my_entities.is_empty() { return; }
     // Copy into owned rows — the closure must not borrow the World.
-    let rows: Vec<(i64, f32)> = q.iter()
-        .map(|(e, d)| (e.index_u32() as i64, d.value))
+    let rows: Vec<(u32, f32)> = my_entities.iter()
+        .map(|(entity, data)| (entity.index_u32(), data.value))
         .collect();
     save.submit(move |ctx| {
         for (id, value) in rows {
@@ -91,13 +94,13 @@ collector/normalizer drift. Collectors that don't care never mention `SaveRunner
 
 ```rust
 fn collect_my_entities(
-    q: Query<(Entity, &MyData), With<MyEntity>>,
     save_runner: Res<SaveRunner>,
+    my_entities: Query<(Entity, &MyData), With<MyEntity>>,
     mut save: SaveWriter,
 ) {
-    if q.is_empty() { return; }
-    let rows: Vec<(i64, f32)> = q.iter()
-        .map(|(e, d)| (e.index_u32() as i64, if save_runner.save_as_scenario { 0.0 } else { d.value }))
+    if my_entities.is_empty() { return; }
+    let rows: Vec<(u32, f32)> = my_entities.iter()
+        .map(|(entity, data)| (entity.index_u32(), if save_runner.saves_as_scenario() { 0.0 } else { data.value }))
         .collect();
     // ... same submit pattern
 }
@@ -110,9 +113,9 @@ LoadGameSignal(LoadMapConfig)
 ├─ Reject → report reason; current map untouched
 │    ├─ already Loading
 │    ├─ GameState transition queued
-│    └─ file missing
+│    ├─ file missing
+│    └─ migration failed
 └─ Accept
-     ├─ migrate if loading from a file
      ├─ despawn MapBound entities; queue Loading / Init
      ▼
 MapLoadingStage state machine (stages are ordering barriers)

@@ -19,7 +19,7 @@ use crate::{
 
 /// Save all moments of kind `M` to the `moments` table. Registered via
 /// `register_moment_persistence`. Scenario saves reset `fired_count` to 0;
-/// quick saves preserve it.
+/// other saves preserve it.
 #[log_tags(Tag::GameSave)]
 pub fn save_moments<M: MomentKind>(
     save_runner: Res<SaveRunner>,
@@ -33,7 +33,7 @@ pub fn save_moments<M: MomentKind>(
         .map(|(entity, moment, parent, _marker)| {
             let id = entity.index_u32();
             let parent_id = parent.0.index_u32();
-            let fired_count = if save_runner.save_as_scenario { 0 } else { moment.fired_count };
+            let fired_count = if save_runner.saves_as_scenario() { 0 } else { moment.fired_count };
             (id, parent_id, M::KIND, fired_count)
         })
         .collect();

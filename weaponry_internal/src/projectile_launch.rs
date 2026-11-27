@@ -43,12 +43,13 @@ fn launch_due_projectiles(
 
 pub(crate) trait SaveProjectileLaunchCounterExtension {
     /// Persists `launch_counter` into the `projectile_launch_counters` table for an already-registered `entity_id`.
-    fn save_projectile_launch_counter(&self, entity_id: u32, launch_counter: ProjectileLaunchCounter) -> rusqlite::Result<usize>;
+    fn save_projectile_launch_counter(&self, entity_id: u32, launch_counter: ProjectileLaunchCounter) -> rusqlite::Result<()>;
 }
 impl SaveProjectileLaunchCounterExtension for SaveContext<'_> {
-    fn save_projectile_launch_counter(&self, entity_id: u32, launch_counter: ProjectileLaunchCounter) -> rusqlite::Result<usize> {
+    fn save_projectile_launch_counter(&self, entity_id: u32, launch_counter: ProjectileLaunchCounter) -> rusqlite::Result<()> {
         self.tx.prepare_cached("INSERT OR REPLACE INTO projectile_launch_counters (entity_id, launch_at) VALUES (?1, ?2)")?
-            .execute(rusqlite::params![entity_id, launch_counter.launch_at])
+            .execute(rusqlite::params![entity_id, launch_counter.launch_at])?;
+        Ok(())
     }
 }
 

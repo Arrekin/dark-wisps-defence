@@ -1,6 +1,5 @@
 mod close;
-mod load_map;
-mod maps;
+mod map_files;
 mod pause;
 mod screenshot;
 mod status;
@@ -12,9 +11,11 @@ use crate::server::ServerState;
 pub(crate) fn router(state: ServerState) -> Router {
     Router::new()
         .route("/game/status", get(status::get_game_status))
-        .route("/game/maps", get(maps::get_game_maps))
+        .route("/game/scenarios", get(map_files::get_game_scenarios))
+        .route("/game/saves", get(map_files::get_game_saves))
         .route("/game/pause", post(pause::post_game_pause))
-        .route("/game/load-map", post(load_map::post_game_load_map))
+        .route("/game/load", post(map_files::post_game_load))
+        .route("/game/save", post(map_files::post_game_save))
         .route("/game/screenshot", post(screenshot::post_game_screenshot))
         .route("/game/close", post(close::post_game_close))
         .with_state(state)

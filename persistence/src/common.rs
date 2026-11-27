@@ -5,7 +5,8 @@ use logging::prelude::*;
 use states::MapLoadingStage;
 
 use crate::{
-    load::GameLoadRegistry,
+    load::{GameLoadRegistry, LoaderDescriptor, LoaderFn},
+    map_file::MapFile,
     moments::{load_moments, save_moments},
     save::CollectSave,
 };
@@ -41,14 +42,15 @@ pub(crate) mod db_migrations {
     embed_migrations!("./migrations");
 }
 
-/// Apply schema migrations on every `.dwd` file in `paths`.
+/// Apply schema migrations on every file in `files`.
 ///
 /// When `rebuild_metadata` is true, the refinery schema history is cleared first
 /// so V1 re-runs from scratch. Use this only when consolidating migrations.
 #[log_tags(Tag::GameLoad)]
-pub fn run_migrations_on_paths(paths: &[String], rebuild_metadata: bool) {
-    for path in paths {
-        let _ = with_db_connection(path, Migrations::Skip, |conn| {
+pub fn run_migrations_on_files(files: &[MapFile], rebuild_metadata: bool) {
+    for file in files {
+        let path = file.path();
+        let _ = with_db_connection(&path, Migrations::Skip, |conn| {
             if rebuild_metadata {
                 #[info_dev("Cleared migration history of '{path}'")]
                 conn.execute("DELETE FROM refinery_schema_history;", [])?;
@@ -67,7 +69,7 @@ pub trait AppGameLoadSaveExtension {
         &mut self,
         stage: MapLoadingStage,
         table: &'static str,
-        loader: crate::load::LoaderFn,
+        loader: LoaderFn,
     ) -> &mut Self;
 
     /// Register save collector + loader for a moment kind. Combines
@@ -80,23 +82,15 @@ impl AppGameLoadSaveExtension for App {
         &mut self,
         stage: MapLoadingStage,
         table: &'static str,
-        loader: crate::load::LoaderFn,
+        loader: LoaderFn,
     ) -> &mut Self {
-        if !self.world().contains_resource::<GameLoadRegistry>() {
-            self.init_resource::<GameLoadRegistry>();
-        }
-        let mut registry = self
-            .world_mut()
-            .resource_mut::<GameLoadRegistry>();
-        registry
+        self.init_resource::<GameLoadRegistry>();
+        self.world_mut()
+            .resource_mut::<GameLoadRegistry>()
             .loaders
             .entry(stage)
             .or_default()
-            .push(crate::load::LoaderDescriptor {
-                table,
-                run: loader,
-            });
-
+            .push(LoaderDescriptor { table, run: loader });
         self
     }
 
