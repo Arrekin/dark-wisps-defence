@@ -17,7 +17,10 @@ use bevy::{ecs::system::SystemParam, prelude::*};
 
 use almanach::{Almanach, AlmanachAppExt, ExcavationInfo};
 use game_core::{prelude::{AltitudeLevel, EdgeSide, EdgeSides, GridArea, GridCoords, GridImprint, MapObject, MapObjectTooltipRequest}, request_flag::RequestFlag};
-use grids::placement::{PlacementFeedback, PlacementObject, PlacementSession, PlacementValidity, PlacementFeedbackSystems, PlaceRequest, RemoveRequest, ReplaceExisting, ReservedCoords};
+use grids::placement::{
+    BeginPlacing, PlaceRequest, PlaceResult, PlacementFeedback, PlacementFeedbackSystems, PlacementModes, PlacementObject, PlacementSession,
+    PlacementValidity, RemoveRequest, RemoveResult, ReplaceExisting, ReservedCoords, UiPlacementSession,
+};
 use hud::prelude::BuilderSideMenuItemTooltip;
 use indexes::{emissions::EmissionsRecalculation, floor_cover::FloorCoverGrid, obstacles::GridStructure, prelude::{ObstacleCell, ObstacleGrid}, wisps::WispsGrid};
 use logging::prelude::*;
@@ -25,11 +28,14 @@ use map_objects::prelude::{ExcavationShape, StructureShape};
 use persistence::{prelude::*, rusqlite};
 use states::prelude::MapLoadingStage;
 
+use crate::excavation_editor_ui::GridPlacerUiForExcavation;
+
 pub(crate) struct ExcavationPlugin;
 impl Plugin for ExcavationPlugin {
     fn build(&self, app: &mut App) {
         app
             .add_systems(Update, ExcavationPlacementRules::update_feedback.in_set(PlacementFeedbackSystems))
+            .add_observer(on_begin_placing_set_up_excavation_placement_session)
             .add_observer(ExcavationPlacementRules::on_place_request_do_so)
             .add_observer(ExcavationPlacementRules::on_remove_request_do_so)
             .add_observer(on_map_object_tooltip_request_spawn_excavation_tooltip)
@@ -50,7 +56,25 @@ fn almanach_info() -> ExcavationInfo {
     }
 }
 
-/// Validates and applies excavation edits, including occupant cleanup and emissions updates.
+/// Initializes an excavation placement session at `trigger.origin` (defaulting to
+/// [`ExcavationShape::Pit`] and drag placement) and spawns UI controls for [`UiPlacementSession`].
+fn on_begin_placing_set_up_excavation_placement_session(
+    trigger: On<BeginPlacing>,
+    mut commands: Commands,
+    placement_sessions: Query<(&PlacementObject, Has<UiPlacementSession>)>,
+) {
+    let Ok((&PlacementObject(MapObject::Excavation), is_ui_placement_session)) = placement_sessions.get(trigger.placement_session) else { return };
+    commands.entity(trigger.placement_session).insert((
+        GridArea::new(trigger.origin, EXCAVATION_GRID_IMPRINT),
+        PlacementModes::on_press(),
+        ExcavationShape::Pit,
+    ));
+    if is_ui_placement_session {
+        commands.spawn(GridPlacerUiForExcavation);
+    }
+}
+
+/// Validates and applies excavation edits, clearing displaced occupants and requesting emissions recalculation.
 #[derive(SystemParam)]
 pub(crate) struct ExcavationPlacementRules<'w, 's> {
     commands: Commands<'w, 's>,
@@ -59,14 +83,12 @@ pub(crate) struct ExcavationPlacementRules<'w, 's> {
     wisps_grid: ResMut<'w, WispsGrid>,
     floor_cover_grid: Res<'w, FloorCoverGrid>,
     emissions_recalculation: ResMut<'w, RequestFlag<EmissionsRecalculation>>,
-    placement_session: Single<'w, 's, (&'static GridArea, &'static ExcavationShape, Has<ReplaceExisting>), With<PlacementSession>>,
 }
 impl ExcavationPlacementRules<'_, '_> {
-    /// Requires unreserved solid earth, or an existing excavation when `ReplaceExisting` is set.
+    /// Requires unreserved solid earth (or an existing excavation when `replace` is true).
     /// Pits and ramps also require the cell to have no wall or building above it.
     /// Reports `Replaces` if the area is valid and contains an excavation to replace.
-    fn feedback(&self) -> PlacementFeedback {
-        let (&area, &shape, replace) = *self.placement_session;
+    fn feedback(&self, area: GridArea, shape: ExcavationShape, replace: bool) -> PlacementFeedback {
         let replaceable = |cell: &ObstacleCell| replace && cell.excavation().is_some();
         PlacementFeedback::every_cell(area, &self.reserved_coords, |coords| {
             self.obstacle_grid.get(coords).is_some_and(|cell| {
@@ -80,8 +102,12 @@ impl ExcavationPlacementRules<'_, '_> {
         self.obstacle_grid.get(coords).is_some_and(|cell| cell.excavation().is_some())
     }
 
-    /// Digs `shape` at `coords` and requests an emissions rebuild.
-    fn excavate(&mut self, coords: GridCoords, shape: ExcavationShape) {
+    /// Digs `shape` at the area's origin and requests an emissions rebuild.
+    #[log_tags(Tag::MapObjects)]
+    fn place(&mut self, area: GridArea, shape: ExcavationShape, replace: bool) -> Result<(), PlaceResult> {
+        if self.feedback(area, shape, replace).validity == PlacementValidity::Invalid { return Err(PlaceResult::Invalid); }
+        let coords = area.origin.coords;
+        #[debug_player("Excavated {coords} into {shape:?}")]
         self.obstacle_grid.excavate(coords, shape);
         // Pits and ramps remove the ground floor, invalidating occupants at all levels.
         if !shape.keeps_ground_floor() {
@@ -89,52 +115,49 @@ impl ExcavationPlacementRules<'_, '_> {
             self.floor_cover_grid.despawn_from_level_upwards(&mut self.commands, coords, AltitudeLevel::Underground);
         }
         self.emissions_recalculation.request();
+        Ok(())
     }
 
-    /// Fills the excavation and requests an emissions rebuild.
-    fn fill(&mut self, coords: GridCoords) {
+    /// Fills the excavation at `coords` and requests an emissions rebuild.
+    #[log_tags(Tag::MapObjects)]
+    fn remove(&mut self, coords: GridCoords) -> Result<(), RemoveResult> {
+        if !self.holds_excavation(coords) { return Err(RemoveResult::NothingToRemove); }
+        #[debug_player("Excavation filled at {coords}")]
         self.obstacle_grid.fill_excavation(coords);
         // Filling removes the underground space and any occupants in the cell.
         self.wisps_grid.despawn_from_level_upwards(&mut self.commands, coords, AltitudeLevel::Underground);
         self.floor_cover_grid.despawn_from_level_upwards(&mut self.commands, coords, AltitudeLevel::Underground);
         self.emissions_recalculation.request();
+        Ok(())
     }
 
     fn update_feedback(
         mut rules: ExcavationPlacementRules,
-        placement_session: Single<(Entity, &PlacementObject), With<PlacementSession>>,
+        ui_placement_session: Single<(Entity, &PlacementObject, &GridArea, &ExcavationShape, Has<ReplaceExisting>), With<UiPlacementSession>>,
     ) {
-        let (placement_session, object) = *placement_session;
-        if object.0 != MapObject::Excavation { return; }
-        let feedback = rules.feedback();
-        rules.commands.entity(placement_session).insert_if_neq(feedback);
+        let (ui_placement_session_entity, &PlacementObject(MapObject::Excavation), &area, &shape, replace) = *ui_placement_session else { return };
+        let feedback = rules.feedback(area, shape, replace);
+        rules.commands.entity(ui_placement_session_entity).insert_if_neq(feedback);
     }
 
-    #[log_tags(Tag::MapObjects)]
     fn on_place_request_do_so(
         trigger: On<PlaceRequest>,
         mut rules: ExcavationPlacementRules,
+        placement_sessions: Query<(&PlacementObject, Option<(&GridArea, &ExcavationShape)>, Has<ReplaceExisting>), With<PlacementSession>>,
     ) {
-        let PlaceRequest(MapObject::Excavation) = *trigger else { return };
-        let (area, &shape, _) = *rules.placement_session;
-        if rules.feedback().validity == PlacementValidity::Invalid { return; }
-        let coords = area.origin.coords;
-        #[debug_player("Excavated {coords} into {shape:?}")]
-        rules.excavate(coords, shape);
+        let Ok((&PlacementObject(MapObject::Excavation), settings, replace)) = placement_sessions.get(trigger.placement_session) else { return };
+        let outcome = settings.ok_or(PlaceResult::InvalidSession).and_then(|(&area, &shape)| rules.place(area, shape, replace));
+        trigger.report(&mut rules.commands, outcome);
     }
 
-    #[log_tags(Tag::MapObjects)]
     fn on_remove_request_do_so(
         trigger: On<RemoveRequest>,
         mut rules: ExcavationPlacementRules,
+        placement_sessions: Query<(&PlacementObject, Option<&GridArea>), With<PlacementSession>>,
     ) {
-        let RemoveRequest(MapObject::Excavation) = *trigger else { return };
-        let (area, ..) = *rules.placement_session;
-        let coords = area.origin.coords;
-        #[debug_player("Excavation filled at {coords}")]
-        if rules.holds_excavation(coords) {
-            rules.fill(coords);
-        }
+        let Ok((&PlacementObject(MapObject::Excavation), area)) = placement_sessions.get(trigger.placement_session) else { return };
+        let outcome = area.ok_or(RemoveResult::InvalidSession).and_then(|area| rules.remove(area.origin.coords));
+        trigger.report(&mut rules.commands, outcome);
     }
 }
 

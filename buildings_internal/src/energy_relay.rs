@@ -10,7 +10,10 @@ use alteration::{
 };
 use buildings::prelude::*;
 use game_core::prelude::*;
-use grids::placement::{GridPlacerChanged, PlacementFeedback, PlacementObject, PlacementSession, PlacementValidity, PlacementFeedbackSystems, PlaceRequest};
+use grids::placement::{
+    GridPlacerChanged, PlaceRequest, PlaceResult, PlacementFeedback, PlacementFeedbackSystems, PlacementObject, PlacementSession, PlacementValidity,
+    UiPlacementSession,
+};
 use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
 use indexes::{
     emissions::{EmissionsType, EmitterEnergy, FloodEmissionsDetails, FloodEmissionsEvaluator, FloodEmissionsMode},
@@ -127,66 +130,70 @@ impl BuilderEnergyRelay {
     }
 }
 
-/// Validates and places energy relays using their supply range to check power connectivity.
+/// Validates and places energy relays, checking whether their supply range reaches powered cells.
 #[derive(SystemParam)]
 pub(crate) struct EnergyRelayPlacementRules<'w, 's> {
     building_rules: BuildingPlacementRules<'w, 's>,
 }
 impl EnergyRelayPlacementRules<'_, '_> {
-    /// The supply range a newly placed relay has.
+    /// Baseline supply range for a newly placed energy relay.
     fn supply_range(&self) -> EnergySupplyRange {
         EnergySupplyRange::new(self.building_rules.almanach.get_building_info(BuildingType::EnergyRelay).baseline.get(ModifierType::EnergySupplyRange).unwrap_or(0.))
     }
 
     /// Checks ground, reservations, and cost, then tests the relay's proposed supply coverage.
     /// A valid site is `ValidUnpowered` if that coverage cannot connect to powered cells.
-    fn feedback(&self) -> PlacementFeedback {
+    fn feedback(&self, area: GridArea) -> PlacementFeedback {
         let rules = &self.building_rules;
-        let feedback = rules.with_cost_check(rules.placeable_ground_feedback());
+        let feedback = rules.with_cost_check(rules.placeable_ground_feedback(area), BuildingType::EnergyRelay);
         if feedback.validity != PlacementValidity::Valid { return feedback; }
 
-        if !would_supply_reach_power(&rules.energy_supply.grid, rules.placement_area(), self.supply_range()) {
+        if !would_supply_reach_power(&rules.energy_supply.grid, area, self.supply_range()) {
             return feedback.with_validity(PlacementValidity::ValidUnpowered);
         }
         feedback
     }
 
-    fn update_feedback(
-        mut rules: EnergyRelayPlacementRules,
-        placement_session: Single<(Entity, &PlacementObject), With<PlacementSession>>,
-    ) {
-        let (placement_session, object) = *placement_session;
-        if object.0 != MapObject::Building(BuildingType::EnergyRelay) { return; }
-        let feedback = rules.feedback();
-        rules.building_rules.commands.entity(placement_session).insert_if_neq(feedback);
+    fn place(&mut self, area: GridArea) -> Result<(), PlaceResult> {
+        let validity = self.feedback(area).validity;
+        self.building_rules.claim(BuildingType::EnergyRelay, area, validity, BuilderEnergyRelay::new)
     }
 
-    /// Proposes the relay's supply at the session's area and wants the energy supply overlay to
-    /// show it.
+    fn update_feedback(
+        mut rules: EnergyRelayPlacementRules,
+        ui_placement_session: Single<(Entity, &PlacementObject, &GridArea), With<UiPlacementSession>>,
+    ) {
+        let (ui_placement_session_entity, &PlacementObject(MapObject::Building(BuildingType::EnergyRelay)), &area) = *ui_placement_session else { return };
+        let feedback = rules.feedback(area);
+        rules.building_rules.commands.entity(ui_placement_session_entity).insert_if_neq(feedback);
+    }
+
+    /// Publishes an energy supply preview for the relay on [`UiPlacementSession`] and enables the
+    /// energy supply overlay highlight.
     fn on_grid_placer_changed_write_supply_preview(
         _trigger: On<GridPlacerChanged>,
         mut overlay_config: ResMut<EnergySupplyOverlayConfig>,
         mut rules: EnergyRelayPlacementRules,
-        placement_session: Single<(Entity, &PlacementObject), With<PlacementSession>>,
+        ui_placement_session: Single<(Entity, &PlacementObject, &GridArea), With<UiPlacementSession>>,
     ) {
-        let (placement_session, object) = *placement_session;
-        if object.0 != MapObject::Building(BuildingType::EnergyRelay) { return; }
+        let (ui_placement_session_entity, &PlacementObject(MapObject::Building(BuildingType::EnergyRelay)), &area) = *ui_placement_session else { return };
         let operations = EnergySupplyPreviewOperations(vec![EnergySupplyPreviewOperation::Add {
-            area: rules.building_rules.placement_area(),
+            area,
             range: rules.supply_range(),
             is_generator: false,
         }]);
-        rules.building_rules.commands.entity(placement_session).insert(operations);
+        rules.building_rules.commands.entity(ui_placement_session_entity).insert(operations);
         overlay_config.secondary_mode = Some(EnergySupplyOverlaySecondaryMode::HighlightAll);
     }
 
     fn on_place_request_do_so(
         trigger: On<PlaceRequest>,
         mut rules: EnergyRelayPlacementRules,
+        placement_sessions: Query<(&PlacementObject, Option<&GridArea>), With<PlacementSession>>,
     ) {
-        let PlaceRequest(MapObject::Building(BuildingType::EnergyRelay)) = *trigger else { return };
-        let Some(coords) = rules.building_rules.claim(rules.feedback().validity) else { return };
-        rules.building_rules.commands.spawn(BuilderEnergyRelay::new(coords));
+        let Ok((&PlacementObject(MapObject::Building(BuildingType::EnergyRelay)), area)) = placement_sessions.get(trigger.placement_session) else { return };
+        let outcome = area.ok_or(PlaceResult::InvalidSession).and_then(|&area| rules.place(area));
+        trigger.report(&mut rules.building_rules.commands, outcome);
     }
 }
 

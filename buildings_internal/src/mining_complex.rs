@@ -11,7 +11,10 @@ use alteration::{
 };
 use buildings::prelude::*;
 use game_core::prelude::*;
-use grids::placement::{CellHighlight, PlacementFeedback, PlacementObject, PlacementSession, PlacementValidity, PlacementFeedbackSystems, PlaceRequest};
+use grids::placement::{
+    CellHighlight, PlaceRequest, PlaceResult, PlacementFeedback, PlacementFeedbackSystems, PlacementObject, PlacementSession, PlacementValidity,
+    UiPlacementSession,
+};
 use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
 use logging::prelude::*;
 use map_objects::{
@@ -49,12 +52,11 @@ pub(crate) struct MiningComplexPlacementRules<'w, 's> {
 impl MiningComplexPlacementRules<'_, '_> {
     /// Requires unreserved flat ground without structures or quantum fields, and at least one
     /// dark ore cell. Highlights ore on valid sites and checks power and affordability.
-    fn feedback(&self) -> PlacementFeedback {
+    fn feedback(&self, area: GridArea) -> PlacementFeedback {
         let rules = &self.building_rules;
-        let area = rules.placement_area();
         let feedback = rules.with_cost_check(PlacementFeedback::every_cell(area, &rules.reserved_coords, |coords| {
             rules.obstacle_grid.get(coords).is_some_and(|cell| !cell.has_structure() && !cell.is_within_quantum_field() && cell.has_flat_ground())
-        }));
+        }), BuildingType::MiningComplex);
         if feedback.validity == PlacementValidity::Invalid { return feedback; }
 
         let ore_cells: Vec<_> = area.iter()
@@ -62,26 +64,31 @@ impl MiningComplexPlacementRules<'_, '_> {
             .map(|coords| (coords, CellHighlight::Positive))
             .collect();
         if ore_cells.is_empty() { return feedback.with_validity(PlacementValidity::Invalid); }
-        rules.with_power_check(feedback.with_highlights(ore_cells))
+        rules.with_power_check(feedback.with_highlights(ore_cells), area)
+    }
+
+    fn place(&mut self, area: GridArea) -> Result<(), PlaceResult> {
+        let validity = self.feedback(area).validity;
+        self.building_rules.claim(BuildingType::MiningComplex, area, validity, BuilderMiningComplex::new)
     }
 
     fn update_feedback(
         mut rules: MiningComplexPlacementRules,
-        placement_session: Single<(Entity, &PlacementObject), With<PlacementSession>>,
+        ui_placement_session: Single<(Entity, &PlacementObject, &GridArea), With<UiPlacementSession>>,
     ) {
-        let (placement_session, object) = *placement_session;
-        if object.0 != MapObject::Building(BuildingType::MiningComplex) { return; }
-        let feedback = rules.feedback();
-        rules.building_rules.commands.entity(placement_session).insert_if_neq(feedback);
+        let (ui_placement_session_entity, &PlacementObject(MapObject::Building(BuildingType::MiningComplex)), &area) = *ui_placement_session else { return };
+        let feedback = rules.feedback(area);
+        rules.building_rules.commands.entity(ui_placement_session_entity).insert_if_neq(feedback);
     }
 
     fn on_place_request_do_so(
         trigger: On<PlaceRequest>,
         mut rules: MiningComplexPlacementRules,
+        placement_sessions: Query<(&PlacementObject, Option<&GridArea>), With<PlacementSession>>,
     ) {
-        let PlaceRequest(MapObject::Building(BuildingType::MiningComplex)) = *trigger else { return };
-        let Some(coords) = rules.building_rules.claim(rules.feedback().validity) else { return };
-        rules.building_rules.commands.spawn(BuilderMiningComplex::new(coords));
+        let Ok((&PlacementObject(MapObject::Building(BuildingType::MiningComplex)), area)) = placement_sessions.get(trigger.placement_session) else { return };
+        let outcome = area.ok_or(PlaceResult::InvalidSession).and_then(|&area| rules.place(area));
+        trigger.report(&mut rules.building_rules.commands, outcome);
     }
 }
 

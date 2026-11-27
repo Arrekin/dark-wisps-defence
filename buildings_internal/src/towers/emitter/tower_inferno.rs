@@ -12,7 +12,7 @@ use alteration::{
 };
 use buildings::prelude::*;
 use game_core::prelude::*;
-use grids::placement::PlaceRequest;
+use grids::placement::{PlaceRequest, PlaceResult, PlacementObject, PlacementSession};
 use hud::prelude::{IndicatorDisplay, IndicatorType, Indicators};
 use logging::prelude::*;
 use persistence::prelude::*;
@@ -139,10 +139,11 @@ impl BuilderTowerInferno {
 fn on_tower_inferno_place_request_do_so(
     trigger: On<PlaceRequest>,
     mut rules: BuildingPlacementRules,
+    placement_sessions: Query<(&PlacementObject, Option<&GridArea>), With<PlacementSession>>,
 ) {
-    let PlaceRequest(MapObject::Building(BuildingType::Tower(TowerType::Inferno))) = *trigger else { return };
-    let Some(coords) = rules.claim(rules.feedback().validity) else { return };
-    rules.commands.spawn(BuilderTowerInferno::new(coords));
+    let Ok((&PlacementObject(MapObject::Building(building_type @ BuildingType::Tower(TowerType::Inferno))), area)) = placement_sessions.get(trigger.placement_session) else { return };
+    let outcome = area.ok_or(PlaceResult::InvalidSession).and_then(|&area| rules.place(building_type, area, BuilderTowerInferno::new));
+    trigger.report(&mut rules.commands, outcome);
 }
 
 #[log_tags(Tag::GameSave)]

@@ -1,10 +1,11 @@
 //! # Structure shape controls
 //!
-//! Shared controls for wall and excavation placement: hollowed sides, ramp orientation,
-//! and replacement of existing walls or excavations.
-//! The shape controls replace a [`SelectableShape`] component on the session, then send
-//! `GridPlacerGhostRebuildRequest` to update both the preview and the hollowed side buttons. The replace
-//! switch toggles `ReplaceExisting` and updates only its own border.
+//! Shared placement UI controls for walls and excavations: hollowed-side toggles, ramp direction
+//! cycling, and the [`ReplaceExisting`] toggle.
+//!
+//! Shape controls update a [`SelectableShape`] component on [`UiPlacementSession`] and trigger
+//! [`GridPlacerGhostRebuildRequest`] to refresh both the ghost preview and button highlights.
+//! [`ReplaceToggleButton`] toggles [`ReplaceExisting`] and updates its own border directly.
 //!
 //! Each placement tool registers [`cycle_shape`] and
 //! [`on_ghost_rebuild_request_refresh_hollowed_side_selector`] for its shape type.
@@ -13,7 +14,7 @@ use bevy::{prelude::*, ui_widgets::Button};
 use strum::IntoEnumIterator;
 
 use game_core::prelude::{CELL_SIZE, EdgeSide, EdgeSides};
-use grids::placement::{GridPlacerGhostRebuildRequest, PlacementSession, ReplaceExisting};
+use grids::placement::{GridPlacerGhostRebuildRequest, ReplaceExisting, UiPlacementSession};
 use map_objects::prelude::StructureShape;
 
 pub(crate) struct StructureShapeControlsPlugin;
@@ -118,23 +119,23 @@ pub(crate) fn spawn_hollowed_side_selector<S: SelectableShape>(parent: &mut Chil
         });
 }
 
-/// Replaces the session's shape with the next one in the ramp cycle.
+/// Replaces the UI placement session's shape with the next one in the ramp cycle.
 pub(crate) fn cycle_shape<S: SelectableShape>(
     mut commands: Commands,
-    placement_session: Single<(Entity, &S), With<PlacementSession>>,
+    ui_placement_session: Single<(Entity, &S), With<UiPlacementSession>>,
 ) {
-    let (placement_session, &shape) = placement_session.into_inner();
-    commands.entity(placement_session).insert(shape.next_in_cycle());
+    let (ui_placement_session_entity, &shape) = ui_placement_session.into_inner();
+    commands.entity(ui_placement_session_entity).insert(shape.next_in_cycle());
     commands.trigger(GridPlacerGhostRebuildRequest);
 }
 
-/// Updates the hollowed side buttons to match the session's shape.
+/// Updates the hollowed side buttons to match the UI placement session's shape.
 pub(crate) fn on_ghost_rebuild_request_refresh_hollowed_side_selector<S: SelectableShape>(
     _trigger: On<GridPlacerGhostRebuildRequest>,
-    placement_session: Single<&S, With<PlacementSession>>,
+    ui_placement_session: Single<&S, With<UiPlacementSession>>,
     mut buttons: Query<(&HollowedSideButton, &mut BackgroundColor)>,
 ) {
-    let hollowed_sides = placement_session.hollowed_sides();
+    let hollowed_sides = ui_placement_session.hollowed_sides();
     for (&HollowedSideButton(side), mut color) in buttons.iter_mut() {
         color.0 = HollowedSideButton::color(side, hollowed_sides);
     }
@@ -177,19 +178,18 @@ impl HollowedSideButton {
     fn on_click_toggle_hollowed_side<S: SelectableShape>(
         trigger: On<PointerClick>,
         mut commands: Commands,
-        placement_session: Single<(Entity, &S), With<PlacementSession>>,
+        ui_placement_session: Single<(Entity, &S), With<UiPlacementSession>>,
         buttons: Query<&HollowedSideButton>,
     ) {
         let Ok(&HollowedSideButton(side)) = buttons.get(trigger.entity) else { return; };
-        let (placement_session, &shape) = placement_session.into_inner();
-        commands.entity(placement_session).insert(shape.with_hollowed_side_toggled(side));
+        let (ui_placement_session_entity, &shape) = ui_placement_session.into_inner();
+        commands.entity(ui_placement_session_entity).insert(shape.with_hollowed_side_toggled(side));
         commands.trigger(GridPlacerGhostRebuildRequest);
     }
 }
 
-/// Toggles `ReplaceExisting` on the placement session and updates its border to show the selection.
-///
-/// The border starts unselected; create this button for a session without `ReplaceExisting`.
+/// Button that toggles [`ReplaceExisting`] on [`UiPlacementSession`] and highlights its border
+/// while active. Starts unselected.
 #[derive(Component)]
 #[require(Button)]
 pub(crate) struct ReplaceToggleButton;
@@ -217,14 +217,14 @@ impl ReplaceToggleButton {
     fn on_click_toggle_replace_existing(
         trigger: On<PointerClick>,
         mut commands: Commands,
-        placement_session: Single<(Entity, Has<ReplaceExisting>), With<PlacementSession>>,
+        ui_placement_session: Single<(Entity, Has<ReplaceExisting>), With<UiPlacementSession>>,
         mut frames: Query<&mut BorderColor, With<ReplaceToggleButton>>,
     ) {
-        let (placement_session, was_replacing) = placement_session.into_inner();
+        let (ui_placement_session_entity, was_replacing) = ui_placement_session.into_inner();
         if was_replacing {
-            commands.entity(placement_session).remove::<ReplaceExisting>();
+            commands.entity(ui_placement_session_entity).remove::<ReplaceExisting>();
         } else {
-            commands.entity(placement_session).insert(ReplaceExisting);
+            commands.entity(ui_placement_session_entity).insert(ReplaceExisting);
         }
         let Ok(mut frame) = frames.get_mut(trigger.entity) else { return; };
         *frame = BorderColor::from(if was_replacing { CONTROL_FRAME_IDLE } else { CONTROL_FRAME_SELECTED });

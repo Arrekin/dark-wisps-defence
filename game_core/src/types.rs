@@ -1,7 +1,8 @@
 use bevy::prelude::*;
+use serde::Deserialize;
 use strum::{AsRefStr, Display, EnumCount, EnumIter, EnumString, IntoEnumIterator};
 
-#[derive(Component, Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Component, Copy, Clone, Debug, Eq, PartialEq, Hash, Deserialize)]
 pub enum BuildingType {
     EnergyRelay,
     MainBase,
@@ -56,7 +57,7 @@ impl BuildingType {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, EnumIter)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, EnumIter, Deserialize)]
 pub enum TowerType {
     Blaster,
     Cannon,
@@ -71,7 +72,7 @@ pub enum TowerType {
     Laser,
 }
 
-#[derive(Component, Copy, Clone, Debug, PartialEq, Eq, Hash, EnumString, EnumIter, AsRefStr)]
+#[derive(Component, Copy, Clone, Debug, PartialEq, Eq, Hash, EnumString, EnumIter, AsRefStr, Deserialize)]
 pub enum WispType {
     Fire,
     Water,
@@ -80,7 +81,7 @@ pub enum WispType {
 }
 
 /// Global identifier for all placeable objects on the map.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Deserialize)]
 pub enum MapObject {
     Building(BuildingType),
     Wall,

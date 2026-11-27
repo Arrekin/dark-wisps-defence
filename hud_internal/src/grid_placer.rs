@@ -1,10 +1,11 @@
 //! # Grid object placer
 //!
-//! Owns the placement session, keeps its target area under the cursor, and sends `PlaceRequest`
-//! and `RemoveRequest` on mouse input.
+//! Owns the player's [`UiPlacementSession`], tracks the cursor to update its target [`GridArea`],
+//! renders the ghost preview and validity overlay from [`PlacementFeedback`], and translates mouse
+//! input into [`PlaceRequest`] and [`RemoveRequest`] events.
 //!
-//! Each object's domain validates and handles requests. The tool renders the domain's
-//! `PlacementFeedback` without using it to gate input.
+//! Also handles [`StopPlacing`] for all sessions: resets [`UiPlacementSession`] in place and
+//! despawns standalone sessions.
 
 use bevy::{
     platform::collections::HashSet,
@@ -39,7 +40,7 @@ impl Plugin for GridObjectPlacerPlugin {
             .configure_sets(Update, PlacementFeedbackSystems.run_if(in_state(UiInteraction::PlaceGridObject)))
             .add_systems(OnEnter(UiInteraction::PlaceGridObject), show_placer)
             .add_systems(OnExit(UiInteraction::PlaceGridObject), hide_placer)
-            .add_observer(on_stop_placing_end_session)
+            .add_observer(on_stop_placing_end_placement_session)
             .add_observer(on_grid_placer_changed_fit_overlay)
             .add_observer(on_insert_placement_feedback_redraw_overlay)
             .add_observer(on_grid_placer_ghost_rebuild_request_do_so);
@@ -141,12 +142,11 @@ fn build_cell_data(area: GridArea, highlights: &[(GridCoords, CellHighlight)]) -
 // COMPONENTS
 // ============================================================================
 
-/// The placement tool. Its child session holds what is being placed and where.
+/// Visual overlay entity for grid placement; parents [`UiPlacementSession`] and [`GridPlacerGhost`].
 #[derive(Component, Default)]
 #[require(Transform, ZDepth::GridPlacer, DrawLevel::Airborne)]
 pub(crate) struct GridObjectPlacer {
-    /// Origin cells that got a place request since the left mouse button was pressed, including
-    /// rejected placements.
+    /// Origin cells already requested during the current left-button press (including rejected attempts).
     cells_requested_this_press: HashSet<GridCoords>,
 }
 
@@ -183,7 +183,7 @@ fn spawn_placer(
         Mesh2d(mesh),
         MeshMaterial2d(material),
         Visibility::Hidden,
-        children![PlacementSession],
+        children![UiPlacementSession],
     ));
 }
 
@@ -194,9 +194,10 @@ fn show_placer(placer: Single<&mut Visibility, With<GridObjectPlacer>>) {
 fn hide_placer(
     mut commands: Commands,
     placer: Single<&mut Visibility, With<GridObjectPlacer>>,
+    ui_placement_session: Single<Entity, With<UiPlacementSession>>,
 ) {
     *placer.into_inner() = Visibility::Hidden;
-    commands.trigger(StopPlacing);
+    commands.trigger(StopPlacing::new(*ui_placement_session));
 }
 
 fn handle_keyboard_input(
@@ -207,10 +208,10 @@ fn handle_keyboard_input(
     grid_object_placer_request.set(map_object);
 }
 
-/// Starts a session for the requested object, ending the current one first.
+/// Starts placing the requested object on [`UiPlacementSession`], stopping any active placement first.
 ///
-/// Outside placement, only requests `UiInteraction::PlaceGridObject` and keeps the request, so the
-/// session starts once the state has changed.
+/// If not yet in `UiInteraction::PlaceGridObject`, transitions to that state and retains the
+/// request for the next frame.
 fn begin_placement(
     mut commands: Commands,
     mouse_info: Res<MouseInfo>,
@@ -218,7 +219,7 @@ fn begin_placement(
     ui_interaction: Res<State<UiInteraction>>,
     mut next_ui_interaction: ResMut<NextState<UiInteraction>>,
     placer: Single<&mut GridObjectPlacer>,
-    placement_session: Single<Entity, With<PlacementSession>>,
+    ui_placement_session: Single<Entity, With<UiPlacementSession>>,
 ) {
     if *ui_interaction.get() != UiInteraction::PlaceGridObject {
         next_ui_interaction.set(UiInteraction::PlaceGridObject);
@@ -226,13 +227,13 @@ fn begin_placement(
     }
     let Some(map_object) = placer_request.take() else { return; };
 
-    commands.trigger(StopPlacing);
+    commands.trigger(StopPlacing::new(*ui_placement_session));
 
     let origin = GridPosition { coords: mouse_info.grid_coords, ..default() };
-    commands.entity(*placement_session).insert(PlacementObject(map_object));
+    commands.entity(*ui_placement_session).insert(PlacementObject(map_object));
     placer.into_inner().cells_requested_this_press.clear();
 
-    commands.trigger(BeginPlacing { object: map_object, origin });
+    commands.trigger(BeginPlacing::new(*ui_placement_session, origin));
     commands.trigger(GridPlacerGhostRebuildRequest);
     commands.trigger(GridPlacerChanged);
 }
@@ -240,11 +241,11 @@ fn begin_placement(
 fn follow_mouse(
     mut commands: Commands,
     mouse_info: Res<MouseInfo>,
-    placement_session: Single<(Entity, &GridArea), With<PlacementSession>>,
+    ui_placement_session: Single<(Entity, &GridArea), With<UiPlacementSession>>,
 ) {
-    let (placement_session_entity, area) = placement_session.into_inner();
+    let (ui_placement_session_entity, area) = ui_placement_session.into_inner();
     if area.origin.coords != mouse_info.grid_coords {
-        commands.entity(placement_session_entity).insert(GridArea::new(mouse_info.grid_coords.at(area.origin.level), area.imprint));
+        commands.entity(ui_placement_session_entity).insert(GridArea::new(mouse_info.grid_coords.at(area.origin.level), area.imprint));
         commands.trigger(GridPlacerChanged);
     }
 }
@@ -256,7 +257,7 @@ fn handle_placement_click(
     mouse: Res<ButtonInput<MouseButton>>,
     mouse_info: Res<MouseInfo>,
     placer: Single<&mut GridObjectPlacer>,
-    placement_session: Single<(&PlacementObject, &GridArea, &PlacementModes), With<PlacementSession>>,
+    ui_placement_session: Single<(Entity, &GridArea, &PlacementModes), With<UiPlacementSession>>,
 ) {
     let mut placer = placer.into_inner();
     if !mouse.pressed(MouseButton::Left) && !placer.cells_requested_this_press.is_empty() {
@@ -264,7 +265,7 @@ fn handle_placement_click(
     }
     if mouse_info.is_over_ui { return; }
 
-    let (&PlacementObject(map_object), area, modes) = placement_session.into_inner();
+    let (ui_placement_session_entity, area, modes) = ui_placement_session.into_inner();
 
     let should_place = match modes.place {
         PlacementMode::OnRelease => mouse.just_released(MouseButton::Left),
@@ -276,56 +277,60 @@ fn handle_placement_click(
     };
 
     if should_place {
-        commands.trigger(PlaceRequest(map_object));
+        commands.trigger(PlaceRequest::new(ui_placement_session_entity));
     } else if should_remove {
-        commands.trigger(RemoveRequest(map_object));
+        commands.trigger(RemoveRequest::new(ui_placement_session_entity));
     }
 }
 
-/// Despawns the session's controls, resets the session entity, keeping it attached to the placer,
-/// and clears the overlay highlights that placing domains wrote.
-fn on_stop_placing_end_session(
-    _trigger: On<StopPlacing>,
+/// Cleans up a session on [`StopPlacing`]: resets [`UiPlacementSession`] in place (despawning
+/// [`PlacementControls`] and clearing overlay secondary modes) and despawns standalone sessions.
+fn on_stop_placing_end_placement_session(
+    trigger: On<StopPlacing>,
     mut commands: Commands,
     mut energy_supply_overlay_config: ResMut<EnergySupplyOverlayConfig>,
     mut towers_range_overlay_config: ResMut<TowersRangeOverlayConfig>,
-    placement_session: Single<Entity, With<PlacementSession>>,
+    placement_sessions: Query<Has<UiPlacementSession>, With<PlacementSession>>,
 ) {
+    let placement_session = trigger.placement_session;
+    let Ok(is_ui_placement_session) = placement_sessions.get(placement_session) else { return; };
+    if !is_ui_placement_session {
+        commands.entity(placement_session).despawn();
+        return;
+    }
     commands.despawn_all::<With<PlacementControls>>();
-    commands.entity(*placement_session).retain::<(PlacementSession, ChildOf)>();
+    commands.entity(placement_session).retain::<(UiPlacementSession, PlacementSession, ChildOf)>();
     energy_supply_overlay_config.secondary_mode = None;
     towers_range_overlay_config.secondary_mode = None;
 }
 
-/// Replaces the placer's ghost and requests its world-space appearance.
-///
-/// Copies the session's imprint to the new ghost. Domain renderers read their settings from the
-/// session.
+/// Respawns [`GridPlacerGhost`] with the current imprint from [`UiPlacementSession`] and requests
+/// its world-space appearance via [`ObjectFaceRequest::ghost`].
 fn on_grid_placer_ghost_rebuild_request_do_so(
     _trigger: On<GridPlacerGhostRebuildRequest>,
     mut commands: Commands,
     placer: Single<Entity, With<GridObjectPlacer>>,
-    placement_session: Single<(&PlacementObject, &GridArea), With<PlacementSession>>,
+    ui_placement_session: Single<(&PlacementObject, &GridArea), With<UiPlacementSession>>,
 ) {
     commands.despawn_all::<With<GridPlacerGhost>>();
 
-    let (&PlacementObject(map_object), area) = placement_session.into_inner();
+    let (&PlacementObject(map_object), area) = ui_placement_session.into_inner();
     commands
         .spawn((GridPlacerGhost, area.imprint, ChildOf(*placer)))
         .trigger(|ghost| ObjectFaceRequest::ghost(ghost, map_object));
 }
 
-/// Moves and resizes the overlay to the session's area, then redraws it.
+/// Repositions and resizes the overlay quad to match [`UiPlacementSession`], then updates its uniform.
 fn on_grid_placer_changed_fit_overlay(
     _trigger: On<GridPlacerChanged>,
     mut commands: Commands,
     mut materials: ResMut<Assets<GridPlacerMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
     placer: Single<(Entity, &mut Transform, &MeshMaterial2d<GridPlacerMaterial>), With<GridObjectPlacer>>,
-    placement_session: Single<(&GridArea, Option<&PlacementFeedback>), With<PlacementSession>>,
+    ui_placement_session: Single<(&GridArea, Option<&PlacementFeedback>), With<UiPlacementSession>>,
 ) {
     let (placer_entity, mut transform, material_handle) = placer.into_inner();
-    let (&area, feedback) = placement_session.into_inner();
+    let (&area, feedback) = ui_placement_session.into_inner();
     let Some(mut material) = materials.get_mut(material_handle) else { return; };
 
     transform.translation = area.world_center().extend(transform.translation.z);
@@ -343,9 +348,9 @@ fn on_insert_placement_feedback_redraw_overlay(
     _trigger: On<Insert<PlacementFeedback>>,
     mut materials: ResMut<Assets<GridPlacerMaterial>>,
     placer: Single<&MeshMaterial2d<GridPlacerMaterial>, With<GridObjectPlacer>>,
-    placement_session: Single<(&GridArea, &PlacementFeedback), With<PlacementSession>>,
+    ui_placement_session: Single<(&GridArea, &PlacementFeedback), With<UiPlacementSession>>,
 ) {
-    let (&area, feedback) = placement_session.into_inner();
+    let (&area, feedback) = ui_placement_session.into_inner();
     let Some(mut material) = materials.get_mut(*placer) else { return; };
     material.uniform.show(area, Some(feedback));
 }

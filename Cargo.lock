@@ -2219,6 +2219,7 @@ dependencies = [
  "axum",
  "bevy",
  "game_core",
+ "grids",
  "logging",
  "persistence",
  "serde",
@@ -3353,6 +3354,7 @@ version = "0.2.0"
 dependencies = [
  "bevy",
  "game_core",
+ "serde",
  "strum",
 ]
 

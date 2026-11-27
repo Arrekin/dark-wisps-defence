@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, EnumIter, EnumString, IntoEnumIterator};
 
 use crate::{altitude::AltitudeLevel, prelude::SSS};
@@ -75,7 +75,7 @@ impl MapInfo {
 #[require(Transform)]
 pub struct AutoGridSnap;
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Deserialize)]
 pub struct GridCoords {
     pub x: i32,
     pub y: i32,

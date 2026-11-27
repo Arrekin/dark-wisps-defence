@@ -59,7 +59,7 @@ impl Plugin for WispsPlugin {
                 systems::drive_wisp_altitude_index::<looks::WispElectricVisual>,
             ))
             .add_observer(spawning::BuilderWisp::on_builder_add_spawn_wisp)
-            .add_observer(spawning::on_begin_placing_start_wisp_session)
+            .add_observer(spawning::on_begin_placing_set_up_wisp_placement_session)
             .add_observer(spawning::WispPlacementRules::on_place_request_do_so)
             .add_observer(spawning::WispPlacementRules::on_remove_request_do_so)
             .add_systems(CollectSave, spawning::collect_wisps)

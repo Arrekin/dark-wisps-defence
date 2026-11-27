@@ -8,6 +8,7 @@ bevy = { workspace = true }
 logging = { workspace = true }
 states = { workspace = true }
 game_core = { workspace = true }
+grids = { workspace = true }
 session = { workspace = true }
 persistence = { workspace = true }
 axum = { workspace = true }

@@ -15,7 +15,7 @@ use alteration::{
 };
 use buildings::prelude::*;
 use game_core::prelude::*;
-use grids::placement::PlaceRequest;
+use grids::placement::{PlaceRequest, PlaceResult, PlacementObject, PlacementSession};
 use hud::prelude::*;
 use logging::prelude::*;
 use persistence::prelude::*;
@@ -125,10 +125,11 @@ impl BuilderForge {
 fn on_forge_place_request_do_so(
     trigger: On<PlaceRequest>,
     mut rules: BuildingPlacementRules,
+    placement_sessions: Query<(&PlacementObject, Option<&GridArea>), With<PlacementSession>>,
 ) {
-    let PlaceRequest(MapObject::Building(BuildingType::Forge)) = *trigger else { return };
-    let Some(coords) = rules.claim(rules.feedback().validity) else { return };
-    rules.commands.spawn(BuilderForge::new(coords));
+    let Ok((&PlacementObject(MapObject::Building(building_type @ BuildingType::Forge)), area)) = placement_sessions.get(trigger.placement_session) else { return };
+    let outcome = area.ok_or(PlaceResult::InvalidSession).and_then(|&area| rules.place(building_type, area, BuilderForge::new));
+    trigger.report(&mut rules.commands, outcome);
 }
 
 #[log_tags(Tag::GameSave)]

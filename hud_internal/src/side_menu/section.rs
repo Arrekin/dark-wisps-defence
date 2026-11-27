@@ -12,7 +12,7 @@ use bevy::{
 };
 
 use game_core::prelude::MapObject;
-use grids::placement::{BeginPlacing, StopPlacing};
+use grids::placement::{BeginPlacing, PlacementObject, StopPlacing, UiPlacementSession};
 use states::{AdminMode, prelude::UiInteraction};
 use widgets::prelude::{BuilderVoidPanel, VoidPanel};
 
@@ -155,8 +155,9 @@ pub(crate) fn on_begin_placing_latch_owning_section(
     sections: Query<(Entity, &SectionLatch, &Children), With<SideMenuSection>>,
     strips: Query<&Children, With<SideMenuStrip>>,
     tiles: Query<&PlacementTile>,
+    ui_placement_sessions: Query<&PlacementObject, With<UiPlacementSession>>,
 ) {
-    let BeginPlacing { object: placed, .. } = *trigger;
+    let Ok(&PlacementObject(placed)) = ui_placement_sessions.get(trigger.placement_session) else { return };
 
     for (section_entity, latch, children) in sections.iter() {
         let holds_tile = children.first()
@@ -171,7 +172,7 @@ pub(crate) fn on_begin_placing_latch_owning_section(
     }
 }
 
-/// Clicking the section latched to the running placement cancels the session.
+/// Clicking the section latched to the running placement cancels the placement.
 pub(crate) fn on_click_section_cancel_placement(
     trigger: On<PointerClick>,
     mut next_ui_state: ResMut<NextState<UiInteraction>>,
@@ -184,10 +185,12 @@ pub(crate) fn on_click_section_cancel_placement(
 }
 
 pub(crate) fn on_stop_placing_release_owning_section(
-    _trigger: On<StopPlacing>,
+    trigger: On<StopPlacing>,
     mut commands: Commands,
     sections: Query<(Entity, &SectionLatch), With<SideMenuSection>>,
+    ui_placement_sessions: Query<(), With<UiPlacementSession>>,
 ) {
+    if !ui_placement_sessions.contains(trigger.placement_session) { return; }
     for (section_entity, latch) in sections.iter() {
         if matches!(latch, SectionLatch::OnObject(_)) {
             commands.entity(section_entity).insert(SectionLatch::Free);

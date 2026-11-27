@@ -3,13 +3,23 @@ use serde::Serialize;
 
 use game_core::prelude::*;
 
-use crate::requests::{CollectionEndReason, RequestFulfilled, ResponseChannel, ResponseSender};
+use crate::requests::{CollectionEndReason, FrameWindow, RequestFulfilled, ResponseChannel, ResponseSender};
 
 /// Spawns a request entity that forwards the first `E` reported to it and then ends the request.
 /// Pass the returned `ResponseRequest` to the work that produces `E`.
 pub(crate) fn spawn_request<E: EntityEvent + Serialize>(commands: &mut Commands, sender: ResponseSender) -> ResponseRequest {
     let request_entity = commands
         .spawn(ResponseChannel::new(sender))
+        .observe(forward_and_finish::<E>)
+        .id();
+    ResponseRequest::new(request_entity)
+}
+
+/// Spawns a request entity that forwards the first `E` reported to it, or ends with
+/// [`CollectionEndReason::WindowElapsed`] if none arrives within `frames` additional frames.
+pub(crate) fn spawn_request_within<E: EntityEvent + Serialize>(commands: &mut Commands, sender: ResponseSender, frames: u32) -> ResponseRequest {
+    let request_entity = commands
+        .spawn((ResponseChannel::new(sender), FrameWindow::new(frames)))
         .observe(forward_and_finish::<E>)
         .id();
     ResponseRequest::new(request_entity)

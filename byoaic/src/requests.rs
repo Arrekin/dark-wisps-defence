@@ -67,7 +67,6 @@ pub(crate) struct FrameWindow {
     pub(crate) frames_remaining: u32,
 }
 impl FrameWindow {
-    #[expect(dead_code, reason = "fulfillment policy with no endpoint attaching it")]
     pub(crate) fn new(frames_remaining: u32) -> Self {
         Self { frames_remaining }
     }

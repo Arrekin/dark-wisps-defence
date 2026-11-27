@@ -10,6 +10,8 @@ The game starts a local HTTP server at `http://127.0.0.1:7461` on startup. Keep 
 - [`POST /game/load`](../byoaic/src/endpoints/map_files.rs) — Body: a map file, `{"scenario":"<name>"}`, `{"save":"<name>"}` or `"quick"`; names are file names without `.dwd`.
 - [`POST /game/save`](../byoaic/src/endpoints/map_files.rs) — Body: `{"save":"<name>"}`; writes `saves/<name>.dwd` and reports once the file is in place. Never writes maps or the quicksave.
 - [`POST /game/pause`](../byoaic/src/endpoints/pause.rs) — Body: `{"paused":<bool>}`
+- [`POST /game/place`](../byoaic/src/endpoints/placement.rs) — Body: `{"object":<MapObject>,"coords":{"x":<i32>,"y":<i32>},"level":<AltitudeLevel>}` (`level` optional, defaults to `OnGround`); e.g. `{"object":{"Building":{"Tower":"Cannon"}},"coords":{"x":10,"y":12}}`. Places using default object settings (enforcing placement rules, costs, and cell reservations) and reports `PlaceReport` (`Placed`, `Invalid`, `CannotAfford`, `InvalidSession`). Ends with `WindowElapsed` if no domain handles the object.
+- [`POST /game/remove`](../byoaic/src/endpoints/placement.rs) — Body: same as `/game/place`, e.g. `{"object":"Wall","coords":{"x":10,"y":12}}`. Reports `RemoveReport` (`Removed`, `NothingToRemove`, `InvalidSession`), or ends with `WindowElapsed` if the object does not support removal.
 - [`POST /game/screenshot`](../byoaic/src/endpoints/screenshot.rs) — captures the window into `screenshots/`; reports the absolute path.
 - [`POST /game/close`](../byoaic/src/endpoints/close.rs) — request game shutdown.
 

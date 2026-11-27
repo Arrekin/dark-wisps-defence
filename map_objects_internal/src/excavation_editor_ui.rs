@@ -1,13 +1,9 @@
-//! Excavation placement uses the shared hollowed side buttons and ramp cycle to edit
-//! [`ExcavationShape`] on the placer's session entity.
-//!
-//! In admin mode the bar also carries the replace switch, which toggles `ReplaceExisting` on the
-//! session.
+//! Placement controls for editing [`ExcavationShape`] (hollowed sides and ramp orientation) on
+//! [`UiPlacementSession`], plus a [`ReplaceExisting`](grids::placement::ReplaceExisting) toggle in [`AdminMode`].
 
 use bevy::{input::common_conditions::input_just_pressed, prelude::*};
 
-use game_core::prelude::{GridArea, MapObject};
-use grids::placement::{BeginPlacing, PlacementControls, PlacementModes, PlacementSession};
+use grids::placement::{PlacementControls, UiPlacementSession};
 use map_objects::prelude::{ExcavationShape, StructureShape};
 use states::AdminMode;
 
@@ -15,7 +11,7 @@ use crate::structure_shape_controls::{
     ReplaceToggleButton, SHAPE_KEY, SelectableShape,
     controls_bar_node, cycle_shape, on_ghost_rebuild_request_refresh_hollowed_side_selector, spawn_hollowed_side_selector,
 };
-use crate::{excavations::EXCAVATION_GRID_IMPRINT, tunnel_reveal::RevealsTunnels};
+use crate::tunnel_reveal::RevealsTunnels;
 
 pub(crate) struct ExcavationEditorUiPlugin;
 impl Plugin for ExcavationEditorUiPlugin {
@@ -23,7 +19,6 @@ impl Plugin for ExcavationEditorUiPlugin {
         app
             .add_systems(Update, cycle_shape::<ExcavationShape>.run_if(input_just_pressed(SHAPE_KEY)).run_if(any_with_component::<GridPlacerUiForExcavation>))
             .add_observer(GridPlacerUiForExcavation::on_add_construct_grid_placer_ui)
-            .add_observer(GridPlacerUiForExcavation::on_begin_placing_start_excavation_session)
             .add_observer(on_ghost_rebuild_request_refresh_hollowed_side_selector::<ExcavationShape>);
     }
 }
@@ -43,8 +38,7 @@ impl SelectableShape for ExcavationShape {
     }
 }
 
-/// Root of the excavation placement controls, created and removed with the excavation placement
-/// session.
+/// Root UI node for excavation placement controls.
 #[derive(Component)]
 #[require(PlacementControls, RevealsTunnels)]
 pub(crate) struct GridPlacerUiForExcavation;
@@ -53,9 +47,9 @@ impl GridPlacerUiForExcavation {
         trigger: On<Add<GridPlacerUiForExcavation>>,
         mut commands: Commands,
         admin_mode: Res<State<AdminMode>>,
-        placement_session: Single<&ExcavationShape, With<PlacementSession>>,
+        ui_placement_session: Single<&ExcavationShape, With<UiPlacementSession>>,
     ) {
-        let shape = *placement_session.into_inner();
+        let shape = *ui_placement_session.into_inner();
         commands.entity(trigger.entity)
             .insert(controls_bar_node())
             .with_children(|parent| {
@@ -64,19 +58,5 @@ impl GridPlacerUiForExcavation {
                     parent.spawn(ReplaceToggleButton);
                 }
             });
-    }
-
-    fn on_begin_placing_start_excavation_session(
-        trigger: On<BeginPlacing>,
-        mut commands: Commands,
-        placement_session: Single<Entity, With<PlacementSession>>,
-    ) {
-        let BeginPlacing { object: MapObject::Excavation, origin } = *trigger else { return };
-        commands.entity(*placement_session).insert((
-            GridArea::new(origin, EXCAVATION_GRID_IMPRINT),
-            PlacementModes::on_press(),
-            ExcavationShape::BASE,
-        ));
-        commands.spawn(GridPlacerUiForExcavation);
     }
 }

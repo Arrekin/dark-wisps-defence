@@ -10,7 +10,10 @@ use alteration::{
 };
 use buildings::prelude::*;
 use game_core::prelude::*;
-use grids::placement::{GridPlacerChanged, PlacementFeedback, PlacementObject, PlacementSession, PlacementValidity, PlacementFeedbackSystems, PlaceRequest, ReservedCoords};
+use grids::placement::{
+    GridPlacerChanged, PlaceRequest, PlaceResult, PlacementFeedback, PlacementFeedbackSystems, PlacementObject, PlacementSession, PlacementValidity,
+    ReservedCoords, UiPlacementSession,
+};
 use indexes::{
     emissions::{EmissionsType, EmitterEnergy, FloodEmissionsDetails, FloodEmissionsEvaluator, FloodEmissionsMode},
     energy_supply::{EnergySupplyPreviewOperation, EnergySupplyPreviewOperations, GeneratorEnergy, SupplierEnergy},
@@ -132,23 +135,18 @@ impl BuilderMainBase {
     }
 }
 
-/// Validates and moves the existing main base to the session's target area.
+/// Validates and relocates the existing [`MainBase`].
 #[derive(SystemParam)]
 pub(crate) struct MainBasePlacementRules<'w, 's> {
     commands: Commands<'w, 's>,
     obstacle_grid: ResMut<'w, ObstacleGrid>,
     reserved_coords: ResMut<'w, ReservedCoords>,
-    placement_session: Single<'w, 's, (Entity, &'static GridArea), With<PlacementSession>>,
     main_base: Single<'w, 's, (Entity, &'static GridArea, &'static EnergySupplyRange), With<MainBase>>,
 }
 impl MainBasePlacementRules<'_, '_> {
-    fn placement_area(&self) -> GridArea {
-        *self.placement_session.1
-    }
-
-    /// Proposes moving the base from `base_area` to the session's area, keeping its range.
-    fn write_supply_preview(&mut self, base_area: GridArea) {
-        let (placement_session, &placement_area) = *self.placement_session;
+    /// Writes [`EnergySupplyPreviewOperations`] on `placement_session` for relocating the base from
+    /// `base_area` to `placement_area`.
+    fn write_supply_preview(&mut self, placement_session: Entity, base_area: GridArea, placement_area: GridArea) {
         let (main_base, _, &range) = *self.main_base;
         self.commands.entity(placement_session).insert(EnergySupplyPreviewOperations(vec![
             EnergySupplyPreviewOperation::Disable { supplier: main_base, area: base_area, range },
@@ -158,52 +156,64 @@ impl MainBasePlacementRules<'_, '_> {
 
     /// Requires unreserved cells that are placeable ground or already occupied by the base.
     /// This allows a move to overlap the base's current area.
-    fn feedback(&self) -> PlacementFeedback {
+    fn feedback(&self, area: GridArea) -> PlacementFeedback {
         let (_, current_area, _) = *self.main_base;
-        PlacementFeedback::every_cell(self.placement_area(), &self.reserved_coords, |coords| {
+        PlacementFeedback::every_cell(area, &self.reserved_coords, |coords| {
             current_area.contains(coords) || self.obstacle_grid.get(coords).is_some_and(ObstacleCell::is_placeable_ground)
         })
     }
 
-    fn update_feedback(
-        mut rules: MainBasePlacementRules,
-        placement_session: Single<(Entity, &PlacementObject), With<PlacementSession>>,
-    ) {
-        let (placement_session, object) = *placement_session;
-        if object.0 != MapObject::Building(BuildingType::MainBase) { return; }
-        let feedback = rules.feedback();
-        rules.commands.entity(placement_session).insert_if_neq(feedback);
+    #[log_tags(Tag::Build)]
+    fn place(&mut self, new_area: GridArea) -> Result<(), PlaceResult> {
+        let (main_base, &area, _) = *self.main_base;
+        #[info_player("Main Base cannot be moved to {}", new_area.origin)]
+        if self.feedback(new_area).validity == PlacementValidity::Invalid { return Err(PlaceResult::Invalid); }
+        #[info_player("Main Base moved to {}", new_area.origin)]
+        self.obstacle_grid.relocate(area, new_area);
+        self.reserved_coords.reserve(new_area);
+        self.commands.entity(main_base).insert(new_area);
+        Ok(())
     }
 
-    /// Proposes the move and wants the energy supply overlay to show it.
+    fn update_feedback(
+        mut rules: MainBasePlacementRules,
+        ui_placement_session: Single<(Entity, &PlacementObject, &GridArea), With<UiPlacementSession>>,
+    ) {
+        let (ui_placement_session_entity, &PlacementObject(MapObject::Building(BuildingType::MainBase)), &area) = *ui_placement_session else { return };
+        let feedback = rules.feedback(area);
+        rules.commands.entity(ui_placement_session_entity).insert_if_neq(feedback);
+    }
+
+    /// Publishes an energy supply preview for relocating [`MainBase`] to [`UiPlacementSession`]'s
+    /// area and enables the energy supply overlay highlight.
     fn on_grid_placer_changed_write_supply_preview(
         _trigger: On<GridPlacerChanged>,
         mut overlay_config: ResMut<EnergySupplyOverlayConfig>,
         mut rules: MainBasePlacementRules,
-        placement_session: Single<&PlacementObject, With<PlacementSession>>,
+        ui_placement_session: Single<(Entity, &PlacementObject, &GridArea), With<UiPlacementSession>>,
     ) {
-        if placement_session.0 != MapObject::Building(BuildingType::MainBase) { return; }
+        let (ui_placement_session_entity, &PlacementObject(MapObject::Building(BuildingType::MainBase)), &area) = *ui_placement_session else { return };
         let (_, &base_area, _) = *rules.main_base;
-        rules.write_supply_preview(base_area);
+        rules.write_supply_preview(ui_placement_session_entity, base_area, area);
         overlay_config.secondary_mode = Some(EnergySupplyOverlaySecondaryMode::HighlightAll);
     }
 
-    /// Moves the base and rewrites the preview, whose `Disable` describes the base's area.
-    #[log_tags(Tag::Build)]
+    /// Relocates [`MainBase`] and, for [`UiPlacementSession`], updates the supply preview's
+    /// `Disable` operation to the new base area.
     fn on_place_request_do_so(
         trigger: On<PlaceRequest>,
         mut rules: MainBasePlacementRules,
+        placement_sessions: Query<(&PlacementObject, Option<&GridArea>, Has<UiPlacementSession>), With<PlacementSession>>,
     ) {
-        let PlaceRequest(MapObject::Building(BuildingType::MainBase)) = *trigger else { return };
-        let (main_base, &area, _) = *rules.main_base;
-        let new_area = rules.placement_area();
-        #[info_player("Main Base cannot be moved to {}", new_area.origin)]
-        if rules.feedback().validity == PlacementValidity::Invalid { return; }
-        #[info_player("Main Base moved to {}", new_area.origin)]
-        rules.obstacle_grid.relocate(area, new_area);
-        rules.reserved_coords.reserve(new_area);
-        rules.commands.entity(main_base).insert(new_area);
-        rules.write_supply_preview(new_area);
+        let Ok((&PlacementObject(MapObject::Building(BuildingType::MainBase)), area, is_ui_placement_session)) = placement_sessions.get(trigger.placement_session) else { return };
+        let outcome = area.ok_or(PlaceResult::InvalidSession).and_then(|&area| {
+            rules.place(area)?;
+            if is_ui_placement_session {
+                rules.write_supply_preview(trigger.placement_session, area, area);
+            }
+            Ok(())
+        });
+        trigger.report(&mut rules.commands, outcome);
     }
 }
 

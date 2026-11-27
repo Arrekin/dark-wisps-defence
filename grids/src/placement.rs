@@ -1,24 +1,44 @@
 //! # Placement contract
 //!
-//! A placement session stores the selected object, target area, and object-specific settings.
-//! The placement tool sends [`PlaceRequest`] and [`RemoveRequest`] on player input. Each object's
-//! domain owns the rules for accepting and carrying out those requests.
+//! A [`PlacementSession`] entity holds the selected [`PlacementObject`], target [`GridArea`], and
+//! any object-specific settings. Lifecycle and action events ([`BeginPlacing`], [`StopPlacing`],
+//! [`PlaceRequest`], [`RemoveRequest`]) target a session entity, allowing multiple independent
+//! sessions to coexist. Each object's domain validates and executes requests on its sessions and
+//! reports outcomes via [`PlaceReport`] and [`RemoveReport`].
 //!
-//! Domains publish [`PlacementFeedback`] on the session for the tool to display. Feedback does
-//! not gate requests: handlers validate against current state when a request arrives.
+//! [`UiPlacementSession`] marks the player's persistent session, driven by the placer tool. Only
+//! it carries [`PlacementFeedback`] for visual preview. Feedback never gates requests: handlers
+//! always re-validate against live world state when a request arrives.
 
 use bevy::{platform::collections::HashSet, prelude::*};
+use serde::Serialize;
 
-use game_core::prelude::{GridArea, GridCoords, GridPosition, MapObject};
+use game_core::prelude::{GridArea, GridCoords, GridPosition, MapObject, ResponseRequest};
 
-/// Marks a placement session.
+/// Marks a placement session entity.
 ///
-/// An active session carries [`PlacementObject`], set by the placement tool, with its required
-/// [`PlacementModes`]. On [`BeginPlacing`] the object's domain inserts the target [`GridArea`],
-/// other [`PlacementModes`] where the object needs them, and its own settings. The domain's
-/// feedback systems keep [`PlacementFeedback`] current on it.
+/// An active session holds [`PlacementObject`] (which requires default [`PlacementModes`]), along
+/// with the target [`GridArea`] and any object-specific settings inserted by the domain on
+/// [`BeginPlacing`].
 #[derive(Component, Default)]
 pub struct PlacementSession;
+impl PlacementSession {
+    /// Spawns a standalone session for `object` and triggers [`BeginPlacing`] at `origin`.
+    /// Trigger [`StopPlacing`] on the returned entity when done to despawn it.
+    pub fn begin(commands: &mut Commands, object: MapObject, origin: GridPosition) -> Entity {
+        let placement_session = commands.spawn((PlacementSession, PlacementObject(object))).id();
+        commands.trigger(BeginPlacing::new(placement_session, origin));
+        placement_session
+    }
+}
+
+/// Marks the singleton placement session driven by the player's UI placer tool.
+///
+/// Carries [`PlacementFeedback`] and drives ghost previews, overlay highlights, and
+/// [`PlacementControls`]. Queryable via `Single<.., With<UiPlacementSession>>`.
+#[derive(Component, Default)]
+#[require(PlacementSession)]
+pub struct UiPlacementSession;
 
 /// The object selected for placement.
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
@@ -29,10 +49,11 @@ pub struct PlacementObject(pub MapObject);
 #[derive(Component, Clone, Copy, Debug, Default)]
 pub struct ReplaceExisting;
 
-/// Display feedback for the session's current placement.
+/// Visual validation state for [`UiPlacementSession`].
 ///
-/// Domains update this immutable component with `insert_if_neq`, allowing the tool to redraw
-/// on `On<Insert<PlacementFeedback>>`. Request handlers must validate again before placing.
+/// Domains update this immutable component with `insert_if_neq` so the placer redraws the overlay
+/// on `On<Insert<PlacementFeedback>>`. Request handlers re-validate live state rather than reading
+/// stored feedback.
 #[derive(Component, Clone, Debug, PartialEq)]
 #[component(immutable)]
 pub struct PlacementFeedback {
@@ -109,27 +130,133 @@ pub enum CellHighlight {
     Removed,
 }
 
-/// Systems that keep [`PlacementFeedback`] current on sessions.
+/// Per-frame systems that update [`PlacementFeedback`] on [`UiPlacementSession`].
 #[derive(SystemSet, Clone, Copy, Eq, PartialEq, Hash, Debug)]
 pub struct PlacementFeedbackSystems;
 
-/// Requests placement of the selected object in the session's target area.
+/// Requests placement of the session's [`PlacementObject`] at its target [`GridArea`].
 ///
-/// Domain observers match the object variant, read the area and settings from the session,
-/// and validate against current state:
-///
-/// ```ignore
-/// let PlaceRequest(MapObject::Wall) = *trigger else { return };
-/// ```
-#[derive(Event, Clone, Copy, Debug)]
-pub struct PlaceRequest(pub MapObject);
+/// Domain observers match [`PlacementObject`], read the session's area and settings, validate
+/// live world state, and report a [`PlaceReport`].
+#[derive(EntityEvent, Clone, Copy, Debug)]
+pub struct PlaceRequest {
+    #[event_target]
+    pub placement_session: Entity,
+    pub response: ResponseRequest,
+}
+impl PlaceRequest {
+    pub fn new(placement_session: Entity) -> Self {
+        Self { placement_session, response: ResponseRequest::not_needed() }
+    }
 
-/// Requests removal of the specified object kind at the session's target area.
+    pub fn with_response(mut self, response: ResponseRequest) -> Self {
+        self.response = response;
+        self
+    }
+
+    /// Reports `outcome` to [`Self::response`], mapping `Ok(())` to [`PlaceResult::Placed`].
+    pub fn report(&self, commands: &mut Commands, outcome: Result<(), PlaceResult>) {
+        let result = outcome.err().unwrap_or(PlaceResult::Placed);
+        self.response.report(commands, |entity| PlaceReport { entity, result });
+    }
+}
+
+/// Outcome reported for a [`PlaceRequest`].
+#[derive(EntityEvent, Serialize)]
+pub struct PlaceReport {
+    #[serde(skip)]
+    pub entity: Entity,
+    pub result: PlaceResult,
+}
+
+#[derive(Serialize)]
+pub enum PlaceResult {
+    Placed,
+    /// The target area fails the object's placement rules.
+    Invalid,
+    /// Available stock does not cover the object's cost.
+    CannotAfford,
+    /// The session is missing required components (such as [`GridArea`] or domain settings).
+    InvalidSession,
+}
+
+/// Requests removal of content matching the session's [`PlacementObject`] at its target [`GridArea`].
 ///
-/// Observers match the object as for [`PlaceRequest`]. Objects without a matching observer do not
-/// support removal.
-#[derive(Event, Clone, Copy, Debug)]
-pub struct RemoveRequest(pub MapObject);
+/// Domain observers match [`PlacementObject`] and report a [`RemoveReport`]. Objects without a
+/// removal observer ignore this event.
+#[derive(EntityEvent, Clone, Copy, Debug)]
+pub struct RemoveRequest {
+    #[event_target]
+    pub placement_session: Entity,
+    pub response: ResponseRequest,
+}
+impl RemoveRequest {
+    pub fn new(placement_session: Entity) -> Self {
+        Self { placement_session, response: ResponseRequest::not_needed() }
+    }
+
+    pub fn with_response(mut self, response: ResponseRequest) -> Self {
+        self.response = response;
+        self
+    }
+
+    /// Reports `outcome` to [`Self::response`], mapping `Ok(())` to [`RemoveResult::Removed`].
+    pub fn report(&self, commands: &mut Commands, outcome: Result<(), RemoveResult>) {
+        let result = outcome.err().unwrap_or(RemoveResult::Removed);
+        self.response.report(commands, |entity| RemoveReport { entity, result });
+    }
+}
+
+/// Outcome reported for a [`RemoveRequest`].
+#[derive(EntityEvent, Serialize)]
+pub struct RemoveReport {
+    #[serde(skip)]
+    pub entity: Entity,
+    pub result: RemoveResult,
+}
+
+#[derive(Serialize)]
+pub enum RemoveResult {
+    Removed,
+    /// The target area contains no removable content of this kind.
+    NothingToRemove,
+    /// The session is missing required components (such as [`GridArea`]).
+    InvalidSession,
+}
+
+/// Initializes a [`PlacementSession`] that has [`PlacementObject`] set.
+///
+/// The handling domain observer inserts [`GridArea`] at `origin`, overrides [`PlacementModes`] if
+/// needed, and inserts default domain settings. If the session has [`UiPlacementSession`], the
+/// observer also spawns its [`PlacementControls`]. Flushes before the placer builds the ghost so
+/// ghost and control observers can read the initialized session components.
+#[derive(EntityEvent, Clone, Copy, Debug)]
+pub struct BeginPlacing {
+    #[event_target]
+    pub placement_session: Entity,
+    pub origin: GridPosition,
+}
+impl BeginPlacing {
+    pub fn new(placement_session: Entity, origin: GridPosition) -> Self {
+        Self { placement_session, origin }
+    }
+}
+
+/// Ends placement on a [`PlacementSession`].
+///
+/// Fired when exiting placement, before switching [`UiPlacementSession`] to a new object, or when
+/// finishing a standalone session. [`UiPlacementSession`] is stripped back to its base markers and
+/// its [`PlacementControls`] are despawned; standalone sessions are despawned.
+#[derive(EntityEvent, Clone, Copy, Debug)]
+pub struct StopPlacing {
+    #[event_target]
+    pub placement_session: Entity,
+}
+impl StopPlacing {
+    pub fn new(placement_session: Entity) -> Self {
+        Self { placement_session }
+    }
+}
 
 /// Cells claimed by placement handlers while spawns are waiting to update the obstacle grid.
 ///
@@ -153,7 +280,7 @@ impl ReservedCoords {
 // PLACER TOOL
 // ============================================================================
 
-/// Mouse input behavior for placement and removal of the session's object.
+/// Mouse input trigger modes for placing and removing the session's object.
 #[derive(Component, Clone, Copy, Debug, Default)]
 pub struct PlacementModes {
     pub place: PlacementMode,
@@ -179,40 +306,15 @@ pub enum PlacementMode {
     OnPress,
 }
 
-/// Emitted when the placer's session changes its object or its area.
+/// Triggered when [`UiPlacementSession`] changes its object or [`GridArea`].
 #[derive(Event, Clone, Copy, Debug)]
 pub struct GridPlacerChanged;
 
-/// Emitted when placement begins for an object. The session then holds only
-/// [`PlacementSession`], [`PlacementObject`] and the default [`PlacementModes`].
-///
-/// The object's domain inserts on the session everything its placement needs: at least the
-/// [`GridArea`] at `origin`, other [`PlacementModes`] when the default does not suit it, and its
-/// own settings. It also creates controls such as size or style selectors. The placer builds the
-/// ghost after this event, so the ghost can read the session. Changing a setting does not start a
-/// new session.
-///
-/// ```ignore
-/// let BeginPlacing { object: MapObject::Wall, origin } = *trigger else { return };
-/// ```
-#[derive(Event, Clone, Copy, Debug)]
-pub struct BeginPlacing {
-    pub object: MapObject,
-    pub origin: GridPosition,
-}
-
-/// Emitted when the placement session ends, including when another object is selected, and
-/// before every new session.
-///
-/// Observers still see the session as it was. The placer then removes everything the session
-/// holds, so data published on it lasts exactly as long as the session.
-#[derive(Event, Clone, Copy, Debug)]
-pub struct StopPlacing;
-
-/// Marks a domain's placement controls. The placer despawns them when the session ends.
+/// Marker for domain UI controls spawned during placement; despawned on [`StopPlacing`].
 #[derive(Component, Clone, Copy, Debug, Default)]
 pub struct PlacementControls;
 
-/// Requests a new ghost after a setting the ghost shows changes on the session.
+/// Requests a rebuild of the placement ghost after [`UiPlacementSession`] changes its object,
+/// imprint, or visual settings.
 #[derive(Event, Clone, Copy, Debug)]
 pub struct GridPlacerGhostRebuildRequest;

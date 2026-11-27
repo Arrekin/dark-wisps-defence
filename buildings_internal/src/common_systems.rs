@@ -28,7 +28,7 @@ impl Plugin for CommonSystemsPlugin {
                 rotate_tower_top,
             ).chain().in_set(TowerAimingSystems))
             .add_systems(Update, BuildingPlacementRules::update_feedback.in_set(PlacementFeedbackSystems))
-            .add_observer(on_begin_placing_start_building_session)
+            .add_observer(on_begin_placing_set_up_building_placement_session)
             .add_observer(on_grid_placer_changed_highlight_area_suppliers)
             .add_observer(on_grid_placer_changed_highlight_attack_range)
             .add_observer(on_insert_focused_map_object_highlight_tower_range)

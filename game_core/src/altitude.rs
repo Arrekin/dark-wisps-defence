@@ -10,10 +10,11 @@
 //! default mapping or define their own. These levels describe map occupancy; rendering uses
 //! [`DrawLevel`](crate::z_depth::DrawLevel) for draw order.
 
+use serde::Deserialize;
 use strum::{AsRefStr, EnumCount, EnumIter, EnumString};
 
 /// The altitude occupied by an object or effect.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, EnumIter, EnumCount, EnumString, AsRefStr)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, EnumIter, EnumCount, EnumString, AsRefStr, Deserialize)]
 pub enum AltitudeLevel {
     /// Underground terrain, passages, units, and floor covers.
     Underground,

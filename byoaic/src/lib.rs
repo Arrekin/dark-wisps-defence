@@ -12,7 +12,9 @@
 //! endpoint. The system receives the response sender and passes it to `spawn_request`, which
 //! spawns a *request entity* holding the `ResponseChannel` and a `forward_and_finish` observer for
 //! the action's report. The system hands the returned `ResponseRequest` to the work that decides
-//! the outcome, usually by triggering a domain event that carries it.
+//! the outcome, usually by triggering a domain event that carries it. `spawn_request_within`
+//! attaches a `FrameWindow` that ends the request with `WindowElapsed` if no report arrives within
+//! the allotted frames.
 //!
 //! That work calls `response.report(...)` once, with the action's result, which triggers a typed
 //! report event on the request entity. `forward_and_finish` serializes it into the response

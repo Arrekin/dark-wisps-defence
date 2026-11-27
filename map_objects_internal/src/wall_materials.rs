@@ -11,7 +11,7 @@ use bevy::{
 };
 
 use game_core::prelude::{FaceSurface, GridImprint, MapObject, ObjectFaceRequest};
-use grids::placement::PlacementSession;
+use grids::placement::UiPlacementSession;
 use logging::prelude::*;
 use map_objects::{prelude::StructureShape, wall_style::{WallStyleKey, WallStyles}};
 use visuals::{specialize_ui_with_shared_gpu, specialize_with_shared_gpu};
@@ -68,7 +68,7 @@ impl Material2d for WallQuadMaterial {
 /// Attaches a wall face for UI or placement preview use.
 ///
 /// UI swatches use the target's `WallStyleKey`, falling back to the default style if it is absent.
-/// Placement previews use `WallStyleKey` and `StructureShape` from the placer's session entity.
+/// Placement previews use `WallStyleKey` and `StructureShape` from the UI placement session.
 #[log_tags(Tag::MapObjects)]
 fn on_object_face_request_draw_wall(
     trigger: On<ObjectFaceRequest>,
@@ -77,7 +77,7 @@ fn on_object_face_request_draw_wall(
     mut meshes: ResMut<Assets<Mesh>>,
     mut swatch_materials: ResMut<Assets<WallSwatchMaterial>>,
     mut quad_materials: ResMut<Assets<WallQuadMaterial>>,
-    placement_session: Option<Single<(&WallStyleKey, &StructureShape), With<PlacementSession>>>,
+    ui_placement_session: Option<Single<(&WallStyleKey, &StructureShape), With<UiPlacementSession>>>,
     grid_imprints: Query<&GridImprint>,
     style_keys: Query<&WallStyleKey>,
 ) {
@@ -92,8 +92,8 @@ fn on_object_face_request_draw_wall(
         }
         FaceSurface::World => {
             #[warn_dev("Wall face requested in the world for {entity} outside a wall placement session")]
-            let Some(placement_session) = placement_session else { return; };
-            let (&key, &shape) = placement_session.into_inner();
+            let Some(ui_placement_session) = ui_placement_session else { return; };
+            let (&key, &shape) = ui_placement_session.into_inner();
             #[warn_dev("Wall face requested for {entity} with style {}, which is not in this map's table", key.0)]
             if !styles.contains(key) { return; }
             #[warn_dev("Wall face requested in the world for {entity}, which has no GridImprint or no longer exists")]

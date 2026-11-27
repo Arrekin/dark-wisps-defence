@@ -1,6 +1,7 @@
 mod close;
 mod map_files;
 mod pause;
+mod placement;
 mod screenshot;
 mod status;
 
@@ -14,6 +15,8 @@ pub(crate) fn router(state: ServerState) -> Router {
         .route("/game/scenarios", get(map_files::get_game_scenarios))
         .route("/game/saves", get(map_files::get_game_saves))
         .route("/game/pause", post(pause::post_game_pause))
+        .route("/game/place", post(placement::post_game_place))
+        .route("/game/remove", post(placement::post_game_remove))
         .route("/game/load", post(map_files::post_game_load))
         .route("/game/save", post(map_files::post_game_save))
         .route("/game/screenshot", post(screenshot::post_game_screenshot))

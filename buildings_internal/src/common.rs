@@ -4,7 +4,11 @@ use almanach::prelude::Almanach;
 use alteration::modifiers::prelude::{AttackRangeType, ModifierType};
 use buildings::prelude::Tower;
 use game_core::{math::angle_difference, prelude::*};
-use grids::{base::GridCell, placement::{BeginPlacing, GridPlacerChanged, PlacementFeedback, PlacementObject, PlacementSession, PlacementValidity, ReservedCoords}, prelude::GridPath};
+use grids::{
+    base::GridCell,
+    placement::{BeginPlacing, GridPlacerChanged, PlaceResult, PlacementFeedback, PlacementObject, PlacementValidity, ReservedCoords, UiPlacementSession},
+    prelude::GridPath,
+};
 use hud::prelude::FocusedMapObject;
 use indexes::{energy_supply::EnergySupply, prelude::{ObstacleCell, ObstacleGrid}};
 use logging::prelude::*;
@@ -45,38 +49,38 @@ pub(crate) fn on_object_face_request_draw_building(
     }
 }
 
-/// Starts the placement session of every building type at the building's imprint.
-pub(crate) fn on_begin_placing_start_building_session(
+/// Initializes [`GridArea`] on a building placement session at `trigger.origin` using the
+/// building's Almanach imprint.
+pub(crate) fn on_begin_placing_set_up_building_placement_session(
     trigger: On<BeginPlacing>,
     mut commands: Commands,
     almanach: Res<Almanach>,
-    placement_session: Single<Entity, With<PlacementSession>>,
+    placement_objects: Query<&PlacementObject>,
 ) {
-    let BeginPlacing { object: MapObject::Building(building_type), origin } = *trigger else { return };
+    let Ok(&PlacementObject(MapObject::Building(building_type))) = placement_objects.get(trigger.placement_session) else { return };
     let imprint = almanach.get_building_info(building_type).grid_imprint;
-    commands.entity(*placement_session).insert(GridArea::new(origin, imprint));
+    commands.entity(trigger.placement_session).insert(GridArea::new(trigger.origin, imprint));
 }
 
-/// Wants the energy supply overlay to show which suppliers cover a consumer being placed.
-/// Energy suppliers write their own preview instead.
+/// Highlights energy suppliers covering the target area when placing a non-supplier consumer.
 pub(crate) fn on_grid_placer_changed_highlight_area_suppliers(
     _trigger: On<GridPlacerChanged>,
     mut overlay_config: ResMut<EnergySupplyOverlayConfig>,
-    placement_session: Single<(&PlacementObject, &GridArea), With<PlacementSession>>,
+    ui_placement_session: Single<(&PlacementObject, &GridArea), With<UiPlacementSession>>,
 ) {
-    let (&PlacementObject(MapObject::Building(building_type)), &area) = *placement_session else { return };
+    let (&PlacementObject(MapObject::Building(building_type)), &area) = *ui_placement_session else { return };
     if !building_type.is_energy_consumer() || building_type.is_energy_supplier() { return; }
     overlay_config.secondary_mode = Some(EnergySupplyOverlaySecondaryMode::HighlightAreaSuppliers { area });
 }
 
-/// Wants the tower range overlay to preview the baseline attack range of a building being placed.
+/// Previews the baseline attack range on the tower range overlay when placing a building with an attack range.
 pub(crate) fn on_grid_placer_changed_highlight_attack_range(
     _trigger: On<GridPlacerChanged>,
     almanach: Res<Almanach>,
     mut overlay_config: ResMut<TowersRangeOverlayConfig>,
-    placement_session: Single<(&PlacementObject, &GridArea), With<PlacementSession>>,
+    ui_placement_session: Single<(&PlacementObject, &GridArea), With<UiPlacementSession>>,
 ) {
-    let (&PlacementObject(MapObject::Building(building_type)), &area) = *placement_session else { return };
+    let (&PlacementObject(MapObject::Building(building_type)), &area) = *ui_placement_session else { return };
     let building_info = almanach.get_building_info(building_type);
     let Some(AttackRangeType(range_type)) = building_info.attack_range else { return };
     let range = AreaRange {
@@ -88,7 +92,7 @@ pub(crate) fn on_grid_placer_changed_highlight_attack_range(
     overlay_config.secondary_mode = Some(TowersRangeOverlaySecondaryMode::HighlightRange { range });
 }
 
-/// Wants the tower range overlay to highlight a focused tower's range.
+/// Highlights a focused tower's range on the tower range overlay.
 pub(crate) fn on_insert_focused_map_object_highlight_tower_range(
     trigger: On<Insert<FocusedMapObject>>,
     mut overlay_config: ResMut<TowersRangeOverlayConfig>,
@@ -120,37 +124,25 @@ pub(crate) struct BuildingPlacementRules<'w, 's> {
     pub(crate) reserved_coords: ResMut<'w, ReservedCoords>,
     stock: ResMut<'w, Stock>,
     admin_mode: Res<'w, State<AdminMode>>,
-    placement_session: Single<'w, 's, (&'static GridArea, &'static PlacementObject), With<PlacementSession>>,
 }
 
 impl BuildingPlacementRules<'_, '_> {
-    pub(crate) fn placement_area(&self) -> GridArea {
-        *self.placement_session.0
-    }
-
-    fn building_being_placed(&self) -> BuildingType {
-        let MapObject::Building(building_type) = self.placement_session.1.0 else {
-            panic!("Building placement rules judged a session placing {:?}", self.placement_session.1.0);
-        };
-        building_type
-    }
-
-    /// Checks ground, reservations, power, and affordability for the session's building.
+    /// Checks ground, reservations, power, and affordability for `building_type` at `area`.
     /// A valid site without power is reported as `ValidUnpowered`.
-    pub(crate) fn feedback(&self) -> PlacementFeedback {
-        self.with_cost_check(self.with_power_check(self.placeable_ground_feedback()))
+    pub(crate) fn feedback(&self, building_type: BuildingType, area: GridArea) -> PlacementFeedback {
+        self.with_cost_check(self.with_power_check(self.placeable_ground_feedback(area), area), building_type)
     }
 
-    /// Requires unreserved, placeable ground throughout the session's area.
-    pub(crate) fn placeable_ground_feedback(&self) -> PlacementFeedback {
-        PlacementFeedback::every_cell(self.placement_area(), &self.reserved_coords, |coords| {
+    /// Requires unreserved, placeable ground throughout `area`.
+    pub(crate) fn placeable_ground_feedback(&self, area: GridArea) -> PlacementFeedback {
+        PlacementFeedback::every_cell(area, &self.reserved_coords, |coords| {
             self.obstacle_grid.get(coords).is_some_and(ObstacleCell::is_placeable_ground)
         })
     }
 
-    /// Changes `Valid` to `ValidUnpowered` when the session's area has no power.
-    pub(crate) fn with_power_check(&self, feedback: PlacementFeedback) -> PlacementFeedback {
-        if feedback.validity == PlacementValidity::Valid && !self.energy_supply.grid.is_area_powered(self.placement_area()) {
+    /// Changes `Valid` to `ValidUnpowered` when `area` has no power.
+    pub(crate) fn with_power_check(&self, feedback: PlacementFeedback, area: GridArea) -> PlacementFeedback {
+        if feedback.validity == PlacementValidity::Valid && !self.energy_supply.grid.is_area_powered(area) {
             return feedback.with_validity(PlacementValidity::ValidUnpowered);
         }
         feedback
@@ -158,39 +150,53 @@ impl BuildingPlacementRules<'_, '_> {
 
     /// Sets affordability from the building's Almanach cost and current stock.
     /// Admin placement is always affordable.
-    pub(crate) fn with_cost_check(&self, feedback: PlacementFeedback) -> PlacementFeedback {
-        let cost = &self.almanach.get_building_info(self.building_being_placed()).cost;
+    pub(crate) fn with_cost_check(&self, feedback: PlacementFeedback, building_type: BuildingType) -> PlacementFeedback {
+        let cost = &self.almanach.get_building_info(building_type).cost;
         feedback.with_affordability(self.admin_mode.get().is_enabled() || self.stock.has_all(cost))
     }
 
-    /// Pays the building's cost and reserves the session's area for a site judged `validity`.
+    /// Validates `validity`, deducts the building's cost (unless in [`AdminMode`]), reserves
+    /// `area`, and spawns the builder returned by `make_builder(area.origin)`.
     ///
-    /// Callers must judge the site from current state. Returns `None` without charging or
-    /// reserving if the site is `Invalid` or payment fails. Admin mode skips payment.
+    /// Returns `Err` without charging or reserving if `validity` is [`PlacementValidity::Invalid`]
+    /// or stock is insufficient.
     #[log_tags(Tag::Build)]
-    pub(crate) fn claim(&mut self, validity: PlacementValidity) -> Option<GridPosition> {
-        let area = self.placement_area();
-        let building_info = self.almanach.get_building_info(self.building_being_placed());
+    pub(crate) fn claim<B: Bundle>(
+        &mut self,
+        building_type: BuildingType,
+        area: GridArea,
+        validity: PlacementValidity,
+        make_builder: impl FnOnce(GridPosition) -> B,
+    ) -> Result<(), PlaceResult> {
+        let building_info = self.almanach.get_building_info(building_type);
 
         #[info_player("'{}' cannot be placed at {}", building_info.name, area.origin)]
-        if validity == PlacementValidity::Invalid { return None; }
+        if validity == PlacementValidity::Invalid { return Err(PlaceResult::Invalid); }
         #[info_player("Not enough resources")]
-        if !self.admin_mode.get().is_enabled() && !self.stock.try_remove_all(&building_info.cost) { return None; }
+        if !self.admin_mode.get().is_enabled() && !self.stock.try_remove_all(&building_info.cost) { return Err(PlaceResult::CannotAfford); }
 
         #[info_player("'{}' placed at {}", building_info.name, area.origin)]
         self.reserved_coords.reserve(area);
-        Some(area.origin)
+        self.commands.spawn(make_builder(area.origin));
+        Ok(())
     }
 
-    /// Keeps feedback current for towers, the exploration center and the forge.
+    /// Validates `building_type` at `area` using [`Self::feedback`] and claims the site.
+    pub(crate) fn place<B: Bundle>(&mut self, building_type: BuildingType, area: GridArea, make_builder: impl FnOnce(GridPosition) -> B) -> Result<(), PlaceResult> {
+        let validity = self.feedback(building_type, area).validity;
+        self.claim(building_type, area, validity, make_builder)
+    }
+
+    /// Updates [`PlacementFeedback`] for buildings that use the shared placement rules (towers,
+    /// exploration center, and forge).
     pub(crate) fn update_feedback(
         mut rules: BuildingPlacementRules,
-        placement_session: Single<(Entity, &PlacementObject), With<PlacementSession>>,
+        ui_placement_session: Single<(Entity, &PlacementObject, &GridArea), With<UiPlacementSession>>,
     ) {
-        let (placement_session, object) = *placement_session;
-        let MapObject::Building(BuildingType::Tower(_) | BuildingType::ExplorationCenter | BuildingType::Forge) = object.0 else { return; };
-        let feedback = rules.feedback();
-        rules.commands.entity(placement_session).insert_if_neq(feedback);
+        let (ui_placement_session_entity, &PlacementObject(MapObject::Building(building_type)), &area) = *ui_placement_session else { return };
+        let (BuildingType::Tower(_) | BuildingType::ExplorationCenter | BuildingType::Forge) = building_type else { return };
+        let feedback = rules.feedback(building_type, area);
+        rules.commands.entity(ui_placement_session_entity).insert_if_neq(feedback);
     }
 }
 
